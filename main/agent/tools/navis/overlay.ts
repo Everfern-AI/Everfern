@@ -11,10 +11,9 @@ export const OVERLAY_SCRIPT = `
 
   const style = document.createElement('style');
   style.textContent = \`
-    @keyframes navis-shimmer {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
+    @keyframes navis-shimmer-filter {
+      0% { filter: hue-rotate(0deg); }
+      100% { filter: hue-rotate(360deg); }
     }
     @keyframes navis-pulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0); }
@@ -34,12 +33,21 @@ export const OVERLAY_SCRIPT = `
     #navis-border {
       position: absolute;
       inset: 0;
-      border: 1.5px solid transparent;
-      background: linear-gradient(90deg, rgba(180,180,180,0.4), rgba(220,220,220,0.15), rgba(180,180,180,0.4)) border-box;
-      background-size: 200% 100%;
-      animation: navis-shimmer 3s ease infinite;
-      border-image: linear-gradient(90deg, rgba(180,180,180,0.4), rgba(220,220,220,0.15), rgba(180,180,180,0.4)) 1;
-      border-image-slice: 1;
+    }
+    #navis-border::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 4px solid transparent;
+      border-image: linear-gradient(90deg, #ff8a00, #e52e71, #9b51e0, #4facfe, #ff8a00) 1;
+      animation: navis-shimmer-filter 4s linear infinite;
+    }
+    #navis-border::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 30px rgba(229, 46, 113, 0.6), inset 0 0 60px rgba(155, 81, 224, 0.4);
+      animation: navis-shimmer-filter 4s linear infinite;
     }
     #navis-pill {
       position: absolute;
