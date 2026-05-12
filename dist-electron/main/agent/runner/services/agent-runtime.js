@@ -4,6 +4,7 @@ exports.runAgentStep = runAgentStep;
 const text_to_tool_1 = require("../../parsers/text-to-tool");
 const message_utils_1 = require("./message-utils");
 const computer_use_1 = require("../../tools/computer-use");
+const abort_manager_1 = require("../abort-manager");
 /**
  * Reusable agent execution logic for calling the model and processing its response.
  * Uses pooled AI clients for better performance and connection reuse.
@@ -199,6 +200,7 @@ async function runAgentStep(state, options) {
                     }
                 }
             },
+            abortSignal: abort_manager_1.globalAbortManager.abortController.signal,
         };
         let response = await client.chat(request);
         // 5. Tool Call Nudge (Specialized Agents)

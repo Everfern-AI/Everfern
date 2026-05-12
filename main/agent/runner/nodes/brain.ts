@@ -6,6 +6,8 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import type { AIClient } from '../../../lib/ai-client';
+import { globalAbortManager } from '../abort-manager';
+import { nodeLifecycle } from '../services/node-utils';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_computer_use' | 'route_web_explorer' | 'complete_task';
@@ -58,6 +60,7 @@ Respond with JSON only:
         responseFormat: 'json',
         temperature: 0.3,
         maxTokens: 120,
+        abortSignal: globalAbortManager.abortController.signal,
       }),
       timeoutPromise,
     ]) as any;
@@ -185,6 +188,7 @@ Respond with JSON only:
       responseFormat: 'json',
       temperature: 0.3,
       maxTokens: 150,
+      abortSignal: globalAbortManager.abortController.signal,
     }) as any;
 
     const duration = Date.now() - startTime;
@@ -283,6 +287,8 @@ export const createBrainNode = (
   const integrator = createMissionIntegrator(missionTracker);
 
   return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
+    const logger = nodeLifecycle(runner, 'brain');
+    
     // Check for abort signal before processing
     if (shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');

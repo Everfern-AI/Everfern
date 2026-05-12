@@ -145,8 +145,36 @@ exports.webSearchTool = {
     },
     async execute(args, onUpdate, emitEvent, toolCallId) {
         const query = String(args['query'] ?? '').trim();
+        // Strict query validation
         if (!query) {
-            return { success: false, output: 'No search query provided', error: 'query is required' };
+            return {
+                success: false,
+                output: '❌ INVALID QUERY: Search requires a non-empty query string. Provide specific search terms (e.g., "best discord bots", "React hooks guide").',
+                error: 'empty_query',
+            };
+        }
+        // Query length validation
+        if (query.length < 2) {
+            return {
+                success: false,
+                output: '❌ INVALID QUERY: Search query too short. Use at least 2 characters.',
+                error: 'query_too_short',
+            };
+        }
+        if (query.length > 500) {
+            return {
+                success: false,
+                output: '❌ INVALID QUERY: Search query too long (max 500 chars). Break into simpler searches.',
+                error: 'query_too_long',
+            };
+        }
+        // Detect likely non-query patterns (prevent abuse)
+        if (/^\s*[^a-zA-Z0-9\s\-\.\p{L}]+\s*$|^\s*loading\s*$|^\s*undefined\s*$|^\s*null\s*$/iu.test(query)) {
+            return {
+                success: false,
+                output: `❌ INVALID QUERY: "${query}" looks like a placeholder or invalid input. Provide actual search terms.`,
+                error: 'invalid_query_format',
+            };
         }
         try {
             const config = tool_settings_1.toolSettingsStore.get().webSearch;
@@ -177,17 +205,26 @@ exports.webSearchTool = {
             if (results.length === 0) {
                 return {
                     success: true,
-                    output: `🔍 No results found for "${query}". Try rephrasing or use computer_use to open a browser.`,
+                    output: `🔍 No results found for "${query}". Try rephrasing with different keywords or use computer_use to open a browser manually.`,
                     data: { query, results: [] },
                 };
             }
-            const formatted = results
+            // Truncate excessive results to prevent overwhelming output
+            const maxResults = 8;
+            const maxSnippetChars = 300;
+            const truncatedResults = results.slice(0, maxResults).map(r => ({
+                ...r,
+                snippet: r.snippet.length > maxSnippetChars
+                    ? r.snippet.slice(0, maxSnippetChars).trim() + '...'
+                    : r.snippet,
+            }));
+            const formatted = truncatedResults
                 .map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`)
                 .join('\n\n');
             return {
                 success: true,
-                output: `🔍 Search results for "${query}":\n\n${formatted}`,
-                data: { query, results },
+                output: `🔍 Found ${results.length} result(s) for "${query}" (showing top ${truncatedResults.length}):\n\n${formatted}`,
+                data: { query, results: truncatedResults, totalCount: results.length },
             };
         }
         catch (err) {

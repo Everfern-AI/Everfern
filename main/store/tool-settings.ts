@@ -12,11 +12,26 @@ export interface ToolConfig {
   maxFailures?: number;
 }
 
+export interface NavisConfig {
+  useVision: boolean;
+  headless: boolean;
+  maxSteps: number;
+  autoLaunchChrome: boolean;
+}
+
 export interface ToolSettingsConfig {
   webSearch: ToolConfig;
   webCrawl: ToolConfig;
   browserUse: ToolConfig;
+  navis: NavisConfig;
 }
+
+export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
+  useVision: false,
+  headless: false,
+  maxSteps: 25,
+  autoLaunchChrome: true,
+};
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
   webSearch: { mode: 'local', headless: true, apiKey: '' },
@@ -30,6 +45,7 @@ export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
     maxActionsPerStep: 1,
     maxFailures: 10
   },
+  navis: { ...DEFAULT_NAVIS_SETTINGS },
 };
 
 const SETTINGS_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-settings.json');
@@ -50,7 +66,7 @@ export class ToolSettingsStore {
       const raw = fs.readFileSync(SETTINGS_FILE_PATH, 'utf-8');
       const loaded = JSON.parse(raw);
       
-      // Deep merge with defaults to ensure all keys (like browserUse) exist
+      // Deep merge with defaults to ensure all keys (like browserUse, navis) exist
       const config = {
         ...DEFAULT_TOOL_SETTINGS,
         ...loaded,
@@ -58,6 +74,7 @@ export class ToolSettingsStore {
         webSearch: { ...DEFAULT_TOOL_SETTINGS.webSearch, ...(loaded.webSearch || {}) },
         webCrawl: { ...DEFAULT_TOOL_SETTINGS.webCrawl, ...(loaded.webCrawl || {}) },
         browserUse: { ...DEFAULT_TOOL_SETTINGS.browserUse, ...(loaded.browserUse || {}) },
+        navis: { ...DEFAULT_TOOL_SETTINGS.navis, ...(loaded.navis || {}) },
       };
 
       return config as ToolSettingsConfig;

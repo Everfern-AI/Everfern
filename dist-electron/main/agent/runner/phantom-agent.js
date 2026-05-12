@@ -41,6 +41,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PhantomAgent = void 0;
 const crypto = __importStar(require("crypto"));
+const json_repair_1 = require("./json-repair");
+const prompt_sync_1 = require("../../lib/prompt-sync");
 class PhantomAgent {
     client;
     agentId;
@@ -76,50 +78,12 @@ class PhantomAgent {
         }
     }
     buildSystemPrompt() {
-        return `You are Phantom, the Red-Teamer in a peer debate system for AI task planning.
-
-ROLE: You are the pessimistic critic. Your job is to take an execution plan and find EVERY possible way it could fail. You ask the hard questions: "What if this file doesn't exist?", "What if this tool times out?", "What if the assumption is wrong?"
-
-PERSONALITY: Critical, risk-focused, and thorough. You're not trying to be mean — you're trying to save the team from a disaster. You find problems before they happen.
-
-OUTPUT: You must respond with a JSON block containing:
-{
-  "overallAssessment": "viable|concerning|problematic",
-  "concerns": [
-    {
-      "severity": "low|medium|high|critical",
-      "stepId": "step-X or null for overall",
-      "title": "Issue Title",
-      "description": "What could go wrong",
-      "impact": "What happens if this occurs",
-      "suggestion": "How to prevent or handle it",
-      "tags": ["edge-case", "performance", "security", "dependency"]
-    }
-  ],
-  "strongPoints": [
-    "Something the plan does well"
-  ],
-  "worstCaseScenarios": [
-    "If X and Y both fail, then Z could happen"
-  ],
-  "alternativeSuggestions": [
-    "Alternative approach to consider"
-  ]
-}
-
-SEVERITY GUIDE:
-- low: Minor inefficiency or edge case (doesn't block execution)
-- medium: Could cause delays or partial failures (needs mitigation)
-- high: Could cause significant failures (needs redesign)
-- critical: Could cause complete failure (must redesign)
-
-CONCERN TAGS:
-- edge-case: Unusual situations
-- performance: Speed, resource usage
-- security: Safety, permissions, data
-- dependency: Reliance on external tools/files
-- timing: Race conditions, sequencing
-- assumption: Something assumed but not verified`;
+        const prompt = (0, prompt_sync_1.loadPrompt)('debate-phantom.md');
+        if (!prompt) {
+            console.warn('[Phantom] Could not load debate-phantom.md prompt. Using fallback.');
+            return `You are Phantom, the Red-Teamer in a peer debate system for AI task planning.`;
+        }
+        return prompt;
     }
     buildUserPrompt(proposal, context) {
         const stepsFormatted = proposal.steps
@@ -165,40 +129,54 @@ Identify:
 Respond with ONLY the JSON block. No other text.`;
     }
     parseReview(responseText, proposal) {
-        try {
-            // Extract JSON from response
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
-            }
-            const parsed = JSON.parse(jsonMatch[0]);
-            // Transform concerns
-            const concerns = (parsed.concerns || []).map((c, idx) => ({
-                id: `concern-${idx}`,
-                severity: c.severity || 'medium',
-                stepId: c.stepId || undefined,
-                title: c.title || '',
-                description: c.description || '',
-                impact: c.impact || '',
-                suggestion: c.suggestion,
-                tags: Array.isArray(c.tags) ? c.tags : [],
-            }));
+        const parsed = (0, json_repair_1.extractJsonFromLLM)(responseText);
+        // If all parsing strategies failed, return a graceful fallback instead of crashing
+        if (!parsed) {
+            console.warn('[Phantom] All JSON parsing strategies failed. Using fallback review.');
+            console.warn('[Phantom] Raw response (first 800 chars):', responseText.substring(0, 800));
             return {
                 reviewerId: this.agentId,
                 reviewId: `review-${crypto.randomUUID()}`,
                 timestamp: new Date().toISOString(),
                 proposalId: proposal.proposalId,
-                overallAssessment: parsed.overallAssessment || 'concerning',
-                concerns,
-                strongPoints: Array.isArray(parsed.strongPoints) ? parsed.strongPoints : [],
-                worstCaseScenarios: Array.isArray(parsed.worstCaseScenarios) ? parsed.worstCaseScenarios : [],
-                alternativeSuggestions: Array.isArray(parsed.alternativeSuggestions) ? parsed.alternativeSuggestions : [],
+                overallAssessment: 'concerning',
+                concerns: [{
+                        id: 'concern-fallback',
+                        severity: 'medium',
+                        stepId: undefined,
+                        title: 'Review parsing failed',
+                        description: 'Phantom\'s review could not be parsed. The plan should be executed with caution.',
+                        impact: 'Unable to assess risk formally.',
+                        suggestion: 'Proceed with standard error handling.',
+                        tags: ['edge-case'],
+                    }],
+                strongPoints: [],
+                worstCaseScenarios: [],
+                alternativeSuggestions: [],
             };
         }
-        catch (error) {
-            console.error('[Phantom] Error parsing review:', responseText.substring(0, 500));
-            throw new Error(`Failed to parse Phantom review: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        // Transform concerns
+        const concerns = (parsed.concerns || []).map((c, idx) => ({
+            id: `concern-${idx}`,
+            severity: c.severity || 'medium',
+            stepId: c.stepId || undefined,
+            title: c.title || '',
+            description: c.description || '',
+            impact: c.impact || '',
+            suggestion: c.suggestion,
+            tags: Array.isArray(c.tags) ? c.tags : [],
+        }));
+        return {
+            reviewerId: this.agentId,
+            reviewId: `review-${crypto.randomUUID()}`,
+            timestamp: new Date().toISOString(),
+            proposalId: proposal.proposalId,
+            overallAssessment: parsed.overallAssessment || 'concerning',
+            concerns,
+            strongPoints: Array.isArray(parsed.strongPoints) ? parsed.strongPoints : [],
+            worstCaseScenarios: Array.isArray(parsed.worstCaseScenarios) ? parsed.worstCaseScenarios : [],
+            alternativeSuggestions: Array.isArray(parsed.alternativeSuggestions) ? parsed.alternativeSuggestions : [],
+        };
     }
 }
 exports.PhantomAgent = PhantomAgent;

@@ -112,6 +112,9 @@ function syncPromptFile(filename: string): boolean {
       return false;
     }
 
+    // Ensure target directory exists before writing
+    ensureTargetDirectory();
+
     const content = fs.readFileSync(sourcePath, 'utf-8');
     fs.writeFileSync(targetPath, content, 'utf-8');
 

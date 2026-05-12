@@ -8,6 +8,8 @@ import {
     WrenchScrewdriverIcon,
     KeyIcon,
     CheckIcon,
+    EyeIcon,
+    ComputerDesktopIcon,
 } from '@heroicons/react/24/outline';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -18,16 +20,32 @@ interface ToolConfig {
     apiKey: string;
 }
 
+interface NavisConfig {
+    useVision: boolean;
+    headless: boolean;
+    maxSteps: number;
+    autoLaunchChrome: boolean;
+}
+
 interface ToolSettingsConfig {
     webSearch: ToolConfig;
     webCrawl: ToolConfig;
     browserUse: ToolConfig;
+    navis: NavisConfig;
 }
+
+const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
+    useVision: false,
+    headless: false,
+    maxSteps: 25,
+    autoLaunchChrome: true,
+};
 
 const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
     webSearch: { mode: 'local', headless: true, apiKey: '' },
     webCrawl: { mode: 'local', headless: true, apiKey: '' },
     browserUse: { mode: 'local', headless: false, apiKey: '' },
+    navis: { ...DEFAULT_NAVIS_SETTINGS },
 };
 
 // ── Shared sub-components (matching SettingsPage style) ───────────────────────
@@ -220,6 +238,7 @@ export function ToolSettingsSection() {
                         webSearch: { ...DEFAULT_TOOL_SETTINGS.webSearch, ...(stored.webSearch || {}) },
                         webCrawl: { ...DEFAULT_TOOL_SETTINGS.webCrawl, ...(stored.webCrawl || {}) },
                         browserUse: { ...DEFAULT_TOOL_SETTINGS.browserUse, ...(stored.browserUse || {}) },
+                        navis: { ...DEFAULT_NAVIS_SETTINGS, ...(stored.navis || {}) },
                     };
                     setConfig(merged);
                 }
@@ -246,6 +265,16 @@ export function ToolSettingsSection() {
             await (window as any).electronAPI?.toolSettings?.openDebugBrowser?.();
         } catch (e) {
             console.error('[ToolSettingsSection] Failed to open debug browser:', e);
+        }
+    };
+
+    const handleNavisChange = async (navisConfig: NavisConfig) => {
+        const next = { ...config, navis: navisConfig };
+        setConfig(next);
+        try {
+            await (window as any).electronAPI?.toolSettings?.set?.(next);
+        } catch (e) {
+            console.error('[ToolSettingsSection] Failed to save navis config:', e);
         }
     };
 
@@ -281,13 +310,135 @@ export function ToolSettingsSection() {
                 onChange={toolConfig => handleChange('browserUse', toolConfig)}
             />
 
+            {/* ── Navis (AI Browser) Panel ─────────────────────────────── */}
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 16, padding: 24, marginBottom: 16 }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff' }}>
+                        <ComputerDesktopIcon width={18} height={18} />
+                    </div>
+                    <div>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: 0 }}>Navis (AI Browser)</h3>
+                        <p style={{ fontSize: 11, color: '#8a8886', margin: '2px 0 0' }}>Autonomous browser research agent</p>
+                    </div>
+                </div>
+
+                {/* Vision Mode Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Vision Mode</Label>
+                    <div
+                        onClick={() => handleNavisChange({ ...config.navis, useVision: !config.navis.useVision })}
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '12px 16px', backgroundColor: config.navis.useVision ? '#f0ecff' : '#f9f9f8',
+                            border: `1px solid ${config.navis.useVision ? '#667eea' : '#e8e6d9'}`,
+                            borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? '#e8e4ff' : '#f4f4f4'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? '#f0ecff' : '#f9f9f8'}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <EyeIcon width={18} height={18} style={{ color: config.navis.useVision ? '#667eea' : '#8a8886' }} />
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    {config.navis.useVision ? 'Vision Enabled' : 'Vision Disabled'}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                    {config.navis.useVision
+                                        ? 'Screenshots + VLM for precise visual element detection'
+                                        : 'DOM accessibility tree only (faster, text-based)'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{
+                            width: 44, height: 24, borderRadius: 12, position: 'relative',
+                            backgroundColor: config.navis.useVision ? '#667eea' : '#e8e6d9',
+                            transition: 'background 0.2s', flexShrink: 0,
+                        }}>
+                            <div style={{
+                                position: 'absolute', top: 3,
+                                left: config.navis.useVision ? 23 : 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                backgroundColor: '#ffffff',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Auto-Launch Chrome Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Chrome CDP Connection</Label>
+                    <div
+                        onClick={() => handleNavisChange({ ...config.navis, autoLaunchChrome: !config.navis.autoLaunchChrome })}
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9',
+                            borderRadius: 12, cursor: 'pointer', transition: 'background 0.15s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f9f9f8'}
+                    >
+                        <div>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                {config.navis.autoLaunchChrome ? 'Auto-Launch Chrome' : 'Manual CDP'}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                {config.navis.autoLaunchChrome
+                                    ? 'Launches Chrome with debug port 9222 (uses your profile, cookies, sessions)'
+                                    : 'You must manually start Chrome with --remote-debugging-port=9222'}
+                            </div>
+                        </div>
+                        <div style={{
+                            width: 44, height: 24, borderRadius: 12, position: 'relative',
+                            backgroundColor: config.navis.autoLaunchChrome ? '#111111' : '#e8e6d9',
+                            transition: 'background 0.2s', flexShrink: 0,
+                        }}>
+                            <div style={{
+                                position: 'absolute', top: 3,
+                                left: config.navis.autoLaunchChrome ? 23 : 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                backgroundColor: '#ffffff',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Max Steps Slider */}
+                <div>
+                    <Label>Max Steps Per Task</Label>
+                    <div style={{ padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <span style={{ fontSize: 13, color: '#111111', fontWeight: 500 }}>Steps limit</span>
+                            <span style={{ fontSize: 13, color: '#667eea', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{config.navis.maxSteps}</span>
+                        </div>
+                        <input
+                            type="range"
+                            min={10}
+                            max={50}
+                            step={5}
+                            value={config.navis.maxSteps}
+                            onChange={e => handleNavisChange({ ...config.navis, maxSteps: parseInt(e.target.value) })}
+                            style={{ width: '100%', accentColor: '#667eea', cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                            <span style={{ fontSize: 10, color: '#a8a6a1' }}>10 (fast)</span>
+                            <span style={{ fontSize: 10, color: '#a8a6a1' }}>50 (thorough)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div style={{ padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9', borderRadius: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <WrenchScrewdriverIcon width={14} height={14} style={{ color: '#8a8886' }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#4a4846' }}>About Tool Modes</span>
                 </div>
                 <p style={{ fontSize: 12, color: '#8a8886', margin: 0, lineHeight: 1.6 }}>
-                    <strong>Local</strong> mode uses a Playwright-controlled Chromium browser. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. Changes take effect immediately — no restart required.
+                    <strong>Local</strong> mode uses a Playwright-controlled Chromium browser. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Vision</strong> sends screenshots to a vision AI model for precise page understanding. Changes take effect immediately — no restart required.
                 </p>
             </div>
         </div>

@@ -605,5 +605,26 @@ export function parseTextToToolCalls(
     }
   }
 
-  return { toolCalls, scrubbedContent, parseError: parseErrorStr };
+  // Detect and remove duplicate tool calls (AI sometimes repeats itself)
+  const uniqueToolCalls: ToolCall[] = [];
+  const seenCalls = new Set<string>();
+
+  for (const call of toolCalls) {
+    // Create a deduplication key: name + serialized args
+    const callKey = `${call.name}:${JSON.stringify(call.arguments)}`;
+    
+    if (seenCalls.has(callKey)) {
+      console.log(`[TextToTool] 🔁 DUPLICATE DETECTED: Skipping duplicate call to ${call.name} with same args`);
+      continue;
+    }
+    
+    seenCalls.add(callKey);
+    uniqueToolCalls.push(call);
+  }
+
+  if (uniqueToolCalls.length < toolCalls.length) {
+    console.log(`[TextToTool] 🧹 Removed ${toolCalls.length - uniqueToolCalls.length} duplicate tool call(s)`);
+  }
+
+  return { toolCalls: uniqueToolCalls, scrubbedContent, parseError: parseErrorStr };
 }

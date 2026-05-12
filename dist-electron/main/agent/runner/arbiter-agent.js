@@ -42,6 +42,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ArbiterAgent = void 0;
 const crypto = __importStar(require("crypto"));
+const json_repair_1 = require("./json-repair");
+const prompt_sync_1 = require("../../lib/prompt-sync");
 class ArbiterAgent {
     client;
     agentId;
@@ -77,75 +79,12 @@ class ArbiterAgent {
         }
     }
     buildSystemPrompt() {
-        return `You are Arbiter, the Decision-Maker in a peer debate system for AI task planning.
-
-ROLE: You read both Vanguard's optimistic proposal and Phantom's pessimistic critique. You ignore the nitpicking, take real problems seriously, and produce a final, audited execution plan that will actually work.
-
-PERSONALITY: Pragmatic, balanced, and decisive. You're not trying to please anyone — you're trying to produce the plan that will actually succeed.
-
-DECISION LOGIC:
-1. Concerns marked as CRITICAL or HIGH severity must be addressed (redesign, additional steps, mitigations)
-2. Concerns marked as MEDIUM should be mitigated (add steps, warnings, or prechecks)
-3. Concerns marked as LOW are noted but don't require changes
-4. If Phantom's assessment is "problematic", you must redesign significant parts
-5. If Phantom's assessment is "concerning", you can proceed with mitigations
-6. If Phantom's assessment is "viable", you can proceed with minimal changes
-
-GO/NO-GO DECISION:
-- "go": Plan is sound, proceed with confidence
-- "proceed-with-caution": Real risks exist but can be managed
-- "no-go": Plan is fundamentally broken, redesign needed
-
-OUTPUT: You must respond with a JSON block containing:
-{
-  "goNogo": "go|proceed-with-caution|no-go",
-  "explanation": "Why this decision",
-  "steps": [
-    {
-      "sequence": 1,
-      "description": "What this step does",
-      "action": "The specific action",
-      "toolsNeeded": ["tool1"],
-      "dependencies": [],
-      "estimatedDurationMs": 5000,
-      "riskLevel": "low",
-      "mitigation": "How we prevent or handle failures",
-      "reviewNotes": "Notes from this arbitration"
-    }
-  ],
-  "approvedApproach": "Final high-level strategy",
-  "addressedConcerns": [
-    {
-      "id": "concern-X",
-      "severity": "high",
-      "title": "Issue",
-      "description": "What we addressed",
-      "mitigation": "How we addressed it"
-    }
-  ],
-  "remainingRisks": [
-    {
-      "id": "concern-Y",
-      "severity": "low",
-      "title": "Risk",
-      "description": "Why we kept it",
-      "mitigation": "How we'll manage it if it occurs"
-    }
-  ],
-  "overallRiskAssessment": "low|medium|high|critical",
-  "executionGuidance": [
-    "Key things to watch out for",
-    "Fallback strategies if X fails"
-  ]
-}
-
-DECISION PRINCIPLES:
-- Fix critical issues or reject the plan
-- Mitigate medium issues
-- Document low issues
-- Be decisive, not paralyzed by risk
-- Prefer augmenting the plan over rejecting it
-- Make it practical to execute`;
+        const prompt = (0, prompt_sync_1.loadPrompt)('debate-arbiter.md');
+        if (!prompt) {
+            console.warn('[Arbiter] Could not load debate-arbiter.md prompt. Using fallback.');
+            return `You are Arbiter, the Decision-Maker in a peer debate system for AI task planning.`;
+        }
+        return prompt;
     }
     buildUserPrompt(proposal, review, context) {
         const concernsFormatted = review.concerns
@@ -196,44 +135,11 @@ Think like a senior engineer:
 Respond with ONLY the JSON block. No other text.`;
     }
     parseFinalization(responseText, proposal, review) {
-        try {
-            // Extract JSON from response
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
-            }
-            const parsed = JSON.parse(jsonMatch[0]);
-            // Transform steps
-            const steps = (parsed.steps || []).map((s) => ({
-                originalStepId: proposal.steps[s.sequence - 1]?.id || `step-${s.sequence - 1}`,
-                sequence: s.sequence || 0,
-                description: s.description || '',
-                action: s.action || '',
-                toolsNeeded: s.toolsNeeded || [],
-                dependencies: s.dependencies || [],
-                estimatedDurationMs: s.estimatedDurationMs || 5000,
-                riskLevel: s.riskLevel || 'medium',
-                mitigation: s.mitigation,
-                reviewNotes: s.reviewNotes,
-            }));
-            // Categorize concerns
-            const addressedConcerns = [];
-            const remainingRisks = [];
-            review.concerns.forEach(concern => {
-                if (parsed.addressedConcerns?.some((ac) => ac.id === concern.id)) {
-                    addressedConcerns.push(concern);
-                }
-                else if (parsed.remainingRisks?.some((rr) => rr.id === concern.id)) {
-                    remainingRisks.push(concern);
-                }
-                else if (concern.severity === 'critical' || concern.severity === 'high') {
-                    // Default: critical/high are addressed unless marked as remaining
-                    addressedConcerns.push(concern);
-                }
-                else {
-                    remainingRisks.push(concern);
-                }
-            });
+        const parsed = (0, json_repair_1.extractJsonFromLLM)(responseText);
+        // If all parsing strategies failed, return a graceful fallback instead of crashing
+        if (!parsed) {
+            console.warn('[Arbiter] All JSON parsing strategies failed. Using fallback plan.');
+            console.warn('[Arbiter] Raw response (first 800 chars):', responseText.substring(0, 800));
             return {
                 arbiterId: this.agentId,
                 planId: `final-plan-${crypto.randomUUID()}`,
@@ -241,20 +147,74 @@ Respond with ONLY the JSON block. No other text.`;
                 originTaskSummary: proposal.taskSummary,
                 vanguardProposalId: proposal.proposalId,
                 phantomReviewId: review.reviewId,
-                steps,
-                approvedApproach: parsed.approvedApproach || proposal.approach,
-                addressedConcerns,
-                remainingRisks,
-                overallRiskAssessment: parsed.overallRiskAssessment || 'medium',
-                goNogo: parsed.goNogo || 'proceed-with-caution',
-                explanation: parsed.explanation || 'Plan arbitrated',
-                executionGuidance: Array.isArray(parsed.executionGuidance) ? parsed.executionGuidance : [],
+                steps: proposal.steps.map(s => ({
+                    originalStepId: s.id,
+                    sequence: s.sequence,
+                    description: s.description,
+                    action: s.action,
+                    toolsNeeded: s.toolsNeeded,
+                    dependencies: s.dependencies,
+                    estimatedDurationMs: s.estimatedDurationMs,
+                    riskLevel: s.riskLevel,
+                    mitigation: 'Default mitigation (parsing failed)',
+                    reviewNotes: 'Fallback step due to parsing failure',
+                })),
+                approvedApproach: proposal.approach,
+                addressedConcerns: [],
+                remainingRisks: review.concerns,
+                overallRiskAssessment: 'high',
+                goNogo: 'proceed-with-caution',
+                explanation: 'Arbiter could not parse the structured decision. Falling back to Vanguard\'s proposal with all risks flagged.',
+                executionGuidance: ['Proceed with caution. The plan could not be formally audited due to a parsing failure.'],
             };
         }
-        catch (error) {
-            console.error('[Arbiter] Error parsing finalization:', responseText.substring(0, 500));
-            throw new Error(`Failed to parse Arbiter finalization: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        // Transform steps
+        const steps = (parsed.steps || []).map((s) => ({
+            originalStepId: proposal.steps[s.sequence - 1]?.id || `step-${s.sequence - 1}`,
+            sequence: s.sequence || 0,
+            description: s.description || '',
+            action: s.action || '',
+            toolsNeeded: s.toolsNeeded || [],
+            dependencies: s.dependencies || [],
+            estimatedDurationMs: s.estimatedDurationMs || 5000,
+            riskLevel: s.riskLevel || 'medium',
+            mitigation: s.mitigation,
+            reviewNotes: s.reviewNotes,
+        }));
+        // Categorize concerns
+        const addressedConcerns = [];
+        const remainingRisks = [];
+        review.concerns.forEach(concern => {
+            if (parsed.addressedConcerns?.some((ac) => ac.id === concern.id)) {
+                addressedConcerns.push(concern);
+            }
+            else if (parsed.remainingRisks?.some((rr) => rr.id === concern.id)) {
+                remainingRisks.push(concern);
+            }
+            else if (concern.severity === 'critical' || concern.severity === 'high') {
+                // Default: critical/high are addressed unless marked as remaining
+                addressedConcerns.push(concern);
+            }
+            else {
+                remainingRisks.push(concern);
+            }
+        });
+        return {
+            arbiterId: this.agentId,
+            planId: `final-plan-${crypto.randomUUID()}`,
+            timestamp: new Date().toISOString(),
+            originTaskSummary: proposal.taskSummary,
+            vanguardProposalId: proposal.proposalId,
+            phantomReviewId: review.reviewId,
+            steps,
+            approvedApproach: parsed.approvedApproach || proposal.approach,
+            addressedConcerns,
+            remainingRisks,
+            overallRiskAssessment: parsed.overallRiskAssessment || 'medium',
+            goNogo: parsed.goNogo || 'proceed-with-caution',
+            explanation: parsed.explanation || 'Plan arbitrated',
+            executionGuidance: Array.isArray(parsed.executionGuidance) ? parsed.executionGuidance : [],
+        };
     }
 }
 exports.ArbiterAgent = ArbiterAgent;

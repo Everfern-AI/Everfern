@@ -7,7 +7,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNavisTool = createNavisTool;
-const orchestrator_1 = require("./orchestrator");
+const tool_settings_1 = require("../../../store/tool-settings");
 function mapNavisToProgressType(navisType) {
     switch (navisType) {
         case 'browser_launch': return 'step';
@@ -43,12 +43,16 @@ function buildActionPayload(event) {
             return undefined;
     }
 }
-function createNavisTool(aiClient) {
+function createNavisTool(orchestrator) {
     return {
         name: 'navis',
         description: 'Autonomous browser automation engine. Opens a real browser, navigates websites, ' +
             'clicks elements, fills forms, extracts content. Use for tasks that require interacting ' +
-            'with web pages (login forms, multi-step workflows, dynamic content).',
+            'with web pages. ' +
+            'IMPORTANT RULE: Do NOT spawn multiple Navis agents sequentially for the same overall research or task. ' +
+            'First, determine ALL the information you need, then provide a single comprehensive "task" to Navis asking it to search across multiple sites at once. ' +
+            'Navis is smart and will browse multiple pages, compile all the information, and return it in one go. ' +
+            'Navis will actively avoid hallucinating information from useless websites and report failures clearly if the data cannot be found.',
         parameters: {
             type: 'object',
             properties: {
@@ -72,7 +76,6 @@ function createNavisTool(aiClient) {
             required: ['task'],
         },
         async execute(args, onUpdate, emitEvent, toolCallId) {
-            const orchestrator = new orchestrator_1.NavisOrchestrator(aiClient);
             const logger = orchestrator.getEventLogger();
             logger.on((event) => {
                 let label = '';
@@ -132,11 +135,15 @@ function createNavisTool(aiClient) {
                     });
                 }
             });
+            // Read Navis settings from the persistent store
+            const navisSettings = tool_settings_1.toolSettingsStore.get().navis;
             const result = await orchestrator.run({
                 task: args.task,
-                maxSteps: args.maxSteps,
-                headless: args.headless,
+                maxSteps: args.maxSteps ?? navisSettings.maxSteps,
+                headless: args.headless ?? navisSettings.headless,
                 startUrl: args.startUrl,
+                useVision: navisSettings.useVision,
+                autoLaunchChrome: navisSettings.autoLaunchChrome,
             });
             return {
                 success: result.success,

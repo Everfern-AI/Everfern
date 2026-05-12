@@ -141,6 +141,8 @@ export const GraphState = Annotation.Root({
   // Specialized Agent State
   webExplorerComplete: Annotation<boolean>(),
   webExplorerSelfLoopCount: Annotation<number>(),
+  navisInvoked: Annotation<boolean>(),
+  searchInvoked: Annotation<boolean>(),
   codingComplete: Annotation<boolean>(),
   dataAnalysisComplete: Annotation<boolean>(),
   computerUseComplete: Annotation<boolean>(),

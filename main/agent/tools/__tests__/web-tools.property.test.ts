@@ -96,6 +96,8 @@ describe('Feature: web-tool-settings, Property 6: Exa called with stored query a
           vi.mocked(toolSettingsStore.get).mockReturnValue({
             webSearch: { mode: 'api', headless: false, apiKey },
             webCrawl: { mode: 'local', headless: true, apiKey: '' },
+            browserUse: { mode: 'local', headless: false, apiKey: '' },
+            navis: { useVision: false, headless: false, maxSteps: 25, autoLaunchChrome: true },
           });
           vi.mocked(exaSearch).mockResolvedValue([]);
 
@@ -128,6 +130,8 @@ describe('Feature: web-tool-settings, Property 7: Firecrawl called with stored U
           vi.mocked(toolSettingsStore.get).mockReturnValue({
             webSearch: { mode: 'local', headless: true, apiKey: '' },
             webCrawl: { mode: 'api', headless: false, apiKey },
+            browserUse: { mode: 'local', headless: false, apiKey: '' },
+            navis: { useVision: false, headless: false, maxSteps: 25, autoLaunchChrome: true },
           });
           vi.mocked(firecrawlCrawl).mockResolvedValue('');
 

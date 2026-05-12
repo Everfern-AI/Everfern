@@ -209,7 +209,6 @@ export const CodingPlanCard = ({ previewMarkdown }: CodingPlanCardProps) => {
               borderBottom: activeTab === tab.id ? "2px solid #6366f1" : "2px solid transparent",
               background: "none",
               border: "none",
-              borderBottom: activeTab === tab.id ? "2px solid #6366f1" : "2px solid transparent",
               cursor: "pointer",
               fontFamily: "'Matter', system-ui, sans-serif",
             }}

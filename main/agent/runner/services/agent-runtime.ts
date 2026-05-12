@@ -6,6 +6,7 @@ import { parseTextToToolCalls } from '../../parsers/text-to-tool';
 import { AgentRunner } from '../runner';
 import { normalizeMessages } from './message-utils';
 import { captureScreen } from '../../tools/computer-use';
+import { globalAbortManager } from '../abort-manager';
 
 export interface AgentStepOptions {
   runner: AgentRunner;
@@ -226,6 +227,7 @@ export async function runAgentStep(
           }
         }
       },
+      abortSignal: globalAbortManager.abortController.signal,
     };
 
     let response = await client.chat(request);

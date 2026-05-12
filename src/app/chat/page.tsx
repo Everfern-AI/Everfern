@@ -58,12 +58,7 @@ import ArtifactsList from './ArtifactsList';
 import PlanViewerPanel from './PlanViewerPanel';
 import TasksPanel from './TasksPanel';
 import ScheduledTasksPanel from './components/ScheduledTasksPanel';
-import { DebateDisplay } from './components/DebateDisplay';
-import { LiveDebateChamber } from './components/LiveDebateChamber';
-import { InlineDebateProgress } from './components/InlineDebateProgress';
-import { DebateArena } from './components/DebateArena';
 import { useDebateStream } from './hooks/useDebateStream';
-import { useDebateChamberUI } from './hooks/useDebateChamberUI';
 import ScheduledTaskModal from './components/ScheduledTaskModal';
 import SitePreview from './SitePreview';
 import SettingsPage from './SettingsPage';
@@ -158,7 +153,6 @@ export default function ChatPage() {
     const [scheduledTasksRefreshTrigger, setScheduledTasksRefreshTrigger] = useState(0);
 
     const { debate: debateData, isDebating } = useDebateStream();
-    const debateUI = useDebateChamberUI();
     console.log('[ChatPage] Debate state — isDebating:', isDebating, 'debateData:', !!debateData);
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
         try {
@@ -3100,16 +3094,7 @@ export default function ChatPage() {
                                         </div>
                                     )}
 
-                                    {/* Inline Debate Progress */}
-                                    {(debateData || isDebating) && (
-                                        <div style={{ maxWidth: 800, margin: "0 auto 24px", padding: "0 32px" }}>
-                                            <InlineDebateProgress
-                                                debate={debateData}
-                                                isDebating={isDebating}
-                                                onViewFullDebate={() => debateUI.openArena(debateData?.debateId || debateUI.debateId || '')}
-                                            />
-                                        </div>
-                                    )}
+
 
                                     {/* Messages */}
                                     <AnimatePresence mode="popLayout">
@@ -3177,6 +3162,13 @@ export default function ChatPage() {
                                                         </div>
                                                     ) : (
                                                         <>
+                                                        <div 
+                                                            className="overflow-y-auto pr-1 custom-scrollbar"
+                                                            style={{ 
+                                                                maxHeight: "calc(100vh - 280px)",
+                                                                position: "relative"
+                                                            }}
+                                                        >
                                                             <AgentTimeline
                                                                 key={`timeline-${msg.id}`}
                                                                 toolCalls={msg.toolCalls?.filter(tc => tc.toolName !== 'write' && tc.toolName !== 'write_to_file' && tc.toolName !== 'write_file') || []}
@@ -3187,6 +3179,7 @@ export default function ChatPage() {
                                                                 subAgentProgress={subAgentProgress}
                                                                 generatedTitle={msg.generatedTitle}
                                                             />
+                                                        </div>
                                                             {msg.stopped && (
                                                                 <div style={{
                                                                     display: 'flex',
@@ -3278,17 +3271,7 @@ export default function ChatPage() {
                                         ))}
                                     </AnimatePresence>
 
-                                    {/* Debate display — shows when debate data is received from the backend */}
-                                    {debateData && (
-                                        <motion.div
-                                            key={debateData.debateId}
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            style={{ marginBottom: 28, width: '100%' }}
-                                        >
-                                            <DebateDisplay debate={debateData} isExpanded={isDebating} />
-                                        </motion.div>
-                                    )}
+
 
                                     {/* Live streaming state - hide if last message already has this content (prevent duplicates).
                                         Exception: when HITL or user question is active, always show the streaming bubble
@@ -3310,6 +3293,8 @@ export default function ChatPage() {
                                                     planSteps={activePlanSteps}
                                                     planTitle={activePlanTitle}
                                                     subAgentProgress={subAgentProgress}
+                                                    debateData={debateData}
+                                                    isDebating={isDebating}
                                                 />
                                                 {/* Live streaming tool call cards — show tool calls being built in real-time */}
                                                 {streamingToolCalls.length > 0 && (
@@ -3924,21 +3909,7 @@ export default function ChatPage() {
                 {integrationSettingsModalNode}
                 <DirectoryModal isOpen={showDirectoryModal} onClose={() => setShowDirectoryModal(false)} />
 
-                {/* Floating Live Debate Chamber */}
-                <LiveDebateChamber
-                    debate={debateData}
-                    isDebating={isDebating}
-                    onClose={debateUI.closeLiveDebate}
-                    onViewArena={() => debateUI.openArena(debateData?.debateId || '')}
-                />
 
-                {/* Fullscreen Debate Arena Modal */}
-                <DebateArena
-                    debate={debateData}
-                    isDebating={isDebating}
-                    isOpen={debateUI.showArena}
-                    onClose={debateUI.closeArena}
-                />
 
                 <CustomizeModal
                     isOpen={showCustomizeModal}

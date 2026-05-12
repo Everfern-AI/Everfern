@@ -41,6 +41,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VanguardAgent = void 0;
 const crypto = __importStar(require("crypto"));
+const json_repair_1 = require("./json-repair");
+const prompt_sync_1 = require("../../lib/prompt-sync");
 class VanguardAgent {
     client;
     agentId;
@@ -76,46 +78,12 @@ class VanguardAgent {
         }
     }
     buildSystemPrompt() {
-        return `You are Vanguard, the Proposer in a peer debate system for AI task planning.
-
-ROLE: You are the optimistic architect. Your job is to analyze a complex task and propose a detailed, confident execution plan. You genuinely believe your plan will work because you've thought it through carefully.
-
-PERSONALITY: Optimistic but not reckless. You propose the best forward path based on available tools and context. You don't worry about edge cases (that's Phantom's job) — you focus on the happy path.
-
-OUTPUT: You must respond with a JSON block containing:
-{
-  "taskSummary": "One-line summary of what we're doing",
-  "approach": "High-level strategy (2-3 sentences)",
-  "rationale": "Why this approach is sound (1 paragraph)",
-  "steps": [
-    {
-      "sequence": 1,
-      "description": "What this step does",
-      "action": "The specific action to take",
-      "toolsNeeded": ["tool1", "tool2"],
-      "dependencies": [],
-      "estimatedDurationMs": 5000,
-      "riskLevel": "low"
-    }
-    // ... more steps
-  ],
-  "parallelizable": false,
-  "estimatedTotalTimeMs": 30000,
-  "requiredTools": ["tool1", "tool2"],
-  "assumptionsAndConstraints": [
-    "All required files exist",
-    "Network is available",
-    "User has necessary permissions"
-  ]
-}
-
-CONSTRAINTS:
-- Each step must be actionable and clear
-- Dependencies must reference earlier steps by sequence number
-- Risk levels are: low (routine), medium (some complexity), high (significant risk)
-- Dependencies should form a DAG (no circular dependencies)
-- Estimate durations realistically
-- Only use tools from the available tools list`;
+        const prompt = (0, prompt_sync_1.loadPrompt)('debate-vanguard.md');
+        if (!prompt) {
+            console.warn('[Vanguard] Could not load debate-vanguard.md prompt. Using fallback.');
+            return `You are Vanguard, the Proposer in a peer debate system for AI task planning.`;
+        }
+        return prompt;
     }
     buildUserPrompt(context) {
         const toolsList = context.availableTools.join(', ');
@@ -146,42 +114,58 @@ Generate a detailed execution plan. Think step-by-step:
 Respond with ONLY the JSON block. No other text.`;
     }
     parseProposal(responseText, context) {
-        try {
-            // Extract JSON from response
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('No JSON found in response');
-            }
-            const parsed = JSON.parse(jsonMatch[0]);
-            // Transform steps to include IDs
-            const steps = (parsed.steps || []).map((step, idx) => ({
-                id: `step-${idx}`,
-                sequence: step.sequence || idx + 1,
-                description: step.description || '',
-                action: step.action || '',
-                toolsNeeded: step.toolsNeeded || [],
-                dependencies: this.normalizeStepDependencies(step.dependencies || []),
-                estimatedDurationMs: step.estimatedDurationMs || 5000,
-                riskLevel: step.riskLevel || 'medium',
-            }));
+        const parsed = (0, json_repair_1.extractJsonFromLLM)(responseText);
+        // If all parsing strategies failed, return a graceful fallback instead of crashing
+        if (!parsed) {
+            console.warn('[Vanguard] All JSON parsing strategies failed. Using fallback proposal.');
+            console.warn('[Vanguard] Raw response (first 800 chars):', responseText.substring(0, 800));
             return {
                 proposerId: this.agentId,
                 proposalId: `proposal-${crypto.randomUUID()}`,
                 timestamp: new Date().toISOString(),
-                taskSummary: parsed.taskSummary || 'Unnamed task',
-                approach: parsed.approach || '',
-                steps,
-                parallelizable: parsed.parallelizable || false,
-                estimatedTotalTimeMs: parsed.estimatedTotalTimeMs || 30000,
-                requiredTools: parsed.requiredTools || [],
-                assumptionsAndConstraints: parsed.assumptionsAndConstraints || [],
-                rationale: parsed.rationale || '',
+                taskSummary: 'Fallback plan due to parsing error',
+                approach: 'Execute task steps sequentially with available tools.',
+                steps: [{
+                        id: 'step-0',
+                        sequence: 1,
+                        description: 'Attempt to fulfill the user request directly.',
+                        action: context.userInput,
+                        toolsNeeded: context.availableTools,
+                        dependencies: [],
+                        estimatedDurationMs: 10000,
+                        riskLevel: 'medium',
+                    }],
+                parallelizable: false,
+                estimatedTotalTimeMs: 10000,
+                requiredTools: context.availableTools,
+                assumptionsAndConstraints: ['Parsing failed, assuming default flow'],
+                rationale: 'Generated fallback plan because the model output could not be parsed as JSON.',
             };
         }
-        catch (error) {
-            console.error('[Vanguard] Error parsing proposal:', responseText.substring(0, 500));
-            throw new Error(`Failed to parse Vanguard proposal: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        // Transform steps to include IDs
+        const steps = (parsed.steps || []).map((step, idx) => ({
+            id: `step-${idx}`,
+            sequence: step.sequence || idx + 1,
+            description: step.description || '',
+            action: step.action || '',
+            toolsNeeded: step.toolsNeeded || [],
+            dependencies: this.normalizeStepDependencies(step.dependencies || []),
+            estimatedDurationMs: step.estimatedDurationMs || 5000,
+            riskLevel: step.riskLevel || 'medium',
+        }));
+        return {
+            proposerId: this.agentId,
+            proposalId: `proposal-${crypto.randomUUID()}`,
+            timestamp: new Date().toISOString(),
+            taskSummary: parsed.taskSummary || 'Unnamed task',
+            approach: parsed.approach || '',
+            steps,
+            parallelizable: parsed.parallelizable || false,
+            estimatedTotalTimeMs: parsed.estimatedTotalTimeMs || 30000,
+            requiredTools: parsed.requiredTools || [],
+            assumptionsAndConstraints: parsed.assumptionsAndConstraints || [],
+            rationale: parsed.rationale || '',
+        };
     }
     normalizeStepDependencies(dependencies) {
         if (!Array.isArray(dependencies))

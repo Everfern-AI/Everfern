@@ -52,36 +52,20 @@ export class CommandRegistry {
       }
     }
 
-    let shell = isWin ? 'powershell.exe' : 'bash';
-    let args = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
+    let shell = isWin ? 'wsl.exe' : 'bash';
+    let args = isWin ? ['--exec', 'bash', '-c', command] : ['-c', command];
     let spawnOptions: any = { cwd, shell: false };
 
     // Robust shell detection for Windows
     if (isWin) {
       try {
-        // Test if powershell.exe is available in PATH
+        // Test if wsl.exe is available
         const { execSync } = require('child_process');
-        execSync('powershell.exe -Command "Exit 0"', { stdio: 'ignore' });
+        execSync('wsl.exe --status', { stdio: 'ignore' });
       } catch (e) {
-        console.warn('[CommandRegistry] powershell.exe not found in PATH, trying common locations...');
-        const fs = require('fs');
-        const commonPaths = [
-          'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-          'C:\\Program Files\\PowerShell\\6\\pwsh.exe'
-        ];
-
-        const foundPath = commonPaths.find(p => fs.existsSync(p));
-        if (foundPath) {
-          shell = foundPath;
-          console.log(`[CommandRegistry] Found PowerShell at: ${shell}`);
-        } else {
-          console.error('[CommandRegistry] No PowerShell executable found. Falling back to default shell.');
-          // If no PowerShell found, use shell: true to let the OS decide
-          shell = command;
-          args = [];
-          spawnOptions.shell = true;
-        }
+        console.warn('[CommandRegistry] wsl.exe not found or not working, falling back to powershell...');
+        shell = 'powershell.exe';
+        args = ['-NoProfile', '-Command', command];
       }
     }
 

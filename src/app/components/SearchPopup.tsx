@@ -53,9 +53,10 @@ export default function SearchPopup({
     };
 
     // Filter and group conversations
-    const filtered = history.filter(c =>
-        c.title.toLowerCase().includes(searchValue.toLowerCase())
-    );
+    const filtered = history.filter(c => {
+        const title = c.title || 'Untitled Chat';
+        return title.toLowerCase().includes(searchValue.toLowerCase());
+    });
 
     const groupedChats = groupByDate(filtered);
 
@@ -250,7 +251,7 @@ export default function SearchPopup({
                                                             whiteSpace: 'nowrap',
                                                         }}
                                                     >
-                                                        {chat.title}
+                                                        {chat.title || 'Untitled Chat'}
                                                     </div>
                                                     <div
                                                         style={{

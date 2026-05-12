@@ -35,10 +35,13 @@ interface AgentTimelineProps {
     generatedTitle?: string;
     subAgentProgress?: Map<string, SubAgentProgressEvent[]>;
     timelineBranches?: Map<string, TimelineBranch>;
+    debateData?: any;
+    isDebating?: boolean;
 }
 
 // Import SubAgentProgressEvent type
 import type { SubAgentProgressEvent } from "@/app/chat/types";
+import { InlineDebateProgress } from "@/app/chat/components/InlineDebateProgress";
 
 // ── Timeline Branch Interfaces ───────────────────────────────────────────────
 interface TimelineBranch {
@@ -365,7 +368,8 @@ type TimelineItem =
     | { type: "thought"; data: { id: string; content: string; isLive?: boolean } }
     | { type: "plan"; data: { steps: Array<{ id: string; description: string; tool?: string }>; title?: string | null } }
     | { type: "subagent-progress"; data: SubAgentProgressEvent }
-    | { type: "timeline-branch"; data: TimelineBranch };
+    | { type: "timeline-branch"; data: TimelineBranch }
+    | { type: "debate"; data: { debateData: any; isDebating: boolean } };
 
 const formatDuration = (ms: number): string => {
     if (ms < 1000) return `${ms}ms`;
@@ -695,6 +699,61 @@ const PlanItem = ({
                         </div>
                     ))}
                 </div>
+            </div>
+        </div>
+    );
+};
+
+// Debate item - shows the three-agent debate process
+const DebateItem = ({ debateData, isDebating, isLast, onViewFullDebate }: { 
+    debateData: any; 
+    isDebating: boolean; 
+    isLast: boolean;
+    onViewFullDebate?: () => void;
+}) => {
+    return (
+        <div style={{ display: "flex", gap: 0, position: "relative", paddingBottom: 0 }}>
+            {/* Main timeline line */}
+            <div style={{
+                width: 20,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                position: "relative",
+            }}>
+                <div style={{ width: 2, height: 12, backgroundColor: "#e8e6d9" }} />
+                <div style={{
+                    width: 10, height: 10, borderRadius: "50%",
+                    backgroundColor: isDebating ? "#6366f1" : "#818cf8",
+                    border: "2px solid #faf9f7",
+                    boxShadow: "0 0 0 1px #e8e6d9",
+                    flexShrink: 0,
+                    zIndex: 2,
+                }} />
+                {isDebating && (
+                    <motion.div
+                        animate={{ scale: [1, 2.2], opacity: [0.5, 0] }}
+                        transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
+                        style={{
+                            position: "absolute", top: 10, width: 14, height: 14,
+                            borderRadius: "50%",
+                            backgroundColor: "#6366f1",
+                            zIndex: 1
+                        }}
+                    />
+                )}
+                {!isLast && (
+                    <div style={{ position: "absolute", top: 22, bottom: -20, width: 2, backgroundColor: "#e8e6d9" }} />
+                )}
+            </div>
+
+            {/* Debate content */}
+            <div style={{ flex: 1, paddingLeft: 12, paddingBottom: 20 }}>
+                <InlineDebateProgress
+                    debate={debateData}
+                    isDebating={isDebating}
+                    onViewFullDebate={onViewFullDebate}
+                />
             </div>
         </div>
     );
@@ -2272,7 +2331,7 @@ const SubAgentTimelineView = ({
 };
 
 export const AgentTimeline = ({
-    toolCalls, thought, isLive, currentNode, planSteps, planTitle, subAgentProgress, timelineBranches, generatedTitle
+    toolCalls, thought, isLive, currentNode, planSteps, planTitle, subAgentProgress, timelineBranches, generatedTitle, debateData, isDebating
 }: AgentTimelineProps) => {
     const [expandedToolId, setExpandedToolId] = useState<string | null>(null);
     const [collapsed, setCollapsed] = useState(false);
@@ -2443,8 +2502,22 @@ export const AgentTimeline = ({
             items.push({ type: "timeline-branch", data: branch });
         });
 
+        // Add debate ui element if we are debating or have debate data
+        // Only if it belongs globally, assuming debate happens at the main level
+        // We'll place it at the end so it's visible, or right after plan. Let's put it at the very top, like plan.
+        // Actually, we'll unshift it so it's near the top. Or we can just push it so it's at the bottom? Let's just push it.
+        // Wait, better to put it right after thought, or if there's a plan, after the plan.
+        // Actually, since debate determines the plan, let's insert it before the plan. 
+        // We'll just push it.
+        if (debateData || isDebating) {
+            items.splice(1, 0, {
+                type: "debate",
+                data: { debateData, isDebating: isDebating || false }
+            });
+        }
+
         return items;
-    }, [toolCalls, thought, isLive, planSteps, planTitle, subAgentProgress, buildTimelineBranches]);
+    }, [toolCalls, thought, isLive, planSteps, planTitle, subAgentProgress, buildTimelineBranches, debateData, isDebating]);
 
     const toggleTool = (id: string) => setExpandedToolId(p => p === id ? null : id);
 
@@ -2626,6 +2699,20 @@ export const AgentTimeline = ({
                                                 steps={item.data.steps}
                                                 title={item.data.title}
                                                 isLast={isLast}
+                                            />
+                                        );
+                                    }
+
+                                    if (item.type === "debate") {
+                                        return (
+                                            <DebateItem
+                                                key="debate"
+                                                debateData={item.data.debateData}
+                                                isDebating={item.data.isDebating}
+                                                isLast={isLast}
+                                                onViewFullDebate={() => {
+                                                    // This can be used to open a modal or expand the view
+                                                }}
                                             />
                                         );
                                     }

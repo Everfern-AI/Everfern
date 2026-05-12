@@ -50,10 +50,10 @@ Object.defineProperty(exports, "ArbiterAgent", { enumerable: true, get: function
 const DEFAULT_CONFIG = {
     enableDebate: true,
     complexityThreshold: 'moderate',
-    timeoutMs: 60000,
-    vanguardTimeoutMs: 15000,
-    phantomTimeoutMs: 20000,
-    arbiterTimeoutMs: 15000,
+    timeoutMs: 120000,
+    vanguardTimeoutMs: 45000,
+    phantomTimeoutMs: 45000,
+    arbiterTimeoutMs: 30000,
     maxRetries: 1,
     verbose: false,
 };

@@ -31,6 +31,8 @@ export interface ToolDisplayInfo {
   icon: React.ReactNode; // React node for the tool icon
   label: string;      // human-readable action label
   color: string;      // accent color for the tag
+  useEnhancedCard?: boolean;
+  operation?: 'edit' | 'create';
 }
 
 export function resolveToolDisplay(toolName: string, args?: Record<string, unknown>): ToolDisplayInfo {

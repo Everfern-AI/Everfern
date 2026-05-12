@@ -59,41 +59,41 @@ export class DebateEventEmitter {
       timestamp: debateResult.timestamp,
 
       // Proposal summary (Vanguard)
-      proposal: {
-        id: debateResult.proposal.proposalId,
-        taskSummary: debateResult.proposal.taskSummary,
-        approach: debateResult.proposal.approach,
-        estimatedTimeMs: debateResult.proposal.estimatedTotalTimeMs,
-        stepCount: debateResult.proposal.steps.length,
-        assumptions: debateResult.proposal.assumptionsAndConstraints,
-      },
+      proposal: debateResult.proposal ? {
+        id: debateResult.proposal.proposalId || '',
+        taskSummary: debateResult.proposal.taskSummary || '',
+        approach: debateResult.proposal.approach || '',
+        estimatedTimeMs: debateResult.proposal.estimatedTotalTimeMs || 0,
+        stepCount: debateResult.proposal.steps?.length || 0,
+        assumptions: debateResult.proposal.assumptionsAndConstraints || [],
+      } : {},
 
       // Review summary (Phantom)
-      review: {
-        id: debateResult.review.reviewId,
-        assessment: debateResult.review.overallAssessment,
-        concernCount: debateResult.review.concerns.length,
-        criticalCount: debateResult.review.concerns.filter(c => c.severity === 'critical').length,
-        highCount: debateResult.review.concerns.filter(c => c.severity === 'high').length,
-        concerns: debateResult.review.concerns.map(c => ({
+      review: debateResult.review ? {
+        id: debateResult.review.reviewId || '',
+        assessment: debateResult.review.overallAssessment || '',
+        concernCount: debateResult.review.concerns?.length || 0,
+        criticalCount: debateResult.review.concerns?.filter((c: any) => c.severity === 'critical').length || 0,
+        highCount: debateResult.review.concerns?.filter((c: any) => c.severity === 'high').length || 0,
+        concerns: (debateResult.review.concerns || []).map((c: any) => ({
           severity: c.severity,
           title: c.title,
           description: c.description,
           suggestion: c.suggestion,
         })),
-      },
+      } : {},
 
       // Final plan (Arbiter)
-      finalPlan: {
-        id: debateResult.finalPlan.planId,
-        goNogo: debateResult.finalPlan.goNogo,
-        riskAssessment: debateResult.finalPlan.overallRiskAssessment,
-        stepCount: debateResult.finalPlan.steps.length,
-        addressedConcerns: debateResult.finalPlan.addressedConcerns.length,
-        remainingRisks: debateResult.finalPlan.remainingRisks.length,
-        guidance: debateResult.finalPlan.executionGuidance,
-        explanation: debateResult.finalPlan.explanation,
-      },
+      finalPlan: debateResult.finalPlan ? {
+        id: debateResult.finalPlan.planId || '',
+        goNogo: debateResult.finalPlan.goNogo || '',
+        riskAssessment: debateResult.finalPlan.overallRiskAssessment || '',
+        stepCount: debateResult.finalPlan.steps?.length || 0,
+        addressedConcerns: debateResult.finalPlan.addressedConcerns?.length || 0,
+        remainingRisks: debateResult.finalPlan.remainingRisks?.length || 0,
+        guidance: debateResult.finalPlan.executionGuidance || '',
+        explanation: debateResult.finalPlan.explanation || '',
+      } : {},
     };
   }
 }

@@ -70,6 +70,8 @@ exports.GraphState = langgraph_1.Annotation.Root({
     // Specialized Agent State
     webExplorerComplete: (0, langgraph_1.Annotation)(),
     webExplorerSelfLoopCount: (0, langgraph_1.Annotation)(),
+    navisInvoked: (0, langgraph_1.Annotation)(),
+    searchInvoked: (0, langgraph_1.Annotation)(),
     codingComplete: (0, langgraph_1.Annotation)(),
     dataAnalysisComplete: (0, langgraph_1.Annotation)(),
     computerUseComplete: (0, langgraph_1.Annotation)(),

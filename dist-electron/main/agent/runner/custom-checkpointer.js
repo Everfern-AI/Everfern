@@ -8,11 +8,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.lightweightCheckpointer = exports.LightweightCheckpointer = void 0;
 const langgraph_1 = require("@langchain/langgraph");
+const db_1 = require("../../lib/db");
 class LightweightCheckpointer extends langgraph_1.BaseCheckpointSaver {
-    storage = new Map();
     constructor() {
         super();
-        console.log('[Checkpointer] ✅ Initialized LightweightCheckpointer');
+        console.log('[Checkpointer] ✅ Initialized Persistent LightweightCheckpointer (SQLite)');
     }
     async getTuple(config) {
         const threadId = config.configurable?.thread_id;
@@ -20,36 +20,29 @@ class LightweightCheckpointer extends langgraph_1.BaseCheckpointSaver {
         if (!threadId) {
             return undefined;
         }
-        const threadData = this.storage.get(threadId);
-        if (!threadData) {
-            return undefined;
-        }
-        // If specific checkpoint requested, return that
-        if (checkpointId) {
-            const data = threadData.get(checkpointId);
-            if (!data) {
-                return undefined;
+        try {
+            let row;
+            if (checkpointId) {
+                row = await db_1.dbOps.get('SELECT * FROM checkpoints WHERE thread_id = ? AND checkpoint_id = ?', [threadId, checkpointId]);
             }
+            else {
+                row = await db_1.dbOps.get('SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1', [threadId]);
+            }
+            if (!row)
+                return undefined;
+            const checkpoint = JSON.parse(row.checkpoint_json);
+            const metadata = JSON.parse(row.metadata_json);
             return {
-                config,
-                checkpoint: data.checkpoint,
-                metadata: data.metadata,
-                parentConfig: data.parentId ? { configurable: { thread_id: threadId, checkpoint_id: data.parentId } } : undefined,
+                config: { configurable: { thread_id: threadId, checkpoint_id: row.checkpoint_id } },
+                checkpoint,
+                metadata,
+                parentConfig: row.parent_id ? { configurable: { thread_id: threadId, checkpoint_id: row.parent_id } } : undefined,
             };
         }
-        // Otherwise return the latest checkpoint
-        const checkpoints = Array.from(threadData.entries());
-        if (checkpoints.length === 0) {
+        catch (err) {
+            console.error('[Checkpointer] Failed to get tuple:', err);
             return undefined;
         }
-        // Get the most recent checkpoint (last one added)
-        const [latestId, latestData] = checkpoints[checkpoints.length - 1];
-        return {
-            config: { configurable: { thread_id: threadId, checkpoint_id: latestId } },
-            checkpoint: latestData.checkpoint,
-            metadata: latestData.metadata,
-            parentConfig: latestData.parentId ? { configurable: { thread_id: threadId, checkpoint_id: latestData.parentId } } : undefined,
-        };
     }
     async *list(config, options) {
         const threadId = config.configurable?.thread_id;
@@ -57,40 +50,41 @@ class LightweightCheckpointer extends langgraph_1.BaseCheckpointSaver {
         if (!threadId) {
             return;
         }
-        const threadData = this.storage.get(threadId);
-        if (!threadData) {
-            return;
+        try {
+            const rows = await db_1.dbOps.all(`SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC ${limit ? `LIMIT ${limit}` : ''}`, [threadId]);
+            for (const row of rows) {
+                yield {
+                    config: { configurable: { thread_id: threadId, checkpoint_id: row.checkpoint_id } },
+                    checkpoint: JSON.parse(row.checkpoint_json),
+                    metadata: JSON.parse(row.metadata_json),
+                    parentConfig: row.parent_id ? { configurable: { thread_id: threadId, checkpoint_id: row.parent_id } } : undefined,
+                };
+            }
         }
-        const checkpoints = Array.from(threadData.entries());
-        const limitedCheckpoints = limit ? checkpoints.slice(-limit) : checkpoints;
-        for (const [checkpointId, data] of limitedCheckpoints.reverse()) {
-            yield {
-                config: { configurable: { thread_id: threadId, checkpoint_id: checkpointId } },
-                checkpoint: data.checkpoint,
-                metadata: data.metadata,
-                parentConfig: data.parentId ? { configurable: { thread_id: threadId, checkpoint_id: data.parentId } } : undefined,
-            };
+        catch (err) {
+            console.error('[Checkpointer] Failed to list checkpoints:', err);
         }
     }
     async put(config, checkpoint, metadata) {
         const threadId = config.configurable?.thread_id || `thread_${Date.now()}`;
         const checkpointId = checkpoint.id || `checkpoint_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        if (!this.storage.has(threadId)) {
-            this.storage.set(threadId, new Map());
+        const parentId = config.configurable?.checkpoint_id;
+        try {
+            await db_1.dbOps.run(`INSERT OR REPLACE INTO checkpoints (thread_id, checkpoint_id, parent_id, checkpoint_json, metadata_json)
+         VALUES (?, ?, ?, ?, ?)`, [
+                threadId,
+                checkpointId,
+                parentId || null,
+                JSON.stringify({ ...checkpoint, id: checkpointId }),
+                JSON.stringify(metadata)
+            ]);
+            // Limit storage to last 100 checkpoints per thread
+            await db_1.dbOps.run(`DELETE FROM checkpoints WHERE thread_id = ? AND checkpoint_id NOT IN (
+          SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC LIMIT 100
+        )`, [threadId, threadId]);
         }
-        const threadData = this.storage.get(threadId);
-        // Store the checkpoint
-        threadData.set(checkpointId, {
-            checkpoint: { ...checkpoint, id: checkpointId },
-            metadata,
-            parentId: config.configurable?.checkpoint_id,
-        });
-        // Limit storage to last 100 checkpoints per thread to prevent memory bloat
-        if (threadData.size > 100) {
-            const oldestKey = threadData.keys().next().value;
-            if (oldestKey) {
-                threadData.delete(oldestKey);
-            }
+        catch (err) {
+            console.error('[Checkpointer] Failed to put checkpoint:', err);
         }
         return {
             configurable: {
@@ -100,52 +94,52 @@ class LightweightCheckpointer extends langgraph_1.BaseCheckpointSaver {
         };
     }
     async putWrites(config, writes, taskId) {
-        // Store intermediate writes during task execution — required for interrupt() to work
         const threadId = config.configurable?.thread_id;
         const checkpointId = config.configurable?.checkpoint_id;
-        console.log(`[Checkpointer] putWrites called for thread ${threadId}, task ${taskId}`);
         if (!threadId || !checkpointId)
             return;
-        const threadData = this.storage.get(threadId);
-        if (!threadData)
-            return;
-        const existing = threadData.get(checkpointId);
-        if (!existing)
-            return;
-        // Merge writes into the checkpoint's pending_sends so interrupt() state is preserved
-        const pendingSends = existing.checkpoint.pending_sends || [];
-        for (const write of writes) {
-            pendingSends.push(write);
+        try {
+            const row = await db_1.dbOps.get('SELECT checkpoint_json FROM checkpoints WHERE thread_id = ? AND checkpoint_id = ?', [threadId, checkpointId]);
+            if (!row)
+                return;
+            const checkpoint = JSON.parse(row.checkpoint_json);
+            const pendingSends = checkpoint.pending_sends || [];
+            for (const write of writes) {
+                pendingSends.push(write);
+            }
+            checkpoint.pending_sends = pendingSends;
+            await db_1.dbOps.run('UPDATE checkpoints SET checkpoint_json = ? WHERE thread_id = ? AND checkpoint_id = ?', [JSON.stringify(checkpoint), threadId, checkpointId]);
         }
-        existing.checkpoint.pending_sends = pendingSends;
+        catch (err) {
+            console.error('[Checkpointer] Failed to put writes:', err);
+        }
     }
     async deleteThread(threadId) {
-        this.storage.delete(threadId);
-        console.log(`[Checkpointer] 🗑️  Deleted thread: ${threadId}`);
-    }
-    /**
-     * Clear all checkpoints for a thread (alias for deleteThread)
-     */
-    clearThread(threadId) {
-        this.storage.delete(threadId);
-        console.log(`[Checkpointer] 🗑️  Cleared checkpoints for thread: ${threadId}`);
-    }
-    /**
-     * Get storage statistics
-     */
-    getStats() {
-        let totalCheckpoints = 0;
-        // Convert iterator to array to avoid TypeScript iteration issue
-        const values = Array.from(this.storage.values());
-        for (const threadData of values) {
-            totalCheckpoints += threadData.size;
+        try {
+            await db_1.dbOps.run('DELETE FROM checkpoints WHERE thread_id = ?', [threadId]);
+            console.log(`[Checkpointer] 🗑️  Deleted thread: ${threadId}`);
         }
-        return {
-            threads: this.storage.size,
-            totalCheckpoints,
-        };
+        catch (err) {
+            console.error('[Checkpointer] Failed to delete thread:', err);
+        }
+    }
+    clearThread(threadId) {
+        this.deleteThread(threadId);
+    }
+    async getStats() {
+        try {
+            const threadRow = await db_1.dbOps.get('SELECT COUNT(DISTINCT thread_id) as count FROM checkpoints');
+            const checkpointRow = await db_1.dbOps.get('SELECT COUNT(*) as count FROM checkpoints');
+            return {
+                threads: threadRow?.count || 0,
+                totalCheckpoints: checkpointRow?.count || 0,
+            };
+        }
+        catch (err) {
+            console.error('[Checkpointer] Failed to get stats:', err);
+            return { threads: 0, totalCheckpoints: 0 };
+        }
     }
 }
 exports.LightweightCheckpointer = LightweightCheckpointer;
-// Create a singleton instance
 exports.lightweightCheckpointer = new LightweightCheckpointer();

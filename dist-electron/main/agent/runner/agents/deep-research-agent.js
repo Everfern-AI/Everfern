@@ -4,7 +4,7 @@
  *
  * A spawnable subagent that performs deep research on a topic:
  *   1. web_search  — find relevant URLs
- *   2. website_crawl (FernCrawl) — deep-crawl each URL in parallel
+ *   2. navis — deep-crawl each URL in parallel
  *   3. Synthesize  — compile findings into a structured report
  *
  * Can be spawned directly by the web-explorer node or by the brain

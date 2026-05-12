@@ -33,10 +33,16 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.toolSettingsStore = exports.ToolSettingsStore = exports.DEFAULT_TOOL_SETTINGS = void 0;
+exports.toolSettingsStore = exports.ToolSettingsStore = exports.DEFAULT_TOOL_SETTINGS = exports.DEFAULT_NAVIS_SETTINGS = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
+exports.DEFAULT_NAVIS_SETTINGS = {
+    useVision: false,
+    headless: false,
+    maxSteps: 25,
+    autoLaunchChrome: true,
+};
 exports.DEFAULT_TOOL_SETTINGS = {
     webSearch: { mode: 'local', headless: true, apiKey: '' },
     webCrawl: { mode: 'local', headless: true, apiKey: '' },
@@ -49,6 +55,7 @@ exports.DEFAULT_TOOL_SETTINGS = {
         maxActionsPerStep: 1,
         maxFailures: 10
     },
+    navis: { ...exports.DEFAULT_NAVIS_SETTINGS },
 };
 const SETTINGS_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-settings.json');
 class ToolSettingsStore {
@@ -63,7 +70,7 @@ class ToolSettingsStore {
         try {
             const raw = fs.readFileSync(SETTINGS_FILE_PATH, 'utf-8');
             const loaded = JSON.parse(raw);
-            // Deep merge with defaults to ensure all keys (like browserUse) exist
+            // Deep merge with defaults to ensure all keys (like browserUse, navis) exist
             const config = {
                 ...exports.DEFAULT_TOOL_SETTINGS,
                 ...loaded,
@@ -71,6 +78,7 @@ class ToolSettingsStore {
                 webSearch: { ...exports.DEFAULT_TOOL_SETTINGS.webSearch, ...(loaded.webSearch || {}) },
                 webCrawl: { ...exports.DEFAULT_TOOL_SETTINGS.webCrawl, ...(loaded.webCrawl || {}) },
                 browserUse: { ...exports.DEFAULT_TOOL_SETTINGS.browserUse, ...(loaded.browserUse || {}) },
+                navis: { ...exports.DEFAULT_TOOL_SETTINGS.navis, ...(loaded.navis || {}) },
             };
             return config;
         }

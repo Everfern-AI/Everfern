@@ -91,7 +91,12 @@ export function ensurePlaywrightChromium(): void {
 
   const { bin, args } = getPlaywrightBin();
 
-  execFile(bin, args, { timeout: 5 * 60 * 1000 }, (err, stdout, stderr) => {
+  // On Windows, .cmd files need to be executed via cmd /c
+  const isWindows = process.platform === 'win32';
+  const finalBin = isWindows && bin.endsWith('.cmd') ? 'cmd' : bin;
+  const finalArgs = isWindows && bin.endsWith('.cmd') ? ['/c', bin, ...args] : args;
+
+  execFile(finalBin, finalArgs, { timeout: 5 * 60 * 1000, shell: true }, (err, stdout, stderr) => {
     if (err) {
       console.error('[Playwright] Failed to install Chromium:', err.message);
       if (stderr) console.error('[Playwright] stderr:', stderr.trim());

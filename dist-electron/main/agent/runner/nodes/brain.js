@@ -4,6 +4,8 @@ exports.createBrainNode = void 0;
 const agent_runtime_1 = require("../services/agent-runtime");
 const mission_integrator_1 = require("../mission-integrator");
 const prompt_sync_1 = require("../../../lib/prompt-sync");
+const abort_manager_1 = require("../abort-manager");
+const node_utils_1 = require("../services/node-utils");
 /**
  * After the brain produces a response with no tool calls, ask it to self-assess
  * why it's done and produce a structured completion signal for the judge.
@@ -42,6 +44,7 @@ Respond with JSON only:
                 responseFormat: 'json',
                 temperature: 0.3,
                 maxTokens: 120,
+                abortSignal: abort_manager_1.globalAbortManager.abortController.signal,
             }),
             timeoutPromise,
         ]);
@@ -151,6 +154,7 @@ Respond with JSON only:
             responseFormat: 'json',
             temperature: 0.3,
             maxTokens: 150,
+            abortSignal: abort_manager_1.globalAbortManager.abortController.signal,
         });
         const duration = Date.now() - startTime;
         console.log(`[Brain] Routing decision response received in ${duration}ms`);
@@ -234,6 +238,7 @@ function extractUrlsFromSearchResult(content) {
 const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbort, systemPromptOverride) => {
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
     return async (state) => {
+        const logger = (0, node_utils_1.nodeLifecycle)(runner, 'brain');
         // Check for abort signal before processing
         if (shouldAbort?.()) {
             throw new Error('Execution aborted by user (stop button clicked)');

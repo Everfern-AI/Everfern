@@ -265,7 +265,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:tool-call-start');
       ipcRenderer.removeAllListeners('acp:tool-call-chunk');
       ipcRenderer.removeAllListeners('acp:tool-call-complete');
-      ipcRenderer.removeAllListeners('debate:stream');
+      // NOTE: debate:stream is NOT removed here — it's managed by useDebateStream's
+      // own lifecycle (removeDebateStreamListener). Removing it here would kill the
+      // debate listener during mid-stream resets and prevent the debate UI from showing.
     },
   },
 

@@ -6,7 +6,6 @@ import { systemFilesTool } from '../tools/system-files';
 import { memorySaveTool } from '../tools/memory-save';
 import { memorySearchTool } from '../tools/memory-search';
 import { webSearchTool } from '../tools/web-search';
-import { websiteCrawlTool } from '../tools/website-crawl';
 import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
@@ -23,6 +22,7 @@ import { sendDiscordMessageTool, sendTelegramMessageTool } from '../tools/messag
 import { createScheduledTaskTool, listScheduledTasksTool, deleteScheduledTaskTool } from '../tools/scheduled-tasks';
 import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
+import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import * as os from 'os';
 
@@ -30,13 +30,34 @@ export const getBaseTools = (runner: any): AgentTool[] => {
   const platform = os.platform();
   const config = runner.config;
 
+  if (!runner.navisOrchestrator && runner.client) {
+    // Check if we need a separate vision client for Navis
+    // If the main AI doesn't support vision, use the configured VLM (from settings)
+    let visionClient: AIClient | undefined;
+    const mainConfig = runner.client.getFullConfig();
+    if (mainConfig.vlm) {
+      try {
+        visionClient = new AIClient({
+          provider: mainConfig.vlm.provider as any,
+          model: mainConfig.vlm.model,
+          baseUrl: mainConfig.vlm.baseUrl,
+          apiKey: mainConfig.vlm.apiKey,
+        });
+        console.log(`[ToolsManager] 🖼️ Navis vision fallback client: ${mainConfig.vlm.provider}/${mainConfig.vlm.model}`);
+      } catch (err) {
+        console.warn('[ToolsManager] Failed to create vision client for Navis:', err);
+      }
+    }
+    runner.navisOrchestrator = new NavisOrchestrator(runner.client, undefined, visionClient);
+  }
+
   // Static tools
   const tools: AgentTool[] = [
-      terminalTool,
-      terminalStatusTool,
-      plannerTool,
-      updateStepTool,
-      executionPlanTool,
+    terminalTool,
+    terminalStatusTool,
+    plannerTool,
+    updateStepTool,
+    executionPlanTool,
   ];
 
   // Create computer_use tool with production build validation
@@ -80,8 +101,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     askUserTool,
     skillTool,
     presentFilesTool,
-    websiteCrawlTool,
-    ...(runner.client ? [createNavisTool(runner.client)] : []),
+    ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),
     createWorkspaceRequestTool(config.requestPermission),
     allowFileDeleteTool,
     searchMcpRegistryTool,

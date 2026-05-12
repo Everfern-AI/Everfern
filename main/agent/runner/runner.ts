@@ -38,6 +38,7 @@ import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
 import { presentFilesTool } from '../tools/present-files';
 import { createWorkspaceRequestTool, allowFileDeleteTool } from '../tools/control-plane';
+import { NavisOrchestrator } from '../tools/navis/orchestrator';
 
 // Lifecycle/Infra
 import { getAgentEvents, emitLifecycle } from '../infra/agent-events';
@@ -60,6 +61,10 @@ export class AgentRunner {
   public workspaceDir?: string;
   public projectId?: string;
   public telemetry: TelemetryLogger;
+  public navisOrchestrator?: NavisOrchestrator;
+
+  /** Session lock map to prevent concurrent execution on the same conversation */
+  private static sessionLocks: Map<string, Promise<void>> = new Map();
 
   constructor(client: AIClient, config: Partial<AgentRunnerConfig> = {}) {
     this.client = client;
@@ -201,17 +206,17 @@ export class AgentRunner {
         onUpdate?.(`Spawning ${agentType} agent for: ${(task || '').substring(0, 80)}...`);
 
         if (emitEvent && toolCallId) {
-            emitEvent({
-                type: 'subagent-progress',
-                toolCallId,
-                timestamp: new Date().toISOString(),
-                data: {
-                    type: 'step',
-                    toolCallId,
-                    timestamp: new Date().toISOString(),
-                    content: `[Subagent: ${agentType}] Task: ${(task || '').substring(0, 100)}...`
-                }
-            });
+          emitEvent({
+            type: 'subagent-progress',
+            toolCallId,
+            timestamp: new Date().toISOString(),
+            data: {
+              type: 'step',
+              toolCallId,
+              timestamp: new Date().toISOString(),
+              content: `[Subagent: ${agentType}] Task: ${(task || '').substring(0, 100)}...`
+            }
+          });
         }
 
         try {
@@ -372,420 +377,385 @@ export class AgentRunner {
     projectId?: string,
     isSubagent?: boolean,
   ): AsyncGenerator<StreamEvent, void, unknown> {
-    if (model) this.client.setModel(model);
-    this.telemetry.setAgentId(this.client.model);
-    this.projectId = projectId;
-
-    if (projectId) {
-      try {
-        const { projectsStore } = await import('../../store/projects/projects');
-        const project = await projectsStore.get(projectId);
-        if (project) {
-          this.workspaceDir = project.path;
-          console.log(`[AgentRunner] 📂 Project context detected: ${project.name} (${project.path})`);
-        }
-      } catch (err) {
-        console.warn(`[AgentRunner] Failed to resolve project ${projectId}:`, err);
-      }
-    }
-
     const convId = conversationId || crypto.randomUUID();
-    this.currentConversationId = convId;
-    const sessionKey = `session:${convId}`;
-    sessionCreated(sessionKey);
-    emitLifecycle(sessionKey, 'session_started', { convId, model: this.client.model });
-
-    // Check if this is a HITL approval/rejection response
-    const textInput = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
-    if (textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_REJECTED]')) {
-      const approved = textInput.includes('[HITL_APPROVED]');
-      console.log(`[Runner] HITL response detected: ${approved ? 'APPROVED' : 'REJECTED'}`);
-
-      // Try to find the request ID from state manager
-      const state = stateManager.getState(convId);
-      const interruptData = stateManager.getInterruptData(convId);
-
-      if (interruptData && (interruptData as any).id) {
-        const { saveHitlResponse } = await import('../../store/hitl');
-        const responseId = crypto.randomUUID();
-        const timestamp = new Date().toISOString();
-
-        saveHitlResponse({
-          id: responseId,
-          requestId: (interruptData as any).id,
-          conversationId: convId,
-          timestamp,
-          approved,
-          response: textInput,
-        });
-
-        console.log(`[Runner] HITL response saved: ${responseId} (${approved ? 'approved' : 'rejected'})`);
-      } else {
-        console.warn('[Runner] Could not find HITL request ID to save response');
-      }
+    
+    // UNITY: Ensure only one execution runs at a time for this conversation
+    // This prevents clobbering state and "messages being wiped" due to race conditions
+    const existingLock = AgentRunner.sessionLocks.get(convId);
+    if (existingLock) {
+      console.log(`[AgentRunner] ⏳ Waiting for existing execution on session ${convId} to finish...`);
+      await existingLock;
     }
 
-    // Initialize mission tracker for timeline tracking
-    const { createMissionTracker } = await import('./mission-tracker');
-    const missionTracker = createMissionTracker(convId);
-
-    // Initialize duration tracker for thinking time tracking
-    const { DurationTracker } = await import('./duration-tracker');
-    const durationTracker = new DurationTracker();
-
-    // Add initial mission steps
-    missionTracker.addStep({
-      id: 'step:triage',
-      name: 'Analyzing Intent',
-      description: 'Classifying user request and identifying task type',
-      phase: 'triage',
-    });
-
-    // Setup mission tracker event emission to IPC
-    missionTracker.onStepUpdate((step, timeline) => {
-      eventQueue.push({
-        type: 'mission_step_update',
-        step,
-        timeline,
-      });
-    });
-
-    missionTracker.onPhaseChange((phase, timeline) => {
-      eventQueue.push({
-        type: 'mission_phase_change',
-        phase,
-        timeline,
-      });
-    });
-
-    // Check Context Window before proceeding
-    const { ContextWindowGuard } = await import('./context-window-guard');
-    const guard = new ContextWindowGuard(this.client.model);
-    const status = guard.check(history);
-    if (status.level === 'critical') {
-       history = guard.compactHistory(history);
-       this.telemetry.warn(`Critical context pressure detected. Compacted history proactively (${status.estimatedTokens} tokens).`);
-    }
-
-    this.telemetry.begin(textInput);
-
-    // Ensure all tools and skills are fully loaded before proceeding
-    await this.waitForToolsReady();
-
-    this.telemetry.updateSpinner('Pre-loading system prompt...');
-    const platform = os.platform();
-
-    // Ensure skills are loaded before building system prompt
-    if (this.skills.length === 0) {
-      console.log('[AgentRunner] Skills not yet loaded, loading now...');
-      this.skills = await loadSkillsAsync();
-    }
-
-    // Pre-load system prompt asynchronously with pre-loaded skills to avoid loading them twice
-    const preloadedPrompt = await getSlimSystemPromptAsync(platform, convId, [], this.skills, projectId);
-
-    // Create eventQueue early so we can push status updates
-    let pushResolver: any = null;
-    const eventQueue: StreamEvent[] = [];
-    const originalPush = eventQueue.push.bind(eventQueue);
-    eventQueue.push = (...items: StreamEvent[]) => {
-      const res = originalPush(...items);
-      if (pushResolver) {
-        pushResolver();
-        pushResolver = null;
-      }
-      return res;
-    };
-
-    // Skip boring internal messages - frontend shows LoadingBreadcrumb instead
-    // These console logs are for debugging only
-    this.telemetry.updateSpinner('Compiling system messages...');
-    console.log('[AgentRunner] 🔄 Building system messages...');
-
-    const { messages: initialMessages } = await buildSystemMessages(history, userInput, platform, convId, [], systemPromptOverride || preloadedPrompt, projectId);
-
-    // Bug 2 Fix: Load full conversation history including tool calls into initialMessages
-    const chatHistoryStore = new ChatHistoryStore();
-    try {
-      const fullConversation = await chatHistoryStore.load(convId);
-      if (fullConversation && fullConversation.messages.length > 0) {
-        console.log(`[AgentRunner] 🔄 Reconstructing full conversation history (${fullConversation.messages.length} messages)...`);
-
-        // Reconstruct full message history including tool calls/results
-        const priorMessages = reconstructFullHistory(fullConversation.messages, userInput);
-
-        // Apply context window cap: limit to most recent 50 turns for better context retention
-        const maxMessages = 50;
-        const limitedPriorMessages = priorMessages.slice(-maxMessages);
-
-        // Replace initialMessages with: [system] + priorMessages + [new user msg]
-        const systemMessage = initialMessages[0]; // Extract system message
-        const newUserMessage = initialMessages[initialMessages.length - 1]; // Extract new user message
-
-        initialMessages.length = 0; // Clear array
-        initialMessages.push(systemMessage, ...limitedPriorMessages, newUserMessage);
-
-        console.log(`[AgentRunner] ✅ Full conversation history reconstructed (${limitedPriorMessages.length} prior messages)`);
-      }
-    } catch (err) {
-      console.warn('[AgentRunner] Failed to load conversation history:', err);
-      // Continue with original initialMessages if history loading fails
-    }
-
-    console.log('[AgentRunner] ✅ System messages built');
-
-    await new Promise(resolve => setImmediate(resolve));
-
-    this.telemetry.updateSpinner('Building execution graph...');
-    console.log('[AgentRunner] 🔄 Building execution graph...');
-
-    // Reset abort state for new execution
-    globalAbortManager.reset();
-
-    // SWARM SYNC: Listen for sub-agent progress events to forward to the stream
-    // NOTE: Only the ROOT agent sets up this listener. Sub-agents pass isSubagent=true
-    // to prevent the infinite loop where a sub-agent's own listener re-catches events
-    // emitted by parentEvents.emit('subagent-progress', ...) in subagent-spawn.ts
-    // and re-pushes them to its own eventQueue → infinite cycle.
-    let removeProgressListener: (() => void) | undefined;
-    if (!isSubagent) {
-        const { getAgentEvents } = await import('../infra/agent-events');
-        const swarmEvents = getAgentEvents(convId);
-        
-        removeProgressListener = swarmEvents.onStream('subagent-progress', (event: any) => {
-            console.log(`[AgentRunner] 🛰️ Forwarding subagent progress: ${event.type}`);
-            eventQueue.push({
-                type: 'subagent-progress',
-                toolCallId: event.data.toolCallId,
-                timestamp: event.data.timestamp || new Date().toISOString(),
-                data: { ...event.data, type: event.type }
-            } as any);
-        });
-    }
-    // For sub-agents (isSubagent=true), the listener is NOT set up. This is correct
-    // because ALL sub-agents call parentEvents.emit('subagent-progress', ...) on
-    // getAgentEvents(parentSessionId) which is the ROOT's conversation ID. The ROOT's
-    // listener catches ALL sub-agent progress events and pushes them to the ROOT's
-    // eventQueue, which yields them to the IPC/frontend layer. No self-loop occurs
-    // because sub-agents don't listen on the agent-events stream.
+    let resolveLock: () => void;
+    const lockPromise = new Promise<void>(resolve => { resolveLock = resolve; });
+    AgentRunner.sessionLocks.set(convId, lockPromise);
 
     try {
-        // Create shouldAbort callback for graph nodes
-        const shouldAbort = globalAbortManager.createShouldAbortCallback();
+      if (model) this.client.setModel(model);
+      this.telemetry.setAgentId(this.client.model);
+      this.projectId = projectId;
 
-    // Build graph asynchronously to avoid blocking the event loop
-    // Sub-agents MUST NOT have spawn_agent — prevents sub-agents from spawning more agents
-    let toolDefs = this._buildToolDefinitions();
-    if (isSubagent) {
-      toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent');
-    }
-    const graph = await Promise.resolve().then(() => buildGraph(
-      this,
-      toolDefs,
-      this.tools,
-    ));
-    console.log('[AgentRunner] ✅ Graph built');
+      if (projectId) {
+        try {
+          const { projectsStore } = await import('../../store/projects/projects');
+          const project = await projectsStore.get(projectId);
+          if (project) {
+            this.workspaceDir = project.path;
+            console.log(`[AgentRunner] 📂 Project context detected: ${project.name} (${project.path})`);
+          }
+        } catch (err) {
+          console.warn(`[AgentRunner] Failed to resolve project ${projectId}:`, err);
+        }
+      }
 
-    await new Promise(resolve => setImmediate(resolve));
+      this.currentConversationId = convId;
+      const sessionKey = `session:${convId}`;
+      sessionCreated(sessionKey);
+      emitLifecycle(sessionKey, 'session_started', { convId, model: this.client.model });
 
-    this.telemetry.updateSpinner('Starting agent...');
-    console.log('[AgentRunner] 🚀 Starting agent execution...');
-
-    // Emit a fun status message
-    yield { type: 'thought', content: '🎬 Let\'s do this!' };
-
-    let graphDone = false;
-    (async () => {
+      // REAL-TIME PERSISTENCE: Initialize ChatHistoryStore and save initial user message
+      const chatHistoryStore = new ChatHistoryStore();
+      const textInput = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
+      
       try {
-        // Check abort before starting graph execution
-        // Requirement 1.2: Agent_Runner shall check the flag before each node execution
-        globalAbortManager.checkAbort();
-
-        console.log('[AgentRunner] 🔄 Getting graph state...');
-        const threadConfig = {
-          configurable: {
-            thread_id: convId,
-            executionContext: {
-              runner: this,
-              eventQueue,
-              missionTracker,
-              conversationId: convId,
-              shouldAbort,
-            }
-          },
-          recursionLimit: 100
-        };
-        const currentState = await graph.getState(threadConfig);
-        console.log('[AgentRunner] ✅ Graph state retrieved');
-        const { Command } = await import('@langchain/langgraph');
-
-        // Check abort before graph invocation
-        globalAbortManager.checkAbort();
-
-        if (currentState && currentState.next && currentState.next.length > 0) {
-            console.log('[AgentRunner] 🔄 Resuming interrupted session...');
-            this.telemetry.info(`Resuming session ${convId} from interrupted state...`);
-            missionTracker.startStep('step:triage');
-            await graph.invoke(new Command({ resume: textInput }), threadConfig);
-        } else {
-            console.log('[AgentRunner] 🔄 Starting new graph invocation...');
-            missionTracker.startStep('step:triage');
-            await graph.invoke({
-              messages: initialMessages,
-              toolCallRecords: [],
-              iterations: 0,
-              pendingToolCalls: [],
-              finalResponse: '',
-              toolCallHistory: [],
-              missionId: convId,
-              missionTimeline: missionTracker.getTimeline(),
-              missionSteps: missionTracker.getSteps(),
-              currentStepId: 'step:triage',
-              decompositionAttempts: 0,
-            }, threadConfig);
+        const existingConv = await chatHistoryStore.load(convId);
+        if (!existingConv) {
+          await chatHistoryStore.save({
+            id: convId,
+            title: textInput.slice(0, 60),
+            provider: this.client.provider,
+            model: this.client.model,
+            projectId: projectId || null,
+            messages: [
+              {
+                id: `msg-user-${Date.now()}`,
+                role: 'user',
+                content: textInput,
+                created_at: new Date().toISOString()
+              }
+            ] as any,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          } as any);
         }
-        console.log('[AgentRunner] ✅ Graph invocation completed');
-        // Don't mark mission as complete yet - wait until all events are drained
-        // This ensures HITL events are properly yielded before mission completion
       } catch (err) {
-        console.error('[AgentRunner] Graph Error:', err);
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.warn('[AgentRunner] Failed to initialize real-time persistence:', err);
+      }
 
-        // Handle abort errors specially
-        if (err instanceof AbortError || errorMsg.includes('Execution aborted by user')) {
-          console.log('[AgentRunner] 🛑 Execution aborted by user');
-          eventQueue.push({
-            type: 'chunk',
-            content: '\n\n🛑 Stopped by user.'
-          });
-          missionTracker.fail('Execution stopped by user');
-          this.telemetry.warn('Execution aborted by user (stop button clicked)');
-          this.telemetry.terminate(false, 'User abort');
-        }
-        // Specialized handling for rate limits
-        else if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('too many requests') || errorMsg.toLowerCase().includes('rate limit')) {
-          const providerName = this.client.provider ? this.client.provider.charAt(0).toUpperCase() + this.client.provider.slice(1) : 'The AI provider';
-          eventQueue.push({
-            type: 'chunk',
-            content: `\n\n⚠️ **Rate Limit Reached**: ${providerName} is currently limiting requests. \n\nI have attempted to retry multiple times, but the quota has not reset yet. Please wait about 30-60 seconds and then click **Continue** or type "continue" to resume our mission.`
-          });
-          missionTracker.fail(errorMsg);
-        } else if (errorMsg.toLowerCase().includes('image input') || errorMsg.toLowerCase().includes('does not support image') || errorMsg.toLowerCase().includes('clipboard')) {
-          const providerName = this.client.provider ? this.client.provider.charAt(0).toUpperCase() + this.client.provider.slice(1) : 'The AI provider';
-          eventQueue.push({
-            type: 'chunk',
-            content: `\n\n⚠️ **Vision Error**: ${providerName} rejected image input. This model (${this.client.model}) does not support vision. Screenshots cannot be sent to this model. The task will continue without screenshots.\n\nIf you need vision capabilities, please switch to a vision-capable model (e.g. GPT-4o, Claude Sonnet, Gemini) or configure a separate VLM (Vision Language Model) in Settings.`
-          });
-          missionTracker.fail(errorMsg);
-        } else {
-          eventQueue.push({ type: 'chunk', content: `\n\n❌ **Error during execution:** ${errorMsg}` });
-          missionTracker.fail(errorMsg);
-        }
+      // Check if this is a HITL approval/rejection response
+      const isHitlResponse = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_REJECTED]');
+      
+      if (isHitlResponse) {
+        const approved = textInput.includes('[HITL_APPROVED]');
+        console.log(`[Runner] HITL response detected: ${approved ? 'APPROVED' : 'REJECTED'}`);
 
-        this.telemetry.warn(`Graph mission aborted: ${errorMsg}`);
-        this.telemetry.terminate(false, errorMsg);
-      } finally {
-        graphDone = true;
+        // Try to find the request ID from state manager
+        const state = stateManager.getState(convId);
+        const interruptData = stateManager.getInterruptData(convId);
+
+        if (interruptData && (interruptData as any).id) {
+          const { saveHitlResponse } = await import('../../store/hitl');
+          const responseId = crypto.randomUUID();
+          const timestamp = new Date().toISOString();
+
+          saveHitlResponse({
+            id: responseId,
+            requestId: (interruptData as any).id,
+            conversationId: convId,
+            timestamp,
+            approved,
+            response: textInput,
+          });
+
+          console.log(`[Runner] HITL response saved: ${responseId} (${approved ? 'approved' : 'rejected'})`);
+        }
+      }
+
+      // Initialize mission tracker for timeline tracking
+      const { getMissionTracker } = await import('./mission-tracker');
+      const missionTracker = getMissionTracker(convId);
+
+      // Initialize duration tracker for thinking time tracking
+      const { DurationTracker } = await import('./duration-tracker');
+      const durationTracker = new DurationTracker();
+
+      // Add initial mission steps
+      missionTracker.addStep({
+        id: 'step:triage',
+        name: 'Analyzing Intent',
+        description: 'Classifying user request and identifying task type',
+        phase: 'triage',
+      });
+
+      // Setup mission tracker event emission to IPC
+      missionTracker.onStepUpdate((step, timeline) => {
+        eventQueue.push({
+          type: 'mission_step_update',
+          step,
+          timeline,
+        });
+      });
+
+      missionTracker.onPhaseChange((phase, timeline) => {
+        eventQueue.push({
+          type: 'mission_phase_change',
+          phase,
+          timeline,
+        });
+      });
+
+      // Check Context Window before proceeding
+      const { ContextWindowGuard } = await import('./context-window-guard');
+      const guard = new ContextWindowGuard(this.client.model);
+      const status = guard.check(history);
+      if (status.level === 'critical') {
+        history = guard.compactHistory(history);
+        this.telemetry.warn(`Critical context pressure detected. Compacted history proactively (${status.estimatedTokens} tokens).`);
+      }
+
+      this.telemetry.begin(textInput);
+
+      // Ensure all tools and skills are fully loaded before proceeding
+      await this.waitForToolsReady();
+
+      this.telemetry.updateSpinner('Pre-loading system prompt...');
+      const platform = os.platform();
+
+      // Ensure skills are loaded before building system prompt
+      if (this.skills.length === 0) {
+        console.log('[AgentRunner] Skills not yet loaded, loading now...');
+        this.skills = await loadSkillsAsync();
+      }
+
+      // Create eventQueue early so we can push status updates
+      let pushResolver: any = null;
+      const eventQueue: StreamEvent[] = [];
+      const originalPush = eventQueue.push.bind(eventQueue);
+      eventQueue.push = (...items: StreamEvent[]) => {
+        const res = originalPush(...items);
         if (pushResolver) {
           pushResolver();
           pushResolver = null;
         }
+        return res;
+      };
+
+      // Reset abort state for new execution
+      globalAbortManager.reset();
+
+      // SWARM SYNC: Listen for sub-agent progress events to forward to the stream
+      let removeProgressListener: (() => void) | undefined;
+      if (!isSubagent) {
+        const { getAgentEvents } = await import('../infra/agent-events');
+        const swarmEvents = getAgentEvents(convId);
+
+        removeProgressListener = swarmEvents.onStream('subagent-progress', (event: any) => {
+          eventQueue.push({
+            type: 'subagent-progress',
+            toolCallId: event.data.toolCallId,
+            timestamp: event.data.timestamp || new Date().toISOString(),
+            data: { ...event.data, type: event.type }
+          } as any);
+        });
       }
-    })();
 
-    // Drain all events and wait for mission completion
-    // Keep draining while: graph is still running OR there are events in queue
-    // Don't check missionTracker.isComplete here - it prevents HITL events from being yielded
-    while (!graphDone || eventQueue.length > 0) {
-      // If graph just completed, add a small delay to ensure all events are queued
-      if (graphDone && eventQueue.length === 0) {
-        await new Promise(r => setTimeout(r, 10));
-        // Check again after delay - if still no events, we're done
-        if (eventQueue.length === 0) break;
-      }
-      if (eventQueue.length > 0) {
-        // HITL Event Priority: Process HITL events before other events
-        // This prevents race conditions between HITL and mission completion
-        const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
-        let event: StreamEvent;
+      try {
+        const shouldAbort = globalAbortManager.createShouldAbortCallback();
+        let toolDefs = this._buildToolDefinitions();
+        if (isSubagent) {
+          toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent');
+        }
+        const graph = await Promise.resolve().then(() => buildGraph(
+          this,
+          toolDefs,
+          this.tools,
+        ));
 
-        if (hitlEventIndex !== -1) {
-          // Remove HITL event from queue (higher priority)
-          event = eventQueue.splice(hitlEventIndex, 1)[0];
-          console.log('[Runner] 🔔 Processing HITL event with priority (found at index', hitlEventIndex, ')');
-        } else {
-          // Process regular events in FIFO order
-          event = eventQueue.shift()!;
+        yield { type: 'thought', content: '🎬 Let\'s do this!' };
+
+        let graphDone = false;
+        let currentAssistantMsgId = `msg-ast-${Date.now()}`;
+        let currentContent = '';
+        let currentThought = '';
+        let currentToolCalls: any[] = [];
+        let lastSyncTime = 0;
+
+        const syncToDb = async (force = false) => {
+          const now = Date.now();
+          if (!force && now - lastSyncTime < 2000) return; 
+          lastSyncTime = now;
+          try {
+            await chatHistoryStore.save({
+              id: convId,
+              messages: [
+                {
+                  id: currentAssistantMsgId,
+                  role: 'assistant',
+                  content: currentContent,
+                  thought: currentThought,
+                  toolCalls: currentToolCalls,
+                }
+              ] as any,
+              updatedAt: new Date().toISOString()
+            } as any);
+          } catch (err) {
+            console.warn('[AgentRunner] Real-time sync failed:', err);
+          }
+        };
+
+        (async () => {
+          try {
+            globalAbortManager.checkAbort();
+
+            const threadConfig = {
+              configurable: {
+                thread_id: convId,
+                executionContext: {
+                  runner: this,
+                  eventQueue,
+                  missionTracker,
+                  conversationId: convId,
+                  shouldAbort,
+                }
+              },
+              recursionLimit: 100
+            };
+            
+            const currentState = await graph.getState(threadConfig);
+            const { Command } = await import('@langchain/langgraph');
+
+            globalAbortManager.checkAbort();
+
+            if (currentState && currentState.next && currentState.next.length > 0) {
+              console.log('[AgentRunner] 🔄 Resuming interrupted session...');
+              this.telemetry.info(`Resuming session ${convId} from interrupted state...`);
+              missionTracker.startStep('step:triage');
+              await graph.invoke(new Command({ resume: textInput }), threadConfig);
+            } else {
+              console.log('[AgentRunner] 🔄 Starting new graph invocation...');
+              
+              // Only reconstruct history for NEW invocations
+              // RESUMING invocations already have history in GraphState
+              this.telemetry.updateSpinner('Compiling system messages...');
+              const preloadedPrompt = await getSlimSystemPromptAsync(platform, convId, [], this.skills, projectId);
+              const { messages: initialMessages } = await buildSystemMessages(history, userInput, platform, convId, [], systemPromptOverride || preloadedPrompt, projectId);
+
+              // Reconstruction logic
+              const chatHistoryStore = new ChatHistoryStore();
+              try {
+                const fullConversation = await chatHistoryStore.load(convId);
+                if (fullConversation && fullConversation.messages.length > 0) {
+                  const priorMessages = reconstructFullHistory(fullConversation.messages, userInput);
+                  const maxMessages = 50;
+                  const limitedPriorMessages = priorMessages.slice(-maxMessages);
+                  const systemMessage = initialMessages[0];
+                  const newUserMessage = initialMessages[initialMessages.length - 1];
+                  initialMessages.length = 0;
+                  initialMessages.push(systemMessage, ...limitedPriorMessages, newUserMessage);
+                }
+              } catch (err) {
+                console.warn('[AgentRunner] Failed to load history:', err);
+              }
+
+              missionTracker.startStep('step:triage');
+              await graph.invoke({
+                messages: initialMessages,
+                toolCallRecords: [],
+                iterations: 0,
+                pendingToolCalls: [],
+                finalResponse: '',
+                toolCallHistory: [],
+                missionId: convId,
+                missionTimeline: missionTracker.getTimeline(),
+                missionSteps: missionTracker.getSteps(),
+                currentStepId: 'step:triage',
+                decompositionAttempts: 0,
+              }, threadConfig);
+            }
+          } catch (err) {
+            // ... (error handling remains same)
+            console.error('[AgentRunner] Graph Error:', err);
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            if (err instanceof AbortError || errorMsg.includes('Execution aborted by user')) {
+              eventQueue.push({ type: 'chunk', content: '\n\n🛑 Stopped by user.' });
+              missionTracker.fail('Execution stopped by user');
+            } else {
+              eventQueue.push({ type: 'chunk', content: `\n\n❌ **Error during execution:** ${errorMsg}` });
+              missionTracker.fail(errorMsg);
+            }
+          } finally {
+            graphDone = true;
+            if (pushResolver) {
+              pushResolver();
+              pushResolver = null;
+            }
+          }
+        })();
+
+        while (!graphDone || eventQueue.length > 0) {
+          if (graphDone && eventQueue.length === 0) {
+            await new Promise(r => setTimeout(r, 10));
+            if (eventQueue.length === 0) break;
+          }
+          if (eventQueue.length > 0) {
+            const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
+            let event: StreamEvent;
+            if (hitlEventIndex !== -1) {
+              event = eventQueue.splice(hitlEventIndex, 1)[0];
+            } else {
+              event = eventQueue.shift()!;
+            }
+
+            // Real-time persistence tracking
+            if (event.type === 'chunk') {
+              currentContent += event.content;
+              await syncToDb();
+            } else if (event.type === 'thought') {
+              currentThought += event.content;
+              durationTracker.onThoughtStart();
+              await syncToDb();
+            } else if (event.type === 'tool_call') {
+              currentToolCalls.push({
+                name: (event as any).toolCall.toolName,
+                args: (event as any).toolCall.args,
+                result: (event as any).toolCall.result
+              });
+              await syncToDb(true); // Force sync on tool completion
+            }
+
+            yield event;
+          } else {
+            await new Promise<void>(r => { pushResolver = r; });
+          }
         }
 
-        // Debug logging for HITL events
-        if (event.type === 'hitl_request') {
-          console.log('[Runner] Processing hitl_request event:', event);
-          console.log('[Runner] Remaining events in queue:', eventQueue.length);
+        // Final sync after graph completes
+        await syncToDb(true);
+
+        await new Promise(r => setTimeout(r, 50));
+        if (!missionTracker.getTimeline().isComplete && !missionTracker.getTimeline().error) {
+          missionTracker.complete();
         }
 
-        // Track when first thought event occurs
-        if (event.type === 'thought') {
-          durationTracker.onThoughtStart();
-        }
-
-        if (event.type === 'debate_event') {
-          console.log('[Runner] 📣 Yielding debate_event:', (event as any).debateEvent?.type);
-        }
-        if (event.type === 'chunk') {
-          console.log('[Runner] Yielding chunk event (length:', (event.content || '').length, ')');
-        }
-
-        yield event;
-      } else {
-        await new Promise<void>(r => { pushResolver = r; });
-      }
-    }
-
-    // Ensure judge evaluation completes before marking mission as complete
-    // Add a small delay to ensure all judge processing is finished
-    await new Promise(r => setTimeout(r, 50));
-
-    // Now mark mission as complete after all events have been drained and judge is done
-    if (!missionTracker.getTimeline().isComplete && !missionTracker.getTimeline().error) {
-      missionTracker.complete();
-    }
-
-    this.telemetry.terminate(true);
-
-    // Calculate thinking duration
-    const thinkingDuration = durationTracker.onMissionComplete();
-
-    // Generate a summary title for the timeline from task description
-    let timelineTitle: string = 'Working...';
-    try {
-      // Use task description directly instead of LLM call
-      const steps = missionTracker.getSteps().map(s => s.name).join(', ');
-      const taskDesc = typeof textInput === 'string' ? textInput.substring(0, 50) : 'Agent task';
-      timelineTitle = taskDesc.length > 5 ? taskDesc + '...' : 'Completed';
-      if (steps) {
-        timelineTitle = steps.split(',')[0]?.trim() || timelineTitle;
-      }
-    } catch (err) {
-      timelineTitle = 'Completed';
-    }
-
-    // Emit final mission completion event with thinking duration
-    yield {
-      type: 'mission_complete',
-      timeline: missionTracker.getTimeline(),
-      steps: missionTracker.getSteps(),
-      thinkingDuration,
-      title: timelineTitle,
-    };
-
-    // Reset duration tracker for next mission
-    durationTracker.reset();
-
-    yield { type: 'done' };
-    } finally {
+        const thinkingDuration = durationTracker.onMissionComplete();
+        yield {
+          type: 'mission_complete',
+          timeline: missionTracker.getTimeline(),
+          steps: missionTracker.getSteps(),
+          thinkingDuration,
+          title: 'Completed',
+        };
+        yield { type: 'done' };
+      } finally {
         removeProgressListener?.();
-        console.log('[AgentRunner] 🏁 Stream finished and listener removed');
+      }
+    } finally {
+      // Release session lock
+      if (AgentRunner.sessionLocks.get(convId) === lockPromise) {
+        AgentRunner.sessionLocks.delete(convId);
+      }
+      resolveLock!();
     }
   }
 }
@@ -862,11 +832,11 @@ function reconstructFullHistory(storedMessages: any[], currentUserInput: string 
       // Plain user/assistant/tool message - emit as-is
       // If it's a tool message, ensure it has an ID
       if (msg.role === 'tool' && !(msg.tool_call_id || msg.toolCallId)) {
-          // This is a rare case where a tool message exists but has no ID.
-          // Since we don't have its parent assistant message easily accessible here,
-          // we hope it's rare. But for safety, we skip it as an orphan.
-          console.warn('[Runner] Skipping orphan tool message with no ID');
-          continue;
+        // This is a rare case where a tool message exists but has no ID.
+        // Since we don't have its parent assistant message easily accessible here,
+        // we hope it's rare. But for safety, we skip it as an orphan.
+        console.warn('[Runner] Skipping orphan tool message with no ID');
+        continue;
       }
 
       reconstructed.push({

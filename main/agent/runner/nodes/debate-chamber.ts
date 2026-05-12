@@ -5,6 +5,7 @@ import type { DebateContext, DebateResult } from '../debate-types';
 import { DebateEventEmitter } from '../debate-event-emitter';
 import { createMissionIntegrator } from '../mission-integrator';
 import type { MissionTracker } from '../mission-tracker';
+import { nodeLifecycle } from '../services/node-utils';
 
 console.log('[DebateChamber] 📦 Module loaded');
 
@@ -27,6 +28,7 @@ export const createDebateChamberNode = (
 
   return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
     console.log('[DebateChamber] 🔥 NODE INVOKED');
+    const logger = nodeLifecycle(runner, 'debate_chamber');
     console.log(`[DebateChamber] decomposedTask:`, state.decomposedTask ? 'EXISTS' : 'null');
     if (state.decomposedTask) {
       const plan = state.decomposedTask as DecomposedTask;
@@ -39,7 +41,7 @@ export const createDebateChamberNode = (
 
     const plan = state.decomposedTask as DecomposedTask | undefined;
     if (!plan) {
-      console.log('[DebateChamber] No plan to debate — skipping');
+      logger.info('No plan to debate — skipping');
       return { debateResult: null };
     }
 
@@ -49,17 +51,22 @@ export const createDebateChamberNode = (
     const complexity: 'simple' | 'moderate' | 'complex' = estimatedComplex ? 'complex' : estimatedModerate ? 'moderate' : 'simple';
 
     if (!PeerAgentDebateEngine.shouldDebate(complexity, 'moderate')) {
-      console.log(`[DebateChamber] Task complexity "${complexity}" (${stepCount} steps) below threshold — skipping debate`);
+      logger.info(`Task complexity "${complexity}" (${stepCount} steps) below threshold — skipping debate`);
+      eventQueue?.push({
+        type: 'thought',
+        content: `\n⏭️ Skipped Debate: Task complexity is '${complexity}' (threshold is 'moderate'). Proceeding directly to execution.`
+      });
+      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: `Complexity: ${complexity}` });
       return { debateResult: null };
     }
 
     if (!runner.client) {
-      console.warn('[DebateChamber] No AI client available — skipping debate');
+      logger.warn('No AI client available — skipping debate');
       return { debateResult: null };
     }
 
     runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task (${stepCount} steps)`);
-    eventQueue?.push({ type: 'thought', content: '\n🎭 Peer Agent Debate: Evaluating plan...' });
+    eventQueue?.push({ type: 'thought', content: '\n🎭 **Peer Agent Debate Started** — Three agents (Vanguard, Phantom, Arbiter) are now deliberating on your plan...' });
 
     const lastUserMsg = state.messages.filter((m: any) => {
       const role = m.role || m._getType?.();
@@ -85,13 +92,34 @@ export const createDebateChamberNode = (
     const debateId = `debate-${Date.now()}`;
     emitDebateEvent('debate_start', debateId);
 
+    // Create callback to emit phase completion events to frontend
+    const onPhaseComplete = async (phase: 'vanguard' | 'phantom' | 'arbiter', proposal?: any, review?: any, finalPlan?: any) => {
+      const frontendData = DebateEventEmitter.formatDebateResultForFrontend({
+        debateId,
+        timestamp: new Date().toISOString(),
+        transcript: [],
+        proposal: proposal || {},
+        review: review || {},
+        finalPlan: finalPlan || {},
+      } as any);
+
+      const phaseEventMap = {
+        vanguard: 'vanguard_complete',
+        phantom: 'phantom_complete',
+        arbiter: 'arbiter_complete',
+      };
+
+      emitDebateEvent(phaseEventMap[phase], debateId, frontendData);
+    };
+
     const engine = new PeerAgentDebateEngine(runner.client, {
       verbose: true,
       complexityThreshold: 'moderate',
-      timeoutMs: 120000,
-      vanguardTimeoutMs: 45000,
-      phantomTimeoutMs: 45000,
-      arbiterTimeoutMs: 30000,
+      timeoutMs: 180000,
+      vanguardTimeoutMs: 60000,
+      phantomTimeoutMs: 60000,
+      arbiterTimeoutMs: 45000,
+      onPhaseComplete,
     });
 
     try {

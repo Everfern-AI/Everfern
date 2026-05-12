@@ -4,21 +4,16 @@ exports.createWebExplorerNode = void 0;
 const agent_runtime_1 = require("../services/agent-runtime");
 const mission_integrator_1 = require("../mission-integrator");
 const prompt_sync_1 = require("../../../lib/prompt-sync");
-const subagent_spawn_1 = require("../subagent-spawn");
-const subagent_registry_1 = require("../subagent-registry");
 const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => {
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
     return async (state) => {
         const allTools = toolDefs || runner._buildToolDefinitions();
         const messages = state.messages || [];
-        const lastMsg = messages[messages.length - 1];
-        const isSearchComplete = messages.some((m) => (m.role === 'tool' || m.type === 'tool') && m.name === 'web_search');
-        const hasSpawnedSubagents = state.subagentSpawned && state.subagentSpawned.length > 0;
-        const hasDirectNav = messages.some((m) => (m.role === 'tool' || m.type === 'tool') && m.name === 'navis');
-        // DIRECT URL NAVIGATION: If the user provided a specific URL (skip research workflow)
-        const directUrl = !isSearchComplete && !hasSpawnedSubagents && !hasDirectNav
-            ? extractDirectUrl(messages)
-            : null;
+        const searchInvoked = state.searchInvoked || false;
+        const navisInvoked = state.navisInvoked || false;
+        // ─── DIRECT URL NAVIGATION ───────────────────────────────────────────
+        // If the user provided a specific URL (skip research workflow entirely)
+        const directUrl = !searchInvoked && !navisInvoked ? extractDirectUrl(messages) : null;
         if (directUrl) {
             eventQueue?.push({ type: 'thought', content: `\n🌐 WEB EXPLORER: Navigating directly to ${directUrl}...` });
             const result = await integrator.wrapNode('web_explorer', () => (0, agent_runtime_1.runAgentStep)(state, {
@@ -35,12 +30,14 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
             return {
                 ...result,
                 webExplorerComplete: false,
+                navisInvoked: true,
                 returningFromSpecialist: 'web_explorer'
             };
         }
-        // PHASE 1: Initial Search
-        if (!isSearchComplete && !hasDirectNav) {
-            eventQueue?.push({ type: 'thought', content: '\n🌐 WEB EXPLORER: Searching for authoritative sources...' });
+        // ─── PHASE 1: SEARCH & DISCOVER ──────────────────────────────────────
+        // Use web_search to find the top sources
+        if (!searchInvoked && !navisInvoked) {
+            eventQueue?.push({ type: 'thought', content: '\n🔍 WEB EXPLORER [Phase 1/3]: Searching for authoritative sources...' });
             const result = await integrator.wrapNode('web_explorer', () => (0, agent_runtime_1.runAgentStep)(state, {
                 runner,
                 toolDefs: allTools,
@@ -54,121 +51,88 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
             }), 'Web Explorer: Initial Search');
             return {
                 ...result,
+                searchInvoked: true,
                 returningFromSpecialist: 'web_explorer'
             };
         }
-        // PHASE 2: Spawn 2 focused deep-dive sub-agents
-        if (isSearchComplete && !hasSpawnedSubagents) {
+        // ─── PHASE 2: DEEP INVESTIGATION (SINGLE NAVIS CALL) ─────────────────
+        // After search, call navis ONCE with ALL discovered URLs and detailed extraction goals
+        if (searchInvoked && !navisInvoked) {
+            // Extract all discovered URLs from the search results
             const searchResult = messages.find((m) => (m.role === 'tool' || m.type === 'tool') && m.name === 'web_search');
             if (!searchResult) {
-                console.warn('[WebExplorer] Search complete but result not found.');
+                console.warn('[WebExplorer] Search complete but result not found in messages. Marking complete to avoid loop.');
                 return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: 'web_explorer' };
             }
             const searchContent = typeof searchResult.content === 'string' ? searchResult.content : JSON.stringify(searchResult.content);
             const userTask = messages.find((m) => m.role === 'user')?.content || '';
             const taskText = typeof userTask === 'string' ? userTask : JSON.stringify(userTask);
-            const candidates = extractTopCandidates(searchContent, taskText, 2);
+            const candidates = extractTopCandidates(searchContent, taskText, 5);
             if (candidates.length === 0) {
                 console.warn('[WebExplorer] No candidates found from search results.');
                 return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: 'web_explorer' };
             }
+            // Build a detailed, consolidated navis task with ALL URLs
+            const urlList = candidates.map((c, i) => `  ${i + 1}. ${c.url}`).join('\n');
+            const navisTask = buildConsolidatedNavisTask(taskText, candidates);
             eventQueue?.push({
                 type: 'thought',
-                content: `\n🎯 WEB EXPLORER: Launching ${candidates.length} focused investigators:\n${candidates.map((c, i) => `  ${i + 1}. ${c.url}`).join('\n')}`
+                content: `\n🌐 WEB EXPLORER [Phase 2/3]: Investigating ${candidates.length} sources with navis (single consolidated call):\n${urlList}`
             });
-            const spawner = (0, subagent_spawn_1.getSubagentSpawner)();
-            const spawned = [];
-            for (const candidate of candidates) {
-                const investigatorToolCallId = `investigator_${candidate.url.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30)}_${Date.now().toString(36)}`;
-                // Emit pseudo tool_start for the timeline
-                eventQueue?.push({
-                    type: 'tool_start',
-                    toolName: 'web_investigator',
-                    toolArgs: { url: candidate.url },
-                    toolCallId: investigatorToolCallId
-                });
-                const options = {
-                    parentSessionId: runner.currentConversationId || 'default',
-                    sponsorSessionKey: runner.currentAgentSessionKey,
-                    task: `Investigate this specific source for the research goal below.\n\nTARGET URL: ${candidate.url}\n\nMISSION:\n1. Use navis to navigate to the URL above\n2. Read the FULL page content using extract_content\n3. Extract: features, pricing, pros/cons, technical details, publication date, credibility signals\n4. Return a structured report with specific facts and direct quotes\n\nCRITICAL: You MUST use navis to visit the URL. DO NOT use terminal_execute with curl — curl cannot render JavaScript, will get blocked by captchas, and returns incomplete content. Only navis can properly load modern web pages.\n\nRESTRICTION: You are a single-task investigator. DO NOT spawn sub-agents or delegate to other agents. Investigate this URL yourself directly.`,
-                    agentType: 'generic',
-                    context: `Research goal: ${taskText}`,
-                    model: runner.client.model,
-                    mode: 'run',
-                    maxDepth: 1, // Investigator must not spawn further sub-agents
-                    runner: runner,
-                    toolCallId: investigatorToolCallId
-                };
-                console.log(`[WebExplorer] Dispatching investigator → ${candidate.url}`);
-                const agent = await spawner.spawn(options);
-                spawned.push({
-                    agentId: agent.agentId,
-                    sessionKey: agent.sessionKey,
-                    url: candidate.url,
-                    toolCallId: investigatorToolCallId
-                });
-            }
+            const result = await integrator.wrapNode('web_explorer', () => (0, agent_runtime_1.runAgentStep)(state, {
+                runner,
+                toolDefs: allTools,
+                eventQueue,
+                nodeName: 'web_explorer',
+                systemPromptOverride: ((0, prompt_sync_1.loadPrompt)('web-explorer.md') || '') +
+                    `\n\nPHASE: INVESTIGATE. You MUST call navis EXACTLY ONCE with the following consolidated task.` +
+                    `\nDo NOT spawn subagents. Do NOT call navis multiple times. ONE navis call with ALL URLs.` +
+                    `\nDo NOT use terminal_execute with curl. Only navis can properly load modern web pages.` +
+                    `\n\nNAVIS TASK TO USE (pass this as the "task" parameter to navis):\n\`\`\`\n${navisTask}\n\`\`\`` +
+                    `\n\nAfter navis returns its results, synthesize the findings into a comprehensive answer with inline citations.` +
+                    `\nIf navis reports "NOT_FOUND" for any URL, note that in your synthesis and move on.`
+            }), 'Web Explorer: Deep Investigation');
             return {
-                subagentSpawned: spawned,
+                ...result,
+                navisInvoked: true,
                 webExplorerComplete: false,
-                taskPhase: 'specialized_agent',
                 returningFromSpecialist: 'web_explorer'
             };
         }
-        // PHASE 3: Wait and Synthesize
-        if (hasSpawnedSubagents) {
-            const registry = (0, subagent_registry_1.getSubagentRegistry)();
-            const ids = state.subagentSpawned.map((s) => s.agentId || s.id);
-            const timeout = subagent_spawn_1.AGENT_TIMEOUTS['web-explorer'];
-            const startTime = Date.now();
-            let completed = false;
-            let lastActiveCount = -1;
-            while (Date.now() - startTime < timeout) {
-                const children = registry.getChildren(runner.currentConversationId || 'default');
-                const statusMap = ids.map((id) => {
-                    const child = children.find(c => c.agentId === id);
-                    return { id, status: child?.status || 'unknown' };
-                });
-                const allDone = statusMap.every((s) => s.status === 'completed' || s.status === 'failed' || s.status === 'aborted');
-                if (allDone) {
-                    completed = true;
-                    break;
-                }
-                const activeCount = statusMap.filter((s) => s.status === 'running' || s.status === 'pending').length;
-                // Emit update only when progress changes to avoid spamming
-                if (activeCount !== lastActiveCount) {
-                    const finishedCount = ids.length - activeCount;
-                    eventQueue?.push({
-                        type: 'thought',
-                        content: `\n📊 WEB EXPLORER: Investigating sources... (${finishedCount}/${ids.length} finished, ${activeCount} active)`
-                    });
-                    lastActiveCount = activeCount;
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000));
+        // ─── PHASE 3: SYNTHESIS ──────────────────────────────────────────────
+        // After navis has visited pages, synthesize the results
+        if (searchInvoked && navisInvoked) {
+            // Check if the assistant has already synthesized (has MISSION_COMPLETE)
+            const lastAssistant = [...messages].reverse().find((m) => {
+                const role = m.role || m._getType?.();
+                return role === 'assistant' || role === 'ai';
+            });
+            const lastContent = lastAssistant ? (typeof lastAssistant.content === 'string' ? lastAssistant.content : '') : '';
+            if (lastContent.includes('MISSION_COMPLETE')) {
+                eventQueue?.push({ type: 'thought', content: '\n✅ WEB EXPLORER: Research complete.' });
+                return {
+                    webExplorerComplete: true,
+                    taskPhase: 'evaluating',
+                    returningFromSpecialist: 'web_explorer'
+                };
             }
-            const children = registry.getChildren(runner.currentConversationId || 'default');
-            const results = [];
-            const errors = [];
-            for (const id of ids) {
-                const child = children.find(c => c.agentId === id);
-                if (child?.status === 'completed' && child.result) {
-                    results.push(`## Source Investigation\n\n${child.result}`);
-                }
-                else if (child?.error) {
-                    errors.push(`${id}: ${child.error}`);
-                }
-            }
-            eventQueue?.push({ type: 'thought', content: '\n✅ WEB EXPLORER: All investigators finished. Compiling synthesis...' });
-            const synthesisInput = results.join('\n\n---\n\n');
-            const errorSummary = errors.length > 0 ? `\n\nErrors:\n${errors.join('\n')}` : '';
+            // Not yet synthesized — let the agent compile findings
+            eventQueue?.push({ type: 'thought', content: '\n📝 WEB EXPLORER [Phase 3/3]: Synthesizing research findings...' });
+            const result = await integrator.wrapNode('web_explorer', () => (0, agent_runtime_1.runAgentStep)(state, {
+                runner,
+                toolDefs: allTools,
+                eventQueue,
+                nodeName: 'web_explorer',
+                systemPromptOverride: ((0, prompt_sync_1.loadPrompt)('web-explorer.md') || '') +
+                    '\n\nPHASE: SYNTHESIZE. You have completed your web research.' +
+                    '\nCompile all findings into a comprehensive, well-structured answer.' +
+                    '\nInclude inline citations [Source Title](URL) for all claims.' +
+                    '\nIf comparing options, include a comparison table.' +
+                    '\nProvide actionable recommendations.' +
+                    '\nEnd your response with MISSION_COMPLETE.'
+            }), 'Web Explorer: Synthesis');
             return {
-                messages: [
-                    ...state.messages,
-                    {
-                        role: 'assistant',
-                        content: `[RESEARCH SYNTHESIS INPUT]\n\n${synthesisInput}${errorSummary}\n\n---\n\nSTATUS: COMPLETE\nSources investigated: ${results.length}/${ids.length}\nMISSION_COMPLETE`
-                    }
-                ],
+                ...result,
                 webExplorerComplete: true,
                 taskPhase: 'evaluating',
                 returningFromSpecialist: 'web_explorer'
@@ -178,6 +142,42 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
     };
 };
 exports.createWebExplorerNode = createWebExplorerNode;
+/**
+ * Build a consolidated navis task that includes ALL URLs and specific extraction goals.
+ * This replaces the old multi-subagent approach with a single focused navis call.
+ */
+function buildConsolidatedNavisTask(userGoal, candidates) {
+    const urlInstructions = candidates.map((c, i) => `URL ${i + 1}: ${c.url}\n` +
+        `  → Navigate to this page\n` +
+        `  → Extract: key features, pricing (if any), pros/cons, technical details, user reviews/ratings\n` +
+        `  → If the page is a list/category page, click into the top 1-2 individual items and extract from those\n` +
+        `  → If the information is not available, report "NOT_FOUND: [reason]" for this URL`).join('\n\n');
+    return `RESEARCH GOAL: ${userGoal.slice(0, 500)}
+
+INSTRUCTIONS:
+You must visit ALL of the following URLs in order. For each URL:
+1. Navigate to the page using go_to_url
+2. Wait for it to load, then use extract_content to get the information specified below
+3. If a page blocks you (captcha, paywall, login wall), report NOT_FOUND and move to the next URL
+4. Do NOT follow random links — only visit the URLs listed below
+5. Do NOT do additional web searches — only visit these specific pages
+
+URLS TO VISIT:
+
+${urlInstructions}
+
+COMPLETION:
+After visiting ALL URLs, call done() with a structured report containing:
+- For each URL: the extracted information OR "NOT_FOUND: [reason]"
+- A brief comparison if multiple sources were found
+- Key facts and specific details (not vague summaries)
+
+IMPORTANT RULES:
+- Visit ONLY the URLs listed above — do not wander to other pages
+- If a page doesn't have what you need, say NOT_FOUND and move on
+- Be efficient — extract what's needed and move to the next URL
+- Do NOT spend more than 5 steps per URL`;
+}
 function extractDirectUrl(messages) {
     const userMsg = messages.find((m) => m.role === 'user' || m.type === 'human' || m._getType?.() === 'human');
     if (!userMsg)

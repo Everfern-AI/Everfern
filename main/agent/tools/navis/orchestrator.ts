@@ -52,7 +52,7 @@ export const NAVIS_DECISION_SCHEMA = {
         ],
       },
       minItems: 1,
-      maxItems: 3,
+      maxItems: 8,
     },
   },
   required: ['current_state', 'action'],
@@ -107,6 +107,8 @@ export interface NavisOptions {
   headless?: boolean;
   startUrl?: string;
   onProgress?: (msg: string) => void;
+  useVision?: boolean;
+  autoLaunchChrome?: boolean;
 }
 
 export interface NavisResult {
@@ -121,12 +123,14 @@ export interface NavisResult {
 
 export class NavisOrchestrator {
   private aiClient: AIClient;
+  private visionClient: AIClient | null;
   private model: string;
   private session: BrowserSession;
   private logger: NavisLogger;
 
-  constructor(aiClient: AIClient, logger?: NavisLogger) {
+  constructor(aiClient: AIClient, logger?: NavisLogger, visionClient?: AIClient) {
     this.aiClient = aiClient;
+    this.visionClient = visionClient || null;
     this.model = aiClient.model;
     this.logger = logger || new NavisLogger();
     this.session = new BrowserSession();
@@ -135,11 +139,12 @@ export class NavisOrchestrator {
   getEventLogger(): NavisLogger { return this.logger; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
-    const { task, maxSteps = 25, maxActionsPerStep = 8, headless = false, startUrl } = options;
+    const { task, maxSteps = 25, maxActionsPerStep = 8, headless = false, startUrl, useVision = false, autoLaunchChrome = true } = options;
     
     const runStart = Date.now();
-    await this.session.launch({ headless, startUrl, logger: this.logger });
+    await this.session.launch({ headless, startUrl, logger: this.logger, autoLaunchChrome });
     console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
+    console.log(`[Navis] Vision mode: ${useVision ? 'ENABLED' : 'disabled'}`);
 
     await this.session.page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     console.log(`[Navis] ⏱ initial page load: ${Date.now() - runStart}ms`);
@@ -157,6 +162,8 @@ export class NavisOrchestrator {
     try {
       let aiRetries = 0;
       const maxAiRetries = 3;
+      let lastGoal = '';
+      let goalRepeatCount = 0;
 
       while (steps < maxSteps) {
         const page = this.session.page;
@@ -169,26 +176,63 @@ export class NavisOrchestrator {
           ? pages.map((p, i) => `  Tab ${i}: ${p.url()}`).join('\n')
           : `1 tab open: ${url}`;
 
-        // Use pre-captured snapshot from previous step (captured in background during AI call)
+        // ── Vision mode: screenshot + multimodal AI ──
+        let screenshotB64: string | null = null;
+        let elementsFormatted = '';
+
         const t2 = Date.now();
-        if (pendingSnapshot) {
-          const bgSnapshot = await pendingSnapshot;
-          if (bgSnapshot) {
-            snapshot = bgSnapshot;
+        if (useVision) {
+          // Capture screenshot + element snapshot in parallel for speed
+          try {
+            // Annotate page with visual refs before taking the screenshot
+            await this.session.annotateElements();
+            
+            const [screenshotBuffer, elemSnapshot] = await Promise.all([
+              page.screenshot({ type: 'jpeg', quality: 75, fullPage: false }),
+              captureInteractiveElements(page),
+            ]);
+
+            // Clean up annotations immediately after screenshot
+            await this.session.removeAnnotations();
+
+            screenshotB64 = screenshotBuffer.toString('base64');
+            snapshot = elemSnapshot;
+            elementsFormatted = formatElementsForPrompt(snapshot.raw);
+            lastUrl = url;
+          } catch (err) {
+            console.warn('[Navis] Screenshot capture failed, falling back to DOM-only:', err);
+            await this.session.removeAnnotations().catch(() => {});
+            snapshot = await captureInteractiveElements(page);
+            elementsFormatted = formatElementsForPrompt(snapshot.raw);
             lastUrl = url;
           }
-          pendingSnapshot = null;
-        } else if (!snapshot || url !== lastUrl) {
-          snapshot = await captureInteractiveElements(page);
-          lastUrl = url;
-        }
+        } else {
+          // ── DOM-only mode: aria snapshot ──
+          if (pendingSnapshot) {
+            const bgSnapshot = await pendingSnapshot;
+            if (bgSnapshot) {
+              snapshot = bgSnapshot;
+              lastUrl = url;
+            }
+            pendingSnapshot = null;
+          } else if (!snapshot || url !== lastUrl) {
+            snapshot = await captureInteractiveElements(page);
+            lastUrl = url;
+          }
 
-        const t3 = Date.now();
-        if (!snapshot) {
-          snapshot = await captureInteractiveElements(page);
-          lastUrl = url;
+          if (!snapshot) {
+            snapshot = await captureInteractiveElements(page);
+            lastUrl = url;
+          }
+          elementsFormatted = formatElementsForPrompt(snapshot.raw);
         }
-        const elementsFormatted = formatElementsForPrompt(snapshot.raw);
+        const t3 = Date.now();
+
+        // Stuck loop detection
+        let stuckWarning = '';
+        if (goalRepeatCount >= 2) {
+          stuckWarning = `\n[SELF-CORRECTION]: You have tried "${lastGoal}" ${goalRepeatCount} times without success. TRY A DIFFERENT STRATEGY (different search term, scroll elsewhere, or try a different website).`;
+        }
 
         // Compress history after 8 steps to keep context small
         const historyStr = history.length > 8
@@ -202,7 +246,7 @@ export class NavisOrchestrator {
           `Open Tabs (${tabCount}):\n${tabsStr}`,
           `Elements:`,
           elementsFormatted,
-          lastResult ? `Last: ${lastResult}` : '',
+          lastResult ? `Last: ${lastResult}${stuckWarning}` : '',
         ].filter(Boolean).join('\n');
 
         const systemPrompt = NAVIS_SYSTEM_PROMPT
@@ -215,7 +259,10 @@ export class NavisOrchestrator {
           .replace(/\{content_below_placeholder\}/g, '');
 
         const t4 = Date.now();
-        const decision = await this.callAI(systemPrompt, inputContext, nextPrompt);
+        // Use vision AI if we have a screenshot, otherwise use text-only
+        const decision = screenshotB64
+          ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64)
+          : await this.callAI(systemPrompt, inputContext, nextPrompt);
         const t5 = Date.now();
         
         if (!decision) {
@@ -231,8 +278,17 @@ export class NavisOrchestrator {
         aiRetries = 0;
         steps++;
 
-        this.logger.aiDecision(steps, maxSteps, decision.current_state?.next_goal);
-        await this.session.setOverlayStatus(decision.current_state?.next_goal || 'Working...');
+        // Update loop detection state
+        const currentGoal = decision.current_state?.next_goal || '';
+        if (currentGoal === lastGoal) {
+          goalRepeatCount++;
+        } else {
+          lastGoal = currentGoal;
+          goalRepeatCount = 0;
+        }
+
+        this.logger.aiDecision(steps, maxSteps, currentGoal);
+        await this.session.setOverlayStatus(currentGoal || 'Working...');
 
         const t6 = Date.now();
         const actions = (decision.action || []).slice(0, maxActionsPerStep);
@@ -290,7 +346,8 @@ export class NavisOrchestrator {
         const t8 = Date.now();
         const stepMs = t8 - t1;
         const wallClock = Date.now() - runStart;
-        console.log(`[Navis Step ${steps}] pageInfo=${t2-t1}ms capture=${t3-t2}ms build=${t4-t3}ms AI=${t5-t4}ms actions=${t6-t5}ms wait=${t8-t7}ms(${captureLabel}) STEP=${stepMs}ms WALL=${wallClock}ms`);
+        const visionTag = screenshotB64 ? ' [VISION]' : '';
+        console.log(`[Navis Step ${steps}${visionTag}] pageInfo=${t2-t1}ms capture=${t3-t2}ms build=${t4-t3}ms AI=${t5-t4}ms actions=${t6-t5}ms wait=${t8-t7}ms(${captureLabel}) STEP=${stepMs}ms WALL=${wallClock}ms`);
 
         this.logger.stepComplete(steps, maxSteps, lastResult);
         history.push(`${decision.current_state?.next_goal} → ${lastResult}`);
@@ -307,7 +364,7 @@ export class NavisOrchestrator {
       this.logger.error(err.message);
       return { success: false, output: `Error: ${err.message}`, steps };
     } finally {
-      await this.session.close();
+      // Intentionally not closing session to allow multiple tool calls to share the same browser
     }
   }
 
@@ -335,6 +392,103 @@ export class NavisOrchestrator {
     } catch (err: any) {
       this.logger.error(`AI call failed: ${err.message?.slice(0, 120) || 'unknown error'}`);
       return null;
+    }
+  }
+
+  /**
+   * Vision-enhanced AI call: sends a screenshot as multimodal content alongside text.
+   * Uses the main AI client if it supports vision, else falls back to the configured
+   * vision grounding model (visionClient). Includes a specialized vision prompt that
+   * teaches the AI spatial reasoning and visual page understanding.
+   */
+  private async callAIVision(
+    systemPrompt: string,
+    inputContext: string,
+    nextStepPrompt: string,
+    screenshotB64: string,
+  ): Promise<any | null> {
+    // Pick the right client: vision fallback if available, else main
+    const client = this.visionClient || this.aiClient;
+    const modelToUse = client.model;
+
+    // Calculate image size for detail level — smaller images use 'low' to save tokens
+    const imgSizeKB = Math.round((screenshotB64.length * 3) / 4 / 1024);
+    const detail = imgSizeKB > 200 ? 'high' : 'low';
+
+    const visionInstructions = `
+VISION MODE ACTIVE — You are seeing a screenshot of the browser page.
+
+VISUAL ANALYSIS INSTRUCTIONS:
+1. LAYOUT: Identify the page structure — header/nav, main content, sidebar, footer.
+   Look for the primary content area and focus your actions there.
+2. INTERACTIVE ELEMENTS: The element list ([ref=eN]) maps to clickable/typeable items.
+   Match visual elements you see in the screenshot to their ref IDs for precise actions.
+3. POPUPS & OVERLAYS: If you see cookie banners, modals, login popups, or consent dialogs
+   overlaying the content — dismiss them FIRST (click accept/close/X) before proceeding.
+4. LOADING STATES: If the page appears to be loading (spinners, skeleton screens),
+   use the wait action before trying to interact.
+5. CAPTCHAS: If you see a CAPTCHA challenge (checkboxes, puzzles, "verify you're human"),
+   use solve_captcha immediately.
+6. SCROLL INDICATORS: If you can see that content continues below (e.g. partial text,
+   scrollbar visible), use scroll_down to reveal more content.
+7. SEARCH BOXES: When you see a search input, type SHORT keywords (1-2 words maximum).
+   Long queries rarely work well on website search.
+
+Use the [ref=eN] identifiers from the Elements list to perform actions.
+The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
+
+    try {
+      const aiStart = Date.now();
+      const visionLabel = client === this.visionClient ? 'vision-fallback' : 'main';
+      console.log(`[Navis] 🖼️ Vision AI call (${visionLabel}, model: ${modelToUse}, img: ${imgSizeKB}KB, detail: ${detail})`);
+
+      const response = await client.chat({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${screenshotB64}`,
+                  detail: detail as 'low' | 'high',
+                },
+              },
+              {
+                type: 'text',
+                text: inputContext + '\n\n' + nextStepPrompt + '\n\n' + visionInstructions,
+              },
+            ],
+          },
+        ],
+        model: modelToUse,
+        responseFormat: 'json',
+        jsonSchema: NAVIS_DECISION_SCHEMA,
+        temperature: 0.1,
+      });
+
+      const elapsed = Date.now() - aiStart;
+      console.log(`[Navis] 🖼️ Vision AI complete: ${elapsed}ms (${visionLabel})`);
+
+      const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      return this.extractJson(raw);
+    } catch (err: any) {
+      const errMsg = err.message?.slice(0, 150) || 'unknown error';
+      this.logger.error(`Vision AI call failed: ${errMsg}`);
+
+      // If it's an image-related error, fall back gracefully to text-only
+      const isVisionError = errMsg.toLowerCase().includes('image') ||
+                            errMsg.toLowerCase().includes('vision') ||
+                            errMsg.toLowerCase().includes('multimodal') ||
+                            errMsg.toLowerCase().includes('content type');
+      
+      if (isVisionError) {
+        console.warn('[Navis] Vision not supported by model, falling back to text-only permanently for this session');
+      } else {
+        console.warn('[Navis] Vision AI failed, falling back to text-only call');
+      }
+      return this.callAI(systemPrompt, inputContext, nextStepPrompt);
     }
   }
 

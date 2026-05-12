@@ -9,6 +9,7 @@ import type { AgentTool, ToolResult } from '../../runner/types';
 import type { AIClient } from '../../../lib/ai-client';
 import { NavisOrchestrator } from './orchestrator';
 import { NavisEvent } from './logger';
+import { toolSettingsStore } from '../../../store/tool-settings';
 
 type SubAgentProgressEventType = 'step' | 'reasoning' | 'action' | 'screenshot' | 'complete' | 'abort';
 
@@ -49,13 +50,17 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
   }
 }
 
-export function createNavisTool(aiClient: AIClient): AgentTool {
+export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
   return {
     name: 'navis',
     description:
       'Autonomous browser automation engine. Opens a real browser, navigates websites, ' +
       'clicks elements, fills forms, extracts content. Use for tasks that require interacting ' +
-      'with web pages (login forms, multi-step workflows, dynamic content).',
+      'with web pages. ' +
+      'IMPORTANT RULE: Do NOT spawn multiple Navis agents sequentially for the same overall research or task. ' +
+      'First, determine ALL the information you need, then provide a single comprehensive "task" to Navis asking it to search across multiple sites at once. ' +
+      'Navis is smart and will browse multiple pages, compile all the information, and return it in one go. ' +
+      'Navis will actively avoid hallucinating information from useless websites and report failures clearly if the data cannot be found.',
     parameters: {
       type: 'object',
       properties: {
@@ -79,7 +84,6 @@ export function createNavisTool(aiClient: AIClient): AgentTool {
       required: ['task'],
     },
     async execute(args: any, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
-      const orchestrator = new NavisOrchestrator(aiClient);
       const logger = orchestrator.getEventLogger();
 
       logger.on((event: NavisEvent) => {
@@ -122,11 +126,16 @@ export function createNavisTool(aiClient: AIClient): AgentTool {
         }
       });
 
+      // Read Navis settings from the persistent store
+      const navisSettings = toolSettingsStore.get().navis;
+
       const result = await orchestrator.run({
         task: args.task,
-        maxSteps: args.maxSteps,
-        headless: args.headless,
+        maxSteps: args.maxSteps ?? navisSettings.maxSteps,
+        headless: args.headless ?? navisSettings.headless,
         startUrl: args.startUrl,
+        useVision: navisSettings.useVision,
+        autoLaunchChrome: navisSettings.autoLaunchChrome,
       });
 
       return {

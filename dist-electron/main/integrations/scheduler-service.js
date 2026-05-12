@@ -13,6 +13,7 @@ const history_1 = require("../store/history");
 class SchedulerService {
     interval = null;
     isRunning = false;
+    runningTasks = new Set();
     /**
      * Start the scheduler.
      */
@@ -53,7 +54,13 @@ class SchedulerService {
                     continue;
                 }
                 if (this.shouldRun(task, now)) {
-                    await this.runTask(task);
+                    if (!this.runningTasks.has(task.id)) {
+                        // Do not await, let it run in background to allow other tasks to start
+                        this.runTask(task).catch(err => console.error('[Scheduler] runTask error:', err));
+                    }
+                    else {
+                        console.log(`[Scheduler] ⏳ Task ${task.id} is already running, skipping this interval.`);
+                    }
                 }
             }
         }
@@ -163,11 +170,11 @@ class SchedulerService {
         }
         return next;
     }
-    /**
-     * Execute a scheduled task.
-     */
-    async runTask(task) {
-        console.log(`[Scheduler] 🏃 Running task: ${task.name || task.description} (${task.id})`);
+    async runTask(task, attempt = 1) {
+        if (this.runningTasks.has(task.id) && attempt === 1)
+            return;
+        this.runningTasks.add(task.id);
+        console.log(`[Scheduler] 🏃 Running task: ${task.name || task.description} (${task.id}) - Attempt ${attempt}`);
         try {
             // 1. Create a new conversation for this task
             const conversationId = `scheduled-${task.id}-${Date.now()}`;
@@ -186,11 +193,14 @@ class SchedulerService {
             const runner = new runner_1.AgentRunner(client);
             // 3. Update next run time IMMEDIATELY to prevent double execution 
             // if the checkTasks interval hits again before updating
-            const now = new Date();
-            const nextRun = SchedulerService.calculateNextRun(task.cron, now, task.startsAt);
-            await scheduled_tasks_1.scheduledTasksStore.updateRunTimes(task.id, now.toISOString(), nextRun.toISOString());
+            if (attempt === 1) {
+                const now = new Date();
+                const nextRun = SchedulerService.calculateNextRun(task.cron, now, task.startsAt);
+                await scheduled_tasks_1.scheduledTasksStore.updateRunTimes(task.id, now.toISOString(), nextRun.toISOString());
+            }
             // 4. Run the prompt in the background
             console.log(`[Scheduler] 🤖 Agent starting task execution...`);
+            const MAX_RETRIES = 3;
             (async () => {
                 try {
                     const stream = runner.runStream(task.prompt, [], client.model, conversationId, undefined, task.projectId);
@@ -198,14 +208,22 @@ class SchedulerService {
                         // Processing...
                     }
                     console.log(`[Scheduler] ✅ Task completed: ${task.name || task.description}`);
+                    this.runningTasks.delete(task.id);
                 }
                 catch (err) {
                     console.error(`[Scheduler] ❌ Task failed: ${task.name || task.description}`, err);
+                    this.runningTasks.delete(task.id);
+                    if (attempt < MAX_RETRIES) {
+                        const delayMs = Math.pow(2, attempt) * 5000; // 10s, 20s
+                        console.log(`[Scheduler] 🔄 Retrying task ${task.id} in ${delayMs}ms (Attempt ${attempt + 1}/${MAX_RETRIES})...`);
+                        setTimeout(() => this.runTask(task, attempt + 1), delayMs);
+                    }
                 }
             })();
         }
         catch (err) {
             console.error(`[Scheduler] Failed to start task ${task.id}:`, err);
+            this.runningTasks.delete(task.id);
         }
     }
 }

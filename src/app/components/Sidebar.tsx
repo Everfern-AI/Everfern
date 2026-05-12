@@ -313,7 +313,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                     whiteSpace: "nowrap",
                                     maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                                     WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
-                                }}>{item.title}</span>
+                                }}>{item.title || "Untitled Chat"}</span>
                                 {item.projectName && (
                                     <div style={{ fontSize: 10, backgroundColor: 'rgba(0,0,0,0.08)', padding: '2px 6px', borderRadius: 6, color: '#666666', marginLeft: 4, whiteSpace: 'nowrap', fontWeight: 600 }}>
                                         {item.projectName}

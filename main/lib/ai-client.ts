@@ -141,6 +141,7 @@ export interface ChatRequest {
   onToolCallChunk?: (index: number, toolName: string, argumentsDelta: string) => void;
   /** Gemini native: user response to a safety_decision or confirmation prompt */
   userConfirmation?: 'ACT' | 'STAY_ON_NOMINAL';
+  abortSignal?: AbortSignal;
 }
 
 export interface ChatResponse {

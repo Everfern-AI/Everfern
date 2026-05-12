@@ -144,6 +144,12 @@ export const buildGraph = (
         request: approvalRequest,
       } as any);
 
+      // Register interruption in stateManager so runStream can find it upon resume
+      const { stateManager } = await import('./state-manager');
+      if (conversationId) {
+        stateManager.setInterrupted(conversationId, approvalRequest);
+      }
+
       runner.telemetry.info('HITL approval required — ending turn, user must respond');
       if (missionTracker) missionTracker.completeStep('step:hitl');
 
@@ -556,7 +562,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
 
         // Bug 5: Iteration limit for web_explorer self-loop
         const loopCount = state.webExplorerSelfLoopCount || 0;
-        const MAX_SELF_LOOPS = 5;
+        const MAX_SELF_LOOPS = 3;
         if (loopCount >= MAX_SELF_LOOPS) {
             console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop`);
             return 'brain';
@@ -616,7 +622,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
             'memory_save', 'memory_search', 'read_file', 'view_file',
             'list_directory', 'execution_plan',
             'read', 'find', 'grep', 'ls', 'search_web', 'web_search',
-            'website_crawl', 'skill_tool', 'present_files',
+            'skill_tool', 'present_files',
             'list_mcp_tools', 'search_mcp_registry', 'visualize'
           ]);
           const allSafe = (state.pendingToolCalls || []).every((tc: any) => SAFE_TOOLS.has(tc.name));

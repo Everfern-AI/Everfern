@@ -35,35 +35,36 @@ export interface ActionResult {
 // ── Multi-Strategy Element Finder ───────────────────────────────
 async function findElement(page: Page, ref: string, logger?: NavisLogger): Promise<{ locator: any; name: string }> {
   const strategies: Array<() => Promise<{ locator: any; method: string } | null>> = [
-    // Strategy 1: aria-ref (fastest)
+    // Strategy 1: data-ref (set by our capture script)
     async () => {
-      const loc = page.locator(`aria-ref=${ref}`);
+      const loc = page.locator(`[data-ref="${ref}"]`);
+      if (await loc.count() > 0) return { locator: loc, method: 'data-ref' };
+      return null;
+    },
+    // Strategy 2: aria-ref
+    async () => {
+      const loc = page.locator(`[aria-ref="${ref}"], aria-ref=${ref}`);
       if (await loc.count() > 0) return { locator: loc, method: 'aria-ref' };
       return null;
     },
-    // Strategy 2: CSS selector with data-ref
-    async () => {
-      const loc = page.locator(`[data-ref="${ref}"], [aria-ref="${ref}"]`);
-      if (await loc.count() > 0) return { locator: loc, method: 'css-data-ref' };
-      return null;
-    },
-    // Strategy 3: Parse ref number, try nth-of-type
+    // Strategy 3: Parse ref number, try nth-of-type (fallback for complex SPAs)
     async () => {
       const match = ref.match(/e(\d+)/);
       if (match) {
         const index = parseInt(match[1]) - 1;
-        const loc = page.locator('button, a, input, select, textarea').nth(index);
-        if (await loc.count() > 0) return { locator: loc, method: 'nth-index' };
+        // Search in all interactive types
+        const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"]').nth(index);
+        if (await loc.count() > 0 && await loc.isVisible()) return { locator: loc, method: 'nth-index' };
       }
       return null;
     },
     // Strategy 4: Try text content matching
     async () => {
       try {
-        const text = await page.getAttribute(`[aria-ref="${ref}"]`, 'aria-label').catch(() => '') ||
-                       await page.textContent(`[aria-ref="${ref}"]`).catch(() => '');
-        if (text && text.length > 0 && text.length < 100) {
-          const loc = page.getByText(text.slice(0, 50), { exact: false });
+        const text = await page.getAttribute(`[data-ref="${ref}"]`, 'aria-label').catch(() => '') ||
+                       await page.textContent(`[data-ref="${ref}"]`).catch(() => '');
+        if (text && text.trim().length > 2) {
+          const loc = page.getByText(text.trim().slice(0, 50), { exact: false }).first();
           if (await loc.count() > 0) return { locator: loc, method: 'text-match' };
         }
       } catch {}
@@ -172,7 +173,16 @@ async function executeGoToUrl(args: { url: string }, page: Page, logger?: NavisL
   if (!args.url) return { success: false, message: 'Missing url parameter', stateChanged: false };
   
   logger?.pageNavigate(step, maxSteps, args.url);
-  await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  
+  // Use a more robust goto that doesn't hang on domcontentloaded
+  try {
+    await page.goto(args.url, { waitUntil: 'load', timeout: 20000 });
+  } catch (err: any) {
+    console.warn(`[Navis] goto(load) failed, retrying with commit: ${err.message}`);
+    await page.goto(args.url, { waitUntil: 'commit', timeout: 10000 }).catch(() => {});
+  }
+
+  await page.bringToFront();
   return { success: true, message: `Navigated to ${args.url}`, stateChanged: true };
 }
 
@@ -212,15 +222,26 @@ async function executeClickElement(
     if (box) {
       await session.highlightElement(box);
       
-      // Try Playwright click first — NO trial: true (that would skip the actual click!)
+      // Listen for new pages (popups) being opened by this click
+      const popupPromise = page.context().waitForEvent('page', { timeout: 3000 }).catch(() => null);
+      
       const clicked = await locator.click({ 
         timeout: 3000,
         force: false,
       }).then(() => true).catch(() => false);
 
-      // Fallback: use mouse.click with coordinates
+      // Fallback: use mouse.click
       if (!clicked && box) {
         await page.mouse.click(box.x + box.width/2, box.y + box.height/2);
+      }
+
+      // Check if a new tab was opened
+      const newPage = await popupPromise;
+      if (newPage) {
+        await newPage.bringToFront();
+        session.setActivePage(newPage);
+        logger?.tabChange(step, maxSteps, `switched to new tab: ${newPage.url()}`);
+        return { success: true, message: `Clicked and switched to new tab: ${newPage.url()}`, stateChanged: true };
       }
     } else {
       await locator.click({ timeout: 2000 });
@@ -318,10 +339,31 @@ async function executeWait(args: { ms?: number }, logger?: NavisLogger, step?: n
 }
 
 async function executeExtractContent(args: { goal?: string }, page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
-  const content = await page.locator('body').innerText().catch(() => '');
-  const truncated = content.length > 4000 ? content.slice(0, 4000) + '\n...(truncated)' : content;
+  const content = await page.evaluate(() => {
+    // Remove noise
+    const scripts = document.querySelectorAll('script, style, noscript, iframe, svg, nav, footer');
+    scripts.forEach(s => s.remove());
+
+    // Try to find main content
+    const main = document.querySelector('main, [role="main"], article, #content, .content, .main');
+    const root = main || document.body;
+
+    // Get text and clean it
+    let text = (root as HTMLElement).innerText || '';
+    text = text.replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+    
+    return text;
+  }).catch(() => '');
+
+  const truncated = content.length > 8000 ? content.slice(0, 8000) + '\n...(truncated)' : content;
   logger?.extract(step, maxSteps, `${truncated.length} chars${args.goal ? ` for: ${args.goal}` : ''}`);
-  return { success: true, message: `Extracted ${truncated.length} chars`, stateChanged: false, data: truncated };
+  
+  return { 
+    success: true, 
+    message: `Extracted ${truncated.length} chars of cleaned content.`, 
+    stateChanged: false, 
+    data: truncated 
+  };
 }
 
 async function executeOpenTab(

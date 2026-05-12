@@ -146,6 +146,18 @@ function continueWithSetup(db, resolve, reject) {
 
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
+
+    -- LangGraph Checkpoints table
+    CREATE TABLE IF NOT EXISTS checkpoints (
+      thread_id TEXT,
+      checkpoint_id TEXT,
+      parent_id TEXT,
+      checkpoint_json TEXT,
+      metadata_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (thread_id, checkpoint_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_checkpoints_thread_id ON checkpoints(thread_id);
   `, (execErr) => {
         // Safety: Add missing columns to conversations (migration support)
         db.all("PRAGMA table_info(conversations)", (err, columns) => {

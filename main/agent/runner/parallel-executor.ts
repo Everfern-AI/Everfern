@@ -3,10 +3,19 @@
  * 
  * Executes independent tools in parallel while emitting synchronization events
  * to ensure the UI and backend stay perfectly aligned during multi-agent deployment.
+ * 
+ * Resource Limits:
+ * - Max 4 concurrent operations (prevents resource exhaustion)
+ * - Max output size: 2MB per tool result (prevents memory bloat)
+ * - Timeout: 5 minutes per tool (prevents hanging)
  */
 
 import type { AgentTool, ToolCallRecord, ToolResult } from './types';
 import type { StreamEvent } from './state';
+
+const MAX_CONCURRENT_TOOLS = 4;
+const MAX_RESULT_OUTPUT_SIZE = 2 * 1024 * 1024; // 2MB
+const TOOL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface ParallelGroupResult {
     results: ToolCallRecord[];
@@ -33,9 +42,8 @@ export function analyzeToolDependencies(
     
     return tools.map(tool => {
         const isWrite = fileWriteTools.has(tool.name);
-        const isGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh'].includes(tool.name) && tool.args.safe_for_parallel !== true;
-        const isReadOnly = readOnlyTools.has(tool.name) || (!isWrite && !isGlobalLocking);
-        
+        const isGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh', 'navis'].includes(tool.name) && tool.args.safe_for_parallel !== true;
+        const isReadOnly = readOnlyTools.has(tool.name) || (!isWrite && !isGlobalLocking);        
         // Detect potential conflicts (same file path)
         const conflicts: string[] = [];
         const filePaths = extractFilePaths(tool.args);
@@ -132,6 +140,22 @@ export function groupParallelTools(tools: ToolAnalysis[]): ToolAnalysis[][] {
     }
     
     return groups;
+}
+
+/**
+ * Truncates tool result output if it exceeds size limits.
+ * Prevents extremely large outputs from consuming memory.
+ */
+function truncateToolResult(result: ToolResult): ToolResult {
+    if (typeof result.output === 'string' && result.output.length > MAX_RESULT_OUTPUT_SIZE) {
+        const truncated = result.output.substring(0, MAX_RESULT_OUTPUT_SIZE);
+        return {
+            ...result,
+            output: `${truncated}\n\n[... OUTPUT TRUNCATED (exceeded ${MAX_RESULT_OUTPUT_SIZE} bytes) ...]`,
+        };
+    }
+    
+    return result;
 }
 
 /**

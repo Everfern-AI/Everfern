@@ -46,6 +46,17 @@ describe('Feature: web-tool-settings, Property 1: Config persistence round-trip'
             headless: fc.boolean(),
             apiKey: fc.string(),
           }),
+          browserUse: fc.record({
+            mode: fc.constantFrom('local' as const, 'api' as const),
+            headless: fc.boolean(),
+            apiKey: fc.string(),
+          }),
+          navis: fc.record({
+            useVision: fc.boolean(),
+            headless: fc.boolean(),
+            maxSteps: fc.integer({ min: 10, max: 50 }),
+            autoLaunchChrome: fc.boolean(),
+          }),
         }),
         (config) => {
           // Create a fresh store instance for each run (no file on disk)

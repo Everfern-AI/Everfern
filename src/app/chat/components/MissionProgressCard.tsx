@@ -109,7 +109,15 @@ const MissionProgressCard: React.FC<MissionProgressCardProps> = ({
                             </div>
 
                             {/* Steps List */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <div style={{ 
+                                display: "flex", 
+                                flexDirection: "column", 
+                                gap: 2,
+                                maxHeight: 320,
+                                overflowY: "auto",
+                                paddingRight: 4,
+                                scrollbarWidth: "thin"
+                            }} className="custom-scrollbar">
                                 {timeline.steps.map((step, idx) => (
                                     <StepItem 
                                         key={step.id} 

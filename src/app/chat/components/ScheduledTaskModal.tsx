@@ -352,7 +352,6 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
         name: name.trim() || undefined,
         description: description.trim(),
         cron: pattern,
-        pattern,
         prompt: prompt.trim(),
         startsAt: startTime ? new Date(startTime).toISOString() : undefined,
         endsAt: endsAt ? new Date(endsAt).toISOString() : undefined,
