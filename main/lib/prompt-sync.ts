@@ -129,7 +129,7 @@ function syncPromptFile(filename: string): boolean {
 /**
  * Synchronize all prompt files
  */
-export function syncAllPrompts(): PromptSyncInfo[] {
+export function syncAllPrompts(forceSync: boolean = false): PromptSyncInfo[] {
   console.log('[PromptSync] 🔄 Starting prompt synchronization...');
 
   ensureTargetDirectory();
@@ -149,7 +149,9 @@ export function syncAllPrompts(): PromptSyncInfo[] {
     const syncInfo = checkPromptSync(filename);
     syncResults.push(syncInfo);
 
-    if (syncInfo.needsUpdate) {
+    // Force sync always updates, otherwise only sync if needsUpdate
+    const shouldSync = forceSync || syncInfo.needsUpdate;
+    if (shouldSync) {
       const success = syncPromptFile(filename);
       if (success) {
         syncedCount++;
@@ -230,12 +232,13 @@ export function checkPromptStatus(): PromptSyncInfo[] {
 
 /**
  * Initialize prompt synchronization on startup
+ * Always syncs prompts to ensure the latest version is loaded
  */
-export function initializePromptSync(): void {
+export function initializePromptSync(forceSync: boolean = false): void {
   console.log('[PromptSync] 🚀 Initializing prompt synchronization system...');
 
   try {
-    const results = syncAllPrompts();
+    const results = syncAllPrompts(forceSync);
     const needsUpdate = results.filter(r => r.needsUpdate).length;
 
     if (needsUpdate === 0) {

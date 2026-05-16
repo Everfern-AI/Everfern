@@ -2,10 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.playwrightWebSearch = playwrightWebSearch;
 exports.playwrightWebCrawl = playwrightWebCrawl;
-function loadPlaywright() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('playwright');
-}
+const playwright_1 = require("playwright");
 const ANTI_DETECTION_ARGS = [
     '--disable-infobars',
     '--disable-blink-features=AutomationControlled',
@@ -24,13 +21,8 @@ const ANTI_DETECTION_ARGS = [
     '--disable-domain-reliability',
     '--lang=en-US',
 ];
-/**
- * Launches Chromium, searches multiple engines (Brave, DuckDuckGo Lite) and returns results.
- * Implements randomized user agents and delays to avoid bot detection/captchas.
- */
 async function playwrightWebSearch(query, headless) {
-    const { chromium } = loadPlaywright();
-    const browser = await chromium.launch({
+    const browser = await playwright_1.chromium.launch({
         headless,
         channel: 'chrome',
         args: ANTI_DETECTION_ARGS,
@@ -151,13 +143,8 @@ async function playwrightWebSearch(query, headless) {
         await browser.close();
     }
 }
-/**
- * Launches Chromium, navigates to the target URL, extracts visible text, and returns it.
- * Closes the browser in a finally block.
- */
 async function playwrightWebCrawl(url, headless) {
-    const { chromium } = loadPlaywright();
-    const browser = await chromium.launch({
+    const browser = await playwright_1.chromium.launch({
         headless,
         channel: 'chrome',
         args: ANTI_DETECTION_ARGS,

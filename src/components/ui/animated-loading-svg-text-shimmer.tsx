@@ -96,55 +96,54 @@ interface LoadingBreadcrumbProps {
   className?: string;
 }
 
-export function LoadingBreadcrumb({ 
-  text = "Thinking", 
-  className 
+export function LoadingBreadcrumb({
+  text = "Thinking",
+  className
 }: LoadingBreadcrumbProps) {
   return (
-    <>
+      <>
       <style>{`
         @keyframes textShimmer {
-          0% { 
-            background-position: -100% center;
+          0% {
+            background-position: -200% center;
           }
-          100% { 
-            background-position: 100% center;
+          100% {
+            background-position: 200% center;
           }
         }
       `}</style>
-      
+
       <div className={cn(
         "flex items-center gap-2 text-[15px] font-medium tracking-wide",
         className
       )}>
-        <Loader 
-          size={18} 
-          strokeWidth={2.5} 
-          className="text-zinc-600 dark:text-zinc-200" 
+        <Loader
+          size={18}
+          strokeWidth={2.5}
+          className="text-zinc-600 dark:text-zinc-200"
         />
-        
-        <span 
+
+        <span
           className="bg-clip-text text-transparent shimmer-text"
           style={{
             backgroundSize: "200% auto",
-            // alternate reverses the shimmer direction each cycle
-            animation: "textShimmer 1.5s ease-in-out infinite alternate"
+            animation: "textShimmer 2.5s linear infinite"
           }}
         >
           {text}
         </span>
-        
+
         <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
       </div>
-      
+
       <style>{`
         .shimmer-text {
           background-image: linear-gradient(
             90deg,
             rgb(113 113 122) 0%,
-            rgb(113 113 122) 40%,
-            rgb(24 24 27) 50%,
-            rgb(113 113 122) 60%,
+            rgb(113 113 122) 35%,
+            rgb(255 255 255) 50%,
+            rgb(113 113 122) 65%,
             rgb(113 113 122) 100%
           );
         }
@@ -152,9 +151,9 @@ export function LoadingBreadcrumb({
           background-image: linear-gradient(
             90deg,
             rgb(161 161 170) 0%,
-            rgb(161 161 170) 40%,
+            rgb(161 161 170) 35%,
             rgb(255 255 255) 50%,
-            rgb(161 161 170) 60%,
+            rgb(161 161 170) 65%,
             rgb(161 161 170) 100%
           );
         }
@@ -198,7 +197,7 @@ export function ToolCallingAnimation({
   className
 }: ToolCallingAnimationProps) {
   const [internalExpanded, setInternalExpanded] = useState(isExpanded);
-  
+
   const expanded = onToggle !== undefined ? isExpanded : internalExpanded;
   const handleToggle = () => {
     if (onToggle) {

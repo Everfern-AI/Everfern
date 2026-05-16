@@ -26,15 +26,11 @@ export function useDebateStream() {
   const handleDebateEvent = useCallback((event: DebateStreamEvent) => {
     // Safety check: skip malformed events
     if (!event || !event.type) {
-      console.warn('[useDebateStream] Received malformed debate event:', event);
       return;
     }
 
-    console.log('[useDebateStream] ✅ Received debate event:', event.type, 'debateId:', event.debateId);
-
     switch (event.type) {
       case 'debate_start':
-        console.log('[useDebateStream] 🎭 DEBATE STARTING — setting isDebating=true');
         setState(prev => ({
           ...prev,
           isDebating: true,
@@ -45,7 +41,6 @@ export function useDebateStream() {
         break;
 
       case 'debate_skipped':
-        console.log('[useDebateStream] ⏭️ Debate skipped');
         setState(prev => ({
           ...prev,
           isDebating: false,
@@ -55,7 +50,6 @@ export function useDebateStream() {
       case 'vanguard_complete':
       case 'phantom_complete':
       case 'arbiter_complete':
-        console.log('[useDebateStream] 📊 Phase complete:', event.type);
         if (event.data) {
           setState(prev => ({
             ...prev,
@@ -67,7 +61,6 @@ export function useDebateStream() {
         break;
 
       case 'debate_complete':
-        console.log('[useDebateStream] ✅ Debate complete — setting isDebating=false');
         if (event.data) {
           setState(prev => ({
             ...prev,
@@ -91,7 +84,7 @@ export function useDebateStream() {
         break;
 
       default:
-        console.log('[useDebateStream] Unknown debate event type:', event.type);
+        // No log for unknown
     }
   }, []);
 
@@ -100,14 +93,12 @@ export function useDebateStream() {
     if (listenerRef.current) return;
 
     const hasAPI = typeof window !== 'undefined' && !!(window as any).electronAPI?.acp?.onDebateStream;
-    console.log('[useDebateStream] Hook mounted, electronAPI.acp.onDebateStream available:', hasAPI);
 
     if (hasAPI) {
       listenerRef.current = true;
       (window as any).electronAPI.acp.onDebateStream(handleDebateEvent);
 
       return () => {
-        console.log('[useDebateStream] Cleaning up listener');
         listenerRef.current = false;
         (window as any).electronAPI?.acp?.removeDebateStreamListener?.();
       };

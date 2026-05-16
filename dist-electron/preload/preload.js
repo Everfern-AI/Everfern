@@ -336,5 +336,23 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // ── Chat Title ─────────────────────────────────────────────────────
     chat: {
         generateTitle: (conversationId, firstMessage) => electron_1.ipcRenderer.invoke('chat:generate-title', conversationId, firstMessage),
+        onTitleUpdated: (cb) => {
+            electron_1.ipcRenderer.on('chat:title-updated', (_e, data) => cb(data));
+        },
+        removeTitleUpdatedListener: () => {
+            electron_1.ipcRenderer.removeAllListeners('chat:title-updated');
+        },
+    },
+    // ── Generic Event Listeners ────────────────────────────────────────
+    on: (channel, cb) => {
+        electron_1.ipcRenderer.on(channel, (_e, data) => cb(data));
+    },
+    off: (channel, cb) => {
+        if (cb) {
+            electron_1.ipcRenderer.removeListener(channel, cb);
+        }
+        else {
+            electron_1.ipcRenderer.removeAllListeners(channel);
+        }
     },
 });

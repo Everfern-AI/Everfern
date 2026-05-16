@@ -377,8 +377,11 @@ export class AgentRunner {
     projectId?: string,
     isSubagent?: boolean,
   ): AsyncGenerator<StreamEvent, void, unknown> {
+    // Reset abort state for new execution
+    globalAbortManager.reset();
+
     const convId = conversationId || crypto.randomUUID();
-    
+
     // UNITY: Ensure only one execution runs at a time for this conversation
     // This prevents clobbering state and "messages being wiped" due to race conditions
     const existingLock = AgentRunner.sessionLocks.get(convId);
@@ -417,7 +420,7 @@ export class AgentRunner {
       // REAL-TIME PERSISTENCE: Initialize ChatHistoryStore and save initial user message
       const chatHistoryStore = new ChatHistoryStore();
       const textInput = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
-      
+
       try {
         const existingConv = await chatHistoryStore.load(convId);
         if (!existingConv) {
@@ -445,7 +448,7 @@ export class AgentRunner {
 
       // Check if this is a HITL approval/rejection response
       const isHitlResponse = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_REJECTED]');
-      
+
       if (isHitlResponse) {
         const approved = textInput.includes('[HITL_APPROVED]');
         console.log(`[Runner] HITL response detected: ${approved ? 'APPROVED' : 'REJECTED'}`);
@@ -581,10 +584,22 @@ export class AgentRunner {
         let currentToolCalls: any[] = [];
         let lastSyncTime = 0;
 
+        let isSaving = false;
+        let pendingSave = false;
+
         const syncToDb = async (force = false) => {
           const now = Date.now();
-          if (!force && now - lastSyncTime < 2000) return; 
+          if (!force && now - lastSyncTime < 2000) return;
+
+          if (isSaving) {
+            pendingSave = true;
+            return;
+          }
+
+          isSaving = true;
+          pendingSave = false;
           lastSyncTime = now;
+
           try {
             await chatHistoryStore.save({
               id: convId,
@@ -601,6 +616,12 @@ export class AgentRunner {
             } as any);
           } catch (err) {
             console.warn('[AgentRunner] Real-time sync failed:', err);
+          } finally {
+            isSaving = false;
+            if (pendingSave) {
+              // Ensure we save the last state if a save was requested while we were busy
+              setTimeout(() => syncToDb(true), 100);
+            }
           }
         };
 
@@ -621,7 +642,7 @@ export class AgentRunner {
               },
               recursionLimit: 100
             };
-            
+
             const currentState = await graph.getState(threadConfig);
             const { Command } = await import('@langchain/langgraph');
 
@@ -634,7 +655,7 @@ export class AgentRunner {
               await graph.invoke(new Command({ resume: textInput }), threadConfig);
             } else {
               console.log('[AgentRunner] 🔄 Starting new graph invocation...');
-              
+
               // Only reconstruct history for NEW invocations
               // RESUMING invocations already have history in GraphState
               this.telemetry.updateSpinner('Compiling system messages...');
@@ -693,41 +714,62 @@ export class AgentRunner {
           }
         })();
 
-        while (!graphDone || eventQueue.length > 0) {
-          if (graphDone && eventQueue.length === 0) {
-            await new Promise(r => setTimeout(r, 10));
-            if (eventQueue.length === 0) break;
+        // Register abort listener to wake up loop immediately
+        const unbindAbort = globalAbortManager.onAbort(() => {
+          if (pushResolver) {
+            const r = pushResolver;
+            pushResolver = null;
+            r();
           }
-          if (eventQueue.length > 0) {
-            const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
-            let event: StreamEvent;
-            if (hitlEventIndex !== -1) {
-              event = eventQueue.splice(hitlEventIndex, 1)[0];
-            } else {
-              event = eventQueue.shift()!;
+        });
+
+        try {
+          while (true) {
+            if (eventQueue.length > 0) {
+              const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
+              let event: StreamEvent;
+              if (hitlEventIndex !== -1) {
+                event = eventQueue.splice(hitlEventIndex, 1)[0];
+              } else {
+                event = eventQueue.shift()!;
+              }
+
+              // Real-time persistence tracking
+              if (event.type === 'chunk') {
+                currentContent += event.content;
+                await syncToDb();
+              } else if (event.type === 'thought') {
+                currentThought += event.content;
+                durationTracker.onThoughtStart();
+                await syncToDb();
+              } else if (event.type === 'tool_call') {
+                currentToolCalls.push({
+                  name: (event as any).toolCall.toolName,
+                  args: (event as any).toolCall.args,
+                  result: (event as any).toolCall.result
+                });
+                await syncToDb(true); // Force sync on tool completion
+              }
+
+              yield event;
+              continue; // Immediately check for more events
             }
 
-            // Real-time persistence tracking
-            if (event.type === 'chunk') {
-              currentContent += event.content;
-              await syncToDb();
-            } else if (event.type === 'thought') {
-              currentThought += event.content;
-              durationTracker.onThoughtStart();
-              await syncToDb();
-            } else if (event.type === 'tool_call') {
-              currentToolCalls.push({
-                name: (event as any).toolCall.toolName,
-                args: (event as any).toolCall.args,
-                result: (event as any).toolCall.result
-              });
-              await syncToDb(true); // Force sync on tool completion
+            if (graphDone || globalAbortManager.streamAborted) {
+              // Final check to ensure no events were pushed just before graphDone was set
+              if (eventQueue.length === 0) break;
+              continue;
             }
 
-            yield event;
-          } else {
-            await new Promise<void>(r => { pushResolver = r; });
+            // Wait for next push with built-in race protection
+            // If items were pushed between the check above and this point, resolve immediately
+            await new Promise<void>(r => {
+              if (eventQueue.length > 0 || graphDone || globalAbortManager.streamAborted) return r();
+              pushResolver = r;
+            });
           }
+        } finally {
+          unbindAbort();
         }
 
         // Final sync after graph completes
@@ -736,6 +778,15 @@ export class AgentRunner {
         await new Promise(r => setTimeout(r, 50));
         if (!missionTracker.getTimeline().isComplete && !missionTracker.getTimeline().error) {
           missionTracker.complete();
+
+          // Yield any pending phase change events before mission_complete
+          // This ensures the frontend receives the completion phase change
+          while (eventQueue.length > 0) {
+            const event = eventQueue.shift();
+            if (event) {
+              yield event;
+            }
+          }
         }
 
         const thinkingDuration = durationTracker.onMissionComplete();
@@ -816,13 +867,16 @@ function reconstructFullHistory(storedMessages: any[], currentUserInput: string 
       });
 
       // Then emit individual tool result messages ONLY if they are missing from the original history
-      // and we have a result available in the assistant message's toolCalls.
+      // We MUST provide a tool result for every tool call to satisfy LLM API requirements,
+      // even if the tool was interrupted or failed to return a result.
       for (const tc of toolCallsWithIds) {
-        if (tc.result && !existingToolMessageIds.has(tc.id)) {
+        if (!existingToolMessageIds.has(tc.id)) {
           reconstructed.push({
             role: 'tool',
             tool_call_id: tc.id,
-            content: JSON.stringify(tc.result || { success: false, output: 'No result available' })
+            content: tc.result
+              ? (typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))
+              : JSON.stringify({ success: false, output: 'Tool execution was aborted by user or failed to return a result.' })
           });
           // Add to seen set to prevent further duplicates of this specific ID in this turn
           existingToolMessageIds.add(tc.id);

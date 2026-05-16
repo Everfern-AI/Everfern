@@ -2,7 +2,6 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { globalAbortManager } from '../abort-manager';
 import { createTriageNode } from '../nodes/triage';
 import { createBrainNode } from '../nodes/brain';
-import { createValidationNode } from '../nodes/validation';
 
 describe('AbortSignalManager Integration', () => {
   let mockRunner: any;
@@ -70,47 +69,32 @@ describe('AbortSignalManager Integration', () => {
       await expect(brainNode(mockState)).rejects.toThrow('Execution aborted by user (stop button clicked)');
     });
 
-    it('should abort validation node when abort signal is set', async () => {
-      const shouldAbort = globalAbortManager.createShouldAbortCallback();
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
-
-      // Set abort before calling node
-      globalAbortManager.setAborted();
-
-      const mockState = {
-        pendingToolCalls: [],
-        iterations: 0
-      };
-
-      await expect(validationNode(mockState)).rejects.toThrow('Execution aborted by user (stop button clicked)');
-    });
-
     it('should allow nodes to execute normally when not aborted', async () => {
       const shouldAbort = globalAbortManager.createShouldAbortCallback();
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
+      const brainNode = createBrainNode(mockRunner, mockEventQueue, mockMissionTracker, [], shouldAbort);
 
       const mockState = {
-        pendingToolCalls: [],
-        iterations: 0
+        messages: [{ role: 'user', content: 'test' }],
+        iterations: 0,
+        currentIntent: 'coding'
       };
 
       // Should not throw when not aborted
-      const result = await validationNode(mockState);
+      const result = await brainNode(mockState);
       expect(result).toBeDefined();
-      expect(result.validationResult).toBeDefined();
     });
   });
 
   describe('Abort Timing Requirements', () => {
     it('should meet 100ms abort requirement', async () => {
       const shouldAbort = globalAbortManager.createShouldAbortCallback();
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
+      const brainNode = createBrainNode(mockRunner, mockEventQueue, mockMissionTracker, [], shouldAbort);
 
       const startTime = Date.now();
       globalAbortManager.setAborted();
 
       try {
-        await validationNode({ pendingToolCalls: [], iterations: 0 });
+        await brainNode({ messages: [{ role: 'user', content: 'test' }], iterations: 0, currentIntent: 'coding' });
         expect.fail('Should have thrown an error');
       } catch (error) {
         const elapsedTime = Date.now() - startTime;

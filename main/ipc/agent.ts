@@ -325,6 +325,33 @@ export function registerAgentHandlers() {
           safeSend('acp:tool-call-complete', { index: streamEvent.index, toolName: streamEvent.toolName, arguments: streamEvent.arguments });
         } else if (streamEvent.type === 'done') {
           flushBuffers();
+
+          // Trigger cleanup sequence when execution completes
+          console.log('[AgentIPC] Execution complete, triggering cleanup sequence...');
+          try {
+            const cleanupStatus = await globalAbortManager.executeCleanupSequence();
+
+            // Send cleanup status to frontend
+            safeSend('acp:cleanup-complete', {
+              success: cleanupStatus.success,
+              completedPhases: cleanupStatus.completedPhases,
+              totalPhases: cleanupStatus.totalPhases,
+              elapsedMs: cleanupStatus.elapsedMs,
+              errors: cleanupStatus.errors
+            });
+
+            console.log('[AgentIPC] Cleanup sequence completed:', {
+              success: cleanupStatus.success,
+              elapsedMs: cleanupStatus.elapsedMs
+            });
+          } catch (cleanupErr) {
+            console.error('[AgentIPC] Cleanup sequence error:', cleanupErr);
+            safeSend('acp:cleanup-error', {
+              message: String(cleanupErr),
+              stack: cleanupErr instanceof Error ? cleanupErr.stack : undefined
+            });
+          }
+
           safeSend('acp:stream-chunk', { delta: '', done: true });
 
           // Self-Improvement: Trigger non-blocking memory reflection

@@ -28,7 +28,7 @@ export class PhantomAgent {
     proposal: ExecutionProposal,
     context: DebateContext
   ): Promise<CriticalReview> {
-    const systemPrompt = this.buildSystemPrompt();
+    const systemPrompt = this.buildSystemPrompt(context);
     const userPrompt = this.buildUserPrompt(proposal, context);
 
     try {
@@ -53,12 +53,16 @@ export class PhantomAgent {
     }
   }
 
-  private buildSystemPrompt(): string {
-    const prompt = loadPrompt('debate-phantom.md');
+  private buildSystemPrompt(context: DebateContext): string {
+    const toolsList = context.availableTools.join('\n- ');
+    let prompt = loadPrompt('debate-phantom.md');
     if (!prompt) {
       console.warn('[Phantom] Could not load debate-phantom.md prompt. Using fallback.');
       return `You are Phantom, the Red-Teamer in a peer debate system for AI task planning.`;
     }
+    // Replace the placeholder with actual available tools
+    prompt = prompt.replace('{availableTools}', toolsList);
+    prompt = prompt.replace('{endnote}', `Current tools available: ${toolsList}`);
     return prompt;
   }
 

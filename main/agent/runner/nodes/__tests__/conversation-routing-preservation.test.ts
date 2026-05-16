@@ -5,16 +5,16 @@ import fc from 'fast-check';
 
 /**
  * Preservation Property Tests - Conversation Intent Routing
- * 
+ *
  * **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
- * 
+ *
  * Property 2: Preservation - Non-Conversation Intent Routing Unchanged
- * 
+ *
  * IMPORTANT: These tests follow observation-first methodology
  * - Observe behavior on UNFIXED code for non-conversation intents
  * - Write property-based tests capturing observed routing behavior patterns
  * - EXPECTED OUTCOME: Tests PASS on unfixed code (confirms baseline behavior)
- * 
+ *
  * These tests ensure that the bugfix does NOT introduce regressions for:
  * - Coding tasks routing through coding_specialist
  * - Questions routing through web_explorer
@@ -32,7 +32,7 @@ let mockIntentResponse: { intent: string; confidence: number } = { intent: 'codi
 vi.mock('../../nodes/triage', () => ({
   createTriageNode: vi.fn(() => async (state: any) => {
     executedNodes.push('triage');
-    return { 
+    return {
       currentIntent: mockIntentResponse.intent,
       intentConfidence: mockIntentResponse.confidence,
       taskPhase: 'planning'
@@ -44,29 +44,8 @@ vi.mock('../../nodes/triage', () => ({
 vi.mock('../../nodes/planner', () => ({
   createPlannerNode: vi.fn(() => async (state: any) => {
     executedNodes.push('planner');
-    return { 
+    return {
       taskPhase: 'routing',
-      shouldContinueIteration: false
-    };
-  })
-}));
-
-// Mock the validation node
-vi.mock('../../nodes/validation', () => ({
-  createValidationNode: vi.fn(() => async (state: any) => {
-    executedNodes.push('validation');
-    
-    // Check if there are pending tool calls that are high-risk
-    const hasHighRiskTools = state.pendingToolCalls && state.pendingToolCalls.length > 0 && 
-                             state.pendingToolCalls.some((call: any) => 
-                               call.name === 'fsWrite' || call.name === 'strReplace' || call.name === 'deleteFile'
-                             );
-    
-    return { 
-      validationResult: { 
-        isHighRisk: hasHighRiskTools, 
-        reasoning: hasHighRiskTools ? 'High-risk file operation detected' : 'No tools to validate' 
-      },
       shouldContinueIteration: false
     };
   })
@@ -145,10 +124,10 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Preservation Test 1: Coding Intent Routes Through coding_specialist
-   * 
+   *
    * Requirement 3.1: WHEN a user sends a coding task request THEN the system
    * SHALL CONTINUE TO route through coding_specialist and execute the task
-   * 
+   *
    * Observed behavior on UNFIXED code:
    * - "write a function" → triage → planner → coding_specialist → validation → END
    * - Model is called in coding_specialist
@@ -157,9 +136,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
   describe('Coding Intent Routing', () => {
     it('should route "write a function" through coding_specialist', async () => {
       mockIntentResponse = { intent: 'coding', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'write a function' }],
         iterations: 0,
@@ -175,10 +154,10 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       expect(executedNodes).toContain('planner');
       expect(executedNodes).toContain('coding_specialist');
       expect(executedNodes).toContain('validation');
-      
+
       // Verify model was called
       expect(modelCallCount).toBeGreaterThan(0);
-      
+
       // Verify response was generated
       expect(result.finalResponse).toBeDefined();
       expect(result.finalResponse).not.toBe('');
@@ -186,9 +165,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
     it('should route "fix this bug" through coding_specialist', async () => {
       mockIntentResponse = { intent: 'fix', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'fix this bug' }],
         iterations: 0,
@@ -207,9 +186,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
     it('should route "create a file" through coding_specialist', async () => {
       mockIntentResponse = { intent: 'coding', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'create a file' }],
         iterations: 0,
@@ -228,10 +207,10 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Preservation Test 2: Question Intent Routes Through web_explorer
-   * 
+   *
    * Requirement 3.2: WHEN a user sends a question requiring research THEN the
    * system SHALL CONTINUE TO route through web_explorer to find answers
-   * 
+   *
    * Observed behavior on UNFIXED code:
    * - "what is X?" → triage → planner → web_explorer → validation → END
    * - Model is called in web_explorer
@@ -240,9 +219,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
   describe('Question Intent Routing', () => {
     it('should route "what is TypeScript?" through web_explorer', async () => {
       mockIntentResponse = { intent: 'question', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'what is TypeScript?' }],
         iterations: 0,
@@ -258,10 +237,10 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       expect(executedNodes).toContain('planner');
       expect(executedNodes).toContain('web_explorer');
       expect(executedNodes).toContain('validation');
-      
+
       // Verify model was called
       expect(modelCallCount).toBeGreaterThan(0);
-      
+
       // Verify response was generated
       expect(result.finalResponse).toBeDefined();
       expect(result.finalResponse).not.toBe('');
@@ -269,9 +248,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
     it('should route "how does async/await work?" through web_explorer', async () => {
       mockIntentResponse = { intent: 'question', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'how does async/await work?' }],
         iterations: 0,
@@ -290,19 +269,19 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Preservation Test 3: Research Intent Routes Through web_explorer
-   * 
+   *
    * Requirement 3.2: WHEN a user sends a research request THEN the system
    * SHALL CONTINUE TO route through web_explorer
-   * 
+   *
    * Observed behavior on UNFIXED code:
    * - "search for X" → triage → planner → web_explorer → validation → END
    */
   describe('Research Intent Routing', () => {
     it('should route "search for React documentation" through web_explorer', async () => {
       mockIntentResponse = { intent: 'research', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'search for React documentation' }],
         iterations: 0,
@@ -321,9 +300,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
     it('should route "find information about X" through web_explorer', async () => {
       mockIntentResponse = { intent: 'research', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'find information about GraphQL' }],
         iterations: 0,
@@ -342,19 +321,19 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Preservation Test 4: Data Analysis Routes Through data_analyst
-   * 
+   *
    * Requirement 3.3: WHEN a user sends a data analysis request THEN the system
    * SHALL CONTINUE TO route through data_analyst
-   * 
+   *
    * Observed behavior on UNFIXED code:
    * - "analyze this CSV" → triage → planner → data_analyst → validation → END
    */
   describe('Data Analysis Intent Routing', () => {
     it('should route "analyze this CSV" through data_analyst', async () => {
       mockIntentResponse = { intent: 'analyze', confidence: 0.9 };
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'analyze this CSV' }],
         iterations: 0,
@@ -374,17 +353,17 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Preservation Test 5: High-Risk Tool Calls Trigger hitl_approval
-   * 
+   *
    * Requirement 3.4: WHEN high-risk tool calls are detected THEN the system
    * SHALL CONTINUE TO route through hitl_approval for human review
-   * 
+   *
    * Observed behavior on UNFIXED code:
    * - High-risk tools (fsWrite, strReplace, deleteFile) → validation detects → hitl_approval
    */
   describe('HITL Approval Routing', () => {
     it('should route high-risk file operations through hitl_approval', async () => {
       mockIntentResponse = { intent: 'coding', confidence: 0.9 };
-      
+
       // Override coding_specialist to return high-risk tool calls
       const { createCodingSpecialistNode } = await import('../../nodes/specialized_agents');
       vi.mocked(createCodingSpecialistNode).mockReturnValueOnce(async (state: any) => {
@@ -397,9 +376,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
           ]
         };
       });
-      
+
       const graph = buildGraph(mockRunner, [], []);
-      
+
       const initialState: Partial<GraphStateType> = {
         messages: [{ role: 'user', content: 'create a new file' }],
         iterations: 0,
@@ -422,7 +401,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       // Verify routing path includes validation (which detects high-risk)
       expect(executedNodes).toContain('coding_specialist');
       expect(executedNodes).toContain('validation');
-      
+
       // Note: hitl_approval node won't be in executedNodes because it's not mocked
       // and will hang waiting for human input
     });
@@ -430,7 +409,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
   /**
    * Property-Based Test: All Non-Conversation Intents Route Through Specialists
-   * 
+   *
    * This test generates various non-conversation intents and verifies that they
    * all route through appropriate specialist nodes (not directly to validation)
    */
@@ -449,7 +428,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             mockIntentResponse = { intent, confidence: 0.9 };
 
             const graph = buildGraph(mockRunner, [], []);
-            
+
             const initialState: Partial<GraphStateType> = {
               messages: [{ role: 'user', content: message }],
               iterations: 0,
@@ -463,12 +442,12 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             // All non-conversation intents should route through a specialist node
             const specialistNodes = ['coding_specialist', 'web_explorer', 'data_analyst', 'computer_use'];
             const routedThroughSpecialist = specialistNodes.some(node => executedNodes.includes(node));
-            
+
             expect(routedThroughSpecialist).toBe(true);
-            
+
             // Model should be called for all non-conversation intents
             expect(modelCallCount).toBeGreaterThan(0);
-            
+
             // Response should be generated
             expect(result.finalResponse).toBeDefined();
           }
@@ -489,7 +468,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             mockIntentResponse = { intent, confidence: 0.9 };
 
             const graph = buildGraph(mockRunner, [], []);
-            
+
             const initialState: Partial<GraphStateType> = {
               messages: [{ role: 'user', content: message }],
               iterations: 0,
@@ -521,7 +500,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             mockIntentResponse = { intent, confidence: 0.9 };
 
             const graph = buildGraph(mockRunner, [], []);
-            
+
             const initialState: Partial<GraphStateType> = {
               messages: [{ role: 'user', content: message }],
               iterations: 0,

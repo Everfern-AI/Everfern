@@ -77,6 +77,8 @@ function createNavisTool(orchestrator) {
         },
         async execute(args, onUpdate, emitEvent, toolCallId) {
             const logger = orchestrator.getEventLogger();
+            const toolStartTime = Date.now();
+            console.log('[Navis Tool] 🚀 NAVIS TOOL EXECUTION STARTED');
             logger.on((event) => {
                 let label = '';
                 switch (event.type) {
@@ -137,19 +139,30 @@ function createNavisTool(orchestrator) {
             });
             // Read Navis settings from the persistent store
             const navisSettings = tool_settings_1.toolSettingsStore.get().navis;
-            const result = await orchestrator.run({
-                task: args.task,
-                maxSteps: args.maxSteps ?? navisSettings.maxSteps,
-                headless: args.headless ?? navisSettings.headless,
-                startUrl: args.startUrl,
-                useVision: navisSettings.useVision,
-                autoLaunchChrome: navisSettings.autoLaunchChrome,
-            });
-            return {
-                success: result.success,
-                output: result.output,
-                data: { steps: result.steps },
-            };
+            try {
+                console.log('[Navis Tool] 🔄 Calling orchestrator.run()...');
+                const result = await orchestrator.run({
+                    task: args.task,
+                    maxSteps: args.maxSteps ?? navisSettings.maxSteps,
+                    headless: args.headless ?? navisSettings.headless,
+                    startUrl: args.startUrl,
+                    useVision: navisSettings.useVision,
+                });
+                const executionTime = Date.now() - toolStartTime;
+                console.log(`[Navis Tool] ✅ orchestrator.run() COMPLETED - Total execution time: ${executionTime}ms`);
+                console.log(`[Navis Tool] ✅ NAVIS TOOL RETURNING RESULT TO MAIN AGENT - Success: ${result.success}, Steps: ${result.steps}`);
+                return {
+                    success: result.success,
+                    output: result.output,
+                    data: { steps: result.steps },
+                };
+            }
+            catch (toolErr) {
+                const executionTime = Date.now() - toolStartTime;
+                console.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms):`, toolErr);
+                logger.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms): ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
+                throw toolErr;
+            }
         },
     };
 }

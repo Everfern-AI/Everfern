@@ -149,4 +149,5 @@ export interface DebateEngineConfig {
   maxRetries?: number; // If debate fails, retry (default: 1)
   verbose?: boolean; // Log debate transcript
   onPhaseComplete?: DebateEventEmitterCallback; // Called after each phase completes
+  shouldAbort?: () => boolean; // Callback to check if debate should be aborted
 }

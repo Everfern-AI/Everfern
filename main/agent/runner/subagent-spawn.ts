@@ -512,6 +512,28 @@ class SubagentSpawner {
 
         return registry.getChildren(parentSessionId);
     }
+
+    /**
+     * Aborts all active sub-agents
+     * Used during cleanup when execution completes
+     */
+    async abortAll(): Promise<void> {
+        const registry = getSubagentRegistry();
+        const allAgents = registry.getAll();
+
+        console.log(`[SubagentSpawner] Aborting ${allAgents.length} active sub-agents...`);
+
+        for (const agent of allAgents) {
+            if (agent.status !== 'completed' && agent.status !== 'failed' && agent.status !== 'aborted') {
+                try {
+                    registry.abort(agent.agentId);
+                    console.log(`[SubagentSpawner] Aborted sub-agent: ${agent.agentId}`);
+                } catch (err) {
+                    console.error(`[SubagentSpawner] Error aborting sub-agent ${agent.agentId}:`, err);
+                }
+            }
+        }
+    }
 }
 
 export { SubagentSpawner };

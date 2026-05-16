@@ -467,7 +467,7 @@ electron_1.app.whenReady().then(async () => {
     extension_server_1.bridgeServer.start();
     // ── Initialize Prompt Synchronization System ──────────────────────
     console.log('[Startup] 🔄 Initializing prompt synchronization...');
-    (0, prompt_sync_1.initializePromptSync)();
+    (0, prompt_sync_1.initializePromptSync)(true); // Force sync to ensure latest prompts are always loaded
     // ── Ensure Playwright Chromium is installed (non-blocking) ─────────
     (0, playwright_setup_1.ensurePlaywrightChromium)();
     // Watch for prompt changes in development mode

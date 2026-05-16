@@ -809,6 +809,8 @@ class ToolResult {
  */
 class ComputerUseTool {
   private lastViewport: Partial<Viewport> = {};
+  private progressEmitter: ProgressEventEmitter | null = null;
+  private toolCallId: string = '';
 
   constructor(
     private screenshotDir: string,
@@ -828,6 +830,61 @@ class ComputerUseTool {
     if (robot) {
       robot.setMouseDelay(20);
     }
+  }
+
+  /**
+   * Set the progress emitter for emitting cursor position and status events.
+   * Requirements: 5.1, 5.2
+   */
+  setProgressEmitter(emitter: ProgressEventEmitter, toolCallId: string): void {
+    this.progressEmitter = emitter;
+    this.toolCallId = toolCallId;
+  }
+
+  /**
+   * Emit a cursor position event for real-time visual feedback.
+   * Requirements: 5.1, 2.1, 2.3, 2.4, 2.5
+   */
+  private emitCursorPositionEvent(
+    actionType: 'move' | 'click' | 'drag' | 'scroll',
+    coordinate: [number, number],
+    description: string
+  ): void {
+    if (!this.progressEmitter) return;
+
+    this.progressEmitter.emit({
+      type: 'action',
+      toolCallId: this.toolCallId,
+      timestamp: new Date().toISOString(),
+      action: {
+        type: actionType,
+        params: { coordinate },
+        description,
+      },
+    });
+  }
+
+  /**
+   * Emit a status event for task lifecycle tracking.
+   * Requirements: 5.2, 2.1, 2.2, 2.6, 2.7, 2.8
+   */
+  private emitStatusEvent(
+    status: 'executing' | 'success' | 'error',
+    description: string,
+    details?: Record<string, unknown>
+  ): void {
+    if (!this.progressEmitter) return;
+
+    this.progressEmitter.emit({
+      type: 'action',
+      toolCallId: this.toolCallId,
+      timestamp: new Date().toISOString(),
+      action: {
+        type: status,
+        params: details || {},
+        description,
+      },
+    });
   }
 
   async call(params: ComputerUseParams): Promise<ToolResult> {
@@ -869,81 +926,86 @@ class ComputerUseTool {
 
   private async mouseMove(params: ComputerUseParams): Promise<ToolPayload> {
     const [absX, absY] = this.absoluteXy(params.coordinate);
-    console.log(`[Move] Target=(${absX}, ${absY})`);
+    this.emitCursorPositionEvent('move', [absX, absY], `Move (${absX}, ${absY})`);
     this.moveMouse(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY}).` });
+    return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY})` });
   }
 
   private async leftClick(params: ComputerUseParams): Promise<ToolPayload> {
     if (params.coordinate) {
       const [absX, absY] = this.absoluteXy(params.coordinate);
-      console.log(`[Left Click] Target=(${absX}, ${absY})`);
+      this.emitCursorPositionEvent('click', [absX, absY], `Left click (${absX}, ${absY})`);
       this.moveMouse(absX, absY);
       this.click(absX, absY, "left");
-      return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY}).` });
+      return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY})` });
     }
     this.click(undefined, undefined, "left");
-    return await this.attachScreenshot({ status: "ok", detail: "Left click at current cursor." });
+    return await this.attachScreenshot({ status: "ok", detail: "Left click" });
   }
 
   private async rightClick(params: ComputerUseParams): Promise<ToolPayload> {
     if (params.coordinate) {
       const [absX, absY] = this.absoluteXy(params.coordinate);
+      this.emitCursorPositionEvent('click', [absX, absY], `Right click (${absX}, ${absY})`);
       this.click(absX, absY, "right");
-      return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY}).` });
+      return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY})` });
     }
     this.click(undefined, undefined, "right");
-    return await this.attachScreenshot({ status: "ok", detail: "Right click at current cursor." });
+    return await this.attachScreenshot({ status: "ok", detail: "Right click" });
   }
 
   private async middleClick(params: ComputerUseParams): Promise<ToolPayload> {
     if (params.coordinate) {
       const [absX, absY] = this.absoluteXy(params.coordinate);
+      this.emitCursorPositionEvent('click', [absX, absY], `Middle click (${absX}, ${absY})`);
       this.click(absX, absY, "middle");
-      return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY}).` });
+      return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY})` });
     }
     this.click(undefined, undefined, "middle");
-    return await this.attachScreenshot({ status: "ok", detail: "Middle click at current cursor." });
+    return await this.attachScreenshot({ status: "ok", detail: "Middle click" });
   }
 
   private async doubleClick(params: ComputerUseParams): Promise<ToolPayload> {
     const [absX, absY] = this.absoluteXy(params.coordinate);
+    this.emitCursorPositionEvent('click', [absX, absY], `Double click (${absX}, ${absY})`);
     this.doubleClickAt(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY}).` });
+    return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY})` });
   }
 
   private async tripleClick(params: ComputerUseParams): Promise<ToolPayload> {
     const [absX, absY] = this.absoluteXy(params.coordinate);
+    this.emitCursorPositionEvent('click', [absX, absY], `Triple click (${absX}, ${absY})`);
     this.tripleClickAt(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY}).` });
+    return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY})` });
   }
 
   private async leftClickDrag(params: ComputerUseParams): Promise<ToolPayload> {
     const [absX, absY] = this.absoluteXy(params.coordinate);
+    this.emitCursorPositionEvent('drag', [absX, absY], `Drag (${absX}, ${absY})`);
     this.drag(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY}).` });
+    return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY})` });
   }
 
   private async scroll(params: ComputerUseParams): Promise<ToolPayload> {
     if (params.coordinate) {
       const [absX, absY] = this.absoluteXy(params.coordinate);
+      this.emitCursorPositionEvent('scroll', [absX, absY], `Scroll at (${absX}, ${absY})`);
       this.moveMouse(absX, absY);
-      console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before scroll.`);
     }
     const pixels = maybeInt(params.pixels);
     this.scrollVertical(pixels);
-    return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} vertically at ${params.coordinate ? JSON.stringify(params.coordinate) : 'current position'}.` });
+    return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} px` });
   }
 
   private async hscroll(params: ComputerUseParams): Promise<ToolPayload> {
     if (params.coordinate) {
       const [absX, absY] = this.absoluteXy(params.coordinate);
+      this.emitCursorPositionEvent('scroll', [absX, absY], `H-scroll at (${absX}, ${absY})`);
       this.moveMouse(absX, absY);
-      console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before hscroll.`);
     }
     const pixels = maybeInt(params.pixels);
     this.scrollHorizontal(pixels);
-    return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} horizontally at ${params.coordinate ? JSON.stringify(params.coordinate) : 'current position'}.` });
+    return await this.attachScreenshot({ status: "ok", detail: `H-scroll ${pixels} px` });
   }
 
   private async type(params: ComputerUseParams): Promise<ToolPayload> {
@@ -951,14 +1013,13 @@ class ComputerUseTool {
       throw new Error("text is required for action=type.");
     }
     if (params.clear_first) {
-      console.log(`[Sub-Agent] 🧼 Clearing field before typing...`);
       this.pressKeys(['control', 'a']);
       this.pressKeys(['backspace']);
     }
     this.typeText(params.text);
     return await this.attachScreenshot({
       status: "ok",
-      detail: `Typed "${params.text.substring(0, 50)}".`,
+      detail: `Typed "${params.text.substring(0, 30)}${params.text.length > 30 ? '...' : ''}"`,
     });
   }
 
@@ -966,7 +1027,7 @@ class ComputerUseTool {
     const keys = params.keys || [];
     if (keys.length === 0) throw new Error("keys is required for action=key.");
     this.pressKeys(keys);
-    return await this.attachScreenshot({ status: "ok", detail: `Pressed keys ${JSON.stringify(keys)}.` });
+    return await this.attachScreenshot({ status: "ok", detail: `Pressed ${keys.join('+')}` });
   }
 
   private async waitAction(params: ComputerUseParams): Promise<ToolPayload> {
@@ -974,7 +1035,7 @@ class ComputerUseTool {
       throw new Error("time is required for action=wait.");
     }
     await sleep(params.time);
-    return { status: "ok", detail: `Waited ${params.time} seconds.` };
+    return { status: "ok", detail: `Waited ${params.time}s` };
   }
 
   private async answer(params: ComputerUseParams): Promise<ToolPayload> {
@@ -993,8 +1054,6 @@ class ComputerUseTool {
       throw new Error("coordinate is required for action=zoom.");
     }
     const [absX, absY] = this.absoluteXy(params.coordinate);
-    console.log(`[Sub-Agent] 🔍 Zooming in at (${absX}, ${absY})...`);
-
     const ts = nowTs();
     const imgPath = path.join(this.screenshotDir, `${ts}-zoom.png`);
     await this.captureScreen(imgPath);
@@ -1004,7 +1063,7 @@ class ComputerUseTool {
     const { width: rawW, height: rawH } = this.getPngDimensions(rawBuffer);
 
     // Define a 400x400 physical crop box centered at the target
-    const boxSize = 250; // 500x500 box for detailed view
+    const boxSize = 250;
     const left = Math.max(0, absX - boxSize);
     const top = Math.max(0, absY - boxSize);
     const width = Math.min(boxSize * 2, rawW - left);
@@ -1015,7 +1074,7 @@ class ComputerUseTool {
     try {
       const croppedBuffer = await sharp!(rawBuffer)
         .extract({ left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) })
-        .jpeg({ quality: 85 }) // High quality for zoom
+        .jpeg({ quality: 85 })
         .toBuffer();
       encoded = croppedBuffer.toString("base64");
     } catch (err) {
@@ -1025,7 +1084,7 @@ class ComputerUseTool {
 
     return {
       status: "ok",
-      detail: `Zoomed in at (${absX}, ${absY}) with 500x500 crop.`,
+      detail: `Zoom at (${absX}, ${absY})`,
       screenshot: `data:image/jpeg;base64,${encoded}`,
       screenshot_path: imgPath,
       cursor: { x: absX, y: absY },
@@ -1222,9 +1281,6 @@ class ComputerUseTool {
       height: rawH || physicalSize.height || 1080
     };
 
-    console.log(`[Screenshot] ${imgPath} cursor=(${cursorPos.x}, ${cursorPos.y}) monitor=${this.monitorIndex} offset=(${display.bounds.x}, ${display.bounds.y})`);
-    console.log(`[Resolution] Logical=${logicalSize.width}x${logicalSize.height}, Physical=${effectiveDisplaySize.width}x${effectiveDisplaySize.height}, ScaleFactor=${scaleFactor}`);
-
     let appName = "None";
     let appLogo = "";
 
@@ -1233,7 +1289,6 @@ class ComputerUseTool {
        const openWindows = execSync(`powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -ExpandProperty ProcessName"`, { encoding: 'utf-8' });
        if (openWindows.toLowerCase().includes('spotify')) {
           appName = "Spotify";
-          // Leaving appLogo empty so the frontend uses the universal SVG app icon
           appLogo = "";
        }
     } catch(e) {}
@@ -1384,9 +1439,6 @@ class ComputerUseTool {
         const normY = Math.max(0, Math.min(1, y / 1000));
         let absX = left + Math.floor(normX * displayW);
         let absY = top + Math.floor(normY * displayH);
-        console.log(
-          `[Coordinate Transform] normalized input=(${x}, ${y}) → abs=(${absX}, ${absY})`
-        );
         return [absX, absY];
       }
 
@@ -1397,20 +1449,13 @@ class ComputerUseTool {
         const scaleY = displayH / imageH;
         const absX = left + Math.round(x * scaleX);
         const absY = top + Math.round(y * scaleY);
-        console.log(
-          `[Coordinate Transform] pixel input=(${x}, ${y}) scale=(${scaleX.toFixed(2)}, ${scaleY.toFixed(2)}) → abs=(${absX}, ${absY})`
-        );
         return [absX, absY];
       }
 
       // Fallback: assume 1:1 mapping
-      console.log(`[Coordinate Transform] pixel input=(${x}, ${y}) → abs=(${left + x}, ${top + y})`);
       return [left + x, top + y];
     }
 
-    console.log(
-      `[Coordinate Transform] No viewport/scale, using offset only: (${left + x}, ${top + y})`
-    );
     return [left + x, top + y];
   }
 }
@@ -1457,6 +1502,11 @@ class ComputerUseAgent {
   private lastScreenshot?: string;
   private aborted = false;
 
+  // Action timing tracking
+  private actionTimings: Map<string, number> = new Map();
+  private currentActionStartTime: number = 0;
+  private totalExecutionTime: number = 0;
+
   constructor(
     private client: AIClient,
     private tool: ComputerUseTool,
@@ -1471,6 +1521,28 @@ class ComputerUseAgent {
     this.baseCount = this.messages.length;
   }
 
+  /**
+   * Log action timing with performance metrics
+   */
+  private logActionTiming(action: string, durationMs: number): void {
+    this.actionTimings.set(action, (this.actionTimings.get(action) || 0) + durationMs);
+    const totalForAction = this.actionTimings.get(action)!;
+    const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
+    console.log(`[Timing] ${action}: ${durationMs}ms (total: ${totalForAction}ms for ${count} calls)`);
+  }
+
+  private startActionTiming(): void {
+    this.currentActionStartTime = Date.now();
+  }
+
+  private endActionTiming(): number {
+    if (this.currentActionStartTime === 0) return 0;
+    const duration = Date.now() - this.currentActionStartTime;
+    this.totalExecutionTime += duration;
+    this.currentActionStartTime = 0;
+    return duration;
+  }
+
   public abort(): void {
     this.aborted = true;
     this.terminated = "aborted";
@@ -1481,12 +1553,13 @@ class ComputerUseAgent {
     onUpdate?: (msg: string) => void,
     onProgress?: (event: SubAgentProgressEvent) => void
   ): Promise<{ finalAnswer: string, lastScreenshot?: string }> {
+    const runStartTime = Date.now();
     if (this.messages.length === 1) {
       await this.appendInitialObservation();
       this.baseCount = this.messages.length;
     }
 
-    console.log(`\n[Sub-Agent] 🚀 VLM PROOF: Using Model="${this.model}" via Provider="${this.client.provider}"`);
+    console.log(`\n[Sub-Agent] 🚀 VLM: Model="${this.model}" Provider="${this.client.provider}"`);
     console.log(`[Sub-Agent] 📡 Base URL: ${JSON.stringify((this.client as any).config?.baseUrl || "builtin")}`);
 
     let errorCount = 0;
@@ -1499,8 +1572,9 @@ class ComputerUseAgent {
           this.terminated = "aborted";
           break;
         }
-        console.log(`\n[Sub-Agent] 👁️  Step ${step}/${this.maxTurns}`);
-        onUpdate?.(`Sub-Agent Turn ${step}/${this.maxTurns}...`);
+        const stepStartTime = Date.now();
+        console.log(`\n[Sub-Agent] 👁️  Step ${step}/${this.maxTurns} (elapsed: ${Date.now() - runStartTime}ms)`);
+        onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
 
         // Emit step progress event
         onProgress?.({
@@ -1511,7 +1585,7 @@ class ComputerUseAgent {
           totalSteps: this.maxTurns,
         });
 
-        // Ollama Cloud vision models don't support tool calling — omit tools to avoid 500 errors
+        // Ollama Cloud vision models don't support tool calling
         const shouldSendTools = this.client.provider !== 'ollama-cloud';
 
         const response = await this.client.chat({
@@ -1528,7 +1602,7 @@ class ComputerUseAgent {
 
         const content = typeof response.content === "string" ? response.content : "";
         if (content) {
-          console.log(`[Sub-Agent] 🧠 Reasoning: ${content}`);
+          console.log(`[Sub-Agent] 🧠 Reasoning: ${content.substring(0, 200)}...`);
           onProgress?.({
             type: 'reasoning',
             toolCallId: '',
@@ -1584,10 +1658,14 @@ class ComputerUseAgent {
           }
 
           onUpdate?.(`Executing ${args.action}...`);
-          console.log(`[Sub-Agent] ▶ Executing: ${args.action}`);
+          console.log(`[Sub-Agent] ▶ ${args.action}`);
 
           try {
+            this.startActionTiming();
             const result = await this.tool.call(args);
+            const duration = this.endActionTiming();
+            this.logActionTiming(args.action, duration);
+
             const payload = result.payload;
 
             onProgress?.({
@@ -1604,12 +1682,12 @@ class ComputerUseAgent {
 
             if (payload.status === "answer") {
               this.finalAnswer = (payload.text as string) || "Task finished.";
-              console.log(`[Sub-Agent] ✅ Final Answer received: ${this.finalAnswer}`);
+              console.log(`[Sub-Agent] ✅ Final Answer: ${this.finalAnswer}`);
             }
 
             if (payload.status === "terminate") {
               this.terminated = (payload.result as string) || "success";
-              console.log(`[Sub-Agent] 🏁 Termination received: ${this.terminated}`);
+              console.log(`[Sub-Agent] 🏁 Terminated: ${this.terminated}`);
             }
 
             if (payload.screenshot) {
@@ -1647,11 +1725,13 @@ class ComputerUseAgent {
           console.log(`[Sub-Agent] 🏁 Exiting loop: terminated=${!!this.terminated}, finalAnswer=${!!this.finalAnswer}`);
           break;
         }
+
+        const stepElapsed = Date.now() - stepStartTime;
+        console.log(`[Sub-Agent] ⏱️  Step ${step} completed in ${stepElapsed}ms`);
       } catch (chatErr) {
         console.error(`[Sub-Agent] ❌ Chat error at step ${step}:`, chatErr);
 
         if (isAuthError(chatErr)) {
-          // Auth errors (401/403) won't resolve with retries — exit immediately
           const clientConfig = (this.client as any).config;
           const baseUrl = clientConfig?.baseUrl || 'unknown';
           const provider = clientConfig?.provider || 'unknown';
@@ -1706,6 +1786,15 @@ class ComputerUseAgent {
         });
       }
     }
+
+    const totalRunTime = Date.now() - runStartTime;
+    console.log(`\n[Sub-Agent] 📊 Total execution time: ${totalRunTime}ms`);
+    console.log(`[Sub-Agent] 📊 Action timing summary:`);
+    for (const [action, totalTime] of this.actionTimings.entries()) {
+      const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
+      console.log(`  - ${action}: ${totalTime}ms (${count} calls)`);
+    }
+
     return {
       finalAnswer: this.finalAnswer || (this.terminated === 'success' ? `Task completed successfully: ${this.task}` : `Task ended: ${this.terminated || 'unknown'}`),
       lastScreenshot: this.lastScreenshot,
@@ -2002,6 +2091,9 @@ export function createComputerUseTool(
 
       // Emit branch start event for timeline visualization
       progressEmitter.emitBranchStart(task);
+
+      // 5.2: Set progress emitter on the tool for cursor position and status event emission
+      tool.setProgressEmitter(progressEmitter, effectiveToolCallId);
 
       try {
         const { finalAnswer, lastScreenshot } = await agent.run(

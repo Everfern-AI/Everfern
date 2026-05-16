@@ -11,6 +11,7 @@ function normalizeMessage(m) {
         return {
             role: m.role,
             content: m.content,
+            name: m.name || m.tool_name || m.toolName,
             tool_call_id: m.tool_call_id || m.toolCallId,
             tool_calls: m.tool_calls || m.toolCalls,
             reasoning_content: m.reasoning_content || m.thought
@@ -38,6 +39,7 @@ function normalizeMessage(m) {
     return {
         role,
         content: m.content || '',
+        name: m.name || m.tool_name || m.toolName,
         tool_call_id: m.tool_call_id || m.tool_call_id || m.toolCallId,
         tool_calls: m.tool_calls || m.tool_calls || m.toolCalls,
         reasoning_content: m.reasoning_content || m.reasoning_content || m.thought

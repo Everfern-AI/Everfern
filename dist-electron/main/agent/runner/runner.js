@@ -340,6 +340,8 @@ class AgentRunner {
         return { response: lastResponse, toolCalls };
     }
     async *runStream(userInput, history, model, conversationId, systemPromptOverride, projectId, isSubagent) {
+        // Reset abort state for new execution
+        abort_manager_1.globalAbortManager.reset();
         const convId = conversationId || crypto.randomUUID();
         // UNITY: Ensure only one execution runs at a time for this conversation
         // This prevents clobbering state and "messages being wiped" due to race conditions
@@ -512,10 +514,18 @@ class AgentRunner {
                 let currentThought = '';
                 let currentToolCalls = [];
                 let lastSyncTime = 0;
+                let isSaving = false;
+                let pendingSave = false;
                 const syncToDb = async (force = false) => {
                     const now = Date.now();
                     if (!force && now - lastSyncTime < 2000)
                         return;
+                    if (isSaving) {
+                        pendingSave = true;
+                        return;
+                    }
+                    isSaving = true;
+                    pendingSave = false;
                     lastSyncTime = now;
                     try {
                         await chatHistoryStore.save({
@@ -534,6 +544,13 @@ class AgentRunner {
                     }
                     catch (err) {
                         console.warn('[AgentRunner] Real-time sync failed:', err);
+                    }
+                    finally {
+                        isSaving = false;
+                        if (pendingSave) {
+                            // Ensure we save the last state if a save was requested while we were busy
+                            setTimeout(() => syncToDb(true), 100);
+                        }
                     }
                 };
                 (async () => {
@@ -622,50 +639,77 @@ class AgentRunner {
                         }
                     }
                 })();
-                while (!graphDone || eventQueue.length > 0) {
-                    if (graphDone && eventQueue.length === 0) {
-                        await new Promise(r => setTimeout(r, 10));
-                        if (eventQueue.length === 0)
-                            break;
+                // Register abort listener to wake up loop immediately
+                const unbindAbort = abort_manager_1.globalAbortManager.onAbort(() => {
+                    if (pushResolver) {
+                        const r = pushResolver;
+                        pushResolver = null;
+                        r();
                     }
-                    if (eventQueue.length > 0) {
-                        const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
-                        let event;
-                        if (hitlEventIndex !== -1) {
-                            event = eventQueue.splice(hitlEventIndex, 1)[0];
+                });
+                try {
+                    while (true) {
+                        if (eventQueue.length > 0) {
+                            const hitlEventIndex = eventQueue.findIndex(e => e.type === 'hitl_request');
+                            let event;
+                            if (hitlEventIndex !== -1) {
+                                event = eventQueue.splice(hitlEventIndex, 1)[0];
+                            }
+                            else {
+                                event = eventQueue.shift();
+                            }
+                            // Real-time persistence tracking
+                            if (event.type === 'chunk') {
+                                currentContent += event.content;
+                                await syncToDb();
+                            }
+                            else if (event.type === 'thought') {
+                                currentThought += event.content;
+                                durationTracker.onThoughtStart();
+                                await syncToDb();
+                            }
+                            else if (event.type === 'tool_call') {
+                                currentToolCalls.push({
+                                    name: event.toolCall.toolName,
+                                    args: event.toolCall.args,
+                                    result: event.toolCall.result
+                                });
+                                await syncToDb(true); // Force sync on tool completion
+                            }
+                            yield event;
+                            continue; // Immediately check for more events
                         }
-                        else {
-                            event = eventQueue.shift();
+                        if (graphDone || abort_manager_1.globalAbortManager.streamAborted) {
+                            // Final check to ensure no events were pushed just before graphDone was set
+                            if (eventQueue.length === 0)
+                                break;
+                            continue;
                         }
-                        // Real-time persistence tracking
-                        if (event.type === 'chunk') {
-                            currentContent += event.content;
-                            await syncToDb();
-                        }
-                        else if (event.type === 'thought') {
-                            currentThought += event.content;
-                            durationTracker.onThoughtStart();
-                            await syncToDb();
-                        }
-                        else if (event.type === 'tool_call') {
-                            currentToolCalls.push({
-                                name: event.toolCall.toolName,
-                                args: event.toolCall.args,
-                                result: event.toolCall.result
-                            });
-                            await syncToDb(true); // Force sync on tool completion
-                        }
-                        yield event;
+                        // Wait for next push with built-in race protection
+                        // If items were pushed between the check above and this point, resolve immediately
+                        await new Promise(r => {
+                            if (eventQueue.length > 0 || graphDone || abort_manager_1.globalAbortManager.streamAborted)
+                                return r();
+                            pushResolver = r;
+                        });
                     }
-                    else {
-                        await new Promise(r => { pushResolver = r; });
-                    }
+                }
+                finally {
+                    unbindAbort();
                 }
                 // Final sync after graph completes
                 await syncToDb(true);
                 await new Promise(r => setTimeout(r, 50));
                 if (!missionTracker.getTimeline().isComplete && !missionTracker.getTimeline().error) {
                     missionTracker.complete();
+                    // Yield any pending phase change events before mission_complete
+                    // This ensures the frontend receives the completion phase change
+                    while (eventQueue.length > 0) {
+                        const event = eventQueue.shift();
+                        if (event) {
+                            yield event;
+                        }
+                    }
                 }
                 const thinkingDuration = durationTracker.onMissionComplete();
                 yield {
@@ -741,13 +785,16 @@ function reconstructFullHistory(storedMessages, currentUserInput) {
                 }))
             });
             // Then emit individual tool result messages ONLY if they are missing from the original history
-            // and we have a result available in the assistant message's toolCalls.
+            // We MUST provide a tool result for every tool call to satisfy LLM API requirements,
+            // even if the tool was interrupted or failed to return a result.
             for (const tc of toolCallsWithIds) {
-                if (tc.result && !existingToolMessageIds.has(tc.id)) {
+                if (!existingToolMessageIds.has(tc.id)) {
                     reconstructed.push({
                         role: 'tool',
                         tool_call_id: tc.id,
-                        content: JSON.stringify(tc.result || { success: false, output: 'No result available' })
+                        content: tc.result
+                            ? (typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))
+                            : JSON.stringify({ success: false, output: 'Tool execution was aborted by user or failed to return a result.' })
                     });
                     // Add to seen set to prevent further duplicates of this specific ID in this turn
                     existingToolMessageIds.add(tc.id);

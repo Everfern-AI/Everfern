@@ -4,13 +4,48 @@ exports.createWebExplorerNode = void 0;
 const agent_runtime_1 = require("../services/agent-runtime");
 const mission_integrator_1 = require("../mission-integrator");
 const prompt_sync_1 = require("../../../lib/prompt-sync");
+/**
+ * Robustly find the web_search tool result in messages.
+ * Handles multiple message formats and property names.
+ */
+function findWebSearchResult(messages) {
+    if (!messages || messages.length === 0) {
+        return { content: '', found: false, reason: 'No messages in state' };
+    }
+    // Walk backwards to find most recent tool result
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        const role = m.role || m.type || m._getType?.();
+        // Check if this is a tool/function result message
+        if (role === 'tool' || role === 'function') {
+            // Try multiple property names for tool name
+            const toolName = m.name || m.tool_name || m.toolName || '';
+            if (toolName === 'web_search') {
+                const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+                console.log('[WebExplorer] Found web_search result in messages');
+                return { content, found: true, reason: 'Found web_search tool result' };
+            }
+        }
+    }
+    console.warn('[WebExplorer] No web_search tool result found in messages');
+    return { content: '', found: false, reason: 'No web_search tool result found in messages' };
+}
 const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => {
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
     return async (state) => {
         const allTools = toolDefs || runner._buildToolDefinitions();
         const messages = state.messages || [];
-        const searchInvoked = state.searchInvoked || false;
-        const navisInvoked = state.navisInvoked || false;
+        // Determine if this is a fresh web_explorer session or a continuation
+        // Fresh session: brain just routed to us (returningFromSpecialist is null or not 'web_explorer')
+        // Continuation: we're already in web_explorer (returningFromSpecialist === 'web_explorer')
+        const isFreshSession = state.returningFromSpecialist !== 'web_explorer';
+        // If fresh session, reset flags to start from Phase 1
+        let searchInvoked = isFreshSession ? false : (state.searchInvoked || false);
+        let navisInvoked = isFreshSession ? false : (state.navisInvoked || false);
+        if (isFreshSession) {
+            console.log('[WebExplorer] Fresh session detected, starting from Phase 1');
+        }
+        const loopCount = (state.webExplorerSelfLoopCount || 0) + 1;
         // ─── DIRECT URL NAVIGATION ───────────────────────────────────────────
         // If the user provided a specific URL (skip research workflow entirely)
         const directUrl = !searchInvoked && !navisInvoked ? extractDirectUrl(messages) : null;
@@ -31,12 +66,14 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
                 ...result,
                 webExplorerComplete: false,
                 navisInvoked: true,
+                webExplorerSelfLoopCount: loopCount,
                 returningFromSpecialist: 'web_explorer'
             };
         }
         // ─── PHASE 1: SEARCH & DISCOVER ──────────────────────────────────────
         // Use web_search to find the top sources
         if (!searchInvoked && !navisInvoked) {
+            console.log('[WebExplorer] Phase 1: Starting search...');
             eventQueue?.push({ type: 'thought', content: '\n🔍 WEB EXPLORER [Phase 1/3]: Searching for authoritative sources...' });
             const result = await integrator.wrapNode('web_explorer', () => (0, agent_runtime_1.runAgentStep)(state, {
                 runner,
@@ -49,32 +86,35 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
                     'Return a structured list of URLs with brief descriptions.' +
                     '\n\nCRITICAL: Use web_search — NOT terminal_execute with curl. Curl cannot render JavaScript pages and will get blocked by captchas. web_search is the only allowed search tool.'
             }), 'Web Explorer: Initial Search');
+            console.log('[WebExplorer] Phase 1: Search invoked, returning to web_explorer');
             return {
                 ...result,
                 searchInvoked: true,
+                webExplorerSelfLoopCount: loopCount,
                 returningFromSpecialist: 'web_explorer'
             };
         }
         // ─── PHASE 2: DEEP INVESTIGATION (SINGLE NAVIS CALL) ─────────────────
         // After search, call navis ONCE with ALL discovered URLs and detailed extraction goals
         if (searchInvoked && !navisInvoked) {
+            console.log('[WebExplorer] Phase 2: Starting NAVIS investigation...');
             // Extract all discovered URLs from the search results
-            const searchResult = messages.find((m) => (m.role === 'tool' || m.type === 'tool') && m.name === 'web_search');
-            if (!searchResult) {
-                console.warn('[WebExplorer] Search complete but result not found in messages. Marking complete to avoid loop.');
-                return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: 'web_explorer' };
+            const { content: searchContent, found, reason } = findWebSearchResult(messages);
+            if (!found) {
+                console.warn(`[WebExplorer] Phase 2 failed: ${reason}. Marking complete to avoid loop.`);
+                return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: null };
             }
-            const searchContent = typeof searchResult.content === 'string' ? searchResult.content : JSON.stringify(searchResult.content);
             const userTask = messages.find((m) => m.role === 'user')?.content || '';
             const taskText = typeof userTask === 'string' ? userTask : JSON.stringify(userTask);
             const candidates = extractTopCandidates(searchContent, taskText, 5);
             if (candidates.length === 0) {
-                console.warn('[WebExplorer] No candidates found from search results.');
-                return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: 'web_explorer' };
+                console.warn('[WebExplorer] Phase 2: No candidates found from search results.');
+                return { webExplorerComplete: true, taskPhase: 'evaluating', returningFromSpecialist: null };
             }
             // Build a detailed, consolidated navis task with ALL URLs
             const urlList = candidates.map((c, i) => `  ${i + 1}. ${c.url}`).join('\n');
             const navisTask = buildConsolidatedNavisTask(taskText, candidates);
+            console.log(`[WebExplorer] Phase 2: Found ${candidates.length} candidates, calling navis...`);
             eventQueue?.push({
                 type: 'thought',
                 content: `\n🌐 WEB EXPLORER [Phase 2/3]: Investigating ${candidates.length} sources with navis (single consolidated call):\n${urlList}`
@@ -92,16 +132,19 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
                     `\n\nAfter navis returns its results, synthesize the findings into a comprehensive answer with inline citations.` +
                     `\nIf navis reports "NOT_FOUND" for any URL, note that in your synthesis and move on.`
             }), 'Web Explorer: Deep Investigation');
+            console.log('[WebExplorer] Phase 2: NAVIS invoked, returning to web_explorer');
             return {
                 ...result,
                 navisInvoked: true,
                 webExplorerComplete: false,
+                webExplorerSelfLoopCount: loopCount,
                 returningFromSpecialist: 'web_explorer'
             };
         }
         // ─── PHASE 3: SYNTHESIS ──────────────────────────────────────────────
         // After navis has visited pages, synthesize the results
         if (searchInvoked && navisInvoked) {
+            console.log('[WebExplorer] Phase 3: Synthesizing research findings...');
             // Check if the assistant has already synthesized (has MISSION_COMPLETE)
             const lastAssistant = [...messages].reverse().find((m) => {
                 const role = m.role || m._getType?.();
@@ -109,11 +152,15 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
             });
             const lastContent = lastAssistant ? (typeof lastAssistant.content === 'string' ? lastAssistant.content : '') : '';
             if (lastContent.includes('MISSION_COMPLETE')) {
+                console.log('[WebExplorer] Phase 3: Research complete');
+                console.log('[WebExplorer] Sub-task 3.5: Setting webExplorerComplete=true, pendingToolCalls=[], returningFromSpecialist=null');
                 eventQueue?.push({ type: 'thought', content: '\n✅ WEB EXPLORER: Research complete.' });
                 return {
                     webExplorerComplete: true,
                     taskPhase: 'evaluating',
-                    returningFromSpecialist: 'web_explorer'
+                    webExplorerSelfLoopCount: loopCount,
+                    returningFromSpecialist: null,
+                    pendingToolCalls: [] // Sub-task 3.5: Clear pending tools on completion
                 };
             }
             // Not yet synthesized — let the agent compile findings
@@ -131,14 +178,23 @@ const createWebExplorerNode = (runner, eventQueue, missionTracker, toolDefs) => 
                     '\nProvide actionable recommendations.' +
                     '\nEnd your response with MISSION_COMPLETE.'
             }), 'Web Explorer: Synthesis');
+            console.log('[WebExplorer] Phase 3: Synthesis complete');
+            console.log('[WebExplorer] Sub-task 3.5: Setting webExplorerComplete=true, pendingToolCalls=[], returningFromSpecialist=null');
             return {
                 ...result,
                 webExplorerComplete: true,
                 taskPhase: 'evaluating',
-                returningFromSpecialist: 'web_explorer'
+                webExplorerSelfLoopCount: loopCount,
+                returningFromSpecialist: null,
+                pendingToolCalls: [] // Sub-task 3.5: Clear pending tools on completion
             };
         }
-        return { webExplorerComplete: true, returningFromSpecialist: 'web_explorer' };
+        return {
+            webExplorerComplete: true,
+            webExplorerSelfLoopCount: loopCount,
+            returningFromSpecialist: null,
+            pendingToolCalls: [] // Sub-task 3.5: Clear pending tools on completion
+        };
     };
 };
 exports.createWebExplorerNode = createWebExplorerNode;

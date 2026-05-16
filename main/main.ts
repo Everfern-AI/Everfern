@@ -491,7 +491,7 @@ app.whenReady().then(async () => {
 
   // ── Initialize Prompt Synchronization System ──────────────────────
   console.log('[Startup] 🔄 Initializing prompt synchronization...');
-  initializePromptSync();
+  initializePromptSync(true); // Force sync to ensure latest prompts are always loaded
 
   // ── Ensure Playwright Chromium is installed (non-blocking) ─────────
   ensurePlaywrightChromium();

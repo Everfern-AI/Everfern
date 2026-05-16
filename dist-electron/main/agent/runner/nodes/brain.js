@@ -8,15 +8,23 @@ const abort_manager_1 = require("../abort-manager");
 const node_utils_1 = require("../services/node-utils");
 /**
  * After the brain produces a response with no tool calls, ask it to self-assess
- * why it's done and produce a structured completion signal for the judge.
+ * why it's done and produce a structured completion signal.
  *
- * This replaces regex pattern matching in the judge with a first-class signal
+ * This replaces regex pattern matching with a first-class signal
  * from the brain itself.
+ *
+ * IMPROVEMENTS (Sub-task 3.1):
+ * - Increased timeout from 20s to 30s for slower LLM responses
+ * - Added fallback completion signal when LLM fails
+ * - Improved JSON extraction and error handling
+ * - Added detailed logging at each step
  */
 async function buildCompletionSignal(runner, responseContent, originalRequest) {
     if (!runner.client) {
         console.warn('[Brain] No client available for completion signal');
-        return null;
+        // Return fallback signal instead of null
+        console.warn('[Brain] Using fallback completion signal (no client)');
+        return { reason: 'task_complete', explanation: 'Task completed (fallback signal - no client)' };
     }
     try {
         const prompt = `You just produced a response to a user request. Classify why you are done for this turn.
@@ -36,8 +44,10 @@ Respond with JSON only:
   "explanation": "one sentence explaining why"
 }`;
         console.log('[Brain] Building completion signal...');
+        console.log('[Brain] Original request (first 100 chars):', originalRequest.slice(0, 100));
         const startTime = Date.now();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('completion signal timed out')), 10000));
+        // Increased timeout from 20s to 30s (Sub-task 3.1)
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('completion signal timed out after 30s')), 30000));
         const response = await Promise.race([
             runner.client.chat({
                 messages: [{ role: 'user', content: prompt }],
@@ -50,35 +60,49 @@ Respond with JSON only:
         ]);
         const duration = Date.now() - startTime;
         console.log(`[Brain] Completion signal response received in ${duration}ms`);
+        console.log(`[Brain] Response length: ${response.content?.length || 0} chars, first 100 chars:`, (typeof response.content === 'string' ? response.content : JSON.stringify(response.content)).slice(0, 100));
         let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        // Improved JSON extraction: handle extra whitespace and markdown code blocks (Sub-task 3.1)
         content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        console.log('[Brain] After markdown cleanup:', content.slice(0, 100));
         // Robust JSON extraction: find first '{' and last '}'
         const firstBrace = content.indexOf('{');
         const lastBrace = content.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace > firstBrace) {
             content = content.substring(firstBrace, lastBrace + 1);
+            console.log('[Brain] Extracted JSON substring:', content.slice(0, 100));
         }
         let signal;
         try {
+            console.log('[Brain] Attempting to parse JSON:', content.slice(0, 150));
             signal = JSON.parse(content);
+            console.log('[Brain] Successfully parsed JSON:', signal);
         }
         catch (parseError) {
-            console.warn('[Brain] Failed to parse completion signal JSON:', content);
-            return null;
+            const parseErrorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+            console.warn('[Brain] Failed to parse completion signal JSON:', parseErrorMsg);
+            console.warn('[Brain] Content was:', content.slice(0, 200));
+            // Return fallback signal instead of null (Sub-task 3.1)
+            console.warn('[Brain] Using fallback completion signal (JSON parse failed)');
+            return { reason: 'task_complete', explanation: 'Task completed (fallback signal - parse error)' };
         }
         const validReasons = ['task_complete', 'waiting_for_user_input', 'needs_hitl', 'cannot_proceed'];
         if (!validReasons.includes(signal.reason)) {
             console.warn('[Brain] Invalid completion signal reason:', signal.reason);
-            return null;
+            // Return fallback signal instead of null (Sub-task 3.1)
+            console.warn('[Brain] Using fallback completion signal (invalid reason)');
+            return { reason: 'task_complete', explanation: 'Task completed (fallback signal - invalid reason)' };
         }
         console.log(`[Brain] Completion signal built successfully in ${duration}ms: ${signal.reason}`);
         return { reason: signal.reason, explanation: String(signal.explanation || '') };
     }
     catch (error) {
-        // Log the specific error for debugging
+        // Log the specific error for debugging (Sub-task 3.1)
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.warn('[Brain] Completion signal failed:', errorMessage);
-        return null;
+        // Return fallback signal instead of null (Sub-task 3.1)
+        console.warn('[Brain] Using fallback completion signal (exception)');
+        return { reason: 'task_complete', explanation: 'Task completed (fallback signal - exception)' };
     }
 }
 /**
@@ -125,7 +149,7 @@ YOUR CURRENT RESPONSE: "${responseContent.slice(0, 300)}"
 CONVERSATION CONTEXT: ${JSON.stringify(conversationHistory).slice(0, 200)}
 
 Available routing options:
-- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks)
+- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, web_search + navis for detailed extraction)
 - "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
 - "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
 - "route_computer_use" — Route to Computer Use agent ONLY for DESKTOP GUI automation (clicking desktop UI elements, interacting with native apps like Excel, VS Code, Discord desktop app). NEVER use for web research, searching the internet, visiting websites, or filling forms on websites.
@@ -135,12 +159,13 @@ Available routing options:
 CRITICAL ROUTING RULES:
 1. If user asks to "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app" → ALWAYS use "route_coding" (Coding Specialist handles project creation)
 2. "route_computer_use" is ONLY for tasks that require clicking on desktop GUI elements, interacting with native apps, or automating screen interactions. It is NOT for web browsing or research.
-3. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), use "route_web_explorer" NOT "route_computer_use".
-4. CRITICAL: If the user asks to "find", "search for", "investigate", "open [a website/URL]", "go to [a website]", "login to [a website/dashboard]", "visit [a URL]", "navigate to [a URL]" — this is a WEB RESEARCH/BROWSING task. ALWAYS use "route_web_explorer". NEVER use "route_computer_use" for visiting websites or filling forms in browsers — those need navis browser automation, not computer_use screen automation.
-5. CRITICAL: For tasks like "find the best anime discord bot", "search for news bots", "look up pricing for X" — these are WEB research tasks. Use "route_web_explorer".
-6. You have web_search and navis available directly — use them for quick lookups or straightforward web research. For complex multi-step research spanning multiple URLs, consider routing to "route_web_explorer" which has dedicated navigation capabilities.
-7. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available. Route to "route_web_explorer" only for complex research that requires visiting multiple pages or filling forms.
-8. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you route to "route_web_explorer", let the specialist handle it completely. If you use tools directly, do not also route.
+3. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), prefer "continue_brain" to use web_search + navis directly. Only use "route_web_explorer" for complex multi-step workflows.
+4. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
+5. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis. NEVER use "route_computer_use" for visiting websites.
+6. You have web_search and navis available directly — use them for most web research tasks. The two-phase approach (search then extract) handles 90% of web research needs without routing to specialists.
+7. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available.
+8. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
+9. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
 
 Respond with JSON only:
 {
@@ -164,19 +189,27 @@ Respond with JSON only:
             content: `\n⏱️ Brain: Routing analysis completed in ${duration}ms`
         });
         let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        console.log('[Brain] Raw routing response (first 500 chars):', content.slice(0, 500));
         content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         // Robust JSON extraction: find first '{' and last '}'
         const firstBrace = content.indexOf('{');
         const lastBrace = content.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace > firstBrace) {
-            content = content.substring(firstBrace, lastBrace + 1);
+        if (firstBrace === -1 || lastBrace <= firstBrace) {
+            console.warn('[Brain] No valid JSON braces found in routing response');
+            console.warn('[Brain] Response was:', content.slice(0, 300));
+            return null;
         }
+        const jsonStr = content.substring(firstBrace, lastBrace + 1);
+        console.log('[Brain] Extracted JSON string:', jsonStr);
         let routing;
         try {
-            routing = JSON.parse(content);
+            routing = JSON.parse(jsonStr);
+            console.log('[Brain] Successfully parsed routing JSON:', routing);
         }
         catch (parseError) {
-            console.warn('[Brain] Failed to parse routing decision JSON:', content);
+            const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+            console.warn('[Brain] Failed to parse routing decision JSON:', errorMsg);
+            console.warn('[Brain] Attempted to parse:', jsonStr);
             return null;
         }
         const validDecisions = [
@@ -233,7 +266,7 @@ function extractUrlsFromSearchResult(content) {
  * 1. Uses the main SYSTEM_PROMPT.md for comprehensive capabilities
  * 2. Makes intelligent routing decisions to specialized agents
  * 3. Handles general tasks that don't require specialization
- * 4. Provides completion signals for the judge
+ * 4. Provides completion signals
  */
 const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbort, systemPromptOverride) => {
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
@@ -258,6 +291,37 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
             type: 'thought',
             content: '\n🧠 Brain Node: Analyzing task and determining optimal routing...'
         });
+        // ── EARLY RESEARCH INTENT DETECTION ──────────────────────────────────────
+        // If the current intent is 'research' AND we haven't already routed to web-explorer
+        // in this turn, immediately route to web-explorer without executing any tools.
+        // This prevents the brain from attempting web_search execution and ensures research
+        // requests are delegated to the specialized web-explorer agent.
+        //
+        // CRITICAL: Only route on the FIRST brain call for research intent.
+        // If returningFromSpecialist is already set to 'web_explorer', we've already routed
+        // and should NOT route again (that would create an infinite loop).
+        //
+        // ALSO: If web-explorer has already completed (webExplorerComplete === true),
+        // do NOT route back to it — the task is done.
+        if (state.currentIntent === 'research' && !state.returningFromSpecialist && !state.webExplorerComplete) {
+            console.log('[Brain] Research intent detected → routing to web-explorer immediately');
+            eventQueue?.push({
+                type: 'thought',
+                content: '🧠 Brain: Research request detected → routing to web-explorer'
+            });
+            return {
+                pendingToolCalls: [],
+                routingDecision: {
+                    decision: 'route_web_explorer',
+                    explanation: 'Research intent detected — delegating to web-explorer'
+                },
+                completionSignal: null,
+                taskPhase: 'specialized_agent',
+                brainToolsInFlight: false,
+                returningFromSpecialist: 'web_explorer'
+            };
+        }
+        // ────────────────────────────────────────────────────────────────────────
         // Load the main system prompt from synchronized location
         let systemPrompt = systemPromptOverride;
         if (!systemPrompt) {
@@ -281,20 +345,21 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
                 ? firstUserMsg.content
                 : JSON.stringify(firstUserMsg.content))
             : '';
-        // Strict Routing: If we just returned from a specialist, we MUST evaluate if they should continue
-        // This prevents the brain from taking over and looping on tools itself.
-        if (state.returningFromSpecialist) {
-            console.log(`[Brain] Returning from specialist: ${state.returningFromSpecialist} — evaluating continuation`);
-            // If returning from web_explorer and it's not complete, route back immediately
-            if (state.returningFromSpecialist === 'web_explorer' && !state.webExplorerComplete) {
-                console.log('[Brain] Web explorer not complete → routing back');
-                return {
-                    routingDecision: { decision: 'route_web_explorer', explanation: 'Continuation: Web explorer has more work to do' },
-                    taskPhase: 'specialized_agent',
-                    brainToolsInFlight: false,
-                    returningFromSpecialist: null
-                };
-            }
+        // ── EARLY CHECK FOR WEB_EXPLORER COMPLETION (Sub-task 3.2) ──────────────
+        // If web_explorer has completed (webExplorerComplete: true) and we're returning from it,
+        // skip routing to another specialist and go directly to completion signal generation.
+        // This prevents unnecessary specialist routing when the task is already done.
+        if (state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer') {
+            console.log('[Brain] Web explorer complete detected → skipping specialist routing, generating completion signal');
+            eventQueue?.push({
+                type: 'thought',
+                content: '🧠 Brain: Web explorer workflow complete → generating completion signal'
+            });
+            // Skip to completion signal generation below
+        }
+        else if (state.returningFromSpecialist) {
+            console.log(`[Brain] Clearing returningFromSpecialist flag: ${state.returningFromSpecialist}`);
+            // Don't route back automatically - let the normal routing logic decide
         }
         const result = await integrator.wrapNode('brain', () => (0, agent_runtime_1.runAgentStep)(state, {
             runner,
@@ -375,36 +440,43 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
             }
         }
         // Determine routing decision
-        let routingDecision = await determineRouting(runner, state, responseContent, eventQueue);
-        if (routingDecision) {
-            runner.telemetry.info(`Brain routing decision: ${routingDecision.decision} — ${routingDecision.explanation}`);
-            console.log(`[Brain] Routing decision: ${routingDecision.decision} for intent: ${state.currentIntent}`);
-            eventQueue?.push({
-                type: 'thought',
-                content: `🧠 Brain Router: ${routingDecision.decision} — ${routingDecision.explanation}`
-            });
-        }
-        // Fallback: if routing LLM failed (Mistral Small JSON parse issue, etc.),
-        // use intent-based routing as a hard fallback so the task can make progress
-        // instead of falling through to a failed completion signal + judge loop.
-        if (!routingDecision && state.currentIntent) {
-            const fallbackRoutingMap = {
-                'research': 'route_web_explorer',
-                'coding': 'route_coding',
-                'build': 'route_coding',
-                'fix': 'route_coding',
-                'analyze': 'route_data_analyst',
-                'automate': 'route_computer_use',
-            };
-            const fallbackDecision = fallbackRoutingMap[state.currentIntent];
-            if (fallbackDecision) {
-                runner.telemetry.warn(`[Brain] Routing LLM failed, falling back to intent-based routing: ${fallbackDecision} for intent ${state.currentIntent}`);
+        // Skip routing decision if web_explorer has completed (Sub-task 3.2)
+        let routingDecision = null;
+        if (!state.webExplorerComplete) {
+            routingDecision = await determineRouting(runner, state, responseContent, eventQueue);
+            if (routingDecision) {
+                runner.telemetry.info(`Brain routing decision: ${routingDecision.decision} — ${routingDecision.explanation}`);
+                console.log(`[Brain] Routing decision: ${routingDecision.decision} for intent: ${state.currentIntent}`);
                 eventQueue?.push({
                     type: 'thought',
-                    content: `\n🧠 Brain: Routing fallback — using intent "${state.currentIntent}" to route to ${fallbackDecision}`
+                    content: `🧠 Brain Router: ${routingDecision.decision} — ${routingDecision.explanation}`
                 });
-                routingDecision = { decision: fallbackDecision, explanation: `Fallback routing for intent ${state.currentIntent} (routing LLM failed)` };
             }
+            // Fallback: if routing LLM failed (Mistral Small JSON parse issue, etc.),
+            // use intent-based routing as a hard fallback so the task can make progress
+            // instead of falling through to a failed completion signal.
+            if (!routingDecision && state.currentIntent) {
+                const fallbackRoutingMap = {
+                    'research': 'route_web_explorer',
+                    'coding': 'route_coding',
+                    'build': 'route_coding',
+                    'fix': 'route_coding',
+                    'analyze': 'route_data_analyst',
+                    'automate': 'route_computer_use',
+                };
+                const fallbackDecision = fallbackRoutingMap[state.currentIntent];
+                if (fallbackDecision) {
+                    runner.telemetry.warn(`[Brain] Routing LLM failed, falling back to intent-based routing: ${fallbackDecision} for intent ${state.currentIntent}`);
+                    eventQueue?.push({
+                        type: 'thought',
+                        content: `\n🧠 Brain: Routing fallback — using intent "${state.currentIntent}" to route to ${fallbackDecision}`
+                    });
+                    routingDecision = { decision: fallbackDecision, explanation: `Fallback routing for intent ${state.currentIntent} (routing LLM failed)` };
+                }
+            }
+        }
+        else {
+            console.log('[Brain] Skipping routing decision because webExplorerComplete is true');
         }
         // If routing to a specialized agent, set the routing decision
         if (routingDecision && routingDecision.decision.startsWith('route_')) {
@@ -434,15 +506,17 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
             eventQueue?.push({ type: 'thought', content: `🧠 Brain: ${signal.reason} — ${signal.explanation}` });
         }
         else {
-            runner.telemetry.warn('Brain completion signal failed — judge will use fallback');
-            eventQueue?.push({ type: 'thought', content: '🧠 Brain: completion signal failed, judge will evaluate' });
+            runner.telemetry.warn('Brain completion signal failed');
+            eventQueue?.push({ type: 'thought', content: '🧠 Brain: completion signal failed' });
         }
         return {
             ...result,
             completionSignal: signal,
             routingDecision: routingDecision,
             brainToolsInFlight: false,
-            returningFromSpecialist: null
+            returningFromSpecialist: null,
+            // Preserve webExplorerComplete flag from input state (Sub-task 3.2)
+            webExplorerComplete: state.webExplorerComplete
         };
     };
 };

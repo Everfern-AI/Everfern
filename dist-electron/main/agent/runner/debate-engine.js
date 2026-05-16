@@ -50,10 +50,10 @@ Object.defineProperty(exports, "ArbiterAgent", { enumerable: true, get: function
 const DEFAULT_CONFIG = {
     enableDebate: true,
     complexityThreshold: 'moderate',
-    timeoutMs: 120000,
-    vanguardTimeoutMs: 45000,
-    phantomTimeoutMs: 45000,
-    arbiterTimeoutMs: 30000,
+    timeoutMs: 180000,
+    vanguardTimeoutMs: 60000,
+    phantomTimeoutMs: 60000,
+    arbiterTimeoutMs: 45000,
     maxRetries: 1,
     verbose: false,
 };
@@ -63,11 +63,13 @@ class PeerAgentDebateEngine {
     phantom;
     arbiter;
     debateTranscript = [];
+    shouldAbort;
     constructor(client, config) {
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.vanguard = new vanguard_agent_1.VanguardAgent(client);
         this.phantom = new phantom_agent_1.PhantomAgent(client);
         this.arbiter = new arbiter_agent_1.ArbiterAgent(client);
+        this.shouldAbort = config?.shouldAbort;
     }
     /**
      * Main entry point: Run the entire debate process.
@@ -84,8 +86,11 @@ class PeerAgentDebateEngine {
             this.log(`🎭 Starting Peer Agent Debate [${debateId}]`);
             this.log(`Task: "${context.userInput.substring(0, 80)}..."`);
             // Phase 1: Vanguard proposes
+            if (this.shouldAbort?.()) {
+                throw new Error('Execution aborted by user (stop button clicked)');
+            }
             this.log('\n📋 Phase 1: Vanguard proposes execution plan...');
-            const proposal = await this.runWithTimeout(() => this.vanguard.proposeExecutionPlan(context), this.config.vanguardTimeoutMs || 15000, 'Vanguard proposal timed out');
+            const proposal = await this.runWithTimeout(() => this.vanguard.proposeExecutionPlan(context), this.config.vanguardTimeoutMs || 30000, 'Vanguard proposal timed out');
             this.addTranscriptEntry('vanguard', 'proposal', proposal);
             this.log(`✅ Vanguard proposed ${proposal.steps.length} steps`);
             // Emit vanguard_complete event in real-time
@@ -98,8 +103,11 @@ class PeerAgentDebateEngine {
                 }
             }
             // Phase 2: Phantom critiques
+            if (this.shouldAbort?.()) {
+                throw new Error('Execution aborted by user (stop button clicked)');
+            }
             this.log('\n🔍 Phase 2: Phantom reviews plan critically...');
-            const review = await this.runWithTimeout(() => this.phantom.reviewExecutionPlan(proposal, context), this.config.phantomTimeoutMs || 20000, 'Phantom review timed out');
+            const review = await this.runWithTimeout(() => this.phantom.reviewExecutionPlan(proposal, context), this.config.phantomTimeoutMs || 45000, 'Phantom review timed out');
             this.addTranscriptEntry('phantom', 'review', review);
             this.log(`✅ Phantom found ${review.concerns.length} concerns (${review.concerns.filter(c => c.severity === 'critical').length} critical)`);
             this.log(`   Assessment: ${review.overallAssessment}`);
@@ -113,8 +121,11 @@ class PeerAgentDebateEngine {
                 }
             }
             // Phase 3: Arbiter arbitrates
+            if (this.shouldAbort?.()) {
+                throw new Error('Execution aborted by user (stop button clicked)');
+            }
             this.log('\n⚖️  Phase 3: Arbiter arbitrates and finalizes...');
-            const finalPlan = await this.runWithTimeout(() => this.arbiter.arbitrateAndFinalize(proposal, review, context), this.config.arbiterTimeoutMs || 15000, 'Arbiter arbitration timed out');
+            const finalPlan = await this.runWithTimeout(() => this.arbiter.arbitrateAndFinalize(proposal, review, context), this.config.arbiterTimeoutMs || 30000, 'Arbiter arbitration timed out');
             this.addTranscriptEntry('arbiter', 'arbitration', finalPlan);
             this.log(`✅ Arbiter finalized plan: ${finalPlan.goNogo.toUpperCase()}`);
             this.log(`   Risk Level: ${finalPlan.overallRiskAssessment}`);

@@ -19,8 +19,10 @@ describe('Navis - JSON Schema', { timeout: 30000 }, () => {
     const actionNames = actions.map((a: any) => Object.keys(a.properties)[0]);
     
     expect(actionNames).toContain('go_to_url');
+    expect(actionNames).toContain('go_back');
     expect(actionNames).toContain('click_element');
     expect(actionNames).toContain('input_text');
+    expect(actionNames).toContain('press_key');
     expect(actionNames).toContain('scroll_down');
     expect(actionNames).toContain('scroll_up');
     expect(actionNames).toContain('wait');
@@ -30,7 +32,7 @@ describe('Navis - JSON Schema', { timeout: 30000 }, () => {
     expect(actionNames).toContain('close_tab');
     expect(actionNames).toContain('solve_captcha');
     expect(actionNames).toContain('done');
-    expect(actionNames).toHaveLength(12);
+    expect(actionNames).toHaveLength(14);
   });
 });
 

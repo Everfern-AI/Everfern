@@ -160,7 +160,7 @@ When all tasks are completed successfully, output 'MISSION_COMPLETE' to signal t
             (result.pendingToolCalls?.length === 0 && scrubbedContent.length > 50);
         return {
             ...result,
-            returningFromSpecialist: 'coding_specialist',
+            returningFromSpecialist: isComplete ? null : 'coding_specialist',
             codingComplete: isComplete
         };
     };

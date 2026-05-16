@@ -139,7 +139,7 @@ class AIClient {
             this.openaiClient = new openai_1.default({
                 apiKey: this.config.apiKey || 'dummy-key',
                 baseURL: this.config.baseUrl,
-                timeout: 60000,
+                timeout: 120000,
                 maxRetries: 3,
                 defaultHeaders: headers,
                 // Disable keep-alive to avoid Node 22 undici "invalid keep-alive header" errors
@@ -421,7 +421,7 @@ class AIClient {
                     ]
                 });
             }
-            // Final synchronization pass for NVIDIA NIM: 
+            // Final synchronization pass for NVIDIA NIM:
             // Ensure EVERY tool call ID in an assistant message has a corresponding 'tool' response following it.
             const syncMessages = [];
             const outstandingIds = new Set();
@@ -721,7 +721,7 @@ class AIClient {
                 }
                 // Create a new AbortController for each attempt with timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout per request
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per request
                 const enhancedOptions = {
                     ...options,
                     signal: controller.signal,
@@ -758,9 +758,21 @@ class AIClient {
                 // Check if it's an abort error (timeout)
                 if (lastError.name === 'AbortError') {
                     console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
+                    // Log Ollama-specific timeout info
+                    if (url.includes('/api/chat')) {
+                        console.log(`[Ollama] Timeout on ${url} - No response received within timeout window`);
+                    }
                 }
                 else {
                     console.warn(`[AIClient] Network error: ${lastError.message}. Retrying in ${delay}ms...`);
+                    // Log error details for debugging
+                    if (url.includes('/api/chat')) {
+                        console.log(`[Ollama] Error details:`, {
+                            message: lastError.message,
+                            name: lastError.name,
+                            url: url
+                        });
+                    }
                 }
                 if (i < maxRetries) {
                     await new Promise(r => setTimeout(r, delay));
@@ -1644,11 +1656,24 @@ class AIClient {
         if (isStreaming) {
             headers['Accept'] = 'text/event-stream';
         }
-        const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-        });
+        let res;
+        try {
+            res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            });
+        }
+        catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            console.error(`[Ollama] Chat request failed:`, {
+                error: errorMsg,
+                baseUrl: this.config.baseUrl,
+                model: req.model ?? this.config.model,
+                timestamp: new Date().toISOString()
+            });
+            throw err;
+        }
         if (!res.ok) {
             const txt = await res.text();
             let errorMsg = res.statusText;
@@ -1658,6 +1683,12 @@ class AIClient {
                     errorMsg = json.error.message || json.error;
             }
             catch { }
+            console.error(`[Ollama] HTTP ${res.status} response:`, {
+                status: res.status,
+                statusText: res.statusText,
+                body: txt.substring(0, 500),
+                error: errorMsg
+            });
             throw new Error(`[ollama] HTTP ${res.status}: ${errorMsg}`);
         }
         if (!isStreaming) {

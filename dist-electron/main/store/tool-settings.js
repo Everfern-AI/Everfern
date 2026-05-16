@@ -40,8 +40,7 @@ const os = __importStar(require("os"));
 exports.DEFAULT_NAVIS_SETTINGS = {
     useVision: false,
     headless: false,
-    maxSteps: 25,
-    autoLaunchChrome: true,
+    maxSteps: 40,
 };
 exports.DEFAULT_TOOL_SETTINGS = {
     webSearch: { mode: 'local', headless: true, apiKey: '' },

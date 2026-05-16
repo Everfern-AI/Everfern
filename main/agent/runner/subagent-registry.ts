@@ -1,6 +1,6 @@
 /**
  * EverFern Desktop — Subagent Registry
- * 
+ *
  * In-memory + async disk persistence for subagent visibility.
  * Implements a debounced write queue to prevent event loop blocking.
  */
@@ -145,6 +145,13 @@ class SubagentRegistry {
             children = children.filter(e => e.status === status);
         }
         return children;
+    }
+
+    /**
+     * Gets all registered agents
+     */
+    getAll(): SubagentEntry[] {
+        return Array.from(this.entries.values());
     }
 
     hasPendingChildren(parentSessionId: string): boolean {

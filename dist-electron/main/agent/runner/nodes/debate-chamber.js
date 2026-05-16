@@ -5,7 +5,6 @@ const debate_engine_1 = require("../debate-engine");
 const debate_event_emitter_1 = require("../debate-event-emitter");
 const mission_integrator_1 = require("../mission-integrator");
 const node_utils_1 = require("../services/node-utils");
-console.log('[DebateChamber] 📦 Module loaded');
 const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort) => {
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
     const emitDebateEvent = (type, debateId, data, error) => {
@@ -17,13 +16,7 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
         debate_event_emitter_1.DebateEventEmitter.broadcastDebateEvent(debateEvent);
     };
     return async (state) => {
-        console.log('[DebateChamber] 🔥 NODE INVOKED');
         const logger = (0, node_utils_1.nodeLifecycle)(runner, 'debate_chamber');
-        console.log(`[DebateChamber] decomposedTask:`, state.decomposedTask ? 'EXISTS' : 'null');
-        if (state.decomposedTask) {
-            const plan = state.decomposedTask;
-            console.log(`[DebateChamber] Steps: ${plan.steps?.length}, Title: ${plan.title}`);
-        }
         if (shouldAbort?.()) {
             throw new Error('Execution aborted by user (stop button clicked)');
         }
@@ -89,13 +82,14 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
             emitDebateEvent(phaseEventMap[phase], debateId, frontendData);
         };
         const engine = new debate_engine_1.PeerAgentDebateEngine(runner.client, {
-            verbose: true,
+            verbose: false,
             complexityThreshold: 'moderate',
             timeoutMs: 180000,
             vanguardTimeoutMs: 60000,
             phantomTimeoutMs: 60000,
             arbiterTimeoutMs: 45000,
             onPhaseComplete,
+            shouldAbort,
         });
         try {
             const debateResult = await engine.debate(context);
@@ -107,10 +101,10 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
             });
             const isNoGo = debateResult.finalPlan.goNogo === 'no-go';
             if (isNoGo) {
-                runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will not proceed');
+                runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will proceed anyway as requested');
                 eventQueue?.push({
                     type: 'thought',
-                    content: `\n❌ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}`,
+                    content: `\n⚠️ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}\n*(Proceeding with best effort as requested)*`,
                 });
             }
             return {
@@ -123,10 +117,8 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
                     guidance: debateResult.finalPlan.executionGuidance,
                     allData: debateResult,
                 },
-                completionSignal: isNoGo
-                    ? { reason: 'cannot_proceed', explanation: `Debate chamber voted NO-GO: ${debateResult.finalPlan.explanation.slice(0, 200)}` }
-                    : null,
-                shouldContinueIteration: isNoGo ? false : undefined,
+                completionSignal: null,
+                shouldContinueIteration: undefined,
             };
         }
         catch (err) {

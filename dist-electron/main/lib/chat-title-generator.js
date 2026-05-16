@@ -40,6 +40,14 @@ async function generateTitle(conversationId, firstMessage) {
     // Update the title in the database
     await db_1.dbOps.run(`UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [title, conversationId]);
     console.log(`[ChatTitle] Updated title for ${conversationId}: "${title}"`);
+    // Notify all renderer processes to refresh the conversation list
+    // This prevents the temporary title from appearing as a separate chat
+    const windows = electron_1.BrowserWindow.getAllWindows();
+    for (const window of windows) {
+        if (!window.isDestroyed()) {
+            window.webContents.send('chat:title-updated', { conversationId, title });
+        }
+    }
 }
 function getClient() {
     try {

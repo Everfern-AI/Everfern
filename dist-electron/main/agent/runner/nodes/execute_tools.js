@@ -196,10 +196,16 @@ const createExecuteToolsNode = (runner, tools, config, eventQueue, conversationI
                 const groupResult = await executeSynchronizedParallelGroup(groupTools, tools, g + 1, eventQueue, (update) => runner.telemetry.info(update));
                 newRecords.push(...groupResult.results);
                 for (const rec of groupResult.results) {
+                    // Log Navis tool completion
+                    if (rec.toolName === 'navis') {
+                        console.log(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
+                        runner.telemetry.info(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
+                    }
                     newMessages.push({
                         role: 'tool',
                         tool_call_id: groupTools.find((t) => t.name === rec.toolName)?.id,
                         tool_name: rec.toolName,
+                        name: rec.toolName,
                         content: rec.result.base64Image
                             ? [{ type: 'text', text: rec.result.output }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${rec.result.base64Image}` } }]
                             : rec.result.output,
@@ -240,6 +246,12 @@ const createExecuteToolsNode = (runner, tools, config, eventQueue, conversationI
                 userConfirmation: undefined,
                 toolCallHistory: [...(state.toolCallHistory ?? [])],
             };
+            // Log return to brain
+            const navisToolsInResults = newRecords.filter(r => r.toolName === 'navis');
+            if (navisToolsInResults.length > 0) {
+                console.log(`[ExecuteTools] ✅ NAVIS TOOL PROCESSING COMPLETE - Returning ${navisToolsInResults.length} result(s) to brain node`);
+                runner.telemetry.info(`[ExecuteTools] ✅ NAVIS TOOL PROCESSING COMPLETE - Returning to brain node`);
+            }
             nodeIntegrator.completeNode('execute_tools', `Completed ${calls.length} tool calls`);
             return result;
         }

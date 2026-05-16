@@ -1,12 +1,11 @@
 /**
  * Navis — Tool Definition
- * 
+ *
  * Exposes NavisOrchestrator as an AgentTool for the Everfern agent runner.
  * Emits progress events as subagent-progress format for frontend timeline visualization.
  */
 
 import type { AgentTool, ToolResult } from '../../runner/types';
-import type { AIClient } from '../../../lib/ai-client';
 import { NavisOrchestrator } from './orchestrator';
 import { NavisEvent } from './logger';
 import { toolSettingsStore } from '../../../store/tool-settings';
@@ -85,6 +84,9 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
     },
     async execute(args: any, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
       const logger = orchestrator.getEventLogger();
+      const toolStartTime = Date.now();
+
+      console.log('[Navis Tool] 🚀 NAVIS TOOL EXECUTION STARTED');
 
       logger.on((event: NavisEvent) => {
         let label = '';
@@ -129,20 +131,33 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
       // Read Navis settings from the persistent store
       const navisSettings = toolSettingsStore.get().navis;
 
-      const result = await orchestrator.run({
-        task: args.task,
-        maxSteps: args.maxSteps ?? navisSettings.maxSteps,
-        headless: args.headless ?? navisSettings.headless,
-        startUrl: args.startUrl,
-        useVision: navisSettings.useVision,
-        autoLaunchChrome: navisSettings.autoLaunchChrome,
-      });
+      try {
+        console.log('[Navis Tool] 🔄 Calling orchestrator.run()...');
 
-      return {
-        success: result.success,
-        output: result.output,
-        data: { steps: result.steps },
-      };
+        const result = await orchestrator.run({
+          task: args.task,
+          maxSteps: args.maxSteps ?? navisSettings.maxSteps,
+          headless: args.headless ?? navisSettings.headless,
+          startUrl: args.startUrl,
+          useVision: navisSettings.useVision,
+        });
+
+        const executionTime = Date.now() - toolStartTime;
+        console.log(`[Navis Tool] ✅ orchestrator.run() COMPLETED - Total execution time: ${executionTime}ms`);
+        console.log(`[Navis Tool] ✅ NAVIS TOOL RETURNING RESULT TO MAIN AGENT - Success: ${result.success}, Steps: ${result.steps}`);
+
+        return {
+          success: result.success,
+          output: result.output,
+          data: { steps: result.steps },
+        };
+      } catch (toolErr) {
+        const executionTime = Date.now() - toolStartTime;
+        console.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms):`, toolErr);
+        logger.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms): ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
+
+        throw toolErr;
+      }
     },
   };
 }

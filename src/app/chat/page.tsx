@@ -59,6 +59,7 @@ import PlanViewerPanel from './PlanViewerPanel';
 import TasksPanel from './TasksPanel';
 import ScheduledTasksPanel from './components/ScheduledTasksPanel';
 import { useDebateStream } from './hooks/useDebateStream';
+import { InlineDebateProgress } from './components/InlineDebateProgress';
 import ScheduledTaskModal from './components/ScheduledTaskModal';
 import SitePreview from './SitePreview';
 import SettingsPage from './SettingsPage';
@@ -68,7 +69,7 @@ import FileViewerPane from './FileViewerPane';
 import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
 import ProjectsPage from '../components/ProjectsPage';
-import IDEMode from '../../components/IDEMode';
+
 
 // Extracted components
 import {
@@ -146,14 +147,12 @@ export default function ChatPage() {
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showIntegrationSettings, setShowIntegrationSettings] = useState(false);
     const [showProjectsPage, setShowProjectsPage] = useState(false);
-    const [showCodingMode, setShowCodingMode] = useState(false);
     const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
     const [showCustomizeModal, setShowCustomizeModal] = useState(false);
     const [showScheduledTaskModal, setShowScheduledTaskModal] = useState(false);
     const [scheduledTasksRefreshTrigger, setScheduledTasksRefreshTrigger] = useState(0);
 
     const { debate: debateData, isDebating } = useDebateStream();
-    console.log('[ChatPage] Debate state — isDebating:', isDebating, 'debateData:', !!debateData);
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
         try {
             await (window as any).electronAPI.scheduledTasks.save({
@@ -445,7 +444,14 @@ export default function ChatPage() {
 
             // Completion phase nodes
             'completion': 'Finalizing results',
-            'hitl_approval': 'Waiting for approval'
+            'hitl_approval': 'Waiting for approval',
+
+            // Specialist nodes
+            'web_explorer': 'Researching on the web',
+            'deep_research': 'Conducting deep research',
+            'coding_specialist': 'Writing code',
+            'data_analyst': 'Analyzing data',
+            'computer_use_agent': 'Interacting with desktop'
         };
         return nodeNames[nodeName] || (nodeName ? `Working on ${nodeName.replace(/_/g, ' ')}` : 'Working');
     };
@@ -664,7 +670,11 @@ export default function ChatPage() {
         ta.style.height = `${Math.min(ta.scrollHeight, 300)}px`;
     }, [inputValue]);
 
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+    useEffect(() => {
+        if (!isScrolledUp) {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [messages, streamingContent, liveToolCalls, streamingThought]);
 
     useEffect(() => {
         const el = chatScrollRef.current;
@@ -952,10 +962,6 @@ export default function ChatPage() {
                     console.log('[Frontend] Received ask_user_question tool_start:', JSON.stringify({ toolName, toolArgs }, null, 2));
                 }
                 const narrativeText = streamingContentRef.current.trim();
-                if (narrativeText) {
-                    streamingContentRef.current = "";
-                    setStreamingContent("");
-                }
                 const display = resolveToolDisplay(toolName, toolArgs);
                 const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName, ...display, status: 'running', args: toolArgs, description: narrativeText || undefined };
                 liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
@@ -1040,8 +1046,6 @@ export default function ChatPage() {
                     setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
                 } else if (data.action === 'delete') {
                     setActiveSurface(null);
-                } else if (data.action === 'coding_mode') {
-                    setShowCodingMode(data.active !== false);
                 }
             });
 
@@ -1507,14 +1511,10 @@ export default function ChatPage() {
                         if (toolCallId) setCurrentComputerUseToolCallId(toolCallId);
                     }
                     if (toolName === 'create_artifact') {
-                        setShowCodingMode(true);
+                        // Artifact created - no UI panel needed
                     }
 
                     const narrativeText = streamingContentRef.current.trim();
-                    if (narrativeText) {
-                        streamingContentRef.current = "";
-                        setStreamingContent("");
-                    }
                     const display = resolveToolDisplay(toolName, toolArgs);
                     console.log('[Frontend] Resolved display for', toolName, ':', display);
 
@@ -1562,8 +1562,6 @@ export default function ChatPage() {
                         setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
                     } else if (data.action === 'delete') {
                         setActiveSurface(null);
-                    } else if (data.action === 'coding_mode') {
-                        setShowCodingMode(data.active !== false);
                     }
                 });
 
@@ -3035,6 +3033,16 @@ export default function ChatPage() {
                                                     />
                                                 )}
 
+                                                {/* Debate Information - Attached to Prompt Input */}
+                                                {(debateData || isDebating) && (
+                                                    <div style={{ marginBottom: 12, paddingLeft: 0 }}>
+                                                        <InlineDebateProgress
+                                                            debate={debateData}
+                                                            isDebating={isDebating || false}
+                                                        />
+                                                    </div>
+                                                )}
+
                                                 <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
                                                     {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
@@ -3162,11 +3170,12 @@ export default function ChatPage() {
                                                         </div>
                                                     ) : (
                                                         <>
-                                                        <div 
-                                                            className="overflow-y-auto pr-1 custom-scrollbar"
-                                                            style={{ 
+                                                        <div
+                                                            className="overflow-y-auto pr-3 custom-scrollbar"
+                                                            style={{
                                                                 maxHeight: "calc(100vh - 280px)",
-                                                                position: "relative"
+                                                                position: "relative",
+                                                                paddingLeft: "12px"
                                                             }}
                                                         >
                                                             <AgentTimeline
@@ -3319,7 +3328,7 @@ export default function ChatPage() {
 
                                                     return (
                                                         <>
-                                                            {cleanContent && liveToolCalls.length === 0 && <StreamingMarkdown content={cleanContent} isLive={true} />}
+                                                            {cleanContent && <StreamingMarkdown content={cleanContent} isLive={true} />}
                                                             {artifacts.map((art, i) => (
                                                                 <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                                                                     <FileArtifact
@@ -3920,23 +3929,6 @@ export default function ChatPage() {
                     onClose={() => setShowScheduledTaskModal(false)}
                     onSave={handleSaveScheduledTask}
                 />
-
-                {/* Coding Mode Panel */}
-                {showCodingMode && (
-                    <div style={{
-                        position: 'fixed',
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        width: '50%',
-                        zIndex: 1000,
-                        backgroundColor: '#ffffff',
-                        borderLeft: '1px solid #e8e6d9',
-                        boxShadow: '-4px 0 24px rgba(0,0,0,0.06)',
-                    }}>
-                        <IDEMode visible={showCodingMode} onClose={() => setShowCodingMode(false)} projectPath={folderContexts[0]?.path || null} />
-                    </div>
-                )}
             </div>
         </>
     );

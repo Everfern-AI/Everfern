@@ -3,9 +3,8 @@ import { GraphState, GraphStateType, StreamEvent } from './state';
 import { createTriageNode } from './nodes/triage';
 import { createPlannerNode } from './nodes/planner';
 import { createExecuteToolsNode } from './nodes/execute_tools';
-import { createValidationNode } from './nodes/validation';
+
 import { createBrainNode } from './nodes/brain';
-import { createJudgeNode } from './nodes/judge';
 import { createDecomposerNode } from './nodes/decomposer';
 import { loadPrompt } from '../../lib/prompt-sync';
 import { createDebateChamberNode } from './nodes/debate-chamber';
@@ -86,7 +85,7 @@ export const buildGraph = (
 
       const toolSummary = state.pendingToolCalls?.map(formatToolCallSummary).join('\n') || 'No tools pending';
 
-      const reasoning = state.validationResult?.reasoning || 'High-risk operation detected';
+      const reasoning = 'High-risk operation detected';
       const requestId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
 
@@ -120,7 +119,7 @@ export const buildGraph = (
           {
             question: `⚠️ Security Check Required\n\n${reasoning}\n\nActions to execute:\n${toolSummary}`,
             options: [
-              '✅ Approve — proceed once', 
+              '✅ Approve — proceed once',
               '🚀 Approve & Allow Always — never ask for this specific command again',
               '📂 Approve & Allow Prefix — never ask for commands starting with this base (e.g. npm)',
               '❌ Reject — cancel and do not proceed'
@@ -174,18 +173,18 @@ export const buildGraph = (
       }
 
       const answerStr = String(answer);
-      const isApproved = answerStr.includes('[HITL_APPROVED]') || 
-                         answerStr.includes('[HITL_APPROVED_ALWAYS]') || 
+      const isApproved = answerStr.includes('[HITL_APPROVED]') ||
+                         answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
                          answerStr.includes('[HITL_APPROVED_PREFIX]');
 
       if (isApproved && (answerStr.includes('[HITL_APPROVED_ALWAYS]') || answerStr.includes('[HITL_APPROVED_PREFIX]'))) {
         const type = answerStr.includes('[HITL_APPROVED_ALWAYS]') ? 'exact' : 'prefix';
-        
+
         // Register policies for all pending tools
         for (const tc of state.pendingToolCalls || []) {
           const args = tc.arguments || {};
           let pattern = '';
-          
+
           const cmdTools = ['terminal_execute', 'executePwsh', 'run_command', 'bash'];
           if (cmdTools.includes(tc.name)) {
             const cmd = args.command || args.CommandLine || args.cmd || '';
@@ -199,7 +198,7 @@ export const buildGraph = (
             // For other tools, we use the tool name as the pattern for now
             pattern = tc.name;
           }
-          
+
           if (pattern) {
             toolApprovalStore.addPolicy({
               type,
@@ -360,15 +359,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return node(state);
   };
 
-  const validatorNode = async (state: GraphStateType, config?: any) => {
-    const ctx = getContext(config);
-    // Guard: Check abort before node execution
-    if (ctx.shouldAbort?.()) {
-      throw new Error('Execution aborted by user (stop button clicked)');
-    }
-    const node = createValidationNode(ctx.runner, ctx.missionTracker, ctx.shouldAbort);
-    return node(state);
-  };
+
 
   const orchestratorNode = async (state: GraphStateType, config?: any) => {
     const ctx = getContext(config);
@@ -377,16 +368,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const node = createExecuteToolsNode(ctx.runner, tools, (ctx.runner as any).config, ctx.eventQueue, ctx.conversationId, ctx.missionTracker, ctx.shouldAbort, (ctx.runner as any).client);
-    return node(state);
-  };
-
-  const judgeNode = async (state: GraphStateType, config?: any) => {
-    const ctx = getContext(config);
-    // Guard: Check abort before node execution
-    if (ctx.shouldAbort?.()) {
-      throw new Error('Execution aborted by user (stop button clicked)');
-    }
-    const node = createJudgeNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, ctx.shouldAbort);
     return node(state);
   };
 
@@ -401,10 +382,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
     .addNode('data_analyst', dataAnalystNode)
     .addNode('web_explorer', webExplorerNode)
     .addNode('deep_research', deepResearchNode)
-    .addNode('action_validation', validatorNode)
+
     .addNode('hitl_approval', hitlNode)
-    .addNode('multi_tool_orchestrator', orchestratorNode)
-    .addNode('judge', judgeNode);
+    .addNode('multi_tool_orchestrator', orchestratorNode);
 
   // New Brain-Centric Routing Architecture
   compiledGraph
@@ -419,29 +399,35 @@ If a specialized agent failed to complete a step, identify the issue and use you
     })
     .addEdge('global_planner', 'debate_chamber')
 
-    // Debate chamber: runs three-agent debate for complex tasks, routes to brain or END
+    // Debate chamber: runs three-agent debate for complex tasks, routes to brain
     .addConditionalEdges('debate_chamber', (state) => {
         const dr = state.debateResult;
         if (dr?.goNogo === 'no-go') {
-            console.log('[Graph] 🔀 Debate chamber voted NO-GO → END');
-            return END;
+            console.log('[Graph] 🔀 Debate chamber voted NO-GO → proceeding to brain anyway (best effort)');
+            return 'brain';
         }
         console.log('[Graph] 🔀 Debate chamber complete → brain');
         return 'brain';
     }, {
-        brain: 'brain',
-        [END]: END,
+        brain: 'brain'
     })
 
     // Brain is the central router - it decides whether to handle tasks itself or route to specialists
     .addConditionalEdges('brain', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
         const routingDecision = state.routingDecision;
+        const completionSignal = state.completionSignal;
 
-        // If brain has tools to execute, validate them first
+        // Check if brain indicated need for HITL approval
+        if (completionSignal?.reason === 'needs_hitl') {
+            console.log('[Graph] 🔀 Brain completion signal: needs_hitl → hitl_approval');
+            return 'hitl_approval';
+        }
+
+        // If brain has tools to execute, execute them directly
         if (hasTools) {
-            console.log('[Graph] 🔀 Brain has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Brain has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
         // If brain made a routing decision to specialized agents
@@ -459,23 +445,31 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     // Always use web_explorer for web research tasks to ensure navis is used
                     return 'web_explorer';
                 case 'complete_task':
+                    // Sub-task 3.3: Ensure complete_task routes to END
+                    console.log('[Graph] ➡️ Brain routing decision: complete_task → END');
+                    return END;
                 case 'continue_brain':
+                    // Sub-task 3.3: Ensure continue_brain routes to END (not loop back to brain)
+                    console.log('[Graph] ➡️ Brain routing decision: continue_brain → END');
+                    return END;
                 default:
-                    return 'judge';
+                    console.log('[Graph] ➡️ Unknown routing decision, defaulting to END');
+                    return END;
             }
         }
 
-        // Default to judge for completion assessment
-        console.log('[Graph] ➡️ Defaulting to judge');
-        return 'judge';
+        // Default to END for completion
+        console.log('[Graph] ➡️ Task complete → END');
+        return END;
     }, {
-        action_validation: 'action_validation',
+        hitl_approval: 'hitl_approval',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
         computer_use_agent: 'computer_use_agent',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
-        judge: 'judge',
+        [END]: END,
     })
 
     // All specialized agents route back to brain for coordination
@@ -483,8 +477,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Coding specialist has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Coding specialist has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
         // Keep specialist in control if not complete
@@ -496,7 +490,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Coding specialist complete → brain');
         return 'brain';
     }, {
-        action_validation: 'action_validation',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         brain: 'brain',
     })
@@ -505,8 +499,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Data analyst has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Data analyst has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
         // Keep specialist in control if not complete
@@ -518,7 +512,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Data analyst complete → brain');
         return 'brain';
     }, {
-        action_validation: 'action_validation',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         data_analyst: 'data_analyst',
         brain: 'brain',
     })
@@ -527,8 +521,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Computer use agent has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Computer use agent has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
         // Keep specialist in control if not complete
@@ -540,7 +534,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Computer use agent complete → brain');
         return 'brain';
     }, {
-        action_validation: 'action_validation',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         computer_use_agent: 'computer_use_agent',
         brain: 'brain',
     })
@@ -549,14 +543,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Web explorer has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Web explorer has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
-        // Check if web explorer workflow is complete
+        // Sub-task 3.4: Check if web explorer workflow is complete
         const webExplorerComplete = state.webExplorerComplete;
         if (webExplorerComplete) {
-            console.log('[Graph] 🔀 Web explorer workflow complete → brain');
+            console.log('[Graph] 🔀 Web explorer workflow complete (webExplorerComplete: true) → brain');
             return 'brain';
         }
 
@@ -564,26 +558,26 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const loopCount = state.webExplorerSelfLoopCount || 0;
         const MAX_SELF_LOOPS = 3;
         if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop`);
+            console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to brain`);
             return 'brain';
         }
 
-        // If no tools and not complete, continue web explorer workflow
-        console.log('[Graph] 🔀 Web explorer continuing workflow → web_explorer');
+        // Sub-task 3.4: If no tools and not complete, continue web explorer workflow
+        console.log('[Graph] 🔀 Web explorer continuing workflow (webExplorerComplete: false) → web_explorer');
         return 'web_explorer';
 
     }, {
-        action_validation: 'action_validation',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         brain: 'brain',
-        web_explorer: 'web_explorer',
+        [END]: END,
     })
 
     .addConditionalEdges('deep_research', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Deep research has tools → action_validation');
-            return 'action_validation';
+            console.log('[Graph] 🔀 Deep research has tools → multi_tool_orchestrator');
+            return 'multi_tool_orchestrator';
         }
 
         // Keep specialist in control if not complete
@@ -595,58 +589,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Deep research complete → brain');
         return 'brain';
     }, {
-        action_validation: 'action_validation',
+        multi_tool_orchestrator: 'multi_tool_orchestrator',
         deep_research: 'deep_research',
         brain: 'brain',
     })
 
 
-    // Tool validation and execution flow
-    .addConditionalEdges('action_validation', (state) => {
-        const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
-        if (hasTools) {
-          // Bypass HITL if the user has already explicitly approved the execution plan
-          const isPlanApproved = state.messages.some((m: any) => {
-            const role = m.role || m._getType?.() || m.type;
-            const content = typeof m.content === 'string' ? m.content : '';
-            return (role === 'user' || role === 'human') && content.includes('[PLAN_APPROVED]');
-          });
+    // Tool execution flow - direct to orchestrator or HITL based on risk
 
-          if (isPlanApproved) {
-              return 'multi_tool_orchestrator';
-          }
-
-          // Bypass HITL for safe internal bookkeeping tools — these never need user approval
-          const SAFE_TOOLS = new Set([
-            'update_plan_step', 'create_plan', 'todo_write',
-            'memory_save', 'memory_search', 'read_file', 'view_file',
-            'list_directory', 'execution_plan',
-            'read', 'find', 'grep', 'ls', 'search_web', 'web_search',
-            'skill_tool', 'present_files',
-            'list_mcp_tools', 'search_mcp_registry', 'visualize'
-          ]);
-          const allSafe = (state.pendingToolCalls || []).every((tc: any) => SAFE_TOOLS.has(tc.name));
-          if (allSafe) {
-            return 'multi_tool_orchestrator';
-          }
-
-          // Bypass HITL for auto-approved tools (e.g. commands matching user-defined rules)
-          const allAutoApproved = (state.pendingToolCalls || []).every((tc: any) => 
-            toolApprovalStore.isApproved(tc.name, tc.arguments || {})
-          );
-          if (allAutoApproved) {
-            console.log('[Graph] 🚀 All pending tool calls are auto-approved → bypassing HITL');
-            return 'multi_tool_orchestrator';
-          }
-
-          return state.validationResult?.isHighRisk ? 'hitl_approval' : 'multi_tool_orchestrator';
-        }
-        return 'brain';
-    }, {
-        hitl_approval: 'hitl_approval',
-        multi_tool_orchestrator: 'multi_tool_orchestrator',
-        brain: 'brain',
-    })
 
     .addConditionalEdges('hitl_approval', (state) => {
         const approved = state.hitlApprovalResult?.approved;
@@ -668,7 +618,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
     .addConditionalEdges('multi_tool_orchestrator', (state) => {
         const specialist = state.returningFromSpecialist;
         console.log(`[Graph] 🔀 multi_tool_orchestrator complete. returningFromSpecialist: ${specialist || 'None'}`);
-        
+
         if (specialist) {
             console.log(`[Graph] ⬅️ Returning to specialist: ${specialist}`);
             switch (specialist) {
@@ -688,15 +638,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         brain: 'brain',
-    })
-
-
-    // Judge makes final completion decision
-    .addConditionalEdges('judge', (state) => {
-        return state.shouldContinueIteration ? 'brain' : END;
-    }, {
-        brain: 'brain',
-        [END]: END,
     });
 
   const finalGraph = compiledGraph.compile({

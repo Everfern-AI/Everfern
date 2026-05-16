@@ -5,7 +5,7 @@
  * user message. Runs non-blocking via a fire-and-forget IPC channel.
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { acpManager } from '../acp/manager';
 import { AIClient } from './ai-client';
 import { dbOps } from './db';
@@ -50,6 +50,15 @@ async function generateTitle(conversationId: string, firstMessage: string): Prom
   );
 
   console.log(`[ChatTitle] Updated title for ${conversationId}: "${title}"`);
+
+  // Notify all renderer processes to refresh the conversation list
+  // This prevents the temporary title from appearing as a separate chat
+  const windows = BrowserWindow.getAllWindows();
+  for (const window of windows) {
+    if (!window.isDestroyed()) {
+      window.webContents.send('chat:title-updated', { conversationId, title });
+    }
+  }
 }
 
 function getClient(): AIClient | null {

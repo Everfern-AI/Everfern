@@ -368,8 +368,7 @@ type TimelineItem =
     | { type: "thought"; data: { id: string; content: string; isLive?: boolean } }
     | { type: "plan"; data: { steps: Array<{ id: string; description: string; tool?: string }>; title?: string | null } }
     | { type: "subagent-progress"; data: SubAgentProgressEvent }
-    | { type: "timeline-branch"; data: TimelineBranch }
-    | { type: "debate"; data: { debateData: any; isDebating: boolean } };
+    | { type: "timeline-branch"; data: TimelineBranch };
 
 const formatDuration = (ms: number): string => {
     if (ms < 1000) return `${ms}ms`;
@@ -377,9 +376,10 @@ const formatDuration = (ms: number): string => {
 };
 
 // Tool name → human label
-const toolLabel = (toolName: string, label?: string, displayName?: string): string => {
+const toolLabel = (toolName?: string, label?: string, displayName?: string): string => {
     if (label) return label;
     if (displayName) return displayName;
+    if (!toolName) return "Unknown Tool";
     const map: Record<string, string> = {
         read_file: "Read file",
         write: "Write file",
@@ -427,9 +427,9 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
     const [isExpanded, setIsExpanded] = useState(true);
 
     // Clean up backend orchestrator logs for UI display
-    const cleanContent = content ? content.replace(/^(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬)\s*[^:]+:\s*/, '').trim() : '';
-    const displayContent = cleanContent.replace(/^(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬)\s*/, '');
-    
+    const cleanContent = content ? content.replace(/^\s*(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬|💭|📝|🔍|🌐)\s*[^:]+:\s*/, '').trim() : '';
+    const displayContent = cleanContent.replace(/^(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬|💭|📝|🔍|🌐)\s*/, '');
+
     // Skip empty content
     if (!displayContent) return null;
 
@@ -445,7 +445,7 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
             }}>
                 {/* Vertical line before dot */}
                 <div style={{ width: 2, height: 8, backgroundColor: "#e8e6d9" }} />
-                
+
                 {/* Status dot */}
                 <div style={{ position: "relative", width: 10, height: 10, flexShrink: 0 }}>
                     <div style={{
@@ -466,7 +466,7 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
                         />
                     )}
                 </div>
-                
+
                 {/* Vertical line after dot */}
                 {!isLast && (
                     <div style={{ position: "absolute", top: 18, bottom: -20, width: 2, backgroundColor: "#e8e6d9" }} />
@@ -475,9 +475,9 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
 
             {/* Content */}
             <div style={{ flex: 1, paddingLeft: 12, paddingBottom: 20 }}>
-                <div 
+                <div
                     onClick={() => setIsExpanded(!isExpanded)}
-                    style={{ 
+                    style={{
                         display: "flex", alignItems: "center", gap: 8, padding: "2px 0",
                         cursor: "pointer", userSelect: "none"
                     }}
@@ -492,7 +492,7 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
                     }}>
                         {isLive ? "Thinking..." : (displayContent.length > 70 ? displayContent.substring(0, 70) + "..." : displayContent)}
                     </span>
-                    
+
                     {isLive && (
                         <motion.div
                             animate={{ opacity: [0.4, 1, 0.4] }}
@@ -509,7 +509,7 @@ const ThoughtItem = ({ content, isLive, isLast }: { content: string; isLive?: bo
                             ))}
                         </motion.div>
                     )}
-                    
+
                     {displayContent && displayContent.length > 70 && (
                         <motion.svg
                             animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -704,61 +704,6 @@ const PlanItem = ({
     );
 };
 
-// Debate item - shows the three-agent debate process
-const DebateItem = ({ debateData, isDebating, isLast, onViewFullDebate }: { 
-    debateData: any; 
-    isDebating: boolean; 
-    isLast: boolean;
-    onViewFullDebate?: () => void;
-}) => {
-    return (
-        <div style={{ display: "flex", gap: 0, position: "relative", paddingBottom: 0 }}>
-            {/* Main timeline line */}
-            <div style={{
-                width: 20,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                position: "relative",
-            }}>
-                <div style={{ width: 2, height: 12, backgroundColor: "#e8e6d9" }} />
-                <div style={{
-                    width: 10, height: 10, borderRadius: "50%",
-                    backgroundColor: isDebating ? "#6366f1" : "#818cf8",
-                    border: "2px solid #faf9f7",
-                    boxShadow: "0 0 0 1px #e8e6d9",
-                    flexShrink: 0,
-                    zIndex: 2,
-                }} />
-                {isDebating && (
-                    <motion.div
-                        animate={{ scale: [1, 2.2], opacity: [0.5, 0] }}
-                        transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
-                        style={{
-                            position: "absolute", top: 10, width: 14, height: 14,
-                            borderRadius: "50%",
-                            backgroundColor: "#6366f1",
-                            zIndex: 1
-                        }}
-                    />
-                )}
-                {!isLast && (
-                    <div style={{ position: "absolute", top: 22, bottom: -20, width: 2, backgroundColor: "#e8e6d9" }} />
-                )}
-            </div>
-
-            {/* Debate content */}
-            <div style={{ flex: 1, paddingLeft: 12, paddingBottom: 20 }}>
-                <InlineDebateProgress
-                    debate={debateData}
-                    isDebating={isDebating}
-                    onViewFullDebate={onViewFullDebate}
-                />
-            </div>
-        </div>
-    );
-};
-
 // Sub-agent progress item - displays step-by-step progress for sub-agent executions
 const SubAgentProgressItem = ({
     event,
@@ -903,7 +848,7 @@ const SubAgentProgressItem = ({
         // Clean up backend orchestrator logs for UI display
         const cleanContent = event.content ? event.content.replace(/^(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬)\s*[^:]+:\s*/, '').trim() : '';
         const displayContent = cleanContent.replace(/^(?:🤖|🧠|🧭|⚙️|🔍|👨‍💻|📊|🌐|🖥️|💻|✅|⚠️|⚖️|🎬)\s*/, '');
-        
+
         if (!displayContent) return null;
 
         return (
@@ -918,7 +863,7 @@ const SubAgentProgressItem = ({
                 }}>
                     {/* Vertical line before dot */}
                     <div style={{ width: 2, height: 8, backgroundColor: "#e8e6d9" }} />
-                    
+
                     {/* Status dot */}
                     <div style={{ position: "relative", width: 10, height: 10, flexShrink: 0 }}>
                         <div style={{
@@ -939,7 +884,7 @@ const SubAgentProgressItem = ({
                             />
                         )}
                     </div>
-                    
+
                     {/* Vertical line after dot */}
                     {!isLast && (
                         <div style={{ position: "absolute", top: 18, bottom: -20, width: 2, backgroundColor: "#e8e6d9" }} />
@@ -948,9 +893,9 @@ const SubAgentProgressItem = ({
 
                 {/* Content */}
                 <div style={{ flex: 1, paddingLeft: 12, paddingBottom: 20 }}>
-                    <div 
+                    <div
                         onClick={() => setIsExpanded(!isExpanded)}
-                        style={{ 
+                        style={{
                             display: "flex", alignItems: "center", gap: 8, padding: "2px 0",
                             cursor: "pointer", userSelect: "none"
                         }}
@@ -965,7 +910,7 @@ const SubAgentProgressItem = ({
                         }}>
                             {isThinking ? "Thinking..." : (displayContent.length > 70 ? displayContent.substring(0, 70) + "..." : displayContent)}
                         </span>
-                        
+
                         {isThinking && (
                             <motion.div
                                 animate={{ opacity: [0.4, 1, 0.4] }}
@@ -982,7 +927,7 @@ const SubAgentProgressItem = ({
                                 ))}
                             </motion.div>
                         )}
-                        
+
                         {displayContent && displayContent.length > 70 && (
                             <motion.svg
                                 animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -2505,16 +2450,7 @@ export const AgentTimeline = ({
         // Add debate ui element if we are debating or have debate data
         // Only if it belongs globally, assuming debate happens at the main level
         // We'll place it at the end so it's visible, or right after plan. Let's put it at the very top, like plan.
-        // Actually, we'll unshift it so it's near the top. Or we can just push it so it's at the bottom? Let's just push it.
-        // Wait, better to put it right after thought, or if there's a plan, after the plan.
-        // Actually, since debate determines the plan, let's insert it before the plan. 
-        // We'll just push it.
-        if (debateData || isDebating) {
-            items.splice(1, 0, {
-                type: "debate",
-                data: { debateData, isDebating: isDebating || false }
-            });
-        }
+        // Debate information is now attached to the prompt input area, not displayed in timeline
 
         return items;
     }, [toolCalls, thought, isLive, planSteps, planTitle, subAgentProgress, buildTimelineBranches, debateData, isDebating]);
@@ -2593,12 +2529,12 @@ export const AgentTimeline = ({
                     width: "100%",
                 }}
             >
-                <div style={{ 
-                    position: "relative", 
-                    display: "flex", 
-                    alignItems: "center", 
+                <div style={{
+                    position: "relative",
+                    display: "flex",
+                    alignItems: "center",
                     justifyContent: "center",
-                    width: 20 
+                    width: 20
                 }}>
                     {/* Vertical line connecting to timeline */}
                     {!collapsed && hasContent && (
@@ -2699,20 +2635,6 @@ export const AgentTimeline = ({
                                                 steps={item.data.steps}
                                                 title={item.data.title}
                                                 isLast={isLast}
-                                            />
-                                        );
-                                    }
-
-                                    if (item.type === "debate") {
-                                        return (
-                                            <DebateItem
-                                                key="debate"
-                                                debateData={item.data.debateData}
-                                                isDebating={item.data.isDebating}
-                                                isLast={isLast}
-                                                onViewFullDebate={() => {
-                                                    // This can be used to open a modal or expand the view
-                                                }}
                                             />
                                         );
                                     }

@@ -55,12 +55,12 @@ class NavisLogger {
                 break;
         }
         console.log(parts.join(' — '));
-        for (const listener of this.listeners) {
+        this.listeners.forEach((listener) => {
             try {
                 listener(full);
             }
             catch { }
-        }
+        });
     }
     browserLaunch(detail) { this.emit({ type: 'browser_launch', detail }); }
     pageNavigate(step, maxSteps, url) { this.emit({ type: 'page_navigate', step, maxSteps, url }); }

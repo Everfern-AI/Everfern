@@ -159,7 +159,7 @@ CRITICAL RULES:
                 (result.pendingToolCalls?.length === 0 && scrubbedContent.length > 50);
             return {
                 ...result,
-                returningFromSpecialist: 'data_analyst',
+                returningFromSpecialist: isComplete ? null : 'data_analyst',
                 dataAnalysisComplete: isComplete
             };
         }

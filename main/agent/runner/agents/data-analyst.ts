@@ -212,7 +212,7 @@ CRITICAL RULES:
 
       return {
         ...result,
-        returningFromSpecialist: 'data_analyst',
+        returningFromSpecialist: isComplete ? null : 'data_analyst',
         dataAnalysisComplete: isComplete
       };
 

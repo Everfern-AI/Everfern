@@ -4,18 +4,18 @@ import { GraphStateType } from '../../state';
 
 /**
  * Bug Condition Exploration Test - Conversation Intent No Response
- * 
+ *
  * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5**
- * 
+ *
  * Property 1: Bug Condition - Conversation Intents Skip Model Call
- * 
+ *
  * CRITICAL: This test MUST FAIL on unfixed code - failure confirms the bug exists
  * DO NOT attempt to fix the test or the code when it fails
- * 
+ *
  * This test verifies that when users send conversational messages like greetings
  * ("hi", "hello", "how are you?"), the system routes directly to validation without
  * calling the AI model, resulting in no response being generated.
- * 
+ *
  * Expected behavior (after fix): Model should be called and generate a friendly greeting
  * Current behavior (unfixed): Routes to validation → END without calling model
  */
@@ -28,7 +28,7 @@ let executedNodes: string[] = [];
 vi.mock('../../nodes/triage', () => ({
   createTriageNode: vi.fn(() => async (state: any) => {
     executedNodes.push('triage');
-    return { 
+    return {
       currentIntent: 'conversation',
       intentConfidence: 0.95,
       taskPhase: 'planning'
@@ -40,19 +40,8 @@ vi.mock('../../nodes/triage', () => ({
 vi.mock('../../nodes/planner', () => ({
   createPlannerNode: vi.fn(() => async (state: any) => {
     executedNodes.push('planner');
-    return { 
+    return {
       taskPhase: 'routing',
-      shouldContinueIteration: false
-    };
-  })
-}));
-
-// Mock the validation node
-vi.mock('../../nodes/validation', () => ({
-  createValidationNode: vi.fn(() => async (state: any) => {
-    executedNodes.push('validation');
-    return { 
-      validationResult: { isHighRisk: false, reasoning: 'No tools to validate' },
       shouldContinueIteration: false
     };
   })
@@ -124,14 +113,14 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
   /**
    * Test Case 1: "hi" greeting
-   * 
+   *
    * Scenario: User sends "hi"
    * Expected (after fix): Model is called (web_explorer node), response contains greeting
    * Current (unfixed): Model is NOT called, routes directly to validation → END
    */
   it('should call model and generate response for "hi" greeting', async () => {
     const graph = buildGraph(mockRunner, [], []);
-    
+
     // Create initial state with conversation intent
     const initialState: Partial<GraphStateType> = {
       messages: [
@@ -147,21 +136,21 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     });
 
     // ASSERTIONS - These will FAIL on unfixed code (proving the bug exists)
-    
+
     // 1. Model should have been called (web_explorer should be in execution path)
     expect(modelCallCount).toBeGreaterThan(0);
-    
+
     // 2. web_explorer node should have been executed
     expect(executedNodes).toContain('web_explorer');
-    
+
     // 3. Final response should not be empty
     expect(result.finalResponse).toBeDefined();
     expect(result.finalResponse).not.toBe('');
-    
+
     // 4. Response should contain greeting-like content
     const response = result.finalResponse?.toLowerCase() || '';
-    const hasGreeting = response.includes('hello') || 
-                       response.includes('hi') || 
+    const hasGreeting = response.includes('hello') ||
+                       response.includes('hi') ||
                        response.includes('help') ||
                        response.includes('how can i');
     expect(hasGreeting).toBe(true);
@@ -169,14 +158,14 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
   /**
    * Test Case 2: "hello" greeting
-   * 
+   *
    * Scenario: User sends "hello"
    * Expected (after fix): Model is called (web_explorer node), response contains greeting
    * Current (unfixed): Model is NOT called, routes directly to validation → END
    */
   it('should call model and generate response for "hello" greeting', async () => {
     const graph = buildGraph(mockRunner, [], []);
-    
+
     const initialState: Partial<GraphStateType> = {
       messages: [
         { role: 'user', content: 'hello' }
@@ -194,24 +183,24 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     expect(executedNodes).toContain('web_explorer');
     expect(result.finalResponse).toBeDefined();
     expect(result.finalResponse).not.toBe('');
-    
+
     const response = result.finalResponse?.toLowerCase() || '';
-    const hasGreeting = response.includes('hello') || 
-                       response.includes('hi') || 
+    const hasGreeting = response.includes('hello') ||
+                       response.includes('hi') ||
                        response.includes('help');
     expect(hasGreeting).toBe(true);
   });
 
   /**
    * Test Case 3: "how are you?" greeting
-   * 
+   *
    * Scenario: User sends "how are you?"
    * Expected (after fix): Model is called (web_explorer node), response contains greeting
    * Current (unfixed): Model is NOT called, routes directly to validation → END
    */
   it('should call model and generate response for "how are you?" greeting', async () => {
     const graph = buildGraph(mockRunner, [], []);
-    
+
     const initialState: Partial<GraphStateType> = {
       messages: [
         { role: 'user', content: 'how are you?' }
@@ -233,14 +222,14 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
   /**
    * Test Case 4: Routing Path Verification
-   * 
+   *
    * This test verifies the bug at the routing level:
    * Current (unfixed): global_planner → action_validation → END (no model call)
    * Expected (after fix): global_planner → web_explorer → action_validation → END (model called)
    */
   it('should demonstrate bug: conversation intent routes to validation without calling model', async () => {
     const graph = buildGraph(mockRunner, [], []);
-    
+
     const initialState: Partial<GraphStateType> = {
       messages: [
         { role: 'user', content: 'hi' }
@@ -261,10 +250,10 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
   /**
    * Edge Case: Mixed Intent Test
-   * 
+   *
    * Scenario: User sends "hi, can you help me code?"
    * Expected: Should classify as "coding" (not "conversation") and route to coding_specialist
-   * 
+   *
    * This test ensures the fix doesn't break legitimate coding requests with greetings
    */
   it('should classify "hi, can you help me code?" as coding intent, not conversation', async () => {
@@ -272,7 +261,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     const { createTriageNode } = await import('../../nodes/triage');
     vi.mocked(createTriageNode).mockReturnValueOnce(async (state: any) => {
       executedNodes.push('triage');
-      return { 
+      return {
         currentIntent: 'coding', // Should be classified as coding, not conversation
         intentConfidence: 0.85,
         taskPhase: 'planning'
@@ -280,7 +269,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     });
 
     const graph = buildGraph(mockRunner, [], []);
-    
+
     const initialState: Partial<GraphStateType> = {
       messages: [
         { role: 'user', content: 'hi, can you help me code?' }

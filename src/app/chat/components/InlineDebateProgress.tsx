@@ -1,20 +1,11 @@
-/**
- * EverFern Desktop — Inline Debate Progress
- *
- * Shows debate progress inline within the chat message stream.
- * Provides quick access to full debate chamber.
- */
-
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  SparklesIcon,
-  ChevronRightIcon,
-  CheckCircleIcon,
-  ExclamationCircleIcon,
+  ChevronUpIcon,
 } from '@heroicons/react/24/outline';
+import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import type { DebateDisplayData } from '../types/debate-types';
 
 interface InlineDebateProgressProps {
@@ -29,6 +20,7 @@ export function InlineDebateProgress({
   onViewFullDebate,
 }: InlineDebateProgressProps) {
   const [phase, setPhase] = useState<'proposal' | 'review' | 'arbitration' | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (isDebating) {
@@ -48,145 +40,208 @@ export function InlineDebateProgress({
     }
   }, [isDebating]);
 
+  // Auto-expand when debate completes
+  useEffect(() => {
+    if (debate && !isDebating) {
+      setExpanded(true);
+    }
+  }, [debate, isDebating]);
+
   if (!debate && !isDebating) return null;
 
   const phaseInfo = {
     proposal: {
-      label: '🚀 Vanguard: Proposing',
-      description: 'Generating execution plan',
+      label: '🚀 Vanguard',
+      description: 'Proposing execution plan',
       icon: '🚀',
     },
     review: {
-      label: '👻 Phantom: Reviewing',
-      description: 'Analyzing for risks',
+      label: '👻 Phantom',
+      description: 'Reviewing for risks',
       icon: '👻',
     },
     arbitration: {
-      label: '⚖️ Arbiter: Deciding',
-      description: 'Making final call',
+      label: '⚖️ Arbiter',
+      description: 'Making final decision',
       icon: '⚖️',
     },
   };
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="p-4 rounded-xl border border-[#e8e6d9] bg-[#faf9f7] shadow-sm overflow-hidden"
-    >
-      {isDebating && phase ? (
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2.5 mb-2.5">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-                className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 border border-indigo-100"
-              >
-                <SparklesIcon className="w-3.5 h-3.5 text-indigo-600" />
-              </motion.div>
-              <p className="font-semibold text-[#201e24] text-[13.5px] tracking-tight">
-                {phaseInfo[phase].label}
-              </p>
-            </div>
-            <p className="text-[12.5px] text-[#8a8886] leading-relaxed ml-8.5">
-              {phaseInfo[phase].description}
-            </p>
+  // Status icon based on debate state
+  const getStatusIcon = () => {
+    if (isDebating) {
+      return <Loader size={14} strokeWidth={2} className="text-purple-500" />;
+    }
 
-            {/* Progress dots */}
-            <div className="flex gap-1.5 mt-3.5 ml-8.5">
-              {['proposal', 'review', 'arbitration'].map((p) => (
-                <motion.div
-                  key={p}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    p === phase
-                      ? 'w-6 bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.3)]'
-                      : 'w-1.5 bg-[#e8e6d9]'
-                  }`}
-                  animate={p === phase ? {
-                    opacity: [0.7, 1, 0.7],
-                  } : {}}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* View button */}
-          {onViewFullDebate && (
-            <button
-              onClick={onViewFullDebate}
-              className="px-3.5 py-1.5 bg-white border border-[#e8e6d9] hover:bg-[#f3f2ee] text-[#4a4846] rounded-lg font-semibold text-[12px] transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <span>Arena</span>
-              <ChevronRightIcon className="w-3 h-3 text-[#8a8886]" />
-            </button>
-          )}
+    if (debate?.finalPlan.goNogo === 'go') {
+      return (
+        <div className="w-4 h-4 rounded-full bg-[#10b981] flex items-center justify-center z-1">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
         </div>
-      ) : debate ? (
-        <div className="space-y-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              {debate.finalPlan.goNogo === 'go' && (
-                <div className="w-6 h-6 rounded-full bg-green-50 border border-green-100 flex items-center justify-center">
-                  <CheckCircleIcon className="w-4 h-4 text-green-600" />
-                </div>
-              )}
-              {debate.finalPlan.goNogo === 'proceed-with-caution' && (
-                <div className="w-6 h-6 rounded-full bg-yellow-50 border border-yellow-100 flex items-center justify-center">
-                  <ExclamationCircleIcon className="w-4 h-4 text-yellow-600" />
-                </div>
-              )}
-              {debate.finalPlan.goNogo === 'no-go' && (
-                <div className="w-6 h-6 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
-                  <ExclamationCircleIcon className="w-4 h-4 text-red-600" />
-                </div>
-              )}
-              <p className="font-bold text-[#201e24] text-[13.5px] tracking-tight">
-                Debate {debate.finalPlan.goNogo === 'go' ? 'Approved' : debate.finalPlan.goNogo === 'no-go' ? 'Rejected' : 'Cautioned'}
-              </p>
-            </div>
-            
-            {onViewFullDebate && (
-              <button
-                onClick={onViewFullDebate}
-                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 uppercase tracking-wider"
-              >
-                Full Record
-              </button>
+      );
+    }
+
+    if (debate?.finalPlan.goNogo === 'no-go') {
+      return (
+        <div className="w-4 h-4 rounded-full bg-[#ef4444] flex items-center justify-center z-1">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </div>
+      );
+    }
+
+    // proceed-with-caution
+    return (
+      <div className="w-4 h-4 rounded-full bg-[#f59e0b] flex items-center justify-center z-1">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+    );
+  };
+
+  // Get debate title
+  const getDebateTitle = () => {
+    if (isDebating && phase) {
+      return phaseInfo[phase].label;
+    }
+
+    if (debate) {
+      if (debate.finalPlan.goNogo === 'go') return 'Debate Approved';
+      if (debate.finalPlan.goNogo === 'no-go') return 'Debate Rejected';
+      return 'Debate Cautioned';
+    }
+
+    return 'Debate Chamber';
+  };
+
+  const hasOutput = debate && !isDebating;
+
+  // Truncate explanation if too long
+  const truncateText = (text: string, maxLength: number = 200) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
+  return (
+    <div className="flex flex-col relative">
+      {/* Main row with status icon and content */}
+      <div className="flex items-center gap-3 relative">
+        {/* Status Icon - positioned to align with timeline branch at left-[7px] */}
+        <div className="flex items-center justify-center w-4 h-4 shrink-0 relative z-1">
+          {getStatusIcon()}
+        </div>
+
+        {/* Content Container */}
+        <div
+          onClick={() => hasOutput && setExpanded(!expanded)}
+          className={`flex-1 flex items-center gap-2 overflow-hidden ${hasOutput ? 'cursor-pointer' : 'cursor-default'}`}
+        >
+          {/* Title and Phase Info */}
+          {!isDebating && <span className="text-[13px]">⚖️</span>}
+          <div className="flex-1 flex items-center justify-between overflow-hidden">
+            <span
+              className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${
+                isDebating ? 'text-[#888888]' : 'text-[#111111]'
+              }`}
+              style={{ fontFamily: "'Matter', sans-serif" }}
+            >
+              {getDebateTitle()}
+            </span>
+
+            {/* Phase indicator when debating */}
+            {isDebating && phase && (
+              <span className="text-[13px] text-[#888888] font-normal ml-auto shrink-0 pr-1">
+                {phaseInfo[phase].description}
+              </span>
             )}
           </div>
 
-          <p className="text-[12.5px] text-[#4a4846] leading-relaxed bg-white/50 p-2.5 rounded-lg border border-[#e8e6d9]/50">
-            {debate.finalPlan.explanation}
-          </p>
-
-          {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-2 mt-1">
-            <div className="bg-white border border-[#e8e6d9] rounded-lg p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <p className="text-[10px] font-bold text-[#8a8886] uppercase tracking-widest mb-0.5">Steps</p>
-              <p className="text-[14px] font-bold text-[#201e24]">
-                {debate.proposal.stepCount}
-              </p>
-            </div>
-            <div className="bg-white border border-[#e8e6d9] rounded-lg p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <p className="text-[10px] font-bold text-[#8a8886] uppercase tracking-widest mb-0.5">Concerns</p>
-              <p className="text-[14px] font-bold text-[#201e24]">
-                {debate.review.concernCount}
-              </p>
-            </div>
-            <div className="bg-white border border-[#e8e6d9] rounded-lg p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <p className="text-[10px] font-bold text-[#8a8886] uppercase tracking-widest mb-0.5">Risk</p>
-              <p className={`text-[14px] font-bold ${
-                debate.finalPlan.riskAssessment === 'low' ? 'text-green-600' : 
-                debate.finalPlan.riskAssessment === 'medium' ? 'text-yellow-600' : 'text-red-600'
-              } capitalize`}>
-                {debate.finalPlan.riskAssessment}
-              </p>
-            </div>
-          </div>
+          {/* Chevron for completed debates */}
+          {hasOutput && (
+            <motion.span
+              animate={{ rotate: expanded ? 0 : 90 }}
+              className="flex shrink-0 text-[#9ca3af]"
+            >
+              <ChevronUpIcon width={14} height={14} strokeWidth={2.5} />
+            </motion.span>
+          )}
         </div>
-      ) : null}
-    </motion.div>
+      </div>
+
+      {/* Expanded Content */}
+      <AnimatePresence>
+        {expanded && debate && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="overflow-hidden mt-2"
+          >
+            <div className="bg-white border border-[#e5e7eb] rounded-md p-3 flex flex-col gap-2">
+              {/* Explanation - truncated and better formatted */}
+              <div className="px-2 py-1.5 rounded-md text-[12px] leading-[1.5] bg-[#f9fafb] text-[#4b5563] border border-[#f3f4f6]">
+                <p className="whitespace-pre-wrap wrap-break-word">
+                  {truncateText(debate.finalPlan.explanation, 250)}
+                </p>
+              </div>
+
+              {/* Stats Grid - Compact */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5">
+                  <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
+                    Steps
+                  </p>
+                  <p className="text-[13px] font-bold text-[#111827]">
+                    {debate.proposal.stepCount}
+                  </p>
+                </div>
+                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5">
+                  <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
+                    Concerns
+                  </p>
+                  <p className="text-[13px] font-bold text-[#111827]">
+                    {debate.review.concernCount}
+                  </p>
+                </div>
+                <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5">
+                  <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
+                    Risk
+                  </p>
+                  <p
+                    className={`text-[13px] font-bold capitalize ${
+                      debate.finalPlan.riskAssessment === 'low'
+                        ? 'text-green-600'
+                        : debate.finalPlan.riskAssessment === 'medium'
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {debate.finalPlan.riskAssessment}
+                  </p>
+                </div>
+              </div>
+
+              {/* View Full Debate Button */}
+              {onViewFullDebate && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewFullDebate();
+                  }}
+                  className="text-[11px] font-semibold text-[#6366f1] hover:text-[#4f46e5] transition-colors text-left mt-0.5"
+                >
+                  View Full Debate →
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

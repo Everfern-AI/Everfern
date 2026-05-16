@@ -24,7 +24,6 @@ interface NavisConfig {
     useVision: boolean;
     headless: boolean;
     maxSteps: number;
-    autoLaunchChrome: boolean;
 }
 
 interface ToolSettingsConfig {
@@ -38,7 +37,6 @@ const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     useVision: false,
     headless: false,
     maxSteps: 25,
-    autoLaunchChrome: true,
 };
 
 const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
@@ -358,46 +356,6 @@ export function ToolSettingsSection() {
                             <div style={{
                                 position: 'absolute', top: 3,
                                 left: config.navis.useVision ? 23 : 3,
-                                width: 18, height: 18, borderRadius: '50%',
-                                backgroundColor: '#ffffff',
-                                transition: 'left 0.2s',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                            }} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Auto-Launch Chrome Toggle */}
-                <div style={{ marginBottom: 14 }}>
-                    <Label>Chrome CDP Connection</Label>
-                    <div
-                        onClick={() => handleNavisChange({ ...config.navis, autoLaunchChrome: !config.navis.autoLaunchChrome })}
-                        style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9',
-                            borderRadius: 12, cursor: 'pointer', transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f9f9f8'}
-                    >
-                        <div>
-                            <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
-                                {config.navis.autoLaunchChrome ? 'Auto-Launch Chrome' : 'Manual CDP'}
-                            </div>
-                            <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
-                                {config.navis.autoLaunchChrome
-                                    ? 'Launches Chrome with debug port 9222 (uses your profile, cookies, sessions)'
-                                    : 'You must manually start Chrome with --remote-debugging-port=9222'}
-                            </div>
-                        </div>
-                        <div style={{
-                            width: 44, height: 24, borderRadius: 12, position: 'relative',
-                            backgroundColor: config.navis.autoLaunchChrome ? '#111111' : '#e8e6d9',
-                            transition: 'background 0.2s', flexShrink: 0,
-                        }}>
-                            <div style={{
-                                position: 'absolute', top: 3,
-                                left: config.navis.autoLaunchChrome ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: '#ffffff',
                                 transition: 'left 0.2s',

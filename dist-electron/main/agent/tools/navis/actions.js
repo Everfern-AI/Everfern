@@ -4,15 +4,22 @@
  *
  * Executes browser actions from AI decisions.
  * Implements all actions defined in NAVIS.md.
+ *
+ * Phase 1: Basic Actions (go_to_url, click, input, etc.)
+ * Phase 2: Advanced Form Interactions (upload_file, select_option, set_date, drag_and_drop, hover, right_click)
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.executeAction = executeAction;
+const form_interactions_1 = require("./form-interactions");
+const hybrid_click_1 = require("./hybrid-click");
+const element_capture_1 = require("./element-capture");
+const config_1 = require("./config");
 // ── Multi-Strategy Element Finder ───────────────────────────────
 async function findElement(page, ref, logger) {
     const strategies = [
         // Strategy 1: data-ref (set by our capture script)
         async () => {
-            const loc = page.locator(`[data-ref="${ref}"]`);
+            const loc = page.locator(`[data-ref="${ref}"], [data-scroll-ref="${ref}"]`);
             if (await loc.count() > 0)
                 return { locator: loc, method: 'data-ref' };
             return null;
@@ -30,7 +37,7 @@ async function findElement(page, ref, logger) {
             if (match) {
                 const index = parseInt(match[1]) - 1;
                 // Search in all interactive types
-                const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"]').nth(index);
+                const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"], [data-scroll-ref]').nth(index);
                 if (await loc.count() > 0 && await loc.isVisible())
                     return { locator: loc, method: 'nth-index' };
             }
@@ -97,9 +104,9 @@ async function executeAction(actionName, args, page, session, logger, step, maxS
             case 'press_key':
                 return await executePressKey(args, page, session, logger, step, maxSteps);
             case 'scroll_down':
-                return await executeScrollDown(page, logger, step, maxSteps);
+                return await executeScrollDown(page, logger, step, maxSteps, args);
             case 'scroll_up':
-                return await executeScrollUp(page, logger, step, maxSteps);
+                return await executeScrollUp(page, logger, step, maxSteps, args);
             case 'wait':
                 return await executeWait(args, logger, step, maxSteps);
             case 'extract_content':
@@ -114,6 +121,21 @@ async function executeAction(actionName, args, page, session, logger, step, maxS
                 return await executeSolveCaptcha(page, session, logger, step, maxSteps);
             case 'done':
                 return executeDone(args);
+            // Phase 2: Advanced Form Interactions
+            case 'upload_file':
+                return await (0, form_interactions_1.executeUploadFile)(args, page, session, logger, step, maxSteps);
+            case 'select_option':
+                return await (0, form_interactions_1.executeSelectOption)(args, page, session, logger, step, maxSteps);
+            case 'set_date':
+                return await (0, form_interactions_1.executeSetDate)(args, page, session, logger, step, maxSteps);
+            case 'drag_and_drop':
+                return await (0, form_interactions_1.executeDragAndDrop)(args, page, session, logger, step, maxSteps);
+            case 'hover':
+                return await (0, form_interactions_1.executeHover)(args, page, session, logger, step, maxSteps);
+            case 'right_click':
+                return await (0, form_interactions_1.executeRightClick)(args, page, session, logger, step, maxSteps);
+            case 'hybrid_click':
+                return await executeHybridClick(args, page, session, logger, step, maxSteps);
             default:
                 return { success: false, message: `Unknown action: ${actionName}`, stateChanged: false };
         }
@@ -162,6 +184,11 @@ async function executeClickElement(args, page, session, logger, step, maxSteps) 
         }
         const box = await locator.boundingBox().catch(() => null);
         if (box) {
+            const centerX = box.x + box.width / 2;
+            const centerY = box.y + box.height / 2;
+            // Move magical cursor first
+            await session.moveCursor(centerX, centerY);
+            await new Promise(r => setTimeout(r, 600)); // Wait for transition
             await session.highlightElement(box);
             // Listen for new pages (popups) being opened by this click
             const popupPromise = page.context().waitForEvent('page', { timeout: 3000 }).catch(() => null);
@@ -171,7 +198,7 @@ async function executeClickElement(args, page, session, logger, step, maxSteps) 
             }).then(() => true).catch(() => false);
             // Fallback: use mouse.click
             if (!clicked && box) {
-                await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+                await page.mouse.click(centerX, centerY);
             }
             // Check if a new tab was opened
             const newPage = await popupPromise;
@@ -209,8 +236,13 @@ async function executeInputText(args, page, session, logger, step, maxSteps) {
             };
         }
         const box = await locator.boundingBox().catch(() => null);
-        if (box)
+        if (box) {
+            const centerX = box.x + box.width / 2;
+            const centerY = box.y + box.height / 2;
+            await session.moveCursor(centerX, centerY);
+            await new Promise(r => setTimeout(r, 600));
             await session.highlightElement(box);
+        }
         // Use fill() for speed (instant vs 2ms/char with pressSequentially)
         await locator.fill(''); // Clear first
         await locator.fill(args.text, { timeout: 3000 });
@@ -228,6 +260,14 @@ async function executePressKey(args, page, session, logger, step, maxSteps) {
     try {
         if (args.ref) {
             const { locator } = await findElement(page, args.ref, logger);
+            const box = await locator.boundingBox().catch(() => null);
+            if (box) {
+                const centerX = box.x + box.width / 2;
+                const centerY = box.y + box.height / 2;
+                await session.moveCursor(centerX, centerY);
+                await new Promise(r => setTimeout(r, 600));
+                await session.highlightElement(box);
+            }
             await locator.press(args.key, { timeout: 3000 });
             logger?.elementInput(step, maxSteps, `key:${args.key}`, args.ref);
         }
@@ -242,13 +282,35 @@ async function executePressKey(args, page, session, logger, step, maxSteps) {
         return { success: false, message: `Key press failed: ${err.message}`, stateChanged: false };
     }
 }
-async function executeScrollDown(page, logger, step, maxSteps) {
-    await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+async function executeScrollDown(page, logger, step, maxSteps, args) {
+    if (args?.ref) {
+        try {
+            const { locator, name } = await findElement(page, args.ref, logger);
+            await locator.evaluate((el) => el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' }));
+            logger?.scroll(step, maxSteps, `down on ${name}`);
+            return { success: true, message: `Scrolled down on ${name}`, stateChanged: false };
+        }
+        catch (err) {
+            return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
+        }
+    }
+    await page.evaluate(() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' }));
     logger?.scroll(step, maxSteps, 'down');
     return { success: true, message: 'Scrolled down one page', stateChanged: false };
 }
-async function executeScrollUp(page, logger, step, maxSteps) {
-    await page.evaluate(() => window.scrollBy(0, -window.innerHeight));
+async function executeScrollUp(page, logger, step, maxSteps, args) {
+    if (args?.ref) {
+        try {
+            const { locator, name } = await findElement(page, args.ref, logger);
+            await locator.evaluate((el) => el.scrollBy({ top: -el.clientHeight * 0.8, behavior: 'smooth' }));
+            logger?.scroll(step, maxSteps, `up on ${name}`);
+            return { success: true, message: `Scrolled up on ${name}`, stateChanged: false };
+        }
+        catch (err) {
+            return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
+        }
+    }
+    await page.evaluate(() => window.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'smooth' }));
     logger?.scroll(step, maxSteps, 'up');
     return { success: true, message: 'Scrolled up one page', stateChanged: false };
 }
@@ -388,4 +450,51 @@ function executeDone(args) {
 }
 function truncate(s, max) {
     return s.length > max ? s.slice(0, max) + '…' : s;
+}
+async function executeHybridClick(args, page, session, logger, step, maxSteps) {
+    if (!args.targetDescription) {
+        return { success: false, message: 'Missing targetDescription parameter', stateChanged: false };
+    }
+    if (!args.aiClient) {
+        return { success: false, message: 'Missing aiClient parameter', stateChanged: false };
+    }
+    try {
+        // Load configuration
+        const config = (0, config_1.loadConfig)();
+        if (!config.hybridClick) {
+            return { success: false, message: 'Hybrid click is disabled in configuration', stateChanged: false };
+        }
+        // Capture full-screen screenshot
+        logger?.pageNavigate(step, maxSteps, `capturing screenshot for hybrid click: ${args.targetDescription}`);
+        const screenshot = await (0, element_capture_1.captureForVision)(page);
+        // Use hybrid click module
+        const hybrid = new hybrid_click_1.VisionGroundingHybrid(args.aiClient, {
+            confidenceThreshold: config.confidenceThreshold,
+            nearbySearchRadius: config.nearbySearchRadius,
+        });
+        const result = await hybrid.hybridClick(page, screenshot, args.targetDescription);
+        if (result.success) {
+            logger?.elementClick(step, maxSteps, truncate(args.targetDescription, 40), `method=${result.method}`);
+            await session.setOverlayStatus(`Clicked "${truncate(args.targetDescription, 20)}" (${result.method})`);
+            return {
+                success: true,
+                message: `Clicked "${args.targetDescription}" using ${result.method} method`,
+                stateChanged: true,
+            };
+        }
+        else {
+            return {
+                success: false,
+                message: `Failed to click "${args.targetDescription}": ${result.error}`,
+                stateChanged: false,
+            };
+        }
+    }
+    catch (err) {
+        return {
+            success: false,
+            message: `Hybrid click failed: ${err.message}`,
+            stateChanged: false,
+        };
+    }
 }

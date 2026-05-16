@@ -35,9 +35,8 @@ export function createDebateEventEmitter(event: IpcMainEvent | null, debateId: s
       };
 
       event.sender.send('debate:stream', debateEvent);
-      console.log(`[IPC] Emitted ${eventType} event`);
     } catch (err) {
-      console.error(`[IPC] Error emitting ${phase} event:`, err);
+      // Silently fail to keep logs clean
     }
   };
 }
@@ -128,9 +127,8 @@ export function emitDebateStart(event: IpcMainEvent | null, debateId: string): v
     };
 
     event.sender.send('debate:stream', debateEvent);
-    console.log('[IPC] Emitted debate_start event');
   } catch (err) {
-    console.error('[IPC] Error emitting debate_start event:', err);
+    // Silently fail
   }
 }
 
@@ -151,9 +149,8 @@ export function emitDebateComplete(event: IpcMainEvent | null, debateId: string,
     };
 
     event.sender.send('debate:stream', debateEvent);
-    console.log('[IPC] Emitted debate_complete event');
   } catch (err) {
-    console.error('[IPC] Error emitting debate_complete event:', err);
+    // Silently fail
   }
 }
 
@@ -172,9 +169,8 @@ export function emitDebateError(event: IpcMainEvent | null, debateId: string, er
     };
 
     event.sender.send('debate:stream', debateEvent);
-    console.log('[IPC] Emitted debate_error event:', error.message);
   } catch (err) {
-    console.error('[IPC] Error emitting debate_error event:', err);
+    // Silently fail
   }
 }
 

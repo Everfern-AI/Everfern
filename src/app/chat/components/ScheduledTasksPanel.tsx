@@ -60,14 +60,14 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        style={{ 
-          width: "100%", 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "space-between", 
-          padding: "16px 20px", 
-          backgroundColor: "#111111", 
-          border: "none", 
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          backgroundColor: "#111111",
+          border: "none",
           cursor: "pointer",
           transition: "background-color 0.2s"
         }}
@@ -78,7 +78,7 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
           <span style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Scheduled Tasks</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div 
+          <div
             onClick={(e) => { e.stopPropagation(); onAddTask(); }}
             style={{ padding: 6, borderRadius: 8, transition: 'background 0.2s', backgroundColor: 'rgba(255,255,255,0.1)' }}
             className="hover:bg-white/20"
@@ -98,45 +98,45 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
             transition={{ duration: 0.2 }}
             style={{ overflow: "hidden" }}
           >
-            <div style={{ padding: "0 20px 20px" }} className="flex flex-col gap-3">
+            <div style={{ padding: "16px 20px 20px" }} className="flex flex-col gap-4">
               {loading ? (
-                <div className="py-4 text-center">
+                <div className="py-6 text-center">
                   <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                 </div>
               ) : tasks.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#9ca3af", margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>
+                <p style={{ fontSize: 13, color: "#9ca3af", margin: 0, fontStyle: "italic", lineHeight: 1.6, paddingTop: 4 }}>
                   No scheduled tasks. Click the plus icon to create one.
                 </p>
               ) : (
                 tasks.map(task => (
-                  <div 
-                    key={task.id} 
-                    className="group relative bg-gray-50/50 hover:bg-gray-100/50 border border-gray-100 rounded-xl p-3 transition-all"
+                  <div
+                    key={task.id}
+                    className="group relative bg-gray-50/50 hover:bg-gray-100/50 border border-gray-100 rounded-xl p-4 transition-all"
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <h4 className="text-sm font-medium text-gray-700 truncate">{task.name || task.description}</h4>
-                        {task.name && <p className="text-[11px] text-gray-500 truncate mt-0.5">{task.description}</p>}
-                        <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
-                          <ClockIcon className="w-3.5 h-3.5" />
+                        {task.name && <p className="text-[11px] text-gray-500 truncate mt-1.5">{task.description}</p>}
+                        <div className="flex items-center gap-2 mt-2.5 text-xs text-gray-500">
+                          <ClockIcon className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>{task.cron}</span>
                           {task.endsAt && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-gray-200 text-[9px] rounded uppercase font-bold text-gray-600">
+                            <span className="ml-1.5 px-2 py-0.5 bg-gray-200 text-[9px] rounded uppercase font-bold text-gray-600">
                               Ends {new Date(task.endsAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                             </span>
                           )}
                         </div>
                       </div>
-                      <button 
+                      <button
                         onClick={(e) => handleDelete(e, task.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 transition-all flex-shrink-0"
                       >
                         <TrashIcon className="w-4 h-4" />
                       </button>
                     </div>
                     {task.nextRun && (
-                      <div className="mt-2 pt-2 border-t border-gray-100/50 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-indigo-400">
-                        <PlayIcon className="w-3 h-3" />
+                      <div className="mt-3 pt-3 border-t border-gray-100/50 flex items-center gap-2 text-[10px] uppercase tracking-wider font-semibold text-indigo-400">
+                        <PlayIcon className="w-3 h-3 flex-shrink-0" />
                         <span>Next Run: {new Date(task.nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     )}

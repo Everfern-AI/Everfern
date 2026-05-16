@@ -1,30 +1,4 @@
-// Minimal types for the playwright API surface we use.
-// Avoids a hard compile-time dependency on the 'playwright' package
-// (which is loaded at runtime via require).
-interface PlaywrightPage {
-  goto(url: string, opts?: { waitUntil?: string; timeout?: number }): Promise<void>;
-  evaluate<T>(fn: () => T): Promise<T>;
-  evaluate(fn: (arg: any) => void, arg: any): Promise<void>;
-}
-interface PlaywrightBrowserContext {
-  newPage(): Promise<PlaywrightPage>;
-  close(): Promise<void>;
-}
-interface PlaywrightBrowser {
-  newContext(opts: { userAgent: string; locale: string }): Promise<PlaywrightBrowserContext>;
-  close(): Promise<void>;
-}
-interface PlaywrightChromium {
-  launch(opts: { headless: boolean; channel?: string; args?: string[] }): Promise<PlaywrightBrowser>;
-}
-interface PlaywrightModule {
-  chromium: PlaywrightChromium;
-}
-
-function loadPlaywright(): PlaywrightModule {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require('playwright') as PlaywrightModule;
-}
+import { chromium } from 'playwright';
 
 const ANTI_DETECTION_ARGS = [
   '--disable-infobars',
@@ -51,16 +25,10 @@ export interface PlaywrightSearchResult {
   snippet: string;
 }
 
-/**
- * Launches Chromium, searches multiple engines (Brave, DuckDuckGo Lite) and returns results.
- * Implements randomized user agents and delays to avoid bot detection/captchas.
- */
 export async function playwrightWebSearch(
   query: string,
   headless: boolean
 ): Promise<PlaywrightSearchResult[]> {
-  const { chromium } = loadPlaywright();
-
   const browser = await chromium.launch({
     headless,
     channel: 'chrome',
@@ -192,16 +160,10 @@ export async function playwrightWebSearch(
 }
 
 
-/**
- * Launches Chromium, navigates to the target URL, extracts visible text, and returns it.
- * Closes the browser in a finally block.
- */
 export async function playwrightWebCrawl(
   url: string,
   headless: boolean
 ): Promise<string> {
-  const { chromium } = loadPlaywright();
-
   const browser = await chromium.launch({
     headless,
     channel: 'chrome',

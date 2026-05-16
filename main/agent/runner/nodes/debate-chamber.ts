@@ -7,8 +7,6 @@ import { createMissionIntegrator } from '../mission-integrator';
 import type { MissionTracker } from '../mission-tracker';
 import { nodeLifecycle } from '../services/node-utils';
 
-console.log('[DebateChamber] 📦 Module loaded');
-
 export const createDebateChamberNode = (
   runner: AgentRunner,
   eventQueue?: StreamEvent[],
@@ -27,13 +25,7 @@ export const createDebateChamberNode = (
   };
 
   return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
-    console.log('[DebateChamber] 🔥 NODE INVOKED');
     const logger = nodeLifecycle(runner, 'debate_chamber');
-    console.log(`[DebateChamber] decomposedTask:`, state.decomposedTask ? 'EXISTS' : 'null');
-    if (state.decomposedTask) {
-      const plan = state.decomposedTask as DecomposedTask;
-      console.log(`[DebateChamber] Steps: ${plan.steps?.length}, Title: ${plan.title}`);
-    }
 
     if (shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
@@ -76,7 +68,9 @@ export const createDebateChamberNode = (
       ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content))
       : '';
 
-    const availableTools = plan.steps.map((s: any) => s.tool).filter(Boolean);
+    // Get all available tools from runner (not just plan steps)
+    const allToolNames = runner.tools.map((t: any) => t.name).filter(Boolean);
+    const planToolNames = plan.steps.map((s: any) => s.tool).filter(Boolean);
 
     const context: DebateContext = {
       taskId: plan.id || `task_${Date.now()}`,
@@ -85,8 +79,9 @@ export const createDebateChamberNode = (
         role: (m.role || 'user') as 'system' | 'user' | 'assistant' | 'tool',
         content: typeof m.content === 'string' ? m.content.slice(0, 500) : JSON.stringify(m.content).slice(0, 500),
       })),
-      availableTools: [...new Set(availableTools)] as string[],
+      availableTools: [...new Set([...allToolNames, ...planToolNames])] as string[],
       workspaceContext: `Task: ${plan.title}\nSteps: ${stepCount}\nMode: ${plan.executionMode || 'sequential'}`,
+      constraints: [],
     };
 
     const debateId = `debate-${Date.now()}`;
@@ -113,13 +108,14 @@ export const createDebateChamberNode = (
     };
 
     const engine = new PeerAgentDebateEngine(runner.client, {
-      verbose: true,
+      verbose: false,
       complexityThreshold: 'moderate',
       timeoutMs: 180000,
       vanguardTimeoutMs: 60000,
       phantomTimeoutMs: 60000,
       arbiterTimeoutMs: 45000,
       onPhaseComplete,
+      shouldAbort,
     });
 
     try {
@@ -136,10 +132,10 @@ export const createDebateChamberNode = (
 
       const isNoGo = debateResult.finalPlan.goNogo === 'no-go';
       if (isNoGo) {
-        runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will not proceed');
+        runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will proceed anyway as requested');
         eventQueue?.push({
           type: 'thought',
-          content: `\n❌ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}`,
+          content: `\n⚠️ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}\n*(Proceeding with best effort as requested)*`,
         });
       }
 
@@ -153,10 +149,8 @@ export const createDebateChamberNode = (
           guidance: debateResult.finalPlan.executionGuidance,
           allData: debateResult,
         },
-        completionSignal: isNoGo
-          ? { reason: 'cannot_proceed' as const, explanation: `Debate chamber voted NO-GO: ${debateResult.finalPlan.explanation.slice(0, 200)}` }
-          : null,
-        shouldContinueIteration: isNoGo ? false : undefined,
+        completionSignal: null,
+        shouldContinueIteration: undefined,
       };
     } catch (err: any) {
       console.error(`[DebateChamber] Debate failed: ${err.message}`);

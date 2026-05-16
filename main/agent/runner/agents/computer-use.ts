@@ -44,7 +44,7 @@ export const createComputerUseNode = (
         messages: [assistantMsg as any],
         pendingToolCalls: [toolCall],
         taskPhase: 'executing' as const,
-        returningFromSpecialist: 'computer_use_agent',
+        returningFromSpecialist: null,
         computerUseComplete: false
       };
 

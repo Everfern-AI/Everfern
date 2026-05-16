@@ -117,6 +117,8 @@ export interface ChatMessage {
     | { type: 'text'; text: string }
     | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } }
   >;
+  /** Optional name for the message (e.g. tool name for role: 'tool') */
+  name?: string;
   /** Unique ID for a tool call (required for role: 'tool' and assistant tool calls) */
   tool_call_id?: string;
   /** Optional reasoning/thinking content (used by DeepSeek/NVIDIA NIM) */
@@ -222,7 +224,7 @@ export class AIClient {
 
   constructor(config: AIClientConfig) {
     let finalApiKey = config.apiKey ?? '';
-    
+
     // Only apply cleaning for legacy providers if they contain noise
     // Ollama Cloud / Custom keys must be preserved exactly as provided
     if (['openai', 'anthropic', 'nvidia', 'deepseek'].includes(config.provider)) {
@@ -256,7 +258,7 @@ export class AIClient {
       this.openaiClient = new OpenAI({
         apiKey: this.config.apiKey || 'dummy-key',
         baseURL: this.config.baseUrl,
-        timeout: 60000,
+        timeout: 120000,
         maxRetries: 3,
         defaultHeaders: headers,
         // Disable keep-alive to avoid Node 22 undici "invalid keep-alive header" errors
@@ -382,8 +384,8 @@ export class AIClient {
             const textContent = m.content.filter(c => c.type === 'text').map(c => 'text' in c ? c.text : '').join('\n');
             const imageChunks = m.content.filter(c => c.type === 'image_url');
 
-            const toolMsg: any = { 
-              role: 'tool', 
+            const toolMsg: any = {
+              role: 'tool',
               content: textContent || 'Action complete.',
               _images: imageChunks // Tag for second pass
             };
@@ -425,7 +427,7 @@ export class AIClient {
 
       for (let i = 0; i < processedMessages.length; i++) {
         let m = processedMessages[i];
-        
+
         // Collect images from tool messages and remove the internal tag
         if (m.role === 'tool' && m._images) {
           pendingImages.push(...m._images);
@@ -455,8 +457,8 @@ export class AIClient {
           if (last.role === 'tool' && m.role !== 'tool' && pendingImages.length > 0) {
             if (this._supportsVision()) {
               finalMessages.push({ role: 'assistant', content: 'Action completed.' });
-              last = { 
-                role: 'user', 
+              last = {
+                role: 'user',
                 content: [
                   { type: 'text', text: 'Screenshot(s) provided from the system:' },
                   ...pendingImages
@@ -545,8 +547,8 @@ export class AIClient {
       }
       if (pendingImages.length > 0) {
         finalMessages.push({ role: 'assistant', content: 'Action completed.' });
-        finalMessages.push({ 
-          role: 'user', 
+        finalMessages.push({
+          role: 'user',
           content: [
             { type: 'text', text: 'Screenshot(s) provided from the system:' },
             ...pendingImages
@@ -554,7 +556,7 @@ export class AIClient {
         });
       }
 
-      // Final synchronization pass for NVIDIA NIM: 
+      // Final synchronization pass for NVIDIA NIM:
       // Ensure EVERY tool call ID in an assistant message has a corresponding 'tool' response following it.
       const syncMessages: any[] = [];
       const outstandingIds = new Set<string>();
@@ -876,7 +878,7 @@ export class AIClient {
 
         // Create a new AbortController for each attempt with timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout per request
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per request
 
         const enhancedOptions: RequestInit = {
           ...options,
@@ -915,8 +917,20 @@ export class AIClient {
         // Check if it's an abort error (timeout)
         if (lastError.name === 'AbortError') {
           console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
+          // Log Ollama-specific timeout info
+          if (url.includes('/api/chat')) {
+            console.log(`[Ollama] Timeout on ${url} - No response received within timeout window`);
+          }
         } else {
           console.warn(`[AIClient] Network error: ${lastError.message}. Retrying in ${delay}ms...`);
+          // Log error details for debugging
+          if (url.includes('/api/chat')) {
+            console.log(`[Ollama] Error details:`, {
+              message: lastError.message,
+              name: lastError.name,
+              url: url
+            });
+          }
         }
 
         if (i < maxRetries) {
@@ -946,10 +960,10 @@ export class AIClient {
   private get _ollamaHeaders(): Record<string, string> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     // Ollama Cloud / Remote Ollama requires Authorization header
-    const isRemote = this.config.provider === 'ollama-cloud' || 
-                     this.config.baseUrl.includes('ollama.com') || 
+    const isRemote = this.config.provider === 'ollama-cloud' ||
+                     this.config.baseUrl.includes('ollama.com') ||
                      !this.config.baseUrl.includes('localhost') && !this.config.baseUrl.includes('127.0.0.1');
-                     
+
     if (isRemote && this.config.apiKey) {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
@@ -1565,8 +1579,8 @@ export class AIClient {
     }
 
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/v1/messages`, {
-      method: 'POST', 
-      headers, 
+      method: 'POST',
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -1677,8 +1691,8 @@ export class AIClient {
     }
 
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/v1/messages`, {
-      method: 'POST', 
-      headers, 
+      method: 'POST',
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`[anthropic] Stream HTTP ${res.status}`);
@@ -1779,11 +1793,11 @@ export class AIClient {
   private async _ollamaChat(req: ChatRequest): Promise<ChatResponse> {
     const isStreaming = !!req.onStreamChunk;
     const messages = this._mapOllamaMessages(req.messages);
-    
+
     // Ollama doesn't support JSON schema natively — append schema hint to system prompt
     if (req.jsonSchema) {
       const schemaHint = `\n\nIMPORTANT: You MUST respond with a JSON object that matches this schema:\n${JSON.stringify(req.jsonSchema, null, 2)}\n\nReturn ONLY valid JSON matching this schema. No extra text, no markdown fences.`;
-      
+
       // Inject schema hint into the system message
       const systemIdx = messages.findIndex((m: any) => m.role === 'system');
       if (systemIdx !== -1) {
@@ -1792,7 +1806,7 @@ export class AIClient {
         messages.unshift({ role: 'system', content: schemaHint });
       }
     }
-    
+
     const body: Record<string, unknown> = {
       model: req.model ?? this.config.model,
       messages,
@@ -1818,11 +1832,24 @@ export class AIClient {
       headers['Accept'] = 'text/event-stream';
     }
 
-    const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[Ollama] Chat request failed:`, {
+        error: errorMsg,
+        baseUrl: this.config.baseUrl,
+        model: req.model ?? this.config.model,
+        timestamp: new Date().toISOString()
+      });
+      throw err;
+    }
+
     if (!res.ok) {
       const txt = await res.text();
       let errorMsg = res.statusText;
@@ -1830,6 +1857,12 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      console.error(`[Ollama] HTTP ${res.status} response:`, {
+        status: res.status,
+        statusText: res.statusText,
+        body: txt.substring(0, 500),
+        error: errorMsg
+      });
       throw new Error(`[ollama] HTTP ${res.status}: ${errorMsg}`);
     }
 

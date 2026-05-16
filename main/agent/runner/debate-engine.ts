@@ -25,10 +25,10 @@ import type {
 const DEFAULT_CONFIG: DebateEngineConfig = {
   enableDebate: true,
   complexityThreshold: 'moderate',
-  timeoutMs: 120000,
-  vanguardTimeoutMs: 45000,
-  phantomTimeoutMs: 45000,
-  arbiterTimeoutMs: 30000,
+  timeoutMs: 180000,
+  vanguardTimeoutMs: 60000,
+  phantomTimeoutMs: 60000,
+  arbiterTimeoutMs: 45000,
   maxRetries: 1,
   verbose: false,
 };
@@ -39,12 +39,14 @@ export class PeerAgentDebateEngine {
   private phantom: PhantomAgent;
   private arbiter: ArbiterAgent;
   private debateTranscript: DebateMessage[] = [];
+  private shouldAbort?: () => boolean;
 
   constructor(client: AIClient, config?: Partial<DebateEngineConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.vanguard = new VanguardAgent(client);
     this.phantom = new PhantomAgent(client);
     this.arbiter = new ArbiterAgent(client);
+    this.shouldAbort = (config as any)?.shouldAbort;
   }
 
   /**
@@ -65,10 +67,13 @@ export class PeerAgentDebateEngine {
       this.log(`Task: "${context.userInput.substring(0, 80)}..."`);
 
       // Phase 1: Vanguard proposes
+      if (this.shouldAbort?.()) {
+        throw new Error('Execution aborted by user (stop button clicked)');
+      }
       this.log('\n📋 Phase 1: Vanguard proposes execution plan...');
       const proposal = await this.runWithTimeout(
         () => this.vanguard.proposeExecutionPlan(context),
-        this.config.vanguardTimeoutMs || 15000,
+        this.config.vanguardTimeoutMs || 30000,
         'Vanguard proposal timed out'
       );
       this.addTranscriptEntry('vanguard', 'proposal', proposal);
@@ -84,10 +89,13 @@ export class PeerAgentDebateEngine {
       }
 
       // Phase 2: Phantom critiques
+      if (this.shouldAbort?.()) {
+        throw new Error('Execution aborted by user (stop button clicked)');
+      }
       this.log('\n🔍 Phase 2: Phantom reviews plan critically...');
       const review = await this.runWithTimeout(
         () => this.phantom.reviewExecutionPlan(proposal, context),
-        this.config.phantomTimeoutMs || 20000,
+        this.config.phantomTimeoutMs || 45000,
         'Phantom review timed out'
       );
       this.addTranscriptEntry('phantom', 'review', review);
@@ -106,10 +114,13 @@ export class PeerAgentDebateEngine {
       }
 
       // Phase 3: Arbiter arbitrates
+      if (this.shouldAbort?.()) {
+        throw new Error('Execution aborted by user (stop button clicked)');
+      }
       this.log('\n⚖️  Phase 3: Arbiter arbitrates and finalizes...');
       const finalPlan = await this.runWithTimeout(
         () => this.arbiter.arbitrateAndFinalize(proposal, review, context),
-        this.config.arbiterTimeoutMs || 15000,
+        this.config.arbiterTimeoutMs || 30000,
         'Arbiter arbitration timed out'
       );
       this.addTranscriptEntry('arbiter', 'arbitration', finalPlan);

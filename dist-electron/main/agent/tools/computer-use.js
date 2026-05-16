@@ -670,6 +670,8 @@ class ComputerUseTool {
     imageScaleFactor;
     imageQuality;
     lastViewport = {};
+    progressEmitter = null;
+    toolCallId = '';
     constructor(screenshotDir, monitorIndex = 1, mouseMoveDuration = 0.0, dragDuration = 0.15, imageMinPixels = 4096, imageMaxPixels = 2_000_000, imageScaleFactor = 32, imageQuality = 60) {
         this.screenshotDir = screenshotDir;
         this.monitorIndex = monitorIndex;
@@ -687,6 +689,50 @@ class ComputerUseTool {
         if (robot) {
             robot.setMouseDelay(20);
         }
+    }
+    /**
+     * Set the progress emitter for emitting cursor position and status events.
+     * Requirements: 5.1, 5.2
+     */
+    setProgressEmitter(emitter, toolCallId) {
+        this.progressEmitter = emitter;
+        this.toolCallId = toolCallId;
+    }
+    /**
+     * Emit a cursor position event for real-time visual feedback.
+     * Requirements: 5.1, 2.1, 2.3, 2.4, 2.5
+     */
+    emitCursorPositionEvent(actionType, coordinate, description) {
+        if (!this.progressEmitter)
+            return;
+        this.progressEmitter.emit({
+            type: 'action',
+            toolCallId: this.toolCallId,
+            timestamp: new Date().toISOString(),
+            action: {
+                type: actionType,
+                params: { coordinate },
+                description,
+            },
+        });
+    }
+    /**
+     * Emit a status event for task lifecycle tracking.
+     * Requirements: 5.2, 2.1, 2.2, 2.6, 2.7, 2.8
+     */
+    emitStatusEvent(status, description, details) {
+        if (!this.progressEmitter)
+            return;
+        this.progressEmitter.emit({
+            type: 'action',
+            toolCallId: this.toolCallId,
+            timestamp: new Date().toISOString(),
+            action: {
+                type: status,
+                params: details || {},
+                description,
+            },
+        });
     }
     async call(params) {
         const { action } = params;
@@ -722,6 +768,8 @@ class ComputerUseTool {
     async mouseMove(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
         console.log(`[Move] Target=(${absX}, ${absY})`);
+        // 5.1: Emit cursor position event before action execution
+        this.emitCursorPositionEvent('move', [absX, absY], `Moved to (${absX}, ${absY})`);
         this.moveMouse(absX, absY);
         return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY}).` });
     }
@@ -729,6 +777,8 @@ class ComputerUseTool {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
             console.log(`[Left Click] Target=(${absX}, ${absY})`);
+            // 5.1: Emit cursor position event before action execution
+            this.emitCursorPositionEvent('click', [absX, absY], `Left click at (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
             this.click(absX, absY, "left");
             return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY}).` });
@@ -739,6 +789,8 @@ class ComputerUseTool {
     async rightClick(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
+            // 5.1: Emit cursor position event before action execution
+            this.emitCursorPositionEvent('click', [absX, absY], `Right click at (${absX}, ${absY})`);
             this.click(absX, absY, "right");
             return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY}).` });
         }
@@ -748,6 +800,8 @@ class ComputerUseTool {
     async middleClick(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
+            // 5.1: Emit cursor position event before action execution
+            this.emitCursorPositionEvent('click', [absX, absY], `Middle click at (${absX}, ${absY})`);
             this.click(absX, absY, "middle");
             return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY}).` });
         }
@@ -756,22 +810,30 @@ class ComputerUseTool {
     }
     async doubleClick(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
+        // 5.1: Emit cursor position event before action execution
+        this.emitCursorPositionEvent('click', [absX, absY], `Double click at (${absX}, ${absY})`);
         this.doubleClickAt(absX, absY);
         return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY}).` });
     }
     async tripleClick(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
+        // 5.1: Emit cursor position event before action execution
+        this.emitCursorPositionEvent('click', [absX, absY], `Triple click at (${absX}, ${absY})`);
         this.tripleClickAt(absX, absY);
         return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY}).` });
     }
     async leftClickDrag(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
+        // 5.1: Emit cursor position event before action execution
+        this.emitCursorPositionEvent('drag', [absX, absY], `Drag to (${absX}, ${absY})`);
         this.drag(absX, absY);
         return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY}).` });
     }
     async scroll(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
+            // 5.1: Emit cursor position event before action execution
+            this.emitCursorPositionEvent('scroll', [absX, absY], `Scroll at (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
             console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before scroll.`);
         }
@@ -782,6 +844,8 @@ class ComputerUseTool {
     async hscroll(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
+            // 5.1: Emit cursor position event before action execution
+            this.emitCursorPositionEvent('scroll', [absX, absY], `Horizontal scroll at (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
             console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before hscroll.`);
         }
@@ -1718,6 +1782,8 @@ function createComputerUseTool(originalClient, _platform = process.platform, _vi
             const progressEmitter = new ProgressEventEmitter(effectiveToolCallId, sender, timelineBranchMetadata);
             // Emit branch start event for timeline visualization
             progressEmitter.emitBranchStart(task);
+            // 5.2: Set progress emitter on the tool for cursor position and status event emission
+            tool.setProgressEmitter(progressEmitter, effectiveToolCallId);
             try {
                 const { finalAnswer, lastScreenshot } = await agent.run((update) => onUpdate?.(update), (event) => {
                     // Set toolCallId for each event before emitting

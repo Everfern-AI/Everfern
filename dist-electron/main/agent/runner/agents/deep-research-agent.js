@@ -101,6 +101,12 @@ const createDeepResearchNode = (runner, eventQueue, missionTracker, toolDefs) =>
     const integrator = (0, mission_integrator_1.createMissionIntegrator)(missionTracker);
     return async (state) => {
         const tools = toolDefs || runner._buildToolDefinitions();
+        const loopCount = (state.deepResearchSelfLoopCount || 0) + 1;
+        // Loop protection
+        if (loopCount > 3) {
+            eventQueue?.push({ type: 'thought', content: '⚠️ Deep Research: Maximum research iterations reached, returning to brain.' });
+            return { deepResearchComplete: true, deepResearchSelfLoopCount: loopCount, returningFromSpecialist: 'deep_research' };
+        }
         // Extract the research query from the last user message
         const lastUserMsg = state.messages?.filter((m) => {
             const role = m.role || m._getType?.();
@@ -111,7 +117,7 @@ const createDeepResearchNode = (runner, eventQueue, missionTracker, toolDefs) =>
                 ? lastUserMsg.content
                 : JSON.stringify(lastUserMsg.content))
             : '';
-        eventQueue?.push({ type: 'thought', content: `\n🔬 Deep Research Agent: Starting deep research on "${query.slice(0, 80)}..."` });
+        eventQueue?.push({ type: 'thought', content: `\n🔬 Deep Research Agent [Iteration ${loopCount}/3]: Starting deep research on "${query.slice(0, 80)}..."` });
         return integrator.wrapNode('deep_research', async () => {
             const result = await deepResearch({ query, maxUrls: 5, maxPagesPerUrl: 1, maxLengthPerPage: 6000 }, (msg) => {
                 eventQueue?.push({ type: 'thought', content: msg });
@@ -124,7 +130,7 @@ const createDeepResearchNode = (runner, eventQueue, missionTracker, toolDefs) =>
 The automated deep-crawl returned no results. Use web_search and navis tools directly to research: "${query}"
 Synthesize findings into a comprehensive answer with source citations.`;
                 return (0, agent_runtime_1.runAgentStep)(state, { runner, toolDefs: tools, eventQueue, nodeName: 'deep_research', systemPromptOverride: systemPrompt })
-                    .then(res => ({ ...res, returningFromSpecialist: 'deep_research' }));
+                    .then(res => ({ ...res, returningFromSpecialist: 'deep_research', deepResearchSelfLoopCount: loopCount }));
             }
             // Build a rich context message from crawled sources
             const sourceSections = result.sources.map((s, i) => `### Source ${i + 1}: ${s.title ?? s.url}\n**URL:** ${s.url}\n**Engine:** ${s.engine}\n\n${s.content}`).join('\n\n---\n\n');
@@ -154,8 +160,8 @@ DO NOT call any more tools. Synthesize the provided content directly into your r
                 eventQueue,
                 nodeName: 'deep_research',
                 systemPromptOverride: synthesisPrompt,
-            }).then(res => ({ ...res, returningFromSpecialist: 'deep_research' }));
-        }, `Deep research: ${query.slice(0, 60)}`).then(res => ({ ...res, returningFromSpecialist: 'deep_research' }));
+            }).then(res => ({ ...res, returningFromSpecialist: null, deepResearchComplete: true, deepResearchSelfLoopCount: loopCount }));
+        }, `Deep research: ${query.slice(0, 60)}`).then(res => ({ ...res, returningFromSpecialist: null, deepResearchSelfLoopCount: loopCount }));
     };
 };
 exports.createDeepResearchNode = createDeepResearchNode;

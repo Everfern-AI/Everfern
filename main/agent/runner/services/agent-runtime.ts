@@ -173,6 +173,11 @@ export async function runAgentStep(
         }
       },
       onStreamChunk: (chunk: string) => {
+        // First chunk received - clear initialization and show thinking
+        if (!streamedText && !thoughtBuffer && !isThinking) {
+           isThinking = true;
+           eventQueue?.push({ type: 'thought', content: `\n💭 ${nodeName.replace(/_/g, ' ').toUpperCase()}: Processing...` });
+        }
         console.log(`[Stream] Received chunk: "${chunk}" (buffer: ${thoughtBuffer.length} chars)`);
         thoughtBuffer += chunk;
         const hasStart = thoughtBuffer.includes('<think>') || thoughtBuffer.includes('<thought>');

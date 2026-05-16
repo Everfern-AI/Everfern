@@ -9,6 +9,7 @@ export function normalizeMessage(m: any): ChatMessage {
     return {
       role: m.role,
       content: m.content,
+      name: m.name || (m as any).tool_name || (m as any).toolName,
       tool_call_id: m.tool_call_id || (m as any).toolCallId,
       tool_calls: m.tool_calls || (m as any).toolCalls,
       reasoning_content: m.reasoning_content || (m as any).thought
@@ -31,6 +32,7 @@ export function normalizeMessage(m: any): ChatMessage {
   return {
     role,
     content: m.content || '',
+    name: m.name || (m as any).tool_name || (m as any).toolName,
     tool_call_id: m.tool_call_id || (m as any).tool_call_id || (m as any).toolCallId,
     tool_calls: m.tool_calls || (m as any).tool_calls || (m as any).toolCalls,
     reasoning_content: m.reasoning_content || (m as any).reasoning_content || (m as any).thought

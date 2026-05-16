@@ -29,7 +29,7 @@ function getPlaywrightBrowsersPath(): string {
 }
 
 /** Returns the path to the Chromium executable if it exists, otherwise null. */
-function findChromiumExecutable(): string | null {
+export function findChromiumExecutable(): string | null {
   const browsersPath = getPlaywrightBrowsersPath();
   if (!fs.existsSync(browsersPath)) return null;
 

@@ -27,7 +27,6 @@ import { plannerTool } from '../../../tools/planner';
 import { memorySaveTool } from '../../../tools/memory-save';
 import { memorySearchTool } from '../../../tools/memory-search';
 import { webSearchTool } from '../../../tools/web-search';
-import { webFetchTool } from '../../../tools/web-fetch';
 import { askUserTool } from '../../../tools/ask-user';
 import { presentFilesTool } from '../../../tools/present-files';
 import type { AgentTool, ToolResult } from '../../../runner/types';
@@ -78,7 +77,6 @@ describe('Terminal Pi-Tools Integration Preservation', () => {
       memorySaveTool,
       memorySearchTool,
       webSearchTool,
-      webFetchTool,
       askUserTool,
       presentFilesTool,
     ];
@@ -203,7 +201,9 @@ describe('Terminal Pi-Tools Integration Preservation', () => {
 
     // Create a mock runner object for getBaseTools
     const mockRunner = {
-      client: {} as any,
+      client: {
+        getFullConfig: () => ({}),
+      } as any,
       config: {
         visionModel: 'test',
         showuiUrl: 'http://test',
@@ -236,7 +236,6 @@ describe('Terminal Pi-Tools Integration Preservation', () => {
 
     // Check for web tools
     expect(toolNames).toContain('web_search');
-    expect(toolNames).toContain('web_fetch');
 
     // Check for user interaction tools (use flexible matching)
     const hasUserInputTool = toolNames.some(name =>

@@ -84,9 +84,9 @@ export class NavisLogger {
 
     console.log(parts.join(' — '));
 
-    for (const listener of this.listeners) {
+    this.listeners.forEach((listener) => {
       try { listener(full); } catch {}
-    }
+    });
   }
 
   browserLaunch(detail?: string): void { this.emit({ type: 'browser_launch', detail }); }

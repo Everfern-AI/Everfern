@@ -45,3 +45,5 @@ next-env.d.ts
 
 .gemini/
 gha-creds-*.json
+
+.claude/

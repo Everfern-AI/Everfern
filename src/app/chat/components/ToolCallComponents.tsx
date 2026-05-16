@@ -20,6 +20,8 @@ import { DiffViewer } from '@/components/diff-viewer';
 import { SyntaxHighlighter } from '../ArtifactsPanel';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { SimpleFileNotification } from './SimpleFileNotification';
+import { GradientBorderSystem } from './GradientBorderSystem';
+import { CursorOverlaySystem } from './CursorOverlaySystem';
 
 // ── Utility Functions ────────────────────────────────────────────────────────
 /**
@@ -74,7 +76,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
                     onError={(e) => { (e.target as HTMLImageElement).src = 'https://www.google.com/s2/favicons?domain=example.com&sz=32'; }}
                 />
             </div>
-            
+
             <div className="flex-1 min-w-0">
                 <div className="text-[13px] font-medium text-[#334155] truncate leading-none py-0.5">
                     {title}
@@ -354,7 +356,7 @@ const ToolCallRow = ({ tc, isLast }: { tc: ToolCallDisplay, isLast?: boolean }) 
                             style={{ fontFamily: "'Matter', sans-serif" }}>
                             {tc.displayName || tc.label || tc.toolName}
                         </span>
-                        
+
                         {isSearchTool && Array.isArray(tc.data?.results) && (
                             <span className="text-[13px] text-[#888888] font-normal ml-auto shrink-0 pr-1">
                                 {tc.data.results.length} results
@@ -570,6 +572,109 @@ const WriteDiffCard = ({ tc }: { tc: any }) => {
 
 // ── ComputerUseResultCard ────────────────────────────────────────────────────
 const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
+    // 3.2: Add state management to ComputerUseResultCard
+    // Initialize with success status since component only renders when tc.status === 'done'
+    const [taskStatus, setTaskStatus] = useState<'idle' | 'executing' | 'success' | 'error'>('success');
+    const [cursorPosition, setCursorPosition] = useState<[number, number]>([0, 0]);
+    const [cursorAction, setCursorAction] = useState<'move' | 'click' | 'drag' | 'scroll'>('move');
+    const [cursorOverlayVisible, setCursorOverlayVisible] = useState(true);
+    const [screenDimensions, setScreenDimensions] = useState({ width: 1920, height: 1080 });
+    const [rippleActive, setRippleActive] = useState(false);
+    const [dragTrailActive, setDragTrailActive] = useState(false);
+
+    // Initialize screen dimensions on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setScreenDimensions({
+                width: window.innerWidth,
+                height: window.innerHeight,
+            });
+
+            const handleResize = () => {
+                setScreenDimensions({
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                });
+            };
+
+            window.addEventListener('resize', handleResize);
+            return () => window.removeEventListener('resize', handleResize);
+        }
+    }, []);
+
+    // 4.1: Implement idle state transitions
+    // When task starts: transition from idle to executing
+    useEffect(() => {
+        if (tc.status === 'done') {
+            // Task is complete, transition to success or error
+            const finalStatus = tc.status === 'done' ? 'success' : 'error';
+            setTaskStatus(finalStatus);
+
+            // Hide cursor overlay after brief delay (0.3s)
+            setTimeout(() => {
+                setCursorOverlayVisible(false);
+            }, 300);
+        }
+    }, [tc.status]);
+
+    // 3.5: Connect to progress event stream
+    useEffect(() => {
+        // Listen for progress events from computer-use tool
+        const handleProgressEvent = (event: any) => {
+            if (event.detail?.type === 'action') {
+                const action = event.detail.action;
+
+                // 4.1: Show cursor overlay and activate gradient border shimmer when executing
+                setTaskStatus('executing');
+                setCursorOverlayVisible(true);
+
+                // Extract cursor position and action type
+                if (action.params?.coordinate) {
+                    setCursorPosition(action.params.coordinate);
+                }
+
+                // Extract action type
+                if (action.type) {
+                    setCursorAction(action.type);
+
+                    // 4.4: Implement action-specific visual feedback
+                    // For click actions: trigger ripple animation
+                    if (action.type === 'click') {
+                        setRippleActive(true);
+                        setTimeout(() => setRippleActive(false), 400);
+                    }
+
+                    // For drag actions: display drag trail visualization
+                    if (action.type === 'drag') {
+                        setDragTrailActive(true);
+                    } else {
+                        setDragTrailActive(false);
+                    }
+                }
+
+                // Extract status information
+                if (event.detail.status) {
+                    setTaskStatus(event.detail.status);
+                }
+            }
+
+            if (event.detail?.type === 'status') {
+                const newStatus = event.detail.status;
+                setTaskStatus(newStatus);
+
+                // 4.2 & 4.3: Hide cursor overlay on completion with smooth transition
+                if (newStatus === 'success' || newStatus === 'error') {
+                    setTimeout(() => {
+                        setCursorOverlayVisible(false);
+                    }, 300);
+                }
+            }
+        };
+
+        window.addEventListener('computer-use-progress', handleProgressEvent);
+        return () => window.removeEventListener('computer-use-progress', handleProgressEvent);
+    }, []);
+
     if (tc.status !== 'done') return null;
 
     let tcData: any = tc.data || {};
@@ -580,49 +685,76 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
         } catch(e) {}
     }
 
-    const outputMatch = tcData.detail || (tc.output && tc.output.includes('Success: ') ? tc.output.split('Success: ')[1] : tc.output || 'Computer action completed successfully.');
+    const outputMatch = tcData.detail || (tc.output && tc.output.includes('Success: ') ? tc.output.split('Success: ')[1] : tc.output || '');
     const appName = typeof tcData?.appName === 'string' && tcData.appName.trim() ? tcData.appName : "Application";
+
+    // Determine final status based on task completion
+    // 4.2: Success state transitions - green tint (#22C55E)
+    // 4.3: Error state transitions - red tint (#EF4444)
+    const finalStatus = tc.status === 'done' ? 'success' : 'error';
 
     return (
         <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex flex-col gap-3 mt-3 mb-3 max-w-[600px]"
-            >
-                <div className="bg-[rgba(34,197,94,0.06)] border border-[rgba(34,197,94,0.2)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
-                    <div className="mt-0.5 bg-[#22c55e] rounded w-4 h-4 flex items-center justify-center shrink-0">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                    </div>
-                    <div className="text-[13.5px] text-[#064e3b] font-medium leading-relaxed wrap-break-word">
-                        {outputMatch}
-                    </div>
-                </div>
+            {/* 3.4: Render CursorOverlaySystem component */}
+            {cursorOverlayVisible && (
+                <CursorOverlaySystem
+                    coordinate={cursorPosition}
+                    action={cursorAction}
+                    isVisible={cursorOverlayVisible}
+                    screenDimensions={screenDimensions}
+                />
+            )}
 
-                <div className="flex items-center flex-wrap gap-3 text-xs">
-                    <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
-                        <span className="font-medium">Tool used</span>
-                        <div className="flex items-center gap-1 bg-[#22c55e] text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                <line x1="3" y1="9" x2="21" y2="9"></line>
-                                <line x1="9" y1="21" x2="9" y2="9"></line>
+            {/* 3.3: Wrap ComputerUseResultCard content with GradientBorderSystem */}
+            {/* 4.2: Smooth color transition (0.3s ease) for success state */}
+            {/* 4.3: Smooth color transition (0.3s ease) for error state */}
+            <GradientBorderSystem
+                isActive={true}
+                status={finalStatus}
+                borderRadius={12}
+                borderWidth={2.5}
+                animationSpeed={2.5}
+                glowIntensity={1.0}
+            >
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col gap-3 mt-3 mb-3 max-w-[600px]"
+                >
+                    <div className="bg-[rgba(34,197,94,0.06)] border border-[rgba(34,197,94,0.2)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
+                        <div className="mt-0.5 bg-[#22c55e] rounded w-4 h-4 flex items-center justify-center shrink-0">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
                             </svg>
-                            {appName}
+                        </div>
+                        <div className="text-[13.5px] text-[#064e3b] font-medium leading-relaxed wrap-break-word">
+                            {outputMatch}
                         </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
-                        <span>Duration</span>
-                        <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
+
+                    <div className="flex items-center flex-wrap gap-3 text-xs">
+                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                            <span className="font-medium">Tool used</span>
+                            <div className="flex items-center gap-1 bg-[#22c55e] text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                                </svg>
+                                {appName}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                            <span>Duration</span>
+                            <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                            <span>Status</span>
+                            <span className="font-semibold text-[#22c55e]">Success</span>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
-                        <span>Status</span>
-                        <span className="font-semibold text-[#22c55e]">Success</span>
-                    </div>
-                </div>
-            </motion.div>
+                </motion.div>
+            </GradientBorderSystem>
         </AnimatePresence>
     );
 };
@@ -711,14 +843,14 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                             )}
                         </code>
                     </pre>
-                    
+
                     {/* Decorative mono label */}
                     <div className="absolute bottom-2 right-4 px-1.5 py-0.5 rounded border border-slate-100 bg-slate-50/50 text-[9px] font-mono text-slate-400 uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                         JSON PARAMS
                     </div>
                 </div>
             )}
-            
+
             {/* Footer shadow effect */}
             {isStreaming && (
                 <div className="h-1.5 bg-gradient-to-b from-transparent to-indigo-500/5" />

@@ -75,6 +75,16 @@ Examples:
 - "Write a hello world program" (Single artifact)
 - "Explain this concept" (Information delivery)
 - "Fix this small bug in this file" (One file modification)
+- "Open Slack" (Single app launch)
+- "Click the save button" (Single UI interaction)
+- "Take a screenshot" (Single action)
+- "Close this window" (Single action)
+- "Minimize the app" (Single action)
+
+IMPORTANT: Desktop automation tasks are NOT complex just because they involve GUI interaction.
+Opening apps, clicking buttons, typing text, taking screenshots, and other single-step desktop
+interactions are SIMPLE tasks. Only classify as complex if there are multiple interdependent
+steps, decision points, or significant risk factors.
 
 MODERATE (Consider debate)
 ──────────────────────────
@@ -156,12 +166,17 @@ function buildComplexityUserPrompt(userInput: string, workspaceContext?: string)
 
 TASK: "${userInput}"${contextInfo}
 
+CRITICAL REMINDER: Desktop automation tasks (opening apps, clicking buttons, typing, taking screenshots)
+are NOT complex just because they involve GUI interaction. These are SIMPLE tasks unless they involve
+multiple interdependent steps or significant risk factors.
+
 Step-by-step analysis:
 
 1. SCOPE ANALYSIS:
    - How many different files/components are involved?
    - What is the breadth of changes needed?
    - Does it touch multiple systems?
+   - Is this a single desktop action or multiple coordinated steps?
 
 2. DEPENDENCY ANALYSIS:
    - Are steps sequential or parallel?

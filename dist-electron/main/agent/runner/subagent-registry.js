@@ -145,6 +145,12 @@ class SubagentRegistry {
         }
         return children;
     }
+    /**
+     * Gets all registered agents
+     */
+    getAll() {
+        return Array.from(this.entries.values());
+    }
     hasPendingChildren(parentSessionId) {
         return this.getByParent(parentSessionId, 'pending').length > 0 ||
             this.getByParent(parentSessionId, 'running').length > 0;

@@ -1,13 +1,28 @@
 /**
  * Navis - Action Executor
- * 
+ *
  * Executes browser actions from AI decisions.
  * Implements all actions defined in NAVIS.md.
+ *
+ * Phase 1: Basic Actions (go_to_url, click, input, etc.)
+ * Phase 2: Advanced Form Interactions (upload_file, select_option, set_date, drag_and_drop, hover, right_click)
  */
 
 import { Page } from 'playwright';
 import { BrowserSession } from './session';
 import { NavisLogger } from './logger';
+import {
+  executeUploadFile,
+  executeSelectOption,
+  executeSetDate,
+  executeDragAndDrop,
+  executeHover,
+  executeRightClick,
+} from './form-interactions';
+import { VisionGroundingHybrid } from './hybrid-click';
+import { captureForVision } from './element-capture';
+import { loadConfig } from './config';
+import { AIClient } from '../../../lib/ai-client';
 
 export type ActionName =
   | 'go_to_url'
@@ -23,7 +38,16 @@ export type ActionName =
   | 'switch_tab'
   | 'close_tab'
   | 'solve_captcha'
-  | 'done';
+  | 'done'
+  // Phase 2: Advanced Form Interactions
+  | 'upload_file'
+  | 'select_option'
+  | 'set_date'
+  | 'drag_and_drop'
+  | 'hover'
+  | 'right_click'
+  // Phase 3: Vision-Grounding Hybrid
+  | 'hybrid_click';
 
 export interface ActionResult {
   success: boolean;
@@ -37,7 +61,7 @@ async function findElement(page: Page, ref: string, logger?: NavisLogger): Promi
   const strategies: Array<() => Promise<{ locator: any; method: string } | null>> = [
     // Strategy 1: data-ref (set by our capture script)
     async () => {
-      const loc = page.locator(`[data-ref="${ref}"]`);
+      const loc = page.locator(`[data-ref="${ref}"], [data-scroll-ref="${ref}"]`);
       if (await loc.count() > 0) return { locator: loc, method: 'data-ref' };
       return null;
     },
@@ -53,7 +77,7 @@ async function findElement(page: Page, ref: string, logger?: NavisLogger): Promi
       if (match) {
         const index = parseInt(match[1]) - 1;
         // Search in all interactive types
-        const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"]').nth(index);
+        const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"], [data-scroll-ref]').nth(index);
         if (await loc.count() > 0 && await loc.isVisible()) return { locator: loc, method: 'nth-index' };
       }
       return null;
@@ -135,10 +159,10 @@ export async function executeAction(
         return await executePressKey(args as { ref?: string; key: string }, page, session, logger, step, maxSteps);
 
       case 'scroll_down':
-        return await executeScrollDown(page, logger, step, maxSteps);
+        return await executeScrollDown(page, logger, step, maxSteps, args as { ref?: string });
 
       case 'scroll_up':
-        return await executeScrollUp(page, logger, step, maxSteps);
+        return await executeScrollUp(page, logger, step, maxSteps, args as { ref?: string });
 
       case 'wait':
         return await executeWait(args as { ms?: number }, logger, step, maxSteps);
@@ -161,6 +185,28 @@ export async function executeAction(
       case 'done':
         return executeDone(args as { success: boolean; text: string });
 
+      // Phase 2: Advanced Form Interactions
+      case 'upload_file':
+        return await executeUploadFile(args as any, page, session, logger, step, maxSteps);
+
+      case 'select_option':
+        return await executeSelectOption(args as any, page, session, logger, step, maxSteps);
+
+      case 'set_date':
+        return await executeSetDate(args as any, page, session, logger, step, maxSteps);
+
+      case 'drag_and_drop':
+        return await executeDragAndDrop(args as any, page, session, logger, step, maxSteps);
+
+      case 'hover':
+        return await executeHover(args as any, page, session, logger, step, maxSteps);
+
+      case 'right_click':
+        return await executeRightClick(args as any, page, session, logger, step, maxSteps);
+
+      case 'hybrid_click':
+        return await executeHybridClick(args as { targetDescription: string; aiClient: AIClient }, page, session, logger, step, maxSteps);
+
       default:
         return { success: false, message: `Unknown action: ${actionName}`, stateChanged: false };
     }
@@ -171,9 +217,9 @@ export async function executeAction(
 
 async function executeGoToUrl(args: { url: string }, page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
   if (!args.url) return { success: false, message: 'Missing url parameter', stateChanged: false };
-  
+
   logger?.pageNavigate(step, maxSteps, args.url);
-  
+
   // Use a more robust goto that doesn't hang on domcontentloaded
   try {
     await page.goto(args.url, { waitUntil: 'load', timeout: 20000 });
@@ -208,7 +254,7 @@ async function executeClickElement(
 
   try {
     const { locator, name } = await findElement(page, args.ref, logger);
-    
+
     const validation = await validateElement(locator, 'click', logger);
     if (validation !== null) {
       return {
@@ -220,19 +266,26 @@ async function executeClickElement(
 
     const box = await locator.boundingBox().catch(() => null);
     if (box) {
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+
+      // Move magical cursor first
+      await session.moveCursor(centerX, centerY);
+      await new Promise(r => setTimeout(r, 600)); // Wait for transition
+
       await session.highlightElement(box);
-      
+
       // Listen for new pages (popups) being opened by this click
       const popupPromise = page.context().waitForEvent('page', { timeout: 3000 }).catch(() => null);
-      
-      const clicked = await locator.click({ 
+
+      const clicked = await locator.click({
         timeout: 3000,
         force: false,
       }).then(() => true).catch(() => false);
 
       // Fallback: use mouse.click
       if (!clicked && box) {
-        await page.mouse.click(box.x + box.width/2, box.y + box.height/2);
+        await page.mouse.click(centerX, centerY);
       }
 
       // Check if a new tab was opened
@@ -246,7 +299,7 @@ async function executeClickElement(
     } else {
       await locator.click({ timeout: 2000 });
     }
-    
+
     logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`);
     await session.setOverlayStatus(`Clicked "${truncate(String(name), 20)}"`);
     return { success: true, message: `Clicked: ${name}`, stateChanged: true };
@@ -279,12 +332,18 @@ async function executeInputText(
     }
 
     const box = await locator.boundingBox().catch(() => null);
-    if (box) await session.highlightElement(box);
-    
+    if (box) {
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+      await session.moveCursor(centerX, centerY);
+      await new Promise(r => setTimeout(r, 600));
+      await session.highlightElement(box);
+    }
+
     // Use fill() for speed (instant vs 2ms/char with pressSequentially)
     await locator.fill('');  // Clear first
     await locator.fill(args.text, { timeout: 3000 });
-    
+
     logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text);
     await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
     return { success: true, message: `Entered text: ${name}`, stateChanged: false };
@@ -306,6 +365,16 @@ async function executePressKey(
   try {
     if (args.ref) {
       const { locator } = await findElement(page, args.ref, logger);
+
+      const box = await locator.boundingBox().catch(() => null);
+      if (box) {
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        await session.moveCursor(centerX, centerY);
+        await new Promise(r => setTimeout(r, 600));
+        await session.highlightElement(box);
+      }
+
       await locator.press(args.key, { timeout: 3000 });
       logger?.elementInput(step, maxSteps, `key:${args.key}`, args.ref);
     } else {
@@ -319,14 +388,34 @@ async function executePressKey(
   }
 }
 
-async function executeScrollDown(page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
-  await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+async function executeScrollDown(page: Page, logger?: NavisLogger, step?: number, maxSteps?: number, args?: { ref?: string }): Promise<ActionResult> {
+  if (args?.ref) {
+    try {
+      const { locator, name } = await findElement(page, args.ref, logger);
+      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' }));
+      logger?.scroll(step, maxSteps, `down on ${name}`);
+      return { success: true, message: `Scrolled down on ${name}`, stateChanged: false };
+    } catch (err: any) {
+      return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
+    }
+  }
+  await page.evaluate(() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' }));
   logger?.scroll(step, maxSteps, 'down');
   return { success: true, message: 'Scrolled down one page', stateChanged: false };
 }
 
-async function executeScrollUp(page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
-  await page.evaluate(() => window.scrollBy(0, -window.innerHeight));
+async function executeScrollUp(page: Page, logger?: NavisLogger, step?: number, maxSteps?: number, args?: { ref?: string }): Promise<ActionResult> {
+  if (args?.ref) {
+    try {
+      const { locator, name } = await findElement(page, args.ref, logger);
+      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: -el.clientHeight * 0.8, behavior: 'smooth' }));
+      logger?.scroll(step, maxSteps, `up on ${name}`);
+      return { success: true, message: `Scrolled up on ${name}`, stateChanged: false };
+    } catch (err: any) {
+      return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
+    }
+  }
+  await page.evaluate(() => window.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'smooth' }));
   logger?.scroll(step, maxSteps, 'up');
   return { success: true, message: 'Scrolled up one page', stateChanged: false };
 }
@@ -351,18 +440,18 @@ async function executeExtractContent(args: { goal?: string }, page: Page, logger
     // Get text and clean it
     let text = (root as HTMLElement).innerText || '';
     text = text.replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
-    
+
     return text;
   }).catch(() => '');
 
   const truncated = content.length > 8000 ? content.slice(0, 8000) + '\n...(truncated)' : content;
   logger?.extract(step, maxSteps, `${truncated.length} chars${args.goal ? ` for: ${args.goal}` : ''}`);
-  
-  return { 
-    success: true, 
-    message: `Extracted ${truncated.length} chars of cleaned content.`, 
-    stateChanged: false, 
-    data: truncated 
+
+  return {
+    success: true,
+    message: `Extracted ${truncated.length} chars of cleaned content.`,
+    stateChanged: false,
+    data: truncated
   };
 }
 
@@ -409,21 +498,21 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
   const solved = await page.evaluate(() => {
     const title = document.title.toLowerCase();
     const bodyText = document.body?.innerText?.toLowerCase() || '';
-    
+
     if (title.includes('hcaptcha') || bodyText.includes('hcaptcha')) {
       const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
       if (checkbox) { checkbox.click(); return true; }
       const label = document.querySelector('label[for]');
       if (label) { (label as HTMLElement).click(); return true; }
     }
-    
+
     if (title.includes('cloudflare') || bodyText.includes('cloudflare') || bodyText.includes('verifying')) {
       const checkbox = document.querySelector('#challenge-stage input[type="checkbox"]') as HTMLInputElement | null;
       if (checkbox) { checkbox.click(); return true; }
       const cfBtn = document.querySelector('.cf-solve input, .cf-button, .turnstile-input') as HTMLElement | null;
       if (cfBtn) { cfBtn.click(); return true; }
     }
-    
+
     if (bodyText.includes('confirm you') || bodyText.includes('verify you') || bodyText.includes('security check')) {
       const buttons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
       for (const btn of Array.from(buttons)) {
@@ -442,13 +531,13 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
         }
       }
     }
-    
+
     const checkboxes = document.querySelectorAll('input[type="checkbox"]');
     for (const cb of Array.from(checkboxes)) {
       const el = cb as HTMLInputElement;
       if (!el.checked) { el.click(); return true; }
     }
-    
+
     return false;
   });
 
@@ -478,4 +567,69 @@ function executeDone(args: { success: boolean; text: string }): ActionResult {
 
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+async function executeHybridClick(
+  args: { targetDescription: string; aiClient: AIClient },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (!args.targetDescription) {
+    return { success: false, message: 'Missing targetDescription parameter', stateChanged: false };
+  }
+
+  if (!args.aiClient) {
+    return { success: false, message: 'Missing aiClient parameter', stateChanged: false };
+  }
+
+  try {
+    // Load configuration
+    const config = loadConfig();
+
+    if (!config.hybridClick) {
+      return { success: false, message: 'Hybrid click is disabled in configuration', stateChanged: false };
+    }
+
+    // Capture full-screen screenshot
+    logger?.pageNavigate(step, maxSteps, `capturing screenshot for hybrid click: ${args.targetDescription}`);
+    const screenshot = await captureForVision(page);
+
+    // Use hybrid click module
+    const hybrid = new VisionGroundingHybrid(args.aiClient, {
+      confidenceThreshold: config.confidenceThreshold,
+      nearbySearchRadius: config.nearbySearchRadius,
+    });
+
+    const result = await hybrid.hybridClick(page, screenshot, args.targetDescription);
+
+    if (result.success) {
+      logger?.elementClick(
+        step,
+        maxSteps,
+        truncate(args.targetDescription, 40),
+        `method=${result.method}`
+      );
+      await session.setOverlayStatus(`Clicked "${truncate(args.targetDescription, 20)}" (${result.method})`);
+      return {
+        success: true,
+        message: `Clicked "${args.targetDescription}" using ${result.method} method`,
+        stateChanged: true,
+      };
+    } else {
+      return {
+        success: false,
+        message: `Failed to click "${args.targetDescription}": ${result.error}`,
+        stateChanged: false,
+      };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Hybrid click failed: ${err.message}`,
+      stateChanged: false,
+    };
+  }
 }

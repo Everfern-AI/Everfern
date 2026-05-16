@@ -41,13 +41,20 @@ Respond ONLY with a JSON block like this:
         if (!rawContent || rawContent === '""' || rawContent === 'null') {
             throw new Error('AI returned empty content');
         }
+        // Clean up markdown code blocks and log prefixes
+        let cleanedContent = rawContent
+            .replace(/```json\s*/g, '')
+            .replace(/```\s*/g, '')
+            .replace(/\[1\]\s*/g, '') // Remove [1] log prefixes
+            .replace(/\[\d+\]\s*/g, '') // Remove any [N] log prefixes
+            .trim();
         // Extremely robust JSON extraction: find the first '{' and last '}'
-        const firstBrace = rawContent.indexOf('{');
-        const lastBrace = rawContent.lastIndexOf('}');
+        const firstBrace = cleanedContent.indexOf('{');
+        const lastBrace = cleanedContent.lastIndexOf('}');
         if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
             throw new Error('No JSON object found in response');
         }
-        const jsonStr = rawContent.substring(firstBrace, lastBrace + 1);
+        const jsonStr = cleanedContent.substring(firstBrace, lastBrace + 1);
         const parsed = JSON.parse(jsonStr);
         // Ensure critical fields exist
         return {
@@ -109,13 +116,20 @@ Respond ONLY with a JSON array of steps:
         if (!rawContent || rawContent === '""' || rawContent === 'null') {
             throw new Error('AI returned empty content');
         }
+        // Clean up markdown code blocks and log prefixes
+        let cleanedContent = rawContent
+            .replace(/```json\s*/g, '')
+            .replace(/```\s*/g, '')
+            .replace(/\[1\]\s*/g, '') // Remove [1] log prefixes
+            .replace(/\[\d+\]\s*/g, '') // Remove any [N] log prefixes
+            .trim();
         // Robust JSON array extraction: find first '[' and last ']'
-        const firstBracket = rawContent.indexOf('[');
-        const lastBracket = rawContent.lastIndexOf(']');
+        const firstBracket = cleanedContent.indexOf('[');
+        const lastBracket = cleanedContent.lastIndexOf(']');
         if (firstBracket === -1 || lastBracket === -1 || lastBracket <= firstBracket) {
             throw new Error('No JSON array found in response');
         }
-        const jsonStr = rawContent.substring(firstBracket, lastBracket + 1);
+        const jsonStr = cleanedContent.substring(firstBracket, lastBracket + 1);
         const steps = JSON.parse(jsonStr);
         if (!Array.isArray(steps) || steps.length === 0)
             throw new Error('Invalid or empty steps array');

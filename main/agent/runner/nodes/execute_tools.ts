@@ -20,25 +20,25 @@ import type { AIClient } from '../../../lib/ai-client';
  */
 function shouldRetryWithCorrection(error: any, toolName: string): boolean {
   const errorMsg = error instanceof Error ? error.message : String(error);
-  
+
   // Critical errors that benefit from automatic retry
   const criticalErrors = [
     'Cannot read properties of undefined',
     'TypeError',
-    'ReferenceError', 
+    'ReferenceError',
     'Invalid arguments',
     'Tool not found',
     'Validation failed'
   ];
-  
+
   // Check if error message contains any critical error patterns
-  const isCriticalError = criticalErrors.some(pattern => 
+  const isCriticalError = criticalErrors.some(pattern =>
     errorMsg.toLowerCase().includes(pattern.toLowerCase())
   );
-  
+
   // Always retry for ask_user_question tool (our fixed tool)
   const isFixedTool = toolName === 'ask_user_question';
-  
+
   return isCriticalError || isFixedTool;
 }
 
@@ -101,7 +101,7 @@ async function isCommandComplete(output: string, client?: AIClient): Promise<boo
   if (!client) {
     // Fallback: keyword-based check
     const lastLines = output.split('\n').slice(-3).join('\n');
-    return lastLines.includes('> ') || lastLines.includes('$ ') || 
+    return lastLines.includes('> ') || lastLines.includes('$ ') ||
            output.includes('Status: DONE') || output.includes('Exit code:');
   }
 
@@ -145,7 +145,7 @@ Respond with JSON:
   } catch (err) {
     console.warn('[ExecuteTools] AI completion detection failed:', err);
     const lastLines = output.split('\n').slice(-3).join('\n');
-    return lastLines.includes('> ') || lastLines.includes('$ ') || 
+    return lastLines.includes('> ') || lastLines.includes('$ ') ||
            output.includes('Status: DONE') || output.includes('Exit code:');
   }
 }
@@ -169,7 +169,7 @@ export const createExecuteToolsNode = (
 
     const nodeIntegrator = createMissionIntegrator(missionTracker);
     nodeIntegrator.startNode('execute_tools', `Executing ${state.pendingToolCalls?.length || 0} tool calls`);
-    
+
     try {
       runner.telemetry.transition('execute_tools');
 
@@ -198,7 +198,7 @@ export const createExecuteToolsNode = (
     for (let g = 0; g < parallelGroups.length; g++) {
       const group = parallelGroups[g];
       runner.telemetry.info(`🚀 Deploying Parallel Agents: Group ${g + 1}/${parallelGroups.length} (${group.length} agents sync)`);
-      
+
       const groupTools = group.map((a: any) => ({
         name: a.name,
         args: a.args,
@@ -215,12 +215,19 @@ export const createExecuteToolsNode = (
       );
 
       newRecords.push(...groupResult.results);
-      
+
       for (const rec of groupResult.results) {
+        // Log Navis tool completion
+        if (rec.toolName === 'navis') {
+          console.log(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
+          runner.telemetry.info(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
+        }
+
         newMessages.push({
           role: 'tool',
           tool_call_id: (groupTools.find((t: any) => t.name === rec.toolName) as any)?.id,
           tool_name: rec.toolName,
+          name: rec.toolName,
           content: rec.result.base64Image
             ? [{ type: 'text', text: rec.result.output }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${rec.result.base64Image}` } }]
             : rec.result.output,
@@ -232,10 +239,10 @@ export const createExecuteToolsNode = (
     for (const rec of newRecords) {
         if ((rec.toolName === 'run_command' || rec.toolName === 'command_status') && rec.result?.success) {
             const out = typeof rec.result.output === 'string' ? rec.result.output : JSON.stringify(rec.result.output);
-            
+
             // Use AI to determine if command is complete
             const isComplete = await isCommandComplete(out, aiClient);
-            
+
             if (!isComplete) {
                 nextPendingTools.push({
                     id: 'poll_' + Math.random().toString(36).slice(2, 6),
@@ -266,6 +273,13 @@ export const createExecuteToolsNode = (
       userConfirmation: undefined,
       toolCallHistory: [...(state.toolCallHistory ?? [])],
     };
+
+    // Log return to brain
+    const navisToolsInResults = newRecords.filter(r => r.toolName === 'navis');
+    if (navisToolsInResults.length > 0) {
+      console.log(`[ExecuteTools] ✅ NAVIS TOOL PROCESSING COMPLETE - Returning ${navisToolsInResults.length} result(s) to brain node`);
+      runner.telemetry.info(`[ExecuteTools] ✅ NAVIS TOOL PROCESSING COMPLETE - Returning to brain node`);
+    }
 
     nodeIntegrator.completeNode('execute_tools', `Completed ${calls.length} tool calls`);
     return result;

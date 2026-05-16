@@ -254,7 +254,7 @@ When all tasks are completed successfully, output 'MISSION_COMPLETE' to signal t
 
     return {
       ...result,
-      returningFromSpecialist: 'coding_specialist',
+      returningFromSpecialist: isComplete ? null : 'coding_specialist',
       codingComplete: isComplete
     };
   };

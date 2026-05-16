@@ -76,6 +76,7 @@ exports.GraphState = langgraph_1.Annotation.Root({
     dataAnalysisComplete: (0, langgraph_1.Annotation)(),
     computerUseComplete: (0, langgraph_1.Annotation)(),
     deepResearchComplete: (0, langgraph_1.Annotation)(),
+    deepResearchSelfLoopCount: (0, langgraph_1.Annotation)(),
     // Subagent State
     subagentSpawned: (0, langgraph_1.Annotation)(),
     completedSteps: (0, langgraph_1.Annotation)(),

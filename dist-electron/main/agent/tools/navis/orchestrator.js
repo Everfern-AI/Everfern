@@ -12,6 +12,8 @@ const element_capture_1 = require("./element-capture");
 const actions_1 = require("./actions");
 const prompt_sync_1 = require("../../../lib/prompt-sync");
 const logger_1 = require("./logger");
+const ai_optimization_1 = require("./ai-optimization");
+const parallel_processing_1 = require("./parallel-processing");
 // ─────────────────────────────────────────────────────────────────────────────
 // JSON Schema for Navis decision output (strict validation)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,8 +41,8 @@ exports.NAVIS_DECISION_SCHEMA = {
                     { properties: { click_element: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'], additionalProperties: false } }, required: ['click_element'], additionalProperties: false },
                     { properties: { input_text: { type: 'object', properties: { ref: { type: 'string' }, text: { type: 'string' } }, required: ['ref', 'text'], additionalProperties: false } }, required: ['input_text'], additionalProperties: false },
                     { properties: { press_key: { type: 'object', properties: { ref: { type: 'string' }, key: { type: 'string' } }, required: ['key'], additionalProperties: false } }, required: ['press_key'], additionalProperties: false },
-                    { properties: { scroll_down: { type: 'object', additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
-                    { properties: { scroll_up: { type: 'object', additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
+                    { properties: { scroll_down: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
+                    { properties: { scroll_up: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
                     { properties: { wait: { type: 'object', properties: { ms: { type: 'number' } }, additionalProperties: false } }, required: ['wait'], additionalProperties: false },
                     { properties: { extract_content: { type: 'object', properties: { goal: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract_content'], additionalProperties: false },
                     { properties: { open_tab: { type: 'object', properties: { url: { type: 'string' } }, additionalProperties: false } }, required: ['open_tab'], additionalProperties: false },
@@ -93,18 +95,20 @@ class NavisOrchestrator {
     model;
     session;
     logger;
+    parallelCoordinator;
     constructor(aiClient, logger, visionClient) {
         this.aiClient = aiClient;
         this.visionClient = visionClient || null;
         this.model = aiClient.model;
         this.logger = logger || new logger_1.NavisLogger();
         this.session = new session_1.BrowserSession();
+        this.parallelCoordinator = new parallel_processing_1.ParallelProcessingCoordinator();
     }
     getEventLogger() { return this.logger; }
     async run(options) {
-        const { task, maxSteps = 25, maxActionsPerStep = 8, headless = false, startUrl, useVision = false, autoLaunchChrome = true } = options;
+        const { task, maxSteps = 25, maxActionsPerStep = 8, headless = false, startUrl, useVision = false } = options;
         const runStart = Date.now();
-        await this.session.launch({ headless, startUrl, logger: this.logger, autoLaunchChrome });
+        await this.session.launch({ headless, startUrl, logger: this.logger });
         console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
         console.log(`[Navis] Vision mode: ${useVision ? 'ENABLED' : 'disabled'}`);
         await this.session.page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => { });
@@ -137,27 +141,106 @@ class NavisOrchestrator {
                 let elementsFormatted = '';
                 const t2 = Date.now();
                 if (useVision) {
-                    // Capture screenshot + element snapshot in parallel for speed
+                    // Vision mode is PRIMARY - capture screenshot + element snapshot in parallel
                     try {
                         // Annotate page with visual refs before taking the screenshot
                         await this.session.annotateElements();
+                        // Hide overlay before screenshot
+                        await page.evaluate(() => {
+                            const controls = window.__navis_controls;
+                            if (controls?.hideOverlay) {
+                                controls.hideOverlay();
+                            }
+                        }).catch(() => { });
                         const [screenshotBuffer, elemSnapshot] = await Promise.all([
-                            page.screenshot({ type: 'jpeg', quality: 75, fullPage: false }),
+                            page.screenshot({ type: 'jpeg', quality: 75, fullPage: false }).catch((err) => {
+                                // Handle screenshot timeout specifically
+                                if (err.message?.includes('Timeout') || err.message?.includes('timed out')) {
+                                    throw new Error(`Screenshot capture timed out after 30 seconds. The page may be unresponsive or the screenshot operation is taking too long. Try simplifying the task or increasing the timeout.`);
+                                }
+                                throw err;
+                            }),
                             (0, element_capture_1.captureInteractiveElements)(page),
                         ]);
+                        // Restore overlay after screenshot
+                        await page.evaluate(() => {
+                            const controls = window.__navis_controls;
+                            if (controls?.showOverlay) {
+                                controls.showOverlay();
+                            }
+                        }).catch(() => { });
                         // Clean up annotations immediately after screenshot
                         await this.session.removeAnnotations();
                         screenshotB64 = screenshotBuffer.toString('base64');
                         snapshot = elemSnapshot;
                         elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
                         lastUrl = url;
+                        console.log('[Navis] Vision mode: screenshot captured successfully');
                     }
                     catch (err) {
-                        console.warn('[Navis] Screenshot capture failed, falling back to DOM-only:', err);
+                        // Vision mode screenshot timeout - ask AI what happened and return gracefully
+                        const errMsg = err instanceof Error ? err.message : String(err);
+                        const isTimeout = errMsg.includes('timed out') || errMsg.includes('Timeout');
+                        console.error('[Navis] Vision mode FAILED - screenshot capture error:', err);
+                        // Ensure overlay is restored even on error
+                        await page.evaluate(() => {
+                            const controls = window.__navis_controls;
+                            if (controls?.showOverlay) {
+                                controls.showOverlay();
+                            }
+                        }).catch(() => { });
                         await this.session.removeAnnotations().catch(() => { });
-                        snapshot = await (0, element_capture_1.captureInteractiveElements)(page);
-                        elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
-                        lastUrl = url;
+                        // If it's a timeout, ask the AI what happened and return gracefully
+                        if (isTimeout) {
+                            console.log('[Navis] Screenshot timeout detected - asking AI to assess current state and return to main agent');
+                            try {
+                                // Get current page state without screenshot
+                                snapshot = await (0, element_capture_1.captureInteractiveElements)(page);
+                                elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
+                                // Ask AI to assess what happened
+                                const assessmentPrompt = `The screenshot capture timed out after 30 seconds. The page at ${url} appears to be unresponsive or taking too long to render.
+
+Current page elements:
+${elementsFormatted}
+
+Please assess:
+1. What is the current state of the page?
+2. What was the last action attempted?
+3. What should the user know about what happened?
+
+Respond with a brief assessment (2-3 sentences) of the current situation.`;
+                                const assessment = await this.aiClient.chat({
+                                    messages: [
+                                        { role: 'system', content: 'You are a browser automation assistant. Assess the current page state and explain what happened.' },
+                                        { role: 'user', content: assessmentPrompt }
+                                    ],
+                                    model: this.model,
+                                    temperature: 0.3,
+                                }).catch(() => null);
+                                const assessmentText = assessment
+                                    ? (typeof assessment.content === 'string' ? assessment.content : JSON.stringify(assessment.content))
+                                    : 'Screenshot capture timed out - page may be unresponsive.';
+                                // Return gracefully with assessment
+                                this.logger.taskComplete(false, steps, assessmentText);
+                                return {
+                                    success: false,
+                                    output: `Screenshot Timeout: ${assessmentText}\n\nThe page at ${url} did not respond to screenshot capture within 30 seconds. This may indicate:\n- The page is loading complex content\n- JavaScript is running indefinitely\n- The server is slow or unresponsive\n\nPlease try again or simplify the task.`,
+                                    steps,
+                                };
+                            }
+                            catch (assessmentErr) {
+                                console.error('[Navis] Assessment failed:', assessmentErr);
+                                // Return with basic timeout message
+                                this.logger.taskComplete(false, steps, 'Screenshot timeout - page unresponsive');
+                                return {
+                                    success: false,
+                                    output: `Screenshot Timeout: The page at ${url} did not respond to screenshot capture within 30 seconds. The page may be unresponsive or loading complex content. Please try again or simplify the task.`,
+                                    steps,
+                                };
+                            }
+                        }
+                        // For non-timeout errors, throw to stop execution
+                        throw new Error(`Vision mode failed: ${errMsg}`);
                     }
                 }
                 else {
@@ -186,12 +269,11 @@ class NavisOrchestrator {
                 if (goalRepeatCount >= 2) {
                     stuckWarning = `\n[SELF-CORRECTION]: You have tried "${lastGoal}" ${goalRepeatCount} times without success. TRY A DIFFERENT STRATEGY (different search term, scroll elsewhere, or try a different website).`;
                 }
-                // Compress history after 8 steps to keep context small
-                const historyStr = history.length > 8
-                    ? `[${history.length - 8} earlier steps]...` + history.slice(-8).join('\n')
-                    : (history.length > 0 ? history.join('\n') : 'None');
+                // Compress history after 8 steps to keep context small (Req 2.3)
+                const historyStr = (0, ai_optimization_1.compressHistory)(history);
                 const inputContext = [
                     `Task: ${task}`,
+                    `Current Step: ${steps + 1}/${maxSteps}`,
                     `History: ${historyStr}`,
                     `Current Tab: ${url} (${title})`,
                     `Open Tabs (${tabCount}):\n${tabsStr}`,
@@ -208,8 +290,9 @@ class NavisOrchestrator {
                     .replace(/\{content_above_placeholder\}/g, '')
                     .replace(/\{content_below_placeholder\}/g, '');
                 const t4 = Date.now();
-                // Use vision AI if we have a screenshot, otherwise use text-only
-                const decision = screenshotB64
+                // When vision mode is enabled, ALWAYS use vision AI (no fallback to text-only)
+                // When vision mode is disabled, use text-only AI
+                const decision = useVision
                     ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64)
                     : await this.callAI(systemPrompt, inputContext, nextPrompt);
                 const t5 = Date.now();
@@ -283,9 +366,18 @@ class NavisOrchestrator {
                 history.push(`${decision.current_state?.next_goal} → ${lastResult}`);
             }
             console.log(`[Navis] ⏱ Total wall clock: ${Date.now() - runStart}ms over ${steps} steps`);
+            // ── Step Limit Reached: Synthesize Partial Results ──
+            this.logger.error(`Reached maximum ${maxSteps} steps. Synthesizing partial results to prevent data loss...`);
+            // Capture final state for synthesis
+            const finalUrl = this.session.page.url();
+            let finalScreenshot = null;
+            if (useVision) {
+                finalScreenshot = await this.session.page.screenshot({ type: 'jpeg', quality: 60 }).then(b => b.toString('base64')).catch(() => null);
+            }
+            const partialSummary = await this.synthesizePartialResults(task, history, finalUrl, lastResult, finalScreenshot || undefined);
             return {
                 success: false,
-                output: `Reached maximum ${maxSteps} steps. Last result: ${lastResult}`,
+                output: `Reached maximum ${maxSteps} steps. MISSION INTERRUPTED - Partial Findings Summary:\n\n${partialSummary}`,
                 steps,
             };
         }
@@ -294,7 +386,81 @@ class NavisOrchestrator {
             return { success: false, output: `Error: ${err.message}`, steps };
         }
         finally {
-            // Intentionally not closing session to allow multiple tool calls to share the same browser
+            // Close the browser when Navis is done
+            const finallyStartTime = Date.now();
+            console.log('[Navis] 🔴 FINALLY BLOCK ENTERED - Initiating session closure and return to main agent');
+            try {
+                console.log('[Navis] 🔴 Calling session.close()...');
+                await this.session.close().catch((err) => {
+                    console.error('[Navis] ⚠️ session.close() threw error:', err);
+                });
+                const closureTime = Date.now() - finallyStartTime;
+                console.log(`[Navis] ✅ Session closure completed (${closureTime}ms)`);
+            }
+            catch (finallyErr) {
+                const closureTime = Date.now() - finallyStartTime;
+                console.error(`[Navis] ❌ FINALLY BLOCK ERROR (${closureTime}ms):`, finallyErr);
+            }
+            const totalFinallyTime = Date.now() - finallyStartTime;
+            console.log(`[Navis] ✅ FINALLY BLOCK COMPLETE - Total time: ${totalFinallyTime}ms - RETURNING TO MAIN AGENT`);
+        }
+    }
+    /**
+     * When Navis hits its step limit, this method uses the AI to look back at the
+     * entire history and the current page to provide the best possible summary
+     * of findings so far. This prevents "lost progress" for the user.
+     */
+    async synthesizePartialResults(task, history, lastUrl, lastResult, screenshotB64) {
+        // Keep last 15 steps of history for context, as that's where most recent discoveries are
+        const historyContext = history.slice(-15).join('\n');
+        const prompt = `You are Navis, a high-performance browser automation agent.
+You have reached your maximum step limit (25 steps) while working on a complex research task.
+
+ORIGINAL RESEARCH GOAL: "${task}"
+
+Your mission is to provide an EXHAUSTIVE summary of every piece of relevant information you have discovered so far.
+Do not apologize for stopping; instead, provide value by reporting all data points, prices, airline schedules, links, or facts found in your history.
+
+CONVERSATION HISTORY (Last 15 steps):
+${historyContext}
+
+CURRENT PAGE URL: ${lastUrl}
+LAST ACTION ATTEMPTED: ${lastResult}
+
+REPORT FORMAT:
+- Summary of Findings: [High-level overview]
+- Extracted Data: [Specific list of items, prices, names, etc.]
+- Current Status: [Where you stopped and what was left to do]
+
+If you found nothing useful, state "No relevant data points were extracted before the limit was reached."
+Respond with the plain text report only.`;
+        try {
+            const messages = [{ role: 'system', content: 'You are a research synthesis expert.' }];
+            if (screenshotB64) {
+                messages.push({
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'image_url',
+                            image_url: { url: `data:image/jpeg;base64,${screenshotB64}`, detail: 'low' }
+                        },
+                        { type: 'text', text: prompt }
+                    ]
+                });
+            }
+            else {
+                messages.push({ role: 'user', content: prompt });
+            }
+            const response = await this.aiClient.chat({
+                messages,
+                model: this.model,
+                temperature: 0.3,
+            });
+            return typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        }
+        catch (err) {
+            console.error('[Navis] Synthesis failed:', err);
+            return `[Synthesis failed] Last result: ${lastResult}. History: ${history.slice(-5).join('; ')}`;
         }
     }
     async callAI(systemPrompt, inputContext, nextStepPrompt) {
@@ -308,14 +474,30 @@ class NavisOrchestrator {
                 model: this.model,
                 responseFormat: 'json',
                 jsonSchema: exports.NAVIS_DECISION_SCHEMA,
-                temperature: 0.1,
+                temperature: 0.1, // Req 2.4: Temperature 0.1 for consistent responses
             });
-            console.log(`[Navis] AI call: ${Date.now() - aiStart}ms (model: ${this.model})`);
+            const elapsedMs = Date.now() - aiStart;
+            // Check performance target (Req 2.1: text-only <2000ms)
+            const perfCheck = (0, ai_optimization_1.checkPerformanceTarget)(elapsedMs, 'text-only');
+            console.log(`[Navis] ${perfCheck.message} (model: ${this.model})`);
             const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
             return this.extractJson(raw);
         }
         catch (err) {
-            this.logger.error(`AI call failed: ${err.message?.slice(0, 120) || 'unknown error'}`);
+            const errMsg = err.message?.slice(0, 120) || 'unknown error';
+            this.logger.error(`AI call failed: ${errMsg}`);
+            // Check for rate limit or monthly limit errors
+            const isRateLimit = err.message?.toLowerCase().includes('429') ||
+                err.message?.toLowerCase().includes('rate limit') ||
+                err.message?.toLowerCase().includes('monthly limit') ||
+                err.message?.toLowerCase().includes('quota exceeded') ||
+                err.message?.toLowerCase().includes('insufficient quota');
+            if (isRateLimit) {
+                const rateLimitMsg = `[Navis] Vision grounding provider rate limit or monthly limit cap reached. Please check your provider's dashboard to upgrade or wait for quota reset.`;
+                console.warn(`[Navis] ${rateLimitMsg}`);
+                // Note: The user will see this in the chat context through the error message
+                // The error is propagated to stop execution
+            }
             return null;
         }
     }
@@ -383,13 +565,35 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
                 temperature: 0.1,
             });
             const elapsed = Date.now() - aiStart;
-            console.log(`[Navis] 🖼️ Vision AI complete: ${elapsed}ms (${visionLabel})`);
+            // Check performance target (Req 2.2: vision <4000ms)
+            const perfCheck = (0, ai_optimization_1.checkPerformanceTarget)(elapsed, 'vision');
+            console.log(`[Navis] 🖼️ ${perfCheck.message} (${visionLabel})`);
             const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
             return this.extractJson(raw);
         }
         catch (err) {
             const errMsg = err.message?.slice(0, 150) || 'unknown error';
             this.logger.error(`Vision AI call failed: ${errMsg}`);
+            // Check for rate limit or monthly limit errors
+            const isRateLimit = err.message?.toLowerCase().includes('429') ||
+                err.message?.toLowerCase().includes('rate limit') ||
+                err.message?.toLowerCase().includes('monthly limit') ||
+                err.message?.toLowerCase().includes('quota exceeded') ||
+                err.message?.toLowerCase().includes('insufficient quota');
+            // Check for timeout errors
+            const isTimeout = err.message?.toLowerCase().includes('timeout') ||
+                err.message?.toLowerCase().includes('timed out') ||
+                err.message?.toLowerCase().includes('exceeded');
+            if (isRateLimit) {
+                const rateLimitMsg = `[Navis] Vision grounding provider rate limit or monthly limit cap reached. Please check your provider's dashboard to upgrade or wait for quota reset.`;
+                console.warn(`[Navis] ${rateLimitMsg}`);
+                // Note: The user will see this in the chat context through the error message
+                // The error is propagated to stop execution
+            }
+            else if (isTimeout) {
+                const timeoutMsg = `[Navis] Vision grounding operation timed out. This may be due to a slow network connection, large screenshot size, or an unresponsive page. Try simplifying the task or checking your connection.`;
+                console.warn(`[Navis] ${timeoutMsg}`);
+            }
             // If it's an image-related error, fall back gracefully to text-only
             const isVisionError = errMsg.toLowerCase().includes('image') ||
                 errMsg.toLowerCase().includes('vision') ||

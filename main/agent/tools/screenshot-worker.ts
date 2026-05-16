@@ -1,6 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
 import * as fs from 'fs';
-import * as path from 'path';
 const screenshot = require('screenshot-desktop');
 let sharp: any = null;
 try { sharp = require('sharp'); } catch {}
@@ -21,7 +20,7 @@ async function run() {
     // 2. Read
     const imgBuffer = fs.readFileSync(outPath);
 
-    // Get dimensions
+    // Get dimensions from PNG header (faster than sharp)
     let width = 1920, height = 1080;
     if (imgBuffer.length > 24 && imgBuffer.toString("ascii", 1, 4) === "PNG") {
        width = imgBuffer.readUInt32BE(16);
@@ -34,31 +33,12 @@ async function run() {
     let newH = height;
 
     if (sharp) {
-      // Compute resize dimensions
+      // Fast resize calculation
       const area = width * height;
-      if (area > 0) {
-        const clampedArea = Math.min(
-          Math.max(area, imageMinPixels),
-          imageMaxPixels
-        );
-        const scale = Math.sqrt(clampedArea / area);
-
-        const roundSize = (v: number): number =>
-          Math.max(
-            imageScaleFactor,
-            Math.floor(Math.max(1, v) / imageScaleFactor) *
-            imageScaleFactor
-          );
-
-        newW = roundSize(width * scale);
-        newH = roundSize(height * scale);
-
-        const newArea = Math.max(1, newW * newH);
-        if (newArea > imageMaxPixels) {
-          const shrink = Math.sqrt(imageMaxPixels / newArea);
-          newW = roundSize(newW * shrink);
-          newH = roundSize(newH * shrink);
-        }
+      if (area > imageMinPixels) {
+        const scale = Math.sqrt(Math.min(area, imageMaxPixels) / area);
+        newW = Math.max(imageScaleFactor, Math.floor(width * scale / imageScaleFactor) * imageScaleFactor);
+        newH = Math.max(imageScaleFactor, Math.floor(height * scale / imageScaleFactor) * imageScaleFactor);
       }
 
       const jpegBuffer = await sharp(imgBuffer)
@@ -67,18 +47,13 @@ async function run() {
         .toBuffer();
       encoded = jpegBuffer.toString("base64");
     } else {
+      // No sharp - just encode the raw PNG as base64 (no resize)
       encoded = imgBuffer.toString("base64");
     }
 
     parentPort?.postMessage({
       success: true,
-      data: {
-        encoded,
-        width,
-        height,
-        newW,
-        newH
-      }
+      data: { encoded, width, height, newW, newH }
     });
   } catch (err) {
     parentPort?.postMessage({

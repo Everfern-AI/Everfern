@@ -392,6 +392,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chat: {
     generateTitle: (conversationId: string, firstMessage: string) =>
       ipcRenderer.invoke('chat:generate-title', conversationId, firstMessage),
+    onTitleUpdated: (cb: (data: { conversationId: string; title: string }) => void) => {
+      ipcRenderer.on('chat:title-updated', (_e, data) => cb(data));
+    },
+    removeTitleUpdatedListener: () => {
+      ipcRenderer.removeAllListeners('chat:title-updated');
+    },
+  },
+
+  // ── Generic Event Listeners ────────────────────────────────────────
+  on: (channel: string, cb: (data: any) => void) => {
+    ipcRenderer.on(channel, (_e, data) => cb(data));
+  },
+  off: (channel: string, cb?: (data: any) => void) => {
+    if (cb) {
+      ipcRenderer.removeListener(channel, cb as any);
+    } else {
+      ipcRenderer.removeAllListeners(channel);
+    }
   },
 });
 

@@ -43,6 +43,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.findChromiumExecutable = findChromiumExecutable;
 exports.ensurePlaywrightChromium = ensurePlaywrightChromium;
 const child_process_1 = require("child_process");
 const path = __importStar(require("path"));

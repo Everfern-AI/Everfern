@@ -65,7 +65,25 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
         };
         loadHistory();
         const interval = setInterval(loadHistory, 5000);
-        return () => clearInterval(interval);
+
+        // Listen for title updates from the backend to refresh immediately
+        const handleTitleUpdate = (_: any, data: any) => {
+            const { conversationId, title } = data;
+            setHistory(prev => prev.map(conv =>
+                conv.id === conversationId ? { ...conv, title } : conv
+            ));
+        };
+
+        if ((window as any).electronAPI?.on) {
+            (window as any).electronAPI.on('chat:title-updated', handleTitleUpdate);
+        }
+
+        return () => {
+            clearInterval(interval);
+            if ((window as any).electronAPI?.off) {
+                (window as any).electronAPI.off('chat:title-updated', handleTitleUpdate);
+            }
+        };
     }, []);
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -307,9 +325,9 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         </div>
                         {isOpen && (
                             <>
-                                <span style={{ 
-                                    flex: 1, 
-                                    overflow: "hidden", 
+                                <span style={{
+                                    flex: 1,
+                                    overflow: "hidden",
                                     whiteSpace: "nowrap",
                                     maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                                     WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
@@ -336,11 +354,11 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     </div>
                     {isOpen && (
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
-                            <div style={{ 
-                                fontSize: 13, 
-                                fontWeight: 600, 
-                                color: "#111111", 
-                                overflow: "hidden", 
+                            <div style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "#111111",
+                                overflow: "hidden",
                                 whiteSpace: "nowrap",
                                 maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                                 WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'

@@ -147,6 +147,7 @@ export const GraphState = Annotation.Root({
   dataAnalysisComplete: Annotation<boolean>(),
   computerUseComplete: Annotation<boolean>(),
   deepResearchComplete: Annotation<boolean>(),
+  deepResearchSelfLoopCount: Annotation<number>(),
   // Subagent State
   subagentSpawned: Annotation<any>(),
   completedSteps: Annotation<string[]>(),
