@@ -153,7 +153,9 @@ const ORCHESTRATOR_LINE_PATTERNS = [
     /\{[\s\n]*"tool_calls"[\s\S]*?\}/gi,
     /\{[\s\n]*"role"[\s\S]*?\}/gi,
     /\[?(?:Graph|IPC|Network|System)\]?[^\n]*/gi,
-    /^\s*(?:Working|Thinking|Processing|Analyzing)(?:\.|\s)*$/gim
+    /^\s*(?:Working|Thinking|Processing|Analyzing)(?:\.|\s)*$/gim,
+    /(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gi,
+    /(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[:\-\s][^\n]*/gi
 ];
 
 function scrubOrchestratorNoise(text: string): string {

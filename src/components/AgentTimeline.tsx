@@ -400,7 +400,9 @@ const THOUGHT_NOISE_PATTERNS = [
     /task_complete — Task completed[^\n]*/gi,
     /\{[\s\n]*"messages"[\s\S]*?\}/gi,
     /\{[\s\n]*"tool_calls"[\s\S]*?\}/gi,
-    /\{[\s\n]*"role"[\s\S]*?\}/gi
+    /\{[\s\n]*"role"[\s\S]*?\}/gi,
+    /(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gi,
+    /(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[:\-\s][^\n]*/gi
 ];
 
 const cleanThought = (text: string): string => {
