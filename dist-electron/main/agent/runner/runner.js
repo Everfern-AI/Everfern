@@ -432,6 +432,18 @@ class AgentRunner {
             // Initialize duration tracker for thinking time tracking
             const { DurationTracker } = await Promise.resolve().then(() => __importStar(require('./duration-tracker')));
             const durationTracker = new DurationTracker();
+            // Create eventQueue early so we can push status updates
+            let pushResolver = null;
+            const eventQueue = [];
+            const originalPush = eventQueue.push.bind(eventQueue);
+            eventQueue.push = (...items) => {
+                const res = originalPush(...items);
+                if (pushResolver) {
+                    pushResolver();
+                    pushResolver = null;
+                }
+                return res;
+            };
             // Add initial mission steps
             missionTracker.addStep({
                 id: 'step:triage',
@@ -445,7 +457,7 @@ class AgentRunner {
                     type: 'mission_step_update',
                     step,
                     timeline,
-                });
+                }); // Cast as any if type mismatch
             });
             missionTracker.onPhaseChange((phase, timeline) => {
                 eventQueue.push({
@@ -472,18 +484,6 @@ class AgentRunner {
                 console.log('[AgentRunner] Skills not yet loaded, loading now...');
                 this.skills = await (0, skills_loader_1.loadSkillsAsync)();
             }
-            // Create eventQueue early so we can push status updates
-            let pushResolver = null;
-            const eventQueue = [];
-            const originalPush = eventQueue.push.bind(eventQueue);
-            eventQueue.push = (...items) => {
-                const res = originalPush(...items);
-                if (pushResolver) {
-                    pushResolver();
-                    pushResolver = null;
-                }
-                return res;
-            };
             // Reset abort state for new execution
             abort_manager_1.globalAbortManager.reset();
             // SWARM SYNC: Listen for sub-agent progress events to forward to the stream
@@ -507,7 +507,6 @@ class AgentRunner {
                     toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent');
                 }
                 const graph = await Promise.resolve().then(() => (0, graph_1.buildGraph)(this, toolDefs, this.tools));
-                yield { type: 'thought', content: '🎬 Let\'s do this!' };
                 let graphDone = false;
                 let currentAssistantMsgId = `msg-ast-${Date.now()}`;
                 let currentContent = '';

@@ -143,13 +143,21 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         playSound: (soundPath) => electron_1.ipcRenderer.invoke('audio:play-sound', soundPath),
         validateNvidiaModel: (modelId, apiKey) => electron_1.ipcRenderer.invoke('acp:validate-nvidia-model', modelId, apiKey),
         // Mission Timeline Events
+        removeMissionListeners: () => {
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-step-update');
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-phase-change');
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-complete');
+        },
         onMissionStepUpdate: (cb) => {
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-step-update');
             electron_1.ipcRenderer.on('acp:mission-step-update', (_e, data) => cb(data));
         },
         onMissionPhaseChange: (cb) => {
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-phase-change');
             electron_1.ipcRenderer.on('acp:mission-phase-change', (_e, data) => cb(data));
         },
         onMissionComplete: (cb) => {
+            electron_1.ipcRenderer.removeAllListeners('acp:mission-complete');
             electron_1.ipcRenderer.on('acp:mission-complete', (_e, data) => cb(data));
         },
         onPlanCreated: (cb) => {
@@ -217,9 +225,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
             electron_1.ipcRenderer.removeAllListeners('acp:surface-action');
             electron_1.ipcRenderer.removeAllListeners('acp:usage');
             electron_1.ipcRenderer.removeAllListeners('agent:permission-request');
-            electron_1.ipcRenderer.removeAllListeners('acp:mission-step-update');
-            electron_1.ipcRenderer.removeAllListeners('acp:mission-phase-change');
-            electron_1.ipcRenderer.removeAllListeners('acp:mission-complete');
+            // Intentionally NOT removing mission listeners here to allow persistent tracking
             electron_1.ipcRenderer.removeAllListeners('acp:plan-created');
             electron_1.ipcRenderer.removeAllListeners('acp:hitl-request');
             electron_1.ipcRenderer.removeAllListeners('acp:hitl-response-processed');

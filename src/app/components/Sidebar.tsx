@@ -68,10 +68,13 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
 
         // Listen for title updates from the backend to refresh immediately
         const handleTitleUpdate = (_: any, data: any) => {
-            const { conversationId, title } = data;
-            setHistory(prev => prev.map(conv =>
-                conv.id === conversationId ? { ...conv, title } : conv
-            ));
+            const conversationId = data?.conversationId;
+            const title = data?.title;
+            if (conversationId && title) {
+                setHistory(prev => prev.map(conv =>
+                    conv.id === conversationId ? { ...conv, title } : conv
+                ));
+            }
         };
 
         if ((window as any).electronAPI?.on) {

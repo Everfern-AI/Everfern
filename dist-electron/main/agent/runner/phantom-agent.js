@@ -55,7 +55,7 @@ class PhantomAgent {
      * Phantom is pessimistic and looks for all possible failure modes.
      */
     async reviewExecutionPlan(proposal, context) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(context);
         const userPrompt = this.buildUserPrompt(proposal, context);
         try {
             const response = await this.client.chat({
@@ -77,12 +77,16 @@ class PhantomAgent {
             throw new Error(`Phantom failed to review plan: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
-    buildSystemPrompt() {
-        const prompt = (0, prompt_sync_1.loadPrompt)('debate-phantom.md');
+    buildSystemPrompt(context) {
+        const toolsList = context.availableTools.join('\n- ');
+        let prompt = (0, prompt_sync_1.loadPrompt)('debate-phantom.md');
         if (!prompt) {
             console.warn('[Phantom] Could not load debate-phantom.md prompt. Using fallback.');
             return `You are Phantom, the Red-Teamer in a peer debate system for AI task planning.`;
         }
+        // Replace the placeholder with actual available tools
+        prompt = prompt.replace('{availableTools}', toolsList);
+        prompt = prompt.replace('{endnote}', `Current tools available: ${toolsList}`);
         return prompt;
     }
     buildUserPrompt(proposal, context) {

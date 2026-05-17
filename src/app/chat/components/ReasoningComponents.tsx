@@ -502,3 +502,71 @@ export const ReasoningPane = ({
         </AnimatePresence>
     );
 };
+
+// ── ReasoningBlock ────────────────────────────────────────────────────────────
+// Displays raw chain-of-thought (reasoning_content) as a collapsible indented block
+// shown ABOVE the assistant's reply. Styled like a soft italic narrative.
+export const ReasoningBlock = ({ content }: { content: string }) => {
+    const [open, setOpen] = useState(false);
+    if (!content?.trim()) return null;
+
+    return (
+        <div style={{ marginBottom: 12 }}>
+            <button
+                onClick={() => setOpen(o => !o)}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '0 0 6px', color: '#9ca3af',
+                }}
+            >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                    stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span style={{ fontSize: 12.5, color: '#9ca3af', fontStyle: 'italic' }}>
+                    {open ? 'Hide reasoning' : 'Show reasoning'}
+                </span>
+                <motion.span
+                    animate={{ rotate: open ? 180 : 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                    style={{ display: 'flex', marginLeft: 2 }}
+                >
+                    <ChevronDownIcon width={11} height={11} color="#9ca3af" />
+                </motion.span>
+            </button>
+
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                        style={{ overflow: 'hidden' }}
+                    >
+                        <div style={{
+                            borderLeft: '2px solid #e5e7eb',
+                            paddingLeft: 14,
+                            marginLeft: 2,
+                            marginBottom: 10,
+                            maxHeight: 280,
+                            overflowY: 'auto',
+                        }}>
+                            <div style={{
+                                fontSize: 12.5,
+                                lineHeight: 1.75,
+                                color: '#9ca3af',
+                                fontStyle: 'italic',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                            }}>
+                                {content}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};

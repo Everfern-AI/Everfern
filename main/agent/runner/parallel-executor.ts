@@ -1,9 +1,9 @@
 /**
  * EverFern Desktop — Parallel Tool Executor (Synchronized)
- * 
+ *
  * Executes independent tools in parallel while emitting synchronization events
  * to ensure the UI and backend stay perfectly aligned during multi-agent deployment.
- * 
+ *
  * Resource Limits:
  * - Max 4 concurrent operations (prevents resource exhaustion)
  * - Max output size: 2MB per tool result (prevents memory bloat)
@@ -39,35 +39,35 @@ export function analyzeToolDependencies(
 ): ToolAnalysis[] {
     const fileWriteTools = new Set(['write', 'write_file', 'edit', 'delete', 'bash', 'run_command', 'apply_patch', 'executePwsh']);
     const readOnlyTools = new Set(['read', 'read_file', 'web_search', 'memory_search', 'list_directory']);
-    
+
     return tools.map(tool => {
         const isWrite = fileWriteTools.has(tool.name);
         const isGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh', 'navis'].includes(tool.name) && tool.args.safe_for_parallel !== true;
-        const isReadOnly = readOnlyTools.has(tool.name) || (!isWrite && !isGlobalLocking);        
+        const isReadOnly = readOnlyTools.has(tool.name) || (!isWrite && !isGlobalLocking);
         // Detect potential conflicts (same file path)
         const conflicts: string[] = [];
         const filePaths = extractFilePaths(tool.args);
-        
+
         for (const other of tools) {
             if (other.id === tool.id) continue;
 
             const otherGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh'].includes(other.name) && other.args.safe_for_parallel !== true;
-            
+
             // Globally locking tools conflict with absolutely everything else
             if (isGlobalLocking || otherGlobalLocking) {
                 conflicts.push(other.id);
                 continue;
             }
-            
+
             const otherPaths = extractFilePaths(other.args);
             const overlapping = filePaths.filter(p => otherPaths.includes(p));
-            
+
             // Writes to same path conflict
             if (isWrite && overlapping.length > 0) {
                 conflicts.push(other.id);
             }
         }
-        
+
         return {
             name: tool.name,
             args: tool.args,
@@ -84,13 +84,13 @@ export function analyzeToolDependencies(
 function extractFilePaths(args: Record<string, unknown>): string[] {
     const paths: string[] = [];
     const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest'];
-    
+
     for (const [key, value] of Object.entries(args)) {
         if (pathKeys.includes(key.toLowerCase()) && typeof value === 'string') {
             paths.push(value);
         }
     }
-    
+
     return paths;
 }
 
@@ -100,31 +100,31 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
  */
 export function groupParallelTools(tools: ToolAnalysis[]): ToolAnalysis[][] {
     if (tools.length === 0) return [];
-    
+
     const remaining = [...tools];
     const groups: ToolAnalysis[][] = [];
-    
+
     while (remaining.length > 0) {
         const currentGroup: ToolAnalysis[] = [];
         const usedIds = new Set<string>();
-        
+
         for (let i = 0; i < remaining.length; i++) {
             const tool = remaining[i];
-            
+
             // Skip if already in a group
             if (usedIds.has(tool.id)) continue;
-            
+
             // Check if any conflict is still remaining in this group or current remaining list
-            const hasConflict = tool.conflicts.some(cid => 
+            const hasConflict = tool.conflicts.some(cid =>
                 usedIds.has(cid)
             );
-            
+
             if (!hasConflict) {
                 currentGroup.push(tool);
                 usedIds.add(tool.id);
             }
         }
-        
+
         if (currentGroup.length === 0) {
             // Deadlock: force-add one tool
             currentGroup.push(remaining.shift()!);
@@ -135,10 +135,10 @@ export function groupParallelTools(tools: ToolAnalysis[]): ToolAnalysis[][] {
                 if (idx !== -1) remaining.splice(idx, 1);
             }
         }
-        
+
         groups.push(currentGroup);
     }
-    
+
     return groups;
 }
 
@@ -154,7 +154,7 @@ function truncateToolResult(result: ToolResult): ToolResult {
             output: `${truncated}\n\n[... OUTPUT TRUNCATED (exceeded ${MAX_RESULT_OUTPUT_SIZE} bytes) ...]`,
         };
     }
-    
+
     return result;
 }
 
@@ -169,7 +169,7 @@ export async function executeSynchronizedParallelGroup(
     onUpdate?: (update: string) => void
 ): Promise<ParallelGroupResult> {
     const startTime = Date.now();
-    
+
     // Emit synchronization start event
     eventQueue?.push({
         type: 'parallel_group_start',
@@ -195,21 +195,11 @@ export async function executeSynchronizedParallelGroup(
             toolArgs: tc.args
         });
 
-        // Add a thought event to show what's happening
-        eventQueue?.push({
-            type: 'thought',
-            content: `\n🛠️  Executing ${tc.name}...`
-        });
-
         try {
             const result = await tool.execute(
-                tc.args, 
+                tc.args,
                 (update) => {
                     eventQueue?.push({ type: 'tool_update', toolName: tc.name, update });
-                    // Also emit as a thought for visibility if it's a long running tool
-                    if (update.length > 5 && !update.includes('Running')) {
-                        eventQueue?.push({ type: 'thought', content: `\n⏳ ${update}` });
-                    }
                 },
                 (event) => {
                     eventQueue?.push(event);
@@ -218,6 +208,7 @@ export async function executeSynchronizedParallelGroup(
             );
 
             const record: ToolCallRecord = {
+                id: tc.id,
                 toolName: tc.name,
                 args: tc.args,
                 result,
@@ -229,6 +220,7 @@ export async function executeSynchronizedParallelGroup(
             return record;
         } catch (err: any) {
             const record: ToolCallRecord = {
+                id: tc.id,
                 toolName: tc.name,
                 args: tc.args,
                 result: { success: false, output: `Error: ${err.message}`, error: String(err) },

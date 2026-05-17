@@ -767,105 +767,91 @@ class ComputerUseTool {
     // ── Action Handlers ──────────────────────────────────────────────────────────
     async mouseMove(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
-        console.log(`[Move] Target=(${absX}, ${absY})`);
-        // 5.1: Emit cursor position event before action execution
-        this.emitCursorPositionEvent('move', [absX, absY], `Moved to (${absX}, ${absY})`);
+        this.emitCursorPositionEvent('move', [absX, absY], `Move (${absX}, ${absY})`);
         this.moveMouse(absX, absY);
-        return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY}).` });
+        return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY})` });
     }
     async leftClick(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
-            console.log(`[Left Click] Target=(${absX}, ${absY})`);
-            // 5.1: Emit cursor position event before action execution
-            this.emitCursorPositionEvent('click', [absX, absY], `Left click at (${absX}, ${absY})`);
+            this.emitCursorPositionEvent('click', [absX, absY], `Left click (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
             this.click(absX, absY, "left");
-            return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY}).` });
+            return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY})` });
         }
         this.click(undefined, undefined, "left");
-        return await this.attachScreenshot({ status: "ok", detail: "Left click at current cursor." });
+        return await this.attachScreenshot({ status: "ok", detail: "Left click" });
     }
     async rightClick(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
-            // 5.1: Emit cursor position event before action execution
-            this.emitCursorPositionEvent('click', [absX, absY], `Right click at (${absX}, ${absY})`);
+            this.emitCursorPositionEvent('click', [absX, absY], `Right click (${absX}, ${absY})`);
             this.click(absX, absY, "right");
-            return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY}).` });
+            return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY})` });
         }
         this.click(undefined, undefined, "right");
-        return await this.attachScreenshot({ status: "ok", detail: "Right click at current cursor." });
+        return await this.attachScreenshot({ status: "ok", detail: "Right click" });
     }
     async middleClick(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
-            // 5.1: Emit cursor position event before action execution
-            this.emitCursorPositionEvent('click', [absX, absY], `Middle click at (${absX}, ${absY})`);
+            this.emitCursorPositionEvent('click', [absX, absY], `Middle click (${absX}, ${absY})`);
             this.click(absX, absY, "middle");
-            return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY}).` });
+            return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY})` });
         }
         this.click(undefined, undefined, "middle");
-        return await this.attachScreenshot({ status: "ok", detail: "Middle click at current cursor." });
+        return await this.attachScreenshot({ status: "ok", detail: "Middle click" });
     }
     async doubleClick(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
-        // 5.1: Emit cursor position event before action execution
-        this.emitCursorPositionEvent('click', [absX, absY], `Double click at (${absX}, ${absY})`);
+        this.emitCursorPositionEvent('click', [absX, absY], `Double click (${absX}, ${absY})`);
         this.doubleClickAt(absX, absY);
-        return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY}).` });
+        return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY})` });
     }
     async tripleClick(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
-        // 5.1: Emit cursor position event before action execution
-        this.emitCursorPositionEvent('click', [absX, absY], `Triple click at (${absX}, ${absY})`);
+        this.emitCursorPositionEvent('click', [absX, absY], `Triple click (${absX}, ${absY})`);
         this.tripleClickAt(absX, absY);
-        return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY}).` });
+        return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY})` });
     }
     async leftClickDrag(params) {
         const [absX, absY] = this.absoluteXy(params.coordinate);
-        // 5.1: Emit cursor position event before action execution
-        this.emitCursorPositionEvent('drag', [absX, absY], `Drag to (${absX}, ${absY})`);
+        this.emitCursorPositionEvent('drag', [absX, absY], `Drag (${absX}, ${absY})`);
         this.drag(absX, absY);
-        return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY}).` });
+        return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY})` });
     }
     async scroll(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
-            // 5.1: Emit cursor position event before action execution
             this.emitCursorPositionEvent('scroll', [absX, absY], `Scroll at (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
-            console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before scroll.`);
         }
         const pixels = maybeInt(params.pixels);
         this.scrollVertical(pixels);
-        return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} vertically at ${params.coordinate ? JSON.stringify(params.coordinate) : 'current position'}.` });
+        return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} px` });
     }
     async hscroll(params) {
         if (params.coordinate) {
             const [absX, absY] = this.absoluteXy(params.coordinate);
-            // 5.1: Emit cursor position event before action execution
-            this.emitCursorPositionEvent('scroll', [absX, absY], `Horizontal scroll at (${absX}, ${absY})`);
+            this.emitCursorPositionEvent('scroll', [absX, absY], `H-scroll at (${absX}, ${absY})`);
             this.moveMouse(absX, absY);
-            console.log(`[Sub-Agent] 🛰️ Moving mouse to (${absX}, ${absY}) before hscroll.`);
         }
         const pixels = maybeInt(params.pixels);
         this.scrollHorizontal(pixels);
-        return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} horizontally at ${params.coordinate ? JSON.stringify(params.coordinate) : 'current position'}.` });
+        return await this.attachScreenshot({ status: "ok", detail: `H-scroll ${pixels} px` });
     }
     async type(params) {
         if (params.text === undefined || params.text === null) {
             throw new Error("text is required for action=type.");
         }
         if (params.clear_first) {
-            console.log(`[Sub-Agent] 🧼 Clearing field before typing...`);
             this.pressKeys(['control', 'a']);
             this.pressKeys(['backspace']);
         }
         this.typeText(params.text);
         return await this.attachScreenshot({
             status: "ok",
-            detail: `Typed "${params.text.substring(0, 50)}".`,
+            detail: `Typed "${params.text.substring(0, 30)}${params.text.length > 30 ? '...' : ''}"`,
         });
     }
     async key(params) {
@@ -873,14 +859,14 @@ class ComputerUseTool {
         if (keys.length === 0)
             throw new Error("keys is required for action=key.");
         this.pressKeys(keys);
-        return await this.attachScreenshot({ status: "ok", detail: `Pressed keys ${JSON.stringify(keys)}.` });
+        return await this.attachScreenshot({ status: "ok", detail: `Pressed ${keys.join('+')}` });
     }
     async waitAction(params) {
         if (params.time === undefined || params.time === null) {
             throw new Error("time is required for action=wait.");
         }
         await sleep(params.time);
-        return { status: "ok", detail: `Waited ${params.time} seconds.` };
+        return { status: "ok", detail: `Waited ${params.time}s` };
     }
     async answer(params) {
         return { status: "answer", text: params.text || "" };
@@ -896,7 +882,6 @@ class ComputerUseTool {
             throw new Error("coordinate is required for action=zoom.");
         }
         const [absX, absY] = this.absoluteXy(params.coordinate);
-        console.log(`[Sub-Agent] 🔍 Zooming in at (${absX}, ${absY})...`);
         const ts = nowTs();
         const imgPath = path.join(this.screenshotDir, `${ts}-zoom.png`);
         await this.captureScreen(imgPath);
@@ -904,7 +889,7 @@ class ComputerUseTool {
         const rawBuffer = fs.readFileSync(imgPath);
         const { width: rawW, height: rawH } = this.getPngDimensions(rawBuffer);
         // Define a 400x400 physical crop box centered at the target
-        const boxSize = 250; // 500x500 box for detailed view
+        const boxSize = 250;
         const left = Math.max(0, absX - boxSize);
         const top = Math.max(0, absY - boxSize);
         const width = Math.min(boxSize * 2, rawW - left);
@@ -914,7 +899,7 @@ class ComputerUseTool {
         try {
             const croppedBuffer = await sharp(rawBuffer)
                 .extract({ left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) })
-                .jpeg({ quality: 85 }) // High quality for zoom
+                .jpeg({ quality: 85 })
                 .toBuffer();
             encoded = croppedBuffer.toString("base64");
         }
@@ -924,7 +909,7 @@ class ComputerUseTool {
         }
         return {
             status: "ok",
-            detail: `Zoomed in at (${absX}, ${absY}) with 500x500 crop.`,
+            detail: `Zoom at (${absX}, ${absY})`,
             screenshot: `data:image/jpeg;base64,${encoded}`,
             screenshot_path: imgPath,
             cursor: { x: absX, y: absY },
@@ -1118,8 +1103,6 @@ class ComputerUseTool {
             width: rawW || physicalSize.width || 1920,
             height: rawH || physicalSize.height || 1080
         };
-        console.log(`[Screenshot] ${imgPath} cursor=(${cursorPos.x}, ${cursorPos.y}) monitor=${this.monitorIndex} offset=(${display.bounds.x}, ${display.bounds.y})`);
-        console.log(`[Resolution] Logical=${logicalSize.width}x${logicalSize.height}, Physical=${effectiveDisplaySize.width}x${effectiveDisplaySize.height}, ScaleFactor=${scaleFactor}`);
         let appName = "None";
         let appLogo = "";
         // Determine active app (using Spotify as a placeholder default if running)
@@ -1127,7 +1110,6 @@ class ComputerUseTool {
             const openWindows = (0, child_process_1.execSync)(`powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -ExpandProperty ProcessName"`, { encoding: 'utf-8' });
             if (openWindows.toLowerCase().includes('spotify')) {
                 appName = "Spotify";
-                // Leaving appLogo empty so the frontend uses the universal SVG app icon
                 appLogo = "";
             }
         }
@@ -1259,7 +1241,6 @@ class ComputerUseTool {
                 const normY = Math.max(0, Math.min(1, y / 1000));
                 let absX = left + Math.floor(normX * displayW);
                 let absY = top + Math.floor(normY * displayH);
-                console.log(`[Coordinate Transform] normalized input=(${x}, ${y}) → abs=(${absX}, ${absY})`);
                 return [absX, absY];
             }
             // Pixel coordinates — since we send full-resolution screenshots,
@@ -1269,14 +1250,11 @@ class ComputerUseTool {
                 const scaleY = displayH / imageH;
                 const absX = left + Math.round(x * scaleX);
                 const absY = top + Math.round(y * scaleY);
-                console.log(`[Coordinate Transform] pixel input=(${x}, ${y}) scale=(${scaleX.toFixed(2)}, ${scaleY.toFixed(2)}) → abs=(${absX}, ${absY})`);
                 return [absX, absY];
             }
             // Fallback: assume 1:1 mapping
-            console.log(`[Coordinate Transform] pixel input=(${x}, ${y}) → abs=(${left + x}, ${top + y})`);
             return [left + x, top + y];
         }
-        console.log(`[Coordinate Transform] No viewport/scale, using offset only: (${left + x}, ${top + y})`);
         return [left + x, top + y];
     }
 }
@@ -1325,6 +1303,10 @@ class ComputerUseAgent {
     terminated = null;
     lastScreenshot;
     aborted = false;
+    // Action timing tracking
+    actionTimings = new Map();
+    currentActionStartTime = 0;
+    totalExecutionTime = 0;
     constructor(client, tool, model, task, temperature = 0, maxTurns = 40, historyWindow = 12) {
         this.client = client;
         this.tool = tool;
@@ -1337,17 +1319,38 @@ class ComputerUseAgent {
         this.messages = [{ role: "system", content: SYSTEM_PROMPT }];
         this.baseCount = this.messages.length;
     }
+    /**
+     * Log action timing with performance metrics
+     */
+    logActionTiming(action, durationMs) {
+        this.actionTimings.set(action, (this.actionTimings.get(action) || 0) + durationMs);
+        const totalForAction = this.actionTimings.get(action);
+        const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
+        console.log(`[Timing] ${action}: ${durationMs}ms (total: ${totalForAction}ms for ${count} calls)`);
+    }
+    startActionTiming() {
+        this.currentActionStartTime = Date.now();
+    }
+    endActionTiming() {
+        if (this.currentActionStartTime === 0)
+            return 0;
+        const duration = Date.now() - this.currentActionStartTime;
+        this.totalExecutionTime += duration;
+        this.currentActionStartTime = 0;
+        return duration;
+    }
     abort() {
         this.aborted = true;
         this.terminated = "aborted";
         console.log(`[Sub-Agent] 🛑 Received external abort signal.`);
     }
     async run(onUpdate, onProgress) {
+        const runStartTime = Date.now();
         if (this.messages.length === 1) {
             await this.appendInitialObservation();
             this.baseCount = this.messages.length;
         }
-        console.log(`\n[Sub-Agent] 🚀 VLM PROOF: Using Model="${this.model}" via Provider="${this.client.provider}"`);
+        console.log(`\n[Sub-Agent] 🚀 VLM: Model="${this.model}" Provider="${this.client.provider}"`);
         console.log(`[Sub-Agent] 📡 Base URL: ${JSON.stringify(this.client.config?.baseUrl || "builtin")}`);
         let errorCount = 0;
         const MAX_ERRORS = 3;
@@ -1358,8 +1361,9 @@ class ComputerUseAgent {
                     this.terminated = "aborted";
                     break;
                 }
-                console.log(`\n[Sub-Agent] 👁️  Step ${step}/${this.maxTurns}`);
-                onUpdate?.(`Sub-Agent Turn ${step}/${this.maxTurns}...`);
+                const stepStartTime = Date.now();
+                console.log(`\n[Sub-Agent] 👁️  Step ${step}/${this.maxTurns} (elapsed: ${Date.now() - runStartTime}ms)`);
+                onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
                 // Emit step progress event
                 onProgress?.({
                     type: 'step',
@@ -1368,7 +1372,7 @@ class ComputerUseAgent {
                     stepNumber: step,
                     totalSteps: this.maxTurns,
                 });
-                // Ollama Cloud vision models don't support tool calling — omit tools to avoid 500 errors
+                // Ollama Cloud vision models don't support tool calling
                 const shouldSendTools = this.client.provider !== 'ollama-cloud';
                 const response = await this.client.chat({
                     messages: this.messages,
@@ -1382,7 +1386,7 @@ class ComputerUseAgent {
                     break;
                 const content = typeof response.content === "string" ? response.content : "";
                 if (content) {
-                    console.log(`[Sub-Agent] 🧠 Reasoning: ${content}`);
+                    console.log(`[Sub-Agent] 🧠 Reasoning: ${content.substring(0, 200)}...`);
                     onProgress?.({
                         type: 'reasoning',
                         toolCallId: '',
@@ -1434,9 +1438,12 @@ class ComputerUseAgent {
                         continue;
                     }
                     onUpdate?.(`Executing ${args.action}...`);
-                    console.log(`[Sub-Agent] ▶ Executing: ${args.action}`);
+                    console.log(`[Sub-Agent] ▶ ${args.action}`);
                     try {
+                        this.startActionTiming();
                         const result = await this.tool.call(args);
+                        const duration = this.endActionTiming();
+                        this.logActionTiming(args.action, duration);
                         const payload = result.payload;
                         onProgress?.({
                             type: 'action',
@@ -1451,11 +1458,11 @@ class ComputerUseAgent {
                         });
                         if (payload.status === "answer") {
                             this.finalAnswer = payload.text || "Task finished.";
-                            console.log(`[Sub-Agent] ✅ Final Answer received: ${this.finalAnswer}`);
+                            console.log(`[Sub-Agent] ✅ Final Answer: ${this.finalAnswer}`);
                         }
                         if (payload.status === "terminate") {
                             this.terminated = payload.result || "success";
-                            console.log(`[Sub-Agent] 🏁 Termination received: ${this.terminated}`);
+                            console.log(`[Sub-Agent] 🏁 Terminated: ${this.terminated}`);
                         }
                         if (payload.screenshot) {
                             this.lastScreenshot = payload.screenshot;
@@ -1491,11 +1498,12 @@ class ComputerUseAgent {
                     console.log(`[Sub-Agent] 🏁 Exiting loop: terminated=${!!this.terminated}, finalAnswer=${!!this.finalAnswer}`);
                     break;
                 }
+                const stepElapsed = Date.now() - stepStartTime;
+                console.log(`[Sub-Agent] ⏱️  Step ${step} completed in ${stepElapsed}ms`);
             }
             catch (chatErr) {
                 console.error(`[Sub-Agent] ❌ Chat error at step ${step}:`, chatErr);
                 if (isAuthError(chatErr)) {
-                    // Auth errors (401/403) won't resolve with retries — exit immediately
                     const clientConfig = this.client.config;
                     const baseUrl = clientConfig?.baseUrl || 'unknown';
                     const provider = clientConfig?.provider || 'unknown';
@@ -1542,6 +1550,13 @@ class ComputerUseAgent {
                     content: `Error from AI provider: ${chatErr instanceof Error ? chatErr.message : String(chatErr)}. Please try again.`
                 });
             }
+        }
+        const totalRunTime = Date.now() - runStartTime;
+        console.log(`\n[Sub-Agent] 📊 Total execution time: ${totalRunTime}ms`);
+        console.log(`[Sub-Agent] 📊 Action timing summary:`);
+        for (const [action, totalTime] of this.actionTimings.entries()) {
+            const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
+            console.log(`  - ${action}: ${totalTime}ms (${count} calls)`);
         }
         return {
             finalAnswer: this.finalAnswer || (this.terminated === 'success' ? `Task completed successfully: ${this.task}` : `Task ended: ${this.terminated || 'unknown'}`),

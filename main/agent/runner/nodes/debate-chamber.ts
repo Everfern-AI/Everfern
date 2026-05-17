@@ -44,10 +44,7 @@ export const createDebateChamberNode = (
 
     if (!PeerAgentDebateEngine.shouldDebate(complexity, 'moderate')) {
       logger.info(`Task complexity "${complexity}" (${stepCount} steps) below threshold — skipping debate`);
-      eventQueue?.push({
-        type: 'thought',
-        content: `\n⏭️ Skipped Debate: Task complexity is '${complexity}' (threshold is 'moderate'). Proceeding directly to execution.`
-      });
+
       emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: `Complexity: ${complexity}` });
       return { debateResult: null };
     }
@@ -58,7 +55,7 @@ export const createDebateChamberNode = (
     }
 
     runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task (${stepCount} steps)`);
-    eventQueue?.push({ type: 'thought', content: '\n🎭 **Peer Agent Debate Started** — Three agents (Vanguard, Phantom, Arbiter) are now deliberating on your plan...' });
+
 
     const lastUserMsg = state.messages.filter((m: any) => {
       const role = m.role || m._getType?.();
@@ -125,18 +122,12 @@ export const createDebateChamberNode = (
 
       emitDebateEvent('debate_complete', debateResult.debateId, frontendData);
 
-      eventQueue?.push({
-        type: 'thought',
-        content: `\n⚖️  Arbiter decision: ${debateResult.finalPlan.goNogo.toUpperCase()} — ${debateResult.finalPlan.explanation.slice(0, 200)}`,
-      });
+
 
       const isNoGo = debateResult.finalPlan.goNogo === 'no-go';
       if (isNoGo) {
         runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will proceed anyway as requested');
-        eventQueue?.push({
-          type: 'thought',
-          content: `\n⚠️ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}\n*(Proceeding with best effort as requested)*`,
-        });
+
       }
 
       return {
@@ -155,10 +146,7 @@ export const createDebateChamberNode = (
     } catch (err: any) {
       console.error(`[DebateChamber] Debate failed: ${err.message}`);
       emitDebateEvent('debate_error', debateId, undefined, err.message.slice(0, 200));
-      eventQueue?.push({
-        type: 'thought',
-        content: `\n⚠️ Debate chamber failed: ${err.message.slice(0, 200)} — proceeding without debate`,
-      });
+
       return { debateResult: null };
     }
   };

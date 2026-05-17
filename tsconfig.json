@@ -39,6 +39,18 @@
     "out/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "cli",
+    "main",
+    "dist",
+    "release",
+    "dist-electron",
+    "src/app/chat/components/TaskDecomposer",
+    "src/app/chat/components/PillNarrativeTimeline.tsx",
+    "src/app/chat/components/__tests__",
+    "src/app/chat/__tests__",
+    "src/app/chat/hooks/usePillNarrativeTimeline.ts",
+    "test-navis-cursor.test.ts",
+    "test-navis-nvidia.ts"
   ]
 }

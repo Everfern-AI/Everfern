@@ -92,7 +92,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
 
 
 // ── Tool Call Tag Component ──────────────────────────────────────────────────
-const ToolCallTag = ({ tc, isLast }: { tc: ToolCallDisplay; isLast?: boolean }) => {
+const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay; isLast?: boolean; onClick?: () => void; isSelected?: boolean }) => {
     const [expanded, setExpanded] = useState(false);
     const running = tc.status === 'running';
     const errored = tc.status === 'error';
@@ -133,23 +133,41 @@ const ToolCallTag = ({ tc, isLast }: { tc: ToolCallDisplay; isLast?: boolean }) 
             <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 12 : 8, paddingRight: 12 }}>
                 {/* Description (thought/narration above tool) */}
                 {tc.description && (
-                    <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
+                    <div data-testid="narrative-element" style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
                         {tc.description}
                     </div>
                 )}
                 {/* Tool header row */}
                 <div
-                    onClick={() => !running && tc.output && setExpanded(e => !e)}
+                    onClick={() => {
+                        if (!running && tc.output) {
+                            setExpanded(e => !e);
+                        }
+                        onClick?.();
+                    }}
+                    onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && onClick) {
+                            e.preventDefault();
+                            onClick();
+                        }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={isSelected}
+                    aria-label={`Tool: ${tc.label || tc.toolName}`}
                     style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '7px 12px', borderRadius: 10,
-                        background: looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6',
-                        border: looksLikeTerminal ? '1px solid rgba(0,0,0,0.06)' : '1px solid #eceae4',
+                        background: isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6',
+                        border: isSelected ? '1px solid rgba(99,102,241,0.3)' : looksLikeTerminal ? '1px solid rgba(0,0,0,0.06)' : '1px solid #eceae4',
                         cursor: (!running && tc.output) ? 'pointer' : 'default',
                         transition: 'all 0.15s',
+                        outline: 'none',
                     }}
-                    onMouseEnter={e => { if (!running && tc.output) { e.currentTarget.style.background = looksLikeTerminal ? 'rgba(15,23,42,0.07)' : '#f2f1ee'; e.currentTarget.style.borderColor = '#d4d1cc'; } }}
-                    onMouseLeave={e => { e.currentTarget.style.background = looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6'; e.currentTarget.style.borderColor = '#eceae4'; }}
+                    onMouseEnter={e => { if (!running && tc.output) { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.15)' : looksLikeTerminal ? 'rgba(15,23,42,0.07)' : '#f2f1ee'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.4)' : '#d4d1cc'; } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.3)' : '#eceae4'; }}
+                    onFocus={e => { e.currentTarget.style.outline = '2px solid rgba(99,102,241,0.5)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                    onBlur={e => { e.currentTarget.style.outline = 'none'; }}
                 >
                     <span style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>{tc.icon}</span>
                     <span style={{ fontSize: 12.5, color: '#4b5563', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: looksLikeTerminal ? "'JetBrains Mono', monospace" : 'inherit' }}>
@@ -181,12 +199,16 @@ const ToolCallTag = ({ tc, isLast }: { tc: ToolCallDisplay; isLast?: boolean }) 
                                 overflow: 'hidden',
                                 border: '1px solid rgba(99,102,241,0.15)'
                             }}>
+                                {/* macOS-style header with traffic lights */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(99,102,241,0.08)', borderBottom: '1px solid rgba(99,102,241,0.12)' }}>
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444' }} />
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#ff5f57' }} />
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#febc2e' }} />
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#28c840' }} />
                                     <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 6, fontFamily: "'JetBrains Mono', monospace" }}>
                                         {isTerminal ? (((tc.args?.CommandLine || tc.args?.command || tc.args?.commandLine || '') as string).split('\n')[0]?.slice(0, 50) || 'Terminal') : 'Terminal'}
+                                    </span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 10, color: '#4a4a5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                                        {tc.output.length} chars
                                     </span>
                                 </div>
                                 <pre style={{
@@ -197,9 +219,11 @@ const ToolCallTag = ({ tc, isLast }: { tc: ToolCallDisplay; isLast?: boolean }) 
                                 }}>
                                     {tc.output.split('\n').map((line, idx) => {
                                         const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
+                                        const promptMatch = line.match(/^([\$›#]) /);
                                         return (
                                             <div key={idx} style={{ color: isCmd ? '#a5b4fc' : '#d1d5db' }}>
-                                                {isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
+                                                {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
+                                                {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
                                                 {line}
                                             </div>
                                         );
@@ -256,7 +280,7 @@ const ToolCallTag = ({ tc, isLast }: { tc: ToolCallDisplay; isLast?: boolean }) 
 };
 
 // ── ToolCallRow: Individual tool call in the ToolGroup ──────────────────────
-const ToolCallRow = ({ tc, isLast }: { tc: ToolCallDisplay, isLast?: boolean }) => {
+const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay, isLast?: boolean; onClick?: () => void; isSelected?: boolean }) => {
     const [expanded, setExpanded] = useState(false);
     const isRunning = tc.status === 'running';
     const isError = tc.status === 'error';
@@ -334,8 +358,37 @@ const ToolCallRow = ({ tc, isLast }: { tc: ToolCallDisplay, isLast?: boolean }) 
             )}
 
             <div
-                onClick={() => hasOutput && setExpanded(!expanded)}
-                className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'}`}
+                onClick={() => {
+                    if (hasOutput) {
+                        setExpanded(!expanded);
+                    }
+                    onClick?.();
+                }}
+                onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && onClick) {
+                        e.preventDefault();
+                        onClick();
+                    }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-pressed={isSelected}
+                aria-label={`Tool: ${tc.displayName || tc.label || tc.toolName}`}
+                className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
+                    isSelected
+                        ? 'bg-indigo-50 border border-indigo-200'
+                        : 'hover:bg-gray-50'
+                }`}
+                style={{
+                    outline: 'none',
+                }}
+                onFocus={(e) => {
+                    e.currentTarget.style.outline = '2px solid rgba(99,102,241,0.5)';
+                    e.currentTarget.style.outlineOffset = '2px';
+                }}
+                onBlur={(e) => {
+                    e.currentTarget.style.outline = 'none';
+                }}
             >
                 {/* Status Icon / Globe for Search */}
                 <div className="flex items-center justify-center w-4 h-4 bg-white">
@@ -378,8 +431,16 @@ const ToolCallRow = ({ tc, isLast }: { tc: ToolCallDisplay, isLast?: boolean }) 
 
                 {/* Output indicator for terminal tools */}
                 {isTerminal && hasOutput && !expanded && (
-                    <div className="text-[11px] text-[#10b981] bg-[#dcfce7] px-1.5 py-0.5 rounded font-medium">
-                        output
+                    <div className="flex items-center gap-1.5">
+                        {isError ? (
+                            <div className="text-[11px] text-red-600 bg-red-100 px-1.5 py-0.5 rounded font-medium animate-pulse">
+                                Failed
+                            </div>
+                        ) : (
+                            <div className="text-[11px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded font-medium">
+                                output
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -448,9 +509,12 @@ const ToolCallRow = ({ tc, isLast }: { tc: ToolCallDisplay, isLast?: boolean }) 
                                 {isTerminal ? (
                                     <div className="whitespace-pre-wrap">
                                         {cmdStr && (
-                                            <div className="mb-3 pb-2 border-b border-[#2d2d3a] text-[#94a3b8] text-xs">
-                                                <span className="text-[#64748b]">$ </span>
+                                            <div className="mb-3 pb-2 border-b border-[#2d2d3a] flex items-center gap-3 text-[#94a3b8] text-xs">
+                                                <span className="text-[#6366f1] font-semibold">$</span>
                                                 <span className="text-[#e2e8f0]">{cmdStr}</span>
+                                                <span className="ml-auto text-[#4a4a5a]">
+                                                    {tc.durationMs ? `${(tc.durationMs / 1000).toFixed(1)}s` : ''}
+                                                </span>
                                             </div>
                                         )}
                                         {displayOutput.slice(0, 2000)}

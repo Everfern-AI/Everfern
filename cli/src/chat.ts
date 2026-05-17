@@ -3,9 +3,9 @@ import chalk from 'chalk';
 import ora from 'ora';
 import boxen from 'boxen';
 import inquirer from 'inquirer';
-import { initializeAgent, toggleDebugMode, ChatHistoryStore } from './agent-bridge.ts';
-import { acpManager } from '../../main/acp/manager.ts';
-import { PROVIDER_REGISTRY } from '../../main/lib/providers.ts';
+import { initializeAgent, toggleDebugMode, ChatHistoryStore } from './agent-bridge';
+import { acpManager } from '../../main/acp/manager';
+import { PROVIDER_REGISTRY } from '../../main/lib/providers';
 import { Command } from '@langchain/langgraph';
 
 const PROVIDER_MODELS: Rec

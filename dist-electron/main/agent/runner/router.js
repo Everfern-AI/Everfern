@@ -84,7 +84,7 @@ function selectRoute(state) {
  * Check if intent requires planning
  */
 function requiresPlanning(intent) {
-    return ['task', 'coding'].includes(intent);
+    return ['task', 'coding', 'research', 'fix', 'build', 'analyze', 'automate'].includes(intent);
 }
 /**
  * Check if plan is complete

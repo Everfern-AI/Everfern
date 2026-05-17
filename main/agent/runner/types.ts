@@ -34,7 +34,7 @@ export interface AgentTool {
   };
   /** Execute the tool and return a result. Tools can optionally stream internal progress via onUpdate or emit structured events. */
   execute(
-    args: Record<string, unknown>, 
+    args: Record<string, unknown>,
     onUpdate?: (msg: string) => void,
     emitEvent?: (event: any) => void,
     toolCallId?: string
@@ -59,6 +59,7 @@ export interface ToolResult {
 export type AgentNodeType = 'plan' | 'tool_call' | 'respond' | 'error';
 
 export interface ToolCallRecord {
+  id?: string;
   toolName: string;
   args: Record<string, unknown>;
   result: ToolResult;

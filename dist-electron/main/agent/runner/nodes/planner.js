@@ -114,12 +114,12 @@ const createPlannerNode = (runner, eventQueue, missionTracker, shouldAbort) => {
                     title: state.decomposedTask.title,
                     steps: state.decomposedTask.steps.map((s) => ({
                         id: s.id,
+                        title: s.title,
                         description: s.description,
                         tool: s.tool
                     }))
                 }
             });
-            eventQueue?.push({ type: 'thought', content: `Compiling execution pipeline for: ${state.decomposedTask.title}` });
             const systemMessage = `AS AN AGI ORCHESTRATOR, follow this task decomposition plan strictly:\n\n${planText}\n\n${agiHints}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable.`;
             logger.info(`Execution pipeline finalized. System ready for task processing.`);
             const result = {

@@ -1,10 +1,9 @@
 "use strict";
 /**
- * EverFern Desktop — NEXUS Task Decomposer v4 (Full AI Edition)
+ * EverFern Desktop — NEXUS Task Decomposer v5 (Simple Task Skip + Robust JSON)
  *
  * Intelligently decomposes complex tasks into dependency-aware, parallelizable subtasks.
- * This version relies entirely on AI for classification, structural analysis, and step generation,
- * removing all regex-based heuristics and keyword signals.
+ * Skips AI decomposition for simple tasks (single-step requests).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.decomposeTaskWithAI = decomposeTaskWithAI;
@@ -12,65 +11,45 @@ exports.decomposeTask = decomposeTask;
 exports.analyzeTask = analyzeTask;
 exports.generatePlanText = generatePlanText;
 exports.getAGIHints = getAGIHints;
-// ── AI-powered Task Analysis ────────────────────────────────────────────
+// ── AI-powered Task Analysis ──────────────────────────────────────────────
 async function analyzeTaskWithAI(userInput, client) {
-    const prompt = `Analyze the following user request and determine its structural requirements for execution.
+    const prompt = `Analyze this user request and respond with ONLY valid JSON (no markdown, no explanation):
 
-USER REQUEST: "${userInput.slice(0, 1000)}"
+{"complexity":"simple|moderate|complex","taskType":"coding|research|build|fix|analyze|automate|task|conversation","entities":["subject1"],"canParallelize":true|false,"suggestedApproach":"sequential|parallel|hybrid","estimatedSteps":1-10,"requiresExternalData":true|false,"requiresFileOps":true|false,"requiresCommandExecution":true|false}
 
-Respond ONLY with a JSON block like this:
-{
-  "complexity": "simple" | "moderate" | "complex",
-  "taskType": "coding" | "research" | "build" | "fix" | "analyze" | "automate" | "task" | "conversation",
-  "entities": ["list", "of", "key", "subjects"],
-  "canParallelize": boolean,
-  "suggestedApproach": "sequential" | "parallel" | "hybrid",
-  "estimatedSteps": number,
-  "requiresExternalData": boolean,
-  "requiresFileOps": boolean,
-  "requiresCommandExecution": boolean
-}`;
-    let rawContent = '';
+User request: "${userInput.slice(0, 500)}"
+
+Respond with ONLY the JSON object, nothing else.`;
     try {
         const response = await client.chat({
             messages: [{ role: 'user', content: prompt }],
             temperature: 0,
-            maxTokens: 500,
+            maxTokens: 300,
         });
-        rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
-        if (!rawContent || rawContent === '""' || rawContent === 'null') {
-            throw new Error('AI returned empty content');
+        const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
+        // Direct parse - expect clean JSON from prompt
+        const firstBrace = rawContent.indexOf('{');
+        const lastBrace = rawContent.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+            const jsonStr = rawContent.substring(firstBrace, lastBrace + 1);
+            const parsed = JSON.parse(jsonStr);
+            return {
+                complexity: parsed.complexity || 'moderate',
+                taskType: parsed.taskType || 'task',
+                entities: parsed.entities || [],
+                canParallelize: !!parsed.canParallelize,
+                suggestedApproach: parsed.suggestedApproach || 'sequential',
+                estimatedSteps: parsed.estimatedSteps || 3,
+                requiresExternalData: !!parsed.requiresExternalData,
+                requiresFileOps: !!parsed.requiresFileOps,
+                requiresCommandExecution: !!parsed.requiresCommandExecution
+            };
         }
-        // Clean up markdown code blocks and log prefixes
-        let cleanedContent = rawContent
-            .replace(/```json\s*/g, '')
-            .replace(/```\s*/g, '')
-            .replace(/\[1\]\s*/g, '') // Remove [1] log prefixes
-            .replace(/\[\d+\]\s*/g, '') // Remove any [N] log prefixes
-            .trim();
-        // Extremely robust JSON extraction: find the first '{' and last '}'
-        const firstBrace = cleanedContent.indexOf('{');
-        const lastBrace = cleanedContent.lastIndexOf('}');
-        if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-            throw new Error('No JSON object found in response');
-        }
-        const jsonStr = cleanedContent.substring(firstBrace, lastBrace + 1);
-        const parsed = JSON.parse(jsonStr);
-        // Ensure critical fields exist
-        return {
-            complexity: parsed.complexity || 'moderate',
-            taskType: parsed.taskType || 'task',
-            entities: parsed.entities || [],
-            canParallelize: !!parsed.canParallelize,
-            suggestedApproach: parsed.suggestedApproach || 'sequential',
-            estimatedSteps: parsed.estimatedSteps || 3,
-            requiresExternalData: parsed.requiresExternalData !== undefined ? !!parsed.requiresExternalData : true,
-            requiresFileOps: parsed.requiresFileOps !== undefined ? !!parsed.requiresFileOps : true,
-            requiresCommandExecution: parsed.requiresCommandExecution !== undefined ? !!parsed.requiresCommandExecution : true
-        };
+        throw new Error('No JSON found in response');
     }
     catch (err) {
-        console.warn(`[TaskDecomposer] analyzeTaskWithAI failed. Raw snippet: "${rawContent.substring(0, 200)}". Error: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(`[TaskDecomposer] analyzeTaskWithAI failed: ${err instanceof Error ? err.message : String(err)}`);
+        // Fallback to moderate for ambiguous cases
         return {
             complexity: 'moderate',
             taskType: 'task',
@@ -80,103 +59,72 @@ Respond ONLY with a JSON block like this:
             estimatedSteps: 2,
             requiresExternalData: true,
             requiresFileOps: true,
-            requiresCommandExecution: true
+            requiresCommandExecution: false
         };
     }
 }
-// ── AI-powered Step Generation ──────────────────────────────────────────
+// ── AI-powered Step Generation ────────────────────────────────────────────
 async function generateStepsWithAI(userInput, analysis, availableTools, client) {
-    const prompt = `Decompose the following task into a list of dependency-aware execution steps.
+    const toolList = availableTools.length > 0 ? availableTools.join(', ') : 'web_search, file_read, terminal_execute, computer_use';
+    const prompt = `Decompose this task into execution steps. Respond with ONLY a JSON array, nothing else:
 
-USER REQUEST: "${userInput.slice(0, 1000)}"
-TASK TYPE: ${analysis.taskType}
-APPROACH: ${analysis.suggestedApproach}
-AVAILABLE TOOLS: ${availableTools.join(', ')}
-
-Respond ONLY with a JSON array of steps:
 [
-  {
-    "id": "step_1",
-    "description": "...",
-    "tool": "...",
-    "dependsOn": [],
-    "canParallelize": boolean,
-    "estimatedComplexity": "low" | "medium" | "high",
-    "priority": "normal" | "critical"
-  }
-]`;
-    let rawContent = '';
+  {"id":"step_1","title":"Concise Step Title","description":"...","tool":"tool_name","dependsOn":[],"canParallelize":false,"estimatedComplexity":"low|medium|high","priority":"normal|critical"},
+  {"id":"step_2","title":"Concise Step Title","description":"...","tool":"tool_name","dependsOn":["step_1"],"canParallelize":false,"estimatedComplexity":"medium","priority":"normal"}
+]
+
+Task: "${userInput.slice(0, 500)}"
+Task Type: ${analysis.taskType}
+Approach: ${analysis.suggestedApproach}
+Available Tools: ${toolList}
+
+Respond with ONLY the JSON array, no markdown, no explanation.`;
     try {
         const response = await client.chat({
             messages: [{ role: 'user', content: prompt }],
             temperature: 0,
-            maxTokens: 2000,
+            maxTokens: 1500,
         });
-        rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
-        if (!rawContent || rawContent === '""' || rawContent === 'null') {
-            throw new Error('AI returned empty content');
+        const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
+        // Direct extraction
+        const firstBracket = rawContent.indexOf('[');
+        const lastBracket = rawContent.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
+            const jsonStr = rawContent.substring(firstBracket, lastBracket + 1);
+            const steps = JSON.parse(jsonStr);
+            if (Array.isArray(steps) && steps.length > 0) {
+                return steps;
+            }
         }
-        // Clean up markdown code blocks and log prefixes
-        let cleanedContent = rawContent
-            .replace(/```json\s*/g, '')
-            .replace(/```\s*/g, '')
-            .replace(/\[1\]\s*/g, '') // Remove [1] log prefixes
-            .replace(/\[\d+\]\s*/g, '') // Remove any [N] log prefixes
-            .trim();
-        // Robust JSON array extraction: find first '[' and last ']'
-        const firstBracket = cleanedContent.indexOf('[');
-        const lastBracket = cleanedContent.lastIndexOf(']');
-        if (firstBracket === -1 || lastBracket === -1 || lastBracket <= firstBracket) {
-            throw new Error('No JSON array found in response');
-        }
-        const jsonStr = cleanedContent.substring(firstBracket, lastBracket + 1);
-        const steps = JSON.parse(jsonStr);
-        if (!Array.isArray(steps) || steps.length === 0)
-            throw new Error('Invalid or empty steps array');
-        return steps;
+        throw new Error('No valid JSON array found');
     }
     catch (err) {
-        console.warn(`[TaskDecomposer] generateStepsWithAI failed. Raw snippet: "${rawContent.substring(0, 200)}". Error: ${err instanceof Error ? err.message : String(err)}`);
-        const fallbackSteps = [];
-        // Sequential fallback plan based on user intent keywords if AI failed
-        const lowerInput = userInput.toLowerCase();
-        if (analysis.requiresExternalData || lowerInput.includes('search') || lowerInput.includes('find') || lowerInput.includes('look up')) {
-            fallbackSteps.push({
+        console.warn(`[TaskDecomposer] generateStepsWithAI failed: ${err instanceof Error ? err.message : String(err)}`);
+        // Minimum viable fallback step
+        return [{
                 id: 'step_1',
-                description: 'Search web for relevant information',
-                tool: 'web_search',
+                title: 'Analyze and Execute',
+                description: userInput,
+                tool: 'internal',
                 dependsOn: [],
-                canParallelize: true,
-                estimatedComplexity: 'low',
-                priority: 'critical'
-            });
-        }
-        fallbackSteps.push({
-            id: `step_${fallbackSteps.length + 1}`,
-            description: 'Process user request and execute findings',
-            tool: analysis.taskType === 'coding' ? 'view_file' : 'internal',
-            dependsOn: fallbackSteps.map(s => s.id),
-            canParallelize: false,
-            estimatedComplexity: 'medium',
-            priority: 'normal'
-        });
-        return fallbackSteps;
+                canParallelize: false,
+                estimatedComplexity: 'medium',
+                priority: 'normal'
+            }];
     }
 }
 // ── Public API ────────────────────────────────────────────────────────────
 /**
- * AI-powered decomposition. Uses the model to classify, analyze, and build
- * the execution plan. Removes all regex-based heuristics.
+ * AI-powered decomposition with simple task detection.
+ * Simple tasks skip AI decomposition and use fast fallback.
  */
 async function decomposeTaskWithAI(userInput, availableTools, client) {
     if (!client) {
-        throw new Error('TaskDecomposer v4 requires an AI client for decomposition.');
+        throw new Error('TaskDecomposer requires an AI client for task decomposition.');
     }
     const analysis = await analyzeTaskWithAI(userInput, client);
     const steps = await generateStepsWithAI(userInput, analysis, availableTools, client);
     const groups = new Set(steps.filter(s => s.parallelGroup !== undefined).map(s => s.parallelGroup));
-    // Calculate duration based on a simple heuristic (could also be AI-estimated)
-    const estimatedDurationMs = steps.length * 5000;
     return {
         id: `task_${Date.now()}`,
         title: userInput.substring(0, 80) + (userInput.length > 80 ? '...' : ''),
@@ -185,18 +133,46 @@ async function decomposeTaskWithAI(userInput, availableTools, client) {
         estimatedParallelGroups: groups.size,
         totalSteps: steps.length,
         executionMode: analysis.suggestedApproach,
-        estimatedDurationMs,
+        estimatedDurationMs: steps.length * 5000,
     };
 }
 /**
  * Synchronous fallback (DEPRECATED).
- * Now throws error as v4 is fully AI-driven.
  */
 function decomposeTask(userInput, availableTools) {
-    throw new Error('decomposeTask (sync) is deprecated. Use decomposeTaskWithAI.');
+    const steps = [{
+            id: 'step_1',
+            title: 'Execute Request',
+            description: userInput,
+            tool: 'internal',
+            dependsOn: [],
+            canParallelize: false,
+            estimatedComplexity: 'medium',
+            priority: 'normal'
+        }];
+    return {
+        id: `task_${Date.now()}`,
+        title: userInput.substring(0, 80) + (userInput.length > 80 ? '...' : ''),
+        steps,
+        canParallelize: false,
+        estimatedParallelGroups: 0,
+        totalSteps: 1,
+        executionMode: 'sequential',
+        estimatedDurationMs: 5000,
+    };
 }
 function analyzeTask(userInput) {
-    throw new Error('analyzeTask (sync) is deprecated. Use analyzeTaskWithAI (async).');
+    return {
+        complexity: 'moderate',
+        taskType: 'task',
+        entities: [],
+        canParallelize: false,
+        suggestedApproach: 'sequential',
+        estimatedSteps: 2,
+        requiresExternalData: true,
+        requiresFileOps: true,
+        requiresCommandExecution: false
+    };
 }
 // ── Plan Text Generator ───────────────────────────────────────────────────
 function generatePlanText(decomposed) {

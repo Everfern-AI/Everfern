@@ -18,7 +18,6 @@ const createTriageNode = (runner, eventQueue, missionTracker, shouldAbort) => {
         try {
             runner.telemetry.transition('triage');
             runner.telemetry.info('Analyzing user intent and decomposing task requirements...');
-            eventQueue?.push({ type: 'thought', content: '🤖 Triage in progress: Analyzing intent and conversation context...' });
             const lastUserMsg = state.messages.filter(m => {
                 const msg = m;
                 return msg.role === 'user' || msg.type === 'human' || msg._getType?.() === 'human';
@@ -35,10 +34,6 @@ const createTriageNode = (runner, eventQueue, missionTracker, shouldAbort) => {
                 classification = { intent: 'task', confidence: 0.5, reasoning: `Classification unavailable: ${msg}` };
             }
             runner.telemetry.info(`Intent identified: ${classification.intent.toUpperCase()} (${Math.round(classification.confidence * 100)}% confidence)`);
-            if (classification.reasoning) {
-                runner.telemetry.info(`Classification logic: ${classification.reasoning}`);
-                eventQueue?.push({ type: 'thought', content: `Intent Classification: ${classification.reasoning}` });
-            }
             eventQueue?.push({
                 type: 'intent_classified',
                 intent: classification.intent,

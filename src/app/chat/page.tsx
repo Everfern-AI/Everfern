@@ -69,6 +69,7 @@ import FileViewerPane from './FileViewerPane';
 import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
 import ProjectsPage from '../components/ProjectsPage';
+import { ComputerPane } from './components/ComputerPane';
 
 
 // Extracted components
@@ -93,7 +94,7 @@ import { InlineVisualization } from './components/InlineVisualization';
 import { PlanReviewCard, AgentWorkspaceCards } from './components/PlanComponents';
 import { HitlApprovalForm, UserQuestionForm } from './components/FormComponents';
 import { PlanApprovalBanner } from './components/PlanApprovalBanner';
-import { ReasoningBranch, ReasoningPane, ProgressStepsIcon, ContextGridIcon, PaneSection } from './components/ReasoningComponents';
+import { ReasoningBranch, ReasoningPane, ProgressStepsIcon, ContextGridIcon, PaneSection, ReasoningBlock } from './components/ReasoningComponents';
 
 // Utils and types
 import { resolveToolDisplay } from "./tool-labels";
@@ -119,6 +120,51 @@ import { stripAnsi, extractFileArtifacts } from './utils/helpers';
 
 
 
+
+// ── Orchestrator noise scrubber ───────────────────────────────────────────────
+// Strips internal orchestration lines that leak into streaming/stored content.
+const ORCHESTRATOR_LINE_PATTERNS = [
+    /🤖[^\n]*/g,
+    /🧭[^\n]*/g,
+    /🔍[^\n]*/g,
+    /⏱️[^\n]*/g,
+    /⏭️[^\n]*/g,
+    /🧠[^\n]*/g,
+    /💭(?!\s*Working on:|\s*Task:)[^\n]*/g,
+    /\[?BRAIN\]?[:\s][^\n]*/gi,
+    /\[?TRIAGE\]?[:\s][^\n]*/gi,
+    /\[?PLANNER\]?[:\s][^\n]*/gi,
+    /\[?DECOMPOSER\]?[:\s][^\n]*/gi,
+    /Triage in progress:[^\n]*/gi,
+    /Initializing step[^\n]*/gi,
+    /Analyzing task requirements[^\n]*/gi,
+    /Routing analysis completed[^\n]*/gi,
+    /Processing\.\.\.[^\n]*/gi,
+    /\[?Evaluating in [^\]\s]+\]?\.*[^\n]*/gi,
+    /\[?Navis\]?[^\n]*/gi,
+    /\[?Terminal\]?[^\n]*/gi,
+    /\[?Computer\]?[^\n]*/gi,
+    /Intent Classification:.*?(?=(Decomposer:|Debate:|Skipped Debate:|Brain Node:|🧭|$))/gi,
+    /(?:Skipped )?Decomposer: Skipped[^\n]*/gi,
+    /(?:Skipped )?Debate:.*?(?=(Brain Node:|🧭|$))/gi,
+    /Brain Node:.*?(?=(🧭|$))/gi,
+    /task_complete — Task completed[^\n]*/gi,
+    /\{[\s\n]*"messages"[\s\S]*?\}/gi,
+    /\{[\s\n]*"tool_calls"[\s\S]*?\}/gi,
+    /\{[\s\n]*"role"[\s\S]*?\}/gi,
+    /\[?(?:Graph|IPC|Network|System)\]?[^\n]*/gi,
+    /^\s*(?:Working|Thinking|Processing|Analyzing)(?:\.|\s)*$/gim
+];
+
+function scrubOrchestratorNoise(text: string): string {
+    if (!text) return text;
+    let out = text;
+    for (const pat of ORCHESTRATOR_LINE_PATTERNS) {
+        out = out.replace(pat, '');
+    }
+    // Collapse multiple blank lines into one
+    return out.replace(/\n{3,}/g, '\n\n').trim();
+}
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
 export default function ChatPage() {
@@ -173,6 +219,36 @@ export default function ChatPage() {
     const [notification, setNotification] = useState<{ id: string; title: string } | null>(null);
     const [projects, setProjects] = useState<any[]>([]);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+
+    // Computer Pane State
+    const [isComputerPaneOpen, setIsComputerPaneOpen] = useState(false);
+    const [activeComputerData, setActiveComputerData] = useState<{
+        agentName?: string;
+        url?: string;
+        screenshot?: string;
+        toolName?: string;
+        results?: any;
+        query?: string;
+        output?: string;
+        args?: any;
+    } | null>(null);
+
+    const handlePillClick = (tc: ToolCallDisplay) => {
+        const isComputerTool = tc.toolName === 'computer_use' || tc.toolName === 'navis' || tc.toolName.includes('browser') || tc.toolName.includes('web') || tc.toolName.includes('search');
+        if (isComputerTool) {
+            setActiveComputerData({
+                agentName: tc.toolName === 'navis' ? 'Navis' : tc.toolName.includes('search') ? 'Search' : 'Browser',
+                url: (tc.args?.url as string) || (tc.args?.url_to_visit as string) || (tc.args?.query as string) || 'https://www.google.com',
+                screenshot: tc.base64Image || tc.data?.screenshot,
+                toolName: tc.toolName,
+                results: tc.data?.results,
+                query: tc.args?.query as string,
+                output: tc.output,
+                args: tc.args
+            });
+            setIsComputerPaneOpen(true);
+        }
+    };
 
     const loadingMessages = ["marinating...", "schlepping...", "concocting...", "honking..."];
     const greetingMessages = [
@@ -258,14 +334,14 @@ export default function ChatPage() {
 
     useEffect(() => {
         const handleProgress = (_: any, data: any) => {
-            const { conversationId } = data;
+            const conversationId = data?.conversationId;
             if (conversationId && conversationId !== activeConversationId) {
                 setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
             }
         };
 
         const handleComplete = (_: any, data: any) => {
-            const { conversationId } = data;
+            const conversationId = data?.conversationId;
             if (conversationId) {
                 setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
                 if (conversationId !== activeConversationId) {
@@ -772,6 +848,186 @@ export default function ChatPage() {
         };
     }, []);
 
+    // ── Persistent Mission Timeline Listeners ─────────────────────────────────
+    // These are registered ONCE at component mount and are never removed by
+    // removeStreamListeners(), so they survive the per-message stream cleanup cycle.
+    useEffect(() => {
+        const acpApi = (window as any).electronAPI?.acp;
+        if (!acpApi) return;
+
+        acpApi.onMissionStepUpdate(({ step, timeline }: { step: any; timeline: MissionTimelineType }) => {
+            console.log('[Mission] Step update received (persistent):', step?.name, step?.status);
+            setMissionTimeline(timeline);
+            setIsExecutionPlanPaneOpen(false);
+            if (step?.name) {
+                setCurrentNode(step.name);
+            }
+        });
+
+        acpApi.onMissionPhaseChange(({ phase, timeline }: { phase: string; timeline: MissionTimelineType }) => {
+            console.log('[Mission] Phase change received (persistent):', phase);
+            setMissionTimeline(timeline);
+            setIsExecutionPlanPaneOpen(false);
+            setCurrentPhase(phase as any);
+        });
+
+        acpApi.onMissionComplete(({ thinkingDuration, title }: { timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
+            console.log('[Mission] Mission complete received (persistent)');
+
+            // CRITICAL: Check __activeHitl flag BEFORE processing mission_complete
+            const hasActiveHitl = (window as any).__activeHitl || showHitlApproval;
+            const hasActiveUserQuestion = activeUserQuestionRef.current || activeUserQuestions.length > 0;
+
+            if (hasActiveHitl || hasActiveUserQuestion) {
+                console.log(`[Frontend] ⏸️ Mission complete received but ${hasActiveHitl ? 'HITL' : 'user question'} is active - committing message and deferring completion`);
+                if (!isMessageCommittedRef.current) {
+                    isMessageCommittedRef.current = true;
+                    const finalContent = streamingContentRef.current || "";
+                    const finalThought = streamingThoughtRef.current;
+                    const finalToolCalls = liveToolCallsRef.current.map(t =>
+                        t.status === 'running' ? { ...t, status: 'done' as const } : t
+                    );
+                    const durationMs = thinkingDuration?.duration;
+                    if (finalContent || finalThought || finalToolCalls.length > 0) {
+                        const assistantMsg: Message = {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            content: finalContent,
+                            thought: finalThought,
+                            thinkingDuration: durationMs,
+                            timestamp: new Date(),
+                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                            generatedTitle: title,
+                        };
+                        setLiveToolCalls([]);
+                        setStreamingToolCalls([]);
+                        streamingToolCallsRef.current = [];
+                        setMessages(prev => {
+                            const prevMsg = prev[prev.length - 1];
+                            if (prev.length > 0 && prevMsg.role === 'assistant' &&
+                                prevMsg.content === assistantMsg.content &&
+                                prevMsg.thought === assistantMsg.thought &&
+                                JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
+                                return prev;
+                            }
+                            const final = [...prev, assistantMsg];
+                            saveConversation(final);
+                            return final;
+                        });
+                    }
+                }
+                setIsLoading(false);
+                return;
+            }
+
+            setMissionComplete(true);
+
+            // Flush any in-flight stream chunks before committing the final message
+            setTimeout(() => {
+                if (isMessageCommittedRef.current) return;
+                isMessageCommittedRef.current = true;
+
+                const finalContent = streamingContentRef.current || "";
+                const finalThought = streamingThoughtRef.current;
+                const finalToolCalls = liveToolCallsRef.current.map(t =>
+                    t.status === 'running' ? { ...t, status: 'done' as const } : t
+                );
+                const durationMs = thinkingDuration?.duration;
+
+                const hasActiveUserQuestionNow = activeUserQuestionRef.current || activeUserQuestions.length > 0;
+                const hasActiveHitlNow = (window as any).__activeHitl || showHitlApproval;
+
+                if (hasActiveUserQuestionNow || hasActiveHitlNow) {
+                    console.log(`[Frontend] ⏸️ ${hasActiveHitlNow ? 'HITL' : 'User question'} detected - committing accumulated content before pausing`);
+                    setIsLoading(false);
+                    const hasAnything = finalContent || finalThought || finalToolCalls.length > 0;
+                    if (hasAnything) {
+                        const assistantMsg: Message = {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            content: finalContent,
+                            thought: finalThought,
+                            thinkingDuration: durationMs,
+                            timestamp: new Date(),
+                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                            generatedTitle: title,
+                        };
+                        setLiveToolCalls([]);
+                        setStreamingToolCalls([]);
+                        streamingToolCallsRef.current = [];
+                        setMessages(prev => {
+                            const prevMsg = prev[prev.length - 1];
+                            if (prev.length > 0 && prevMsg.role === 'assistant' &&
+                                prevMsg.content === assistantMsg.content &&
+                                prevMsg.thought === assistantMsg.thought &&
+                                JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
+                                return prev;
+                            }
+                            const final = [...prev, assistantMsg];
+                            saveConversation(final);
+                            return final;
+                        });
+                    }
+                    return;
+                }
+
+                if (finalContent || finalThought || finalToolCalls.length > 0) {
+                    const assistantMsg: Message = {
+                        id: crypto.randomUUID(),
+                        role: "assistant",
+                        content: finalContent,
+                        thought: finalThought,
+                        thinkingDuration: durationMs,
+                        timestamp: new Date(),
+                        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                        generatedTitle: title,
+                    };
+                    setStreamingContent("");
+                    setStreamingThought("");
+                    setLiveToolCalls([]);
+                    setStreamingToolCalls([]);
+                    streamingToolCallsRef.current = [];
+                    setIsLoading(false);
+                    setMessages(prev => {
+                        const prevMsg = prev[prev.length - 1];
+                        if (prev.length > 0 && prevMsg.role === 'assistant' &&
+                            prevMsg.content === assistantMsg.content &&
+                            prevMsg.thought === assistantMsg.thought &&
+                            JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
+                            console.warn('[Chat] Duplicate plan message prevented');
+                            return prev;
+                        }
+                        const final = [...prev, assistantMsg];
+                        saveConversation(final);
+                        return final;
+                    });
+                } else {
+                    setStreamingContent("");
+                    setStreamingThought("");
+                    setLiveToolCalls([]);
+                    setStreamingToolCalls([]);
+                    streamingToolCallsRef.current = [];
+                    setIsLoading(false);
+                }
+            }, 150); // flush pending IPC chunk events + allow onToolCall to fire first
+        });
+
+        // Plan created listener is also persistent
+        if (acpApi.onPlanCreated) {
+            acpApi.onPlanCreated(({ plan }: { plan: any }) => {
+                if (plan?.steps) {
+                    setActivePlanSteps(plan.steps);
+                    setActivePlanTitle(plan.title || null);
+                }
+            });
+        }
+
+        return () => {
+            acpApi.removeMissionListeners?.();
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Cleanup sub-agent progress state and listener on unmount
     useEffect(() => {
         return () => {
@@ -1099,271 +1355,8 @@ export default function ChatPage() {
                 }
             });
 
-            // Listen to mission timeline updates
-            acpApi.onMissionStepUpdate(({ step, timeline }: { step: any; timeline: MissionTimelineType }) => {
-                console.log('[Mission] Step update received:', step?.name, step?.status);
-                setMissionTimeline(timeline);
-                setIsExecutionPlanPaneOpen(false);
-
-                // Update current node based on the latest step
-                if (step && step.name) {
-                    setCurrentNode(step.name);
-                }
-            });
-
-            acpApi.onMissionPhaseChange(({ phase, timeline }: { phase: string; timeline: MissionTimelineType }) => {
-                console.log('[Mission] Phase change received:', phase);
-                setMissionTimeline(timeline);
-                setIsExecutionPlanPaneOpen(false);
-                setCurrentPhase(phase as any);
-            });
-
-            acpApi.onPlanCreated?.(({ plan }: { plan: any }) => {
-                if (plan?.steps) {
-                    setActivePlanSteps(plan.steps);
-                    setActivePlanTitle(plan.title || null);
-                }
-            });
-
-            // HITL requests and other global listeners below...
-
-            // Simplified mission complete handler without timeline
-            acpApi.onMissionComplete(({ thinkingDuration, title }: { timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
-                const receiveTime = Date.now();
-
-                // CRITICAL: Check __activeHitl flag BEFORE processing mission_complete
-                // This prevents race condition where mission completion clears state during active HITL
-                const hasActiveHitl = (window as any).__activeHitl || showHitlApproval;
-                const hasActiveUserQuestion = activeUserQuestionRef.current || activeUserQuestions.length > 0;
-
-                if (hasActiveHitl || hasActiveUserQuestion) {
-                    console.log(`[Frontend] ⏸️ Mission complete received but ${hasActiveHitl ? 'HITL' : 'user question'} is active - committing message and deferring completion`);
-                    // Commit the accumulated message NOW so it doesn't disappear
-                    // when the HITL/question form is shown.
-                    if (!isMessageCommittedRef.current) {
-                        isMessageCommittedRef.current = true;
-                        const finalContent = streamingContentRef.current || "";
-                        const finalThought = streamingThoughtRef.current;
-                        const finalToolCalls = liveToolCallsRef.current.map(t =>
-                            t.status === 'running' ? { ...t, status: 'done' as const } : t
-                        );
-                        const durationMs = thinkingDuration?.duration;
-                        if (finalContent || finalThought || finalToolCalls.length > 0) {
-                            const assistantMsg: Message = {
-                                id: crypto.randomUUID(),
-                                role: "assistant",
-                                content: finalContent,
-                                thought: finalThought,
-                                thinkingDuration: durationMs,
-                                timestamp: new Date(),
-                                toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                                generatedTitle: title,
-                            };
-                            setLiveToolCalls([]);
-                            setStreamingToolCalls([]);
-                            streamingToolCallsRef.current = [];
-                            setMessages(prev => {
-                                const prevMsg = prev[prev.length - 1];
-                                if (prev.length > 0 && prevMsg.role === 'assistant' &&
-                                    prevMsg.content === assistantMsg.content &&
-                                    prevMsg.thought === assistantMsg.thought &&
-                                    JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
-                                    return prev;
-                                }
-                                const final = [...prev, assistantMsg];
-                                saveConversation(final);
-                                return final;
-                            });
-                        }
-                    }
-                    setIsLoading(false);
-                    // Don't set missionComplete yet - wait for HITL/question to be resolved
-                    // The form submission handler will trigger completion after response is sent
-                    return;
-                }
-
-                setMissionComplete(true);
-
-                // Delay listener removal to allow pending events (like HITL requests and user questions) to be processed first
-                setTimeout(() => {
-                    // Only remove listeners if no HITL or user question is active
-                    const hasActiveHitl = (window as any).__activeHitl || showHitlApproval;
-                    const hasActiveUserQuestion = activeUserQuestionRef.current || activeUserQuestions.length > 0;
-                    const hasAnyActive = hasActiveHitl || hasActiveUserQuestion;
-
-                    if (!hasAnyActive) {
-                        acpApi.removeStreamListeners();
-                    }
-                    // If a question is active, do NOT schedule a retry removal —
-                    // the next handleSend call will call removeStreamListeners() itself
-                    // before re-registering, so we don't need to clean up here.
-                }, 500);
-
-                // Use setTimeout(0) to flush any pending IPC chunk events before we
-                // read streamingContentRef and set isMessageCommittedRef.
-                // This prevents in-flight chunks from being dropped by the guard.
-                // Use 150ms to ensure onToolCall (which sets activeUserQuestions) fires first.
-                setTimeout(() => {
-                    if (isMessageCommittedRef.current) return;
-                    isMessageCommittedRef.current = true;
-
-                    const finalContent = streamingContentRef.current || "";
-                const finalThought = streamingThoughtRef.current;
-                const finalToolCalls = liveToolCallsRef.current.map(t =>
-                    t.status === 'running' ? { ...t, status: 'done' as const } : t
-                );
-
-                // Extract duration in milliseconds from thinkingDuration
-                const durationMs = thinkingDuration?.duration;
-
-                // Check if there's an active user question or HITL request - commit accumulated content
-                // so it doesn't disappear when the next send resets streaming state.
-                // Use the window flag as the primary check since it's set synchronously
-                // in onToolCall before React state updates propagate.
-                const hasActiveUserQuestion = activeUserQuestionRef.current || activeUserQuestions.length > 0;
-                const hasActiveHitl = (window as any).__activeHitl || showHitlApproval;
-
-                if (hasActiveUserQuestion || hasActiveHitl) {
-                    console.log(`[Frontend] ⏸️ ${hasActiveHitl ? 'HITL' : 'User question'} detected - committing accumulated content before pausing`);
-                    setIsLoading(false);
-                    // Commit even if content is empty — the tool calls themselves are the message
-                    const hasAnything = finalContent || finalThought || finalToolCalls.length > 0;
-                    if (hasAnything) {
-                        const assistantMsg: Message = {
-                            id: crypto.randomUUID(),
-                            role: "assistant",
-                            content: finalContent,
-                            thought: finalThought,
-                            thinkingDuration: durationMs,
-                            timestamp: new Date(),
-                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            generatedTitle: title,
-                        };
-                        // Commit to messages list but keep streamingContent visible
-                        // so the AI message doesn't disappear while the form is shown.
-                        // streamingContent will be cleared by handleSend when the user submits.
-                        setLiveToolCalls([]);
-                        setStreamingToolCalls([]);
-                        streamingToolCallsRef.current = [];
-                        setMessages(prev => {
-                            const prevMsg = prev[prev.length - 1];
-                            const isContentSame = prevMsg.content === assistantMsg.content;
-                            const isThoughtSame = prevMsg.thought === assistantMsg.thought;
-                            const isToolCallsSame = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
-                            if (prev.length > 0 && prevMsg.role === 'assistant' && isContentSame && isThoughtSame && isToolCallsSame) {
-                                return prev;
-                            }
-                            const final = [...prev, assistantMsg];
-                            saveConversation(final);
-                            return final;
-                        });
-                    }
-                    return;
-                }
-
-                // Only create assistant message if there's actual content or tool calls
-                if (finalContent || finalThought || finalToolCalls.length > 0) {
-                    const assistantMsg: Message = {
-                        id: crypto.randomUUID(),
-                        role: "assistant",
-                        content: finalContent,
-                        thought: finalThought,
-                        thinkingDuration: durationMs,
-                        timestamp: new Date(),
-                        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                        generatedTitle: title,
-                    };
-
-                    setStreamingContent("");
-                    setStreamingThought("");
-                    setLiveToolCalls([]);
-                    setStreamingToolCalls([]);
-                    streamingToolCallsRef.current = [];
-                    setIsLoading(false);
-                    setMessages(prev => {
-                        // Prevent duplicate message if the last message is identical
-                        const prevMsg = prev[prev.length - 1];
-                        const isContentSame = prevMsg.content === assistantMsg.content;
-                        const isThoughtSame = prevMsg.thought === assistantMsg.thought;
-                        const isToolCallsSame = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
-                        if (prev.length > 0 && prevMsg.role === 'assistant' && isContentSame && isThoughtSame && isToolCallsSame) {
-                            console.warn('[Chat] Duplicate plan message prevented');
-                            return prev;
-                        }
-                        const final = [...prev, assistantMsg];
-                        saveConversation(final);
-                        return final;
-                    });
-                } else {
-                    // No content at all - just clean up
-                    setStreamingContent("");
-                    setStreamingThought("");
-                    setLiveToolCalls([]);
-                    setStreamingToolCalls([]);
-                    streamingToolCallsRef.current = [];
-                    setIsLoading(false);
-                }
-                }, 150); // flush pending IPC chunk events + allow onToolCall to fire first
-            });
-
-
-
-            // Fallback: if no mission_complete event within reasonable time, mark as done
-            // This handles edge cases where mission tracking isn't properly initialized
-            const fallbackTimeout = setTimeout(() => {
-                if (!isMessageCommittedRef.current && missionComplete === false) {
-                    setMissionComplete(true);
-                    acpApi.removeStreamListeners();
-                    isMessageCommittedRef.current = true;
-
-                    const finalContent = streamingContentRef.current || "";
-                    const finalThought = streamingThoughtRef.current;
-                    const finalToolCalls = liveToolCallsRef.current.map(t =>
-                        t.status === 'running' ? { ...t, status: 'done' as const } : t
-                    );
-
-                    // Only create assistant message if there's actual content or tool calls
-                    if (finalContent || finalThought || finalToolCalls.length > 0) {
-                        const assistantMsg: Message = {
-                            id: crypto.randomUUID(),
-                            role: "assistant",
-                            content: finalContent,
-                        thought: finalThought,
-                        timestamp: new Date(),
-                        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                    };
-
-                    setStreamingContent("");
-                    setStreamingThought("");
-                    setLiveToolCalls([]);
-                    setStreamingToolCalls([]);
-                    streamingToolCallsRef.current = [];
-                    setIsLoading(false);
-                    setMessages(prev => {
-                        // Prevent duplicate message if the last message is identical
-                        const prevMsg = prev[prev.length - 1];
-                        const isContentSame = prevMsg.content === assistantMsg.content;
-                        const isThoughtSame = prevMsg.thought === assistantMsg.thought;
-                        const isToolCallsSame = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
-                        if (prev.length > 0 && prevMsg.role === 'assistant' && isContentSame && isThoughtSame && isToolCallsSame) {
-                            console.warn('[Chat] Duplicate fallback message prevented');
-                            return prev;
-                        }
-                        const final = [...prev, assistantMsg];
-                        saveConversation(final);
-                        return final;
-                    });
-                    } else {
-                        // No content at all - just clean up
-                        setStreamingContent("");
-                        setStreamingThought("");
-                        setLiveToolCalls([]);
-                        setStreamingToolCalls([]);
-                        streamingToolCallsRef.current = [];
-                        setIsLoading(false);
-                    }
-                }
-            }, 120000); // 2 minute fallback
+            // Mission listeners are managed persistently by the useEffect at component mount.
+            // They are not registered per-message to prevent listener cleanup race conditions.
 
             try {
                 await acpApi.stream({
@@ -3106,16 +3099,30 @@ export default function ChatPage() {
 
                                     {/* Messages */}
                                     <AnimatePresence mode="popLayout">
-                                        {messages.map((msg, idx) => (
-                                            <motion.div
-                                                key={msg.id}
-                                                initial={{ opacity: 0, y: 30, scale: 0.95 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                                                transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
-                                                layout
-                                                style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
-                                            >
+                                        {messages.map((msg, idx) => {
+                                            // Skip assistant messages that are purely noise with no other value
+                                            if (msg.role === 'assistant') {
+                                                const scrubbed = scrubOrchestratorNoise(msg.content || '').trim();
+                                                const hasVisibleContent = scrubbed.length > 0;
+                                                const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+                                                const hasReasoning = !!msg.reasoning_content;
+                                                const isLatest = idx === messages.length - 1;
+
+                                                if (!hasVisibleContent && !hasToolCalls && !hasReasoning && !isLatest) {
+                                                    return null;
+                                                }
+                                            }
+
+                                            return (
+                                                <motion.div
+                                                    key={msg.id}
+                                                    initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                                                    transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
+                                                    layout
+                                                    style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
+                                                >
 
                                                 <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "#f5f4f0" : "transparent", border: "none", fontSize: 15, lineHeight: 1.7 }}>
                                                     {msg.role === "user" ? (
@@ -3187,6 +3194,8 @@ export default function ChatPage() {
                                                                 currentNode={currentNode}
                                                                 subAgentProgress={subAgentProgress}
                                                                 generatedTitle={msg.generatedTitle}
+                                                                missionTimeline={missionTimeline}
+                                                                onPillClick={handlePillClick}
                                                             />
                                                         </div>
                                                             {msg.stopped && (
@@ -3207,9 +3216,14 @@ export default function ChatPage() {
                                                                     <span>Stopped by user</span>
                                                                 </div>
                                                             )}
+                                                            {/* ── Reasoning content (chain-of-thought, shown as indented narrative) */}
+                                                            {msg.reasoning_content && (
+                                                                <ReasoningBlock content={msg.reasoning_content} />
+                                                            )}
+
                                                             {(() => {
                                                                 const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
-                                                                let displayContent = cleanContent.trim();
+                                                                let displayContent = scrubOrchestratorNoise(cleanContent.trim());
                                                                 if (displayContent === 'Working...' || displayContent === 'Working') {
                                                                     displayContent = '';
                                                                 }
@@ -3222,7 +3236,7 @@ export default function ChatPage() {
                                                                             <StreamingMarkdown content={displayContent} isLive={false} isLatest={idx === messages.length - 1} />
                                                                         ) : hasToolCalls ? (
                                                                             <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic', padding: '8px 0' }}>
-                                                                                Executing actions...
+
                                                                             </div>
                                                                         ) : null}
                                                                         {artifacts.map((art, i) => (
@@ -3277,7 +3291,9 @@ export default function ChatPage() {
                                                     )}
                                                 </div>
                                             </motion.div>
-                                        ))}
+                                        );
+                                    })
+                                }
                                     </AnimatePresence>
 
 
@@ -3304,6 +3320,7 @@ export default function ChatPage() {
                                                     subAgentProgress={subAgentProgress}
                                                     debateData={debateData}
                                                     isDebating={isDebating}
+                                                    missionTimeline={missionTimeline}
                                                 />
                                                 {/* Live streaming tool call cards — show tool calls being built in real-time */}
                                                 {streamingToolCalls.length > 0 && (
@@ -3320,8 +3337,10 @@ export default function ChatPage() {
                                                 {(() => {
                                                     const { cleanContent: artifactCleanContent, artifacts } = extractFileArtifacts(streamingContent || '');
 
-                                                    // Scrub tool calls from streaming content
-                                                    let cleanContent = artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim();
+                                                    // Scrub tool calls and orchestrator noise from streaming content
+                                                    let cleanContent = scrubOrchestratorNoise(
+                                                        artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim()
+                                                    );
                                                     if (cleanContent === 'Working...' || cleanContent === 'Working') {
                                                         cleanContent = '';
                                                     }
@@ -3902,15 +3921,16 @@ export default function ChatPage() {
                                 })()}
                             </AnimatePresence>
 
-                            {/* Mission Progress card */}
-                            <MissionProgressCard
-                                timeline={missionTimeline}
-                                isRunning={isLoading && !missionComplete}
-                                isExpanded={progressExpanded}
-                                onToggleExpand={() => setProgressExpanded(!progressExpanded)}
-                            />
+                            {/* Mission Progress card removed — steps shown inline in AgentTimeline */}
 
                         </div>
+
+                        {/* Fern's Computer Side Pane */}
+                        <ComputerPane 
+                            isOpen={isComputerPaneOpen} 
+                            onClose={() => setIsComputerPaneOpen(false)} 
+                            data={activeComputerData} 
+                        />
                                     </div>
                 </motion.div>
 

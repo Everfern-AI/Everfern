@@ -31,10 +31,6 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
         const complexity = estimatedComplex ? 'complex' : estimatedModerate ? 'moderate' : 'simple';
         if (!debate_engine_1.PeerAgentDebateEngine.shouldDebate(complexity, 'moderate')) {
             logger.info(`Task complexity "${complexity}" (${stepCount} steps) below threshold — skipping debate`);
-            eventQueue?.push({
-                type: 'thought',
-                content: `\n⏭️ Skipped Debate: Task complexity is '${complexity}' (threshold is 'moderate'). Proceeding directly to execution.`
-            });
             emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: `Complexity: ${complexity}` });
             return { debateResult: null };
         }
@@ -43,7 +39,6 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
             return { debateResult: null };
         }
         runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task (${stepCount} steps)`);
-        eventQueue?.push({ type: 'thought', content: '\n🎭 **Peer Agent Debate Started** — Three agents (Vanguard, Phantom, Arbiter) are now deliberating on your plan...' });
         const lastUserMsg = state.messages.filter((m) => {
             const role = m.role || m._getType?.();
             return role === 'user' || role === 'human';
@@ -51,7 +46,9 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
         const userInput = lastUserMsg
             ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content))
             : '';
-        const availableTools = plan.steps.map((s) => s.tool).filter(Boolean);
+        // Get all available tools from runner (not just plan steps)
+        const allToolNames = runner.tools.map((t) => t.name).filter(Boolean);
+        const planToolNames = plan.steps.map((s) => s.tool).filter(Boolean);
         const context = {
             taskId: plan.id || `task_${Date.now()}`,
             userInput: userInput.slice(0, 2000),
@@ -59,8 +56,9 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
                 role: (m.role || 'user'),
                 content: typeof m.content === 'string' ? m.content.slice(0, 500) : JSON.stringify(m.content).slice(0, 500),
             })),
-            availableTools: [...new Set(availableTools)],
+            availableTools: [...new Set([...allToolNames, ...planToolNames])],
             workspaceContext: `Task: ${plan.title}\nSteps: ${stepCount}\nMode: ${plan.executionMode || 'sequential'}`,
+            constraints: [],
         };
         const debateId = `debate-${Date.now()}`;
         emitDebateEvent('debate_start', debateId);
@@ -95,17 +93,9 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
             const debateResult = await engine.debate(context);
             const frontendData = debate_event_emitter_1.DebateEventEmitter.formatDebateResultForFrontend(debateResult);
             emitDebateEvent('debate_complete', debateResult.debateId, frontendData);
-            eventQueue?.push({
-                type: 'thought',
-                content: `\n⚖️  Arbiter decision: ${debateResult.finalPlan.goNogo.toUpperCase()} — ${debateResult.finalPlan.explanation.slice(0, 200)}`,
-            });
             const isNoGo = debateResult.finalPlan.goNogo === 'no-go';
             if (isNoGo) {
                 runner.telemetry.warn('[DebateChamber] Arbiter voted NO-GO — task will proceed anyway as requested');
-                eventQueue?.push({
-                    type: 'thought',
-                    content: `\n⚠️ Debate result: NO-GO — ${debateResult.finalPlan.explanation.slice(0, 300)}\n*(Proceeding with best effort as requested)*`,
-                });
             }
             return {
                 debateResult: {
@@ -124,10 +114,6 @@ const createDebateChamberNode = (runner, eventQueue, missionTracker, shouldAbort
         catch (err) {
             console.error(`[DebateChamber] Debate failed: ${err.message}`);
             emitDebateEvent('debate_error', debateId, undefined, err.message.slice(0, 200));
-            eventQueue?.push({
-                type: 'thought',
-                content: `\n⚠️ Debate chamber failed: ${err.message.slice(0, 200)} — proceeding without debate`,
-            });
             return { debateResult: null };
         }
     };

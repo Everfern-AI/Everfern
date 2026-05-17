@@ -344,6 +344,30 @@ function registerAgentHandlers() {
                 else if (streamEvent.type === 'tool_call_complete') {
                     safeSend('acp:tool-call-complete', { index: streamEvent.index, toolName: streamEvent.toolName, arguments: streamEvent.arguments });
                 }
+                else if (streamEvent.type === 'mission_step_update') {
+                    // ── Mission Step Update → acp:mission-step-update ──────────────
+                    safeSend('acp:mission-step-update', {
+                        step: streamEvent.step,
+                        timeline: streamEvent.timeline,
+                    });
+                }
+                else if (streamEvent.type === 'mission_phase_change') {
+                    // ── Mission Phase Change → acp:mission-phase-change ────────────
+                    safeSend('acp:mission-phase-change', {
+                        phase: streamEvent.phase,
+                        timeline: streamEvent.timeline,
+                    });
+                }
+                else if (streamEvent.type === 'mission_complete') {
+                    // ── Mission Complete — send BEFORE done:true so listeners are still alive ──
+                    console.log('[AgentIPC] Mission complete event received');
+                    safeSend('acp:mission-complete', {
+                        timeline: streamEvent.timeline,
+                        steps: streamEvent.steps,
+                        thinkingDuration: streamEvent.thinkingDuration,
+                        title: streamEvent.title,
+                    });
+                }
                 else if (streamEvent.type === 'done') {
                     flushBuffers();
                     // Trigger cleanup sequence when execution completes
@@ -370,6 +394,8 @@ function registerAgentHandlers() {
                             stack: cleanupErr instanceof Error ? cleanupErr.stack : undefined
                         });
                     }
+                    // NOTE: done:true fires AFTER mission_complete so the frontend
+                    // still has listeners active when mission_complete arrives.
                     safeSend('acp:stream-chunk', { delta: '', done: true });
                     // Self-Improvement: Trigger non-blocking memory reflection
                     (0, memory_manager_1.reflectAndRemember)(history, userInput, fullResponse, client);
@@ -383,7 +409,11 @@ function registerAgentHandlers() {
                     safeSend('debate:stream', de);
                 }
                 else {
-                    safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent);
+                    // Generic fallback — skip already-handled event types to avoid double-sending
+                    const skippedTypes = new Set(['mission_step_update', 'mission_phase_change', 'mission_complete', 'done']);
+                    if (!skippedTypes.has(streamEvent.type)) {
+                        safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent);
+                    }
                 }
             }
         }

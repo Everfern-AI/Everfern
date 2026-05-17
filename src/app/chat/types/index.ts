@@ -5,6 +5,7 @@ import React from 'react';
 export interface ToolCallDisplay {
     id: string;
     toolName: string;
+    agentName?: string;
     icon?: React.ReactNode;
     label?: string;
     color?: string;
@@ -16,6 +17,9 @@ export interface ToolCallDisplay {
     args?: Record<string, unknown>;
     displayName?: string;
     description?: string;
+    phase?: "triage" | "planning" | "execution" | "validation" | "completion";
+    thought?: string;
+    currentNode?: string;
 }
 
 export interface Message {
@@ -23,12 +27,15 @@ export interface Message {
     role: "user" | "assistant";
     content: string;
     thought?: string;
+    reasoning_content?: string;   // Raw chain-of-thought from model (e.g. DeepSeek-R1 style)
     thinkingDuration?: number; // Duration in milliseconds
     timestamp: Date;
     toolCalls?: ToolCallDisplay[];
     attachments?: FileAttachment[];
     stopped?: boolean; // True if the agent was stopped by the user
     generatedTitle?: string;
+    planSteps?: Array<{ id: string; title?: string; description: string; tool?: string }> | null;
+    planTitle?: string | null;
 }
 
 export interface FileAttachment {

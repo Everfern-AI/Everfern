@@ -5,38 +5,109 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     ChevronDownIcon,
     CheckIcon,
-    CheckCircleIcon,
     DocumentTextIcon,
+    PlayIcon,
 } from "@heroicons/react/24/outline";
-import { MarkdownRenderer } from './MarkdownComponents';
 
+/**
+ * Clean plan review card - shows task title, divider, then steps list
+ * Style: simple, modern, light background using Tailwind CSS
+ */
 const PlanReviewCard = ({ plan, onApprove, onEdit }: { plan: { content: string; chatId: string }; onApprove: (content: string) => void; onEdit: () => void }) => {
+    const [expanded, setExpanded] = useState(true);
+
+    const lines = plan.content.split('\n');
+    let taskTitle = 'Execution Plan';
+    const steps: { id: string; description: string }[] = [];
+
+    for (const line of lines) {
+        if (line.startsWith('# Execution Plan:')) {
+            taskTitle = line.replace('# Execution Plan:', '').trim();
+            break;
+        }
+        if (line.startsWith('## Steps')) break;
+    }
+
+    let inSteps = false;
+    for (const line of lines) {
+        if (line.startsWith('## Steps')) { inSteps = true; continue; }
+        if (inSteps && line.startsWith('### ')) {
+            const desc = line.replace('###', '').replace(/\*\*/g, '').replace(/`[^`]*`/g, '').trim();
+            const parts = desc.split('—');
+            steps.push({
+                id: `step_${steps.length + 1}`,
+                description: parts[0].trim(),
+            });
+        }
+    }
+
     return (
-        <motion.div initial={{ opacity: 0, scale: 0.98, y: 15 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-            style={{ marginTop: '12px', marginBottom: '24px', padding: '24px', backgroundColor: 'rgba(251, 191, 36, 0.04)', border: '1px solid rgba(251, 191, 36, 0.15)', borderRadius: 24, display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', overflow: 'hidden', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.3)' }}
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="mt-3 mb-6 bg-white border border-stone-200 rounded-[20px] overflow-hidden shadow-sm"
         >
-            <div style={{ position: 'absolute', top: 0, right: 0, width: '120px', height: '120px', background: 'radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 70%)', pointerEvents: 'none' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(251, 191, 36, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                    <DocumentTextIcon width={24} height={24} color="#fbbf24" />
+            {/* Header - task title with expand/collapse */}
+            <div
+                onClick={() => setExpanded(!expanded)}
+                className="p-4 flex items-center gap-3 cursor-pointer border-b border-stone-100 hover:bg-stone-50 transition-colors"
+            >
+                <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+                    <DocumentTextIcon className="w-[18px] h-[18px] text-amber-400" />
                 </div>
-                <div>
-                    <div style={{ fontSize: 17, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>Execution Plan Ready</div>
-                    <div style={{ fontSize: 13, color: '#a1a1aa' }}>Review the proposed steps before I proceed</div>
+                <div className="flex-1">
+                    <div className="text-sm font-semibold text-stone-800">{taskTitle}</div>
+                    <div className="text-xs text-stone-500">{steps.length} steps</div>
                 </div>
+                <ChevronDownIcon
+                    className={`w-4 h-4 text-stone-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+                />
             </div>
-            <div style={{ backgroundColor: '#131312', border: '1px solid #2b2a29', borderRadius: 16, padding: '20px 24px', maxHeight: 350, overflowY: 'auto', WebkitMaskImage: 'linear-gradient(to bottom, black 90%, transparent 100%)' }}>
-                <MarkdownRenderer content={plan.content} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 4 }}>
-                <button onClick={onEdit} style={{ padding: '10px 20px', borderRadius: 12, border: '1px solid #363534', backgroundColor: 'transparent', color: '#a1a1aa', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#fff'; }} onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#a1a1aa'; }}>
-                    View in Artifacts
-                </button>
-                <button onClick={() => onApprove(plan.content)} style={{ padding: '10px 26px', borderRadius: 12, border: 'none', backgroundColor: '#fbbf24', color: '#1a1a1a', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 15px rgba(251, 191, 36, 0.2)', transition: 'all 0.2s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(251, 191, 36, 0.3)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(251, 191, 36, 0.2)'; }}>
-                    <CheckCircleIcon width={18} height={18} />
-                    Approve & Execute
-                </button>
-            </div>
+
+            {/* Steps section - collapsible */}
+            <AnimatePresence>
+                {expanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        {/* Steps list */}
+                        <div className="p-3 pb-4 flex flex-col gap-2">
+                            {steps.map((step, idx) => (
+                                <div key={step.id} className="flex items-center gap-3">
+                                    <div className="w-[22px] h-[22px] rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-[11px] text-stone-500 font-medium">{idx + 1}</span>
+                                    </div>
+                                    <span className="text-sm text-stone-700 leading-relaxed">
+                                        {step.description}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="p-3 pb-4 flex gap-2.5 border-t border-stone-100">
+                            {onEdit && (
+                                <button
+                                    onClick={onEdit}
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-stone-200 bg-transparent text-stone-500 text-[13px] font-semibold cursor-pointer transition-all hover:bg-stone-100 hover:text-stone-800"
+                                >
+                                    View Details
+                                </button>
+                            )}
+                            <button
+                                onClick={() => onApprove(plan.content)}
+                                className="flex-[2] px-5 py-2.5 rounded-xl border-none bg-green-600 text-white text-[13px] font-bold cursor-pointer flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-green-600/25"
+                            >
+                                <PlayIcon className="w-3.5 h-3.5" />
+                                Approve & Execute
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };
@@ -46,55 +117,71 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
     const [contextExpanded, setContextExpanded] = useState(true);
 
     if (!plan && contextItems.length === 0) return null;
-    
+
     const hasComputerUse = contextItems.some((i: any) => i.type === 'app');
     const isDataAnalyst = currentNode === 'data_analyst' && isLoading;
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+        <div className="flex flex-col gap-3 mb-4">
             {/* Data Analyst Active Card */}
             {isDataAnalyst && (
-                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ width: '100%', backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#f3e8ff', border: '1px solid #e9d5ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3.5 flex items-center gap-3"
+                >
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 border border-purple-200 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#6b21a8', marginBottom: 2 }}>Data Analyst</div>
-                        <div style={{ fontSize: 12, color: '#7c3aed' }}>Processing data and generating insights...</div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold text-purple-800 mb-0.5">Data Analyst</div>
+                        <div className="text-xs text-purple-600">Processing data and generating insights...</div>
                     </div>
-                    <div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#9333ea', animation: 'pulse 1.5s ease-in-out infinite', flexShrink: 0 }} />
+                    <div className="w-2 h-2 rounded bg-purple-600 animate-pulse flex-shrink-0" />
                 </motion.div>
             )}
 
             {plan && (
-                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ width: "100%", backgroundColor: "transparent" }}>
-                    <div onClick={() => setProgressExpanded(!progressExpanded)} style={{ padding: "8px 0px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-                        <span style={{ fontSize: 16, fontWeight: 600, color: "#201e24" }}>Progress</span>
-                        <ChevronDownIcon width={16} height={16} color="#8a8886" style={{ transform: progressExpanded ? "rotate(180deg)" : "none", transition: "0.2s" }} />
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full bg-transparent"
+                >
+                    <div
+                        onClick={() => setProgressExpanded(!progressExpanded)}
+                        className="py-2 px-0 flex items-center justify-between cursor-pointer"
+                    >
+                        <span className="text-base font-semibold text-stone-800">Progress</span>
+                        <ChevronDownIcon className={`w-4 h-4 text-stone-400 transition-transform duration-200 ${progressExpanded ? 'rotate-180' : ''}`} />
                     </div>
                     <AnimatePresence>
                         {progressExpanded && (
-                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingTop: 12, paddingBottom: 16 }}>
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <div className="flex flex-col gap-3.5 pt-3 pb-4">
                                     {plan.steps?.map((step: any, index: number) => {
                                         const isDone = step.status === 'done';
                                         const isInProgress = step.status === 'in_progress';
                                         return (
-                                            <div key={step.id} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                                            <div key={step.id} className="flex items-start gap-3">
                                                 {isDone ? (
-                                                    <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#f0fdf4", border: "1.5px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                                                        <CheckIcon width={14} height={14} color="#16a34a" strokeWidth={3} />
+                                                    <div className="w-6 h-6 rounded-full bg-green-50 border border-green-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                        <CheckIcon className="w-3.5 h-3.5 text-green-600" strokeWidth={3} />
                                                     </div>
                                                 ) : isInProgress ? (
-                                                    <div style={{ width: 24, height: 24, borderRadius: 12, border: "2.5px solid #111111", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                                                        <span style={{ fontSize: 13, color: "#111111", fontWeight: 700 }}>{index + 1}</span>
+                                                    <div className="w-6 h-6 rounded-full border-[2.5px] border-stone-900 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                        <span className="text-[13px] text-stone-900 font-bold">{index + 1}</span>
                                                     </div>
                                                 ) : (
-                                                    <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#f4f4f4", border: "1px solid #e8e6d9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                                                        <span style={{ fontSize: 12, color: "#8a8886", fontWeight: 500 }}>{index + 1}</span>
+                                                    <div className="w-6 h-6 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                        <span className="text-xs text-stone-500 font-medium">{index + 1}</span>
                                                     </div>
                                                 )}
-                                                <span style={{ fontSize: 14, fontWeight: isInProgress ? 500 : 400, color: isDone ? "#201e24" : isInProgress ? "#201e24" : "#8a8886", lineHeight: 1.5, marginTop: 4 }}>
+                                                <span className={`text-sm leading-relaxed mt-1 ${isInProgress ? 'font-medium text-stone-800' : isDone ? 'text-stone-800' : 'text-stone-500'}`}>
                                                     {step.description}
                                                 </span>
                                             </div>
@@ -108,163 +195,175 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
             )}
 
             {contextItems.length > 0 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ width: "100%", backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 16, overflow: "hidden" }}>
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full bg-white border border-stone-200 rounded-2xl overflow-hidden"
+                >
                     {hasComputerUse ? null : (
-                        <div onClick={() => setContextExpanded(!contextExpanded)} style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", borderBottom: contextExpanded ? "1px solid #e8e6d9" : "none" }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#201e24", textTransform: "uppercase", letterSpacing: "0.03em" }}>Active Context</span>
-                            <ChevronDownIcon width={14} height={14} color="#8a8886" style={{ transform: contextExpanded ? "rotate(180deg)" : "none", transition: "0.2s" }} />
+                        <div
+                            onClick={() => setContextExpanded(!contextExpanded)}
+                            className="p-3 flex items-center justify-between cursor-pointer border-b border-stone-200 hover:bg-stone-50 transition-colors"
+                        >
+                            <span className="text-[13px] font-bold text-stone-800 uppercase tracking-wide">Active Context</span>
+                            <ChevronDownIcon className={`w-3.5 h-3.5 text-stone-400 transition-transform duration-200 ${contextExpanded ? 'rotate-180' : ''}`} />
                         </div>
                     )}
                     <AnimatePresence>
                         {contextExpanded && (
-                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "12px 16px 16px" }}>
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <div className="flex flex-col gap-3.5 p-3 pb-4">
                                     {contextItems.map((item, idx) => {
                                         const isFolder = item.label.startsWith("Folder:");
                                         return (
-                                            <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                                            <div key={idx} className="flex items-start gap-3">
                                                 {item.type !== 'app' && (
-                                                    <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#f5f4f0", border: "1px solid #e8e6d9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                                                    <div className="w-6 h-6 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center flex-shrink-0 mt-0.5">
                                                         {isFolder || item.type === 'file' ? (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                                         ) : item.type === 'web' ? (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1-4-10z"></path></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1-4-10z"></path></svg>
                                                         ) : (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
                                                         )}
                                                     </div>
                                                 )}
                                                 {item.type === 'app' ? (
-                                                    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1, minWidth: 0, paddingTop: 4 }}>
-                                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: -4 }}>
-                                                            <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>CURRENT CONTEXT</span>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(34,197,94,0.1)', padding: '4px 8px', borderRadius: 6 }}>
-                                                                <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a' }}>Active</span>
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                                    <div className="flex flex-col gap-4 flex-1 min-w-0 pt-1">
+                                                        <div className="flex items-center justify-between mb-[-4px]">
+                                                            <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">CURRENT CONTEXT</span>
+                                                            <div className='flex items-center gap-1.5 bg-green-100 px-2 py-1 rounded-md'>
+                                                                <span className='text-[11px] font-semibold text-green-600'>Active</span>
+                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                                                             </div>
                                                         </div>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                        <div className="flex items-center gap-2">
                                                             {item.appLogo ? (
-                                                                <img src={item.appLogo} alt="App Logo" style={{ width: 22, height: 22, borderRadius: 6, objectFit: 'contain' }} />
+                                                                <img src={item.appLogo} alt="App Logo" className="w-5.5 h-5.5 rounded-md object-contain" />
                                                             ) : (
-                                                                <div style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                                                <div className="w-5.5 h-5.5 rounded-md bg-blue-50 flex items-center justify-center">
+                                                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                                                                 </div>
                                                             )}
-                                                            <span style={{ color: '#4b5563', fontSize: 14, fontWeight: 500 }}>{item.label}</span>
+                                                            <span className='text-stone-600 text-sm font-medium'>{item.label}</span>
                                                         </div>
                                                         {item.base64Image && (
-                                                            <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid #e5e7eb", position: 'relative', backgroundColor: '#f9fafb', boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
-                                                                <img src={`data:image/jpeg;base64,${item.base64Image}`} alt="vision context" style={{ width: "100%", display: "block" }} />
+                                                            <div className='rounded-lg overflow-hidden border border-stone-200 relative bg-stone-50 shadow-sm'>
+                                                                <img src={`data:image/jpeg;base64,${item.base64Image}`} alt="vision context" className="w-full block" />
                                                             </div>
                                                         )}
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                                        <div className='flex flex-col gap-5'>
                                                             {/* Context Details */}
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                                                <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>CONTEXT DETAILS</div>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 4 }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Type
+                                                            <div className='flex flex-col gap-2.5'>
+                                                                <div className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">CONTEXT DETAILS</div>
+                                                                <div className='flex flex-col gap-2.5 p-1'>
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Type
                                                                         </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Computer Use
-                                                                        </div>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>Status
-                                                                        </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <span style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' }}></span>Active
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Computer Use
                                                                         </div>
                                                                     </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Started
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>Status
                                                                         </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Just now
-                                                                        </div>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Agent
-                                                                        </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M16 16s-1.5-2-4-2-4 2-4 2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>Computer Use Agent
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <span className="w-2 h-2 rounded bg-green-500"></span>Active
                                                                         </div>
                                                                     </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>Model
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Started
                                                                         </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>gemma4:31b-cloud
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Just now
                                                                         </div>
                                                                     </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                                                                        <div style={{ width: 120, color: '#6b7280', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>Permissions
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>Agent
                                                                         </div>
-                                                                        <div style={{ color: '#111827', fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>2 Granted
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="8" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>Computer Use Agent
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>Model
+                                                                        </div>
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>gemma4:31b-cloud
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className='flex items-center'>
+                                                                        <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>Permissions
+                                                                        </div>
+                                                                        <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>2 Granted
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
 
                                                             {/* Permissions Array */}
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>PERMISSIONS</span>
-                                                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563', border: '1px solid #e5e7eb', padding: '4px 10px', borderRadius: 14 }}>Manage</span>
+                                                            <div className='flex flex-col gap-2.5'>
+                                                                <div className='flex justify-between items-center'>
+                                                                    <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">PERMISSIONS</span>
+                                                                    <span className="text-[11px] font-semibold text-stone-600 border border-stone-200 px-2.5 py-1 rounded-full">Manage</span>
                                                                 </div>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 4 }}>
-                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                                                <div className='flex flex-col gap-3 p-1'>
+                                                                    <div className='flex justify-between items-center'>
+                                                                        <div className='flex items-center gap-2'>
+                                                                            <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                                                                             </div>
-                                                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                                                <span style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>System Control</span>
-                                                                                <span style={{ fontSize: 11, color: '#6b7280' }}>Control applications and system</span>
+                                                                            <div className='flex flex-col'>
+                                                                                <span className='text-[13px] text-stone-900 font-medium'>System Control</span>
+                                                                                <span className='text-[11px] text-stone-500'>Control applications and system</span>
                                                                             </div>
                                                                         </div>
-                                                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '3px 8px', borderRadius: 12 }}>Granted</span>
+                                                                        <span className='text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full'>Granted</span>
                                                                     </div>
-                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                                                    <div className='flex justify-between items-center'>
+                                                                        <div className='flex items-center gap-2'>
+                                                                            <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                                                                             </div>
-                                                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                                                <span style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>Window Management</span>
-                                                                                <span style={{ fontSize: 11, color: '#6b7280' }}>Capture and control windows</span>
+                                                                            <div className='flex flex-col'>
+                                                                                <span className='text-[13px] text-stone-900 font-medium'>Window Management</span>
+                                                                                <span className='text-[11px] text-stone-500'>Capture and control windows</span>
                                                                             </div>
                                                                         </div>
-                                                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '3px 8px', borderRadius: 12 }}>Granted</span>
+                                                                        <span className='text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full'>Granted</span>
                                                                     </div>
                                                                 </div>
                                                             </div>
 
                                                             {/* Recent Actions */}
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>RECENT ACTIONS</span>
-                                                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563', border: '1px solid #e5e7eb', padding: '4px 10px', borderRadius: 14 }}>View all</span>
+                                                            <div className='flex flex-col gap-2.5'>
+                                                                <div className='flex justify-between items-center'>
+                                                                    <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">RECENT ACTIONS</span>
+                                                                    <span className="text-[11px] font-semibold text-stone-600 border border-stone-200 px-2.5 py-1 rounded-full">View all</span>
                                                                 </div>
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 4 }}>
-                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                            <div style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                                <div className='flex flex-col gap-3 p-1'>
+                                                                    <div className='flex justify-between items-center'>
+                                                                        <div className='flex items-center gap-2'>
+                                                                            <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                                                                             </div>
-                                                                            <span style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>{item.label.includes('Wait') ? 'Waited 1s' : item.label.includes('Type') ? `Typed text` : `Launched Application`}</span>
+                                                                            <span className='text-[13px] text-stone-900 font-medium'>{item.label.includes('Wait') ? 'Waited 1s' : item.label.includes('Type') ? `Typed text` : `Launched Application`}</span>
                                                                         </div>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                                            <span style={{ fontSize: 11, color: '#9ca3af' }}>2.1s ago</span>
-                                                                            <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '3px 8px', borderRadius: 12 }}>Success</span>
+                                                                        <div className='flex items-center gap-3'>
+                                                                            <span className='text-[11px] text-stone-400'>2.1s ago</span>
+                                                                            <span className='text-[11px] font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full'>Success</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -272,18 +371,18 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}>
+                                                    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                                                         <span
                                                             onMouseEnter={(e) => setTooltip({ visible: true, x: e.clientX, y: e.clientY, content: item.label.replace(/^(Folder:|File:|URL:)?\s*/i, '') })}
                                                             onMouseMove={(e) => setTooltip({ visible: true, x: e.clientX, y: e.clientY, content: item.label.replace(/^(Folder:|File:|URL:)?\s*/i, '') })}
                                                             onMouseLeave={() => setTooltip({ visible: false, x: 0, y: 0, content: "" })}
-                                                            style={{ fontSize: 14, fontWeight: 400, color: "#201e24", lineHeight: 1.5, marginTop: 4, wordBreak: "break-all", cursor: "default" }}
+                                                            className="text-sm text-stone-800 leading-relaxed mt-1 break-all cursor-default"
                                                         >
-                                                            <span style={{ color: "#8a8886", fontWeight: 500 }}>{isFolder ? "Folder:" : item.type === "web" ? "URL:" : "File:"}</span> {item.label.replace(/^(Folder:|File:|URL:)?\s*/i, '').split(/[/\\]/).pop()}
+                                                            <span className="text-stone-500 font-medium">{isFolder ? "Folder:" : item.type === "web" ? "URL:" : "File:"}</span> {item.label.replace(/^(Folder:|File:|URL:)?\s*/i, '').split(/[/\\]/).pop()}
                                                         </span>
                                                         {item.base64Image && (
-                                                            <div style={{ marginTop: 2, borderRadius: 8, overflow: "hidden", border: "1px solid #e8e6d9" }}>
-                                                                <img src={`data:image/jpeg;base64,${item.base64Image}`} alt="vision context" style={{ width: "100%", display: "block" }} />
+                                                            <div className='mt-0.5 rounded-lg overflow-hidden border border-stone-200'>
+                                                                <img src={`data:image/jpeg;base64,${item.base64Image}`} alt="vision context" className="w-full block" />
                                                             </div>
                                                         )}
                                                     </div>

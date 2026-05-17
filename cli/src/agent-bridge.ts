@@ -1,6 +1,6 @@
-import { AgentRunner } from '../../main/agent/runner/runner.ts';
-import { acpManager } from '../../main/acp/manager.ts';
-import { ChatHistoryStore } from '../../main/store/history.ts';
+import { AgentRunner } from '../../main/agent/runner/runner';
+import { acpManager } from '../../main/acp/manager';
+import { ChatHistoryStore } from '../../main/store/history';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -21,12 +21,12 @@ export function silenceBackendLogs() {
   const originalInfo = console.info;
   const originalWarn = console.warn;
   const originalError = console.error;
-  
+
   const isInternal = (args: any[]) => {
     if (debugMode) return false;
     const msg = args[0];
-    if (typeof msg !== 'string') return true; 
-    
+    if (typeof msg !== 'string') return true;
+
     const internalPrefixes = [
       '[', '⏱️', '🧠', '⚖️', '🎬', '=', '================'
     ];
@@ -37,7 +37,7 @@ export function silenceBackendLogs() {
     if (isInternal(args)) return;
     originalLog(...args);
   };
-  
+
   console.info = (...args: any[]) => {
     if (isInternal(args)) return;
     originalInfo(...args);
@@ -81,17 +81,17 @@ export async function initializeAgent(options: { session?: string, model?: strin
     const runner = new AgentRunner(client, {
       maxIterations: 20,
       enableTerminal: true,
-      silent: true, 
+      silent: true,
     });
-    
+
     if (options.session) {
       runner.currentConversationId = options.session;
     }
-    
+
     await runner.waitForToolsReady();
 
     spinner.succeed(chalk.green('EverFern Engine Ready'));
-    
+
     return { runner, client };
   } catch (err: any) {
     spinner.fail(chalk.red('Failed to start EverFern.'));

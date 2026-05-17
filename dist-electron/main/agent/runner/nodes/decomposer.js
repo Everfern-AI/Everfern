@@ -68,7 +68,6 @@ const createDecomposerNode = (runner, eventQueue, missionTracker, shouldAbort) =
                 };
             }
             runner.telemetry.transition('decomposer');
-            eventQueue?.push({ type: 'thought', content: '🧠 Decomposer: Analyzing task structure using AI classification...' });
             const startTime = Date.now();
             // Use AI-powered decomposition when a client is available, regex fallback otherwise
             const { decomposeTaskWithAI } = await Promise.resolve().then(() => __importStar(require('../task-decomposer')));
@@ -96,17 +95,37 @@ const createDecomposerNode = (runner, eventQueue, missionTracker, shouldAbort) =
                     title: decomposed.title,
                     steps: decomposed.steps.map(s => ({
                         id: s.id,
+                        title: s.title,
                         description: s.description,
                         tool: s.tool
                     }))
                 }
             });
+            // Add steps to mission tracker for to-do visibility
+            if (missionTracker) {
+                for (const step of decomposed.steps) {
+                    const stepName = step.title || (step.description.length > 35
+                        ? step.description.substring(0, 32).trim() + '...'
+                        : step.description);
+                    const displayName = stepName.charAt(0).toUpperCase() + stepName.slice(1);
+                    missionTracker.addStep({
+                        id: step.id,
+                        name: displayName,
+                        description: step.description,
+                        toolCalls: [step.tool],
+                        metadata: {
+                            originalTool: step.tool
+                        },
+                        phase: 'execution',
+                    });
+                }
+            }
             const result = {
                 decomposedTask: decomposed,
                 taskPhase: 'planning',
                 decompositionAttempts: attempts + 1
             };
-            integrator.completeNode('decomposer', `Decomposed into ${decomposed.totalSteps} steps (Fast Heuristic)`);
+            integrator.completeNode('decomposer', `AI Decomposed into ${decomposed.totalSteps} steps`);
             return result;
         }
         catch (error) {

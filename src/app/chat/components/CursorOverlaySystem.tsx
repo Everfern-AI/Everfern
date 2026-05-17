@@ -199,7 +199,7 @@ export const CursorOverlaySystem: React.FC<CursorOverlayProps> = ({
     },
   });
 
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | undefined>(undefined);
   const lastUpdateRef = useRef<number>(Date.now());
 
   // Smooth position transitions using requestAnimationFrame (60fps)

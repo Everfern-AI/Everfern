@@ -17,26 +17,59 @@ export class MissionIntegrator {
   }
 
   /**
-   * Begin tracking a node's execution
+   * Begin tracking a node's execution.
+   * Smart-matches technical nodes to planned user-facing tasks.
    */
   startNode(nodeId: string, description: string): void {
     if (!this.tracker) return;
 
-    const stepId = `step:${nodeId}`;
+    // 1. Try to find an existing planned step that matches this node's purpose
+    // Specialist nodes map to specific tools in the plan
+    const nodeToToolMap: Record<string, string> = {
+      'web_explorer': 'web_search',
+      'coding_specialist': 'read_file', 
+      'data_analyst': 'python_executor',
+      'computer_use_agent': 'computer_use',
+      'deep_research': 'deep_research',
+      'multi_tool_orchestrator': 'ANY',
+      'execute_tools': 'ANY',
+      'brain': 'ANY'
+    };
+
+    const targetTool = nodeToToolMap[nodeId];
+    const steps = this.tracker.getSteps();
+    
+    // Find active or first pending step that matches the tool or is the 'current' planned task
+    // For 'ANY' nodes (orchestrators), we prioritize the last in-progress or first pending step
+    const plannedStep = (targetTool === 'ANY')
+      ? (steps.find(s => s.status === 'in-progress') || steps.find(s => s.status === 'pending'))
+      : (targetTool 
+          ? steps.find(s => s.status === 'pending' && s.toolCalls?.includes(targetTool))
+          : null);
+
+    const stepId = plannedStep ? plannedStep.id : `step:${nodeId}`;
     this.nodeStepMap.set(nodeId, stepId);
 
-    // Check if step exists, create if not
+    // 2. Only add a new step if it's NOT an orchestrator and doesn't exist
+    // We want to avoid "EXECUTE TOOLS" noise at all costs
     let step = this.tracker.getStep(stepId);
-    if (!step) {
+    const isOrchestrator = targetTool === 'ANY';
+
+    if (!step && !isOrchestrator) {
+      const stepName = nodeId.replace(/_/g, ' ');
+      const displayName = stepName.charAt(0).toUpperCase() + stepName.slice(1);
+      
       step = this.tracker.addStep({
         id: stepId,
-        name: nodeId.replace(/_/g, ' ').toUpperCase(),
+        name: displayName,
         description,
         phase: 'execution',
       });
     }
 
-    this.tracker.startStep(stepId);
+    if (stepId) {
+      this.tracker.startStep(stepId);
+    }
   }
 
   /**

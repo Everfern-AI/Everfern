@@ -35,7 +35,7 @@ export async function runAgentStep(
   const icon = nodeName === 'data_analyst' ? '📊' :
                nodeName === 'coding_specialist' ? '💻' :
                nodeName === 'web_explorer' ? '🌐' : '🧭';
-  eventQueue?.push({ type: 'thought', content: `\n${icon} ${nodeName.replace(/_/g, ' ').toUpperCase()}: Initializing step...` });
+  // eventQueue?.push({ type: 'thought', content: `\n${icon} ${nodeName.replace(/_/g, ' ').toUpperCase()}: Initializing step...` });
 
   let client = runner.client;
   let clientToRelease: AIClient | null = null;
@@ -165,6 +165,22 @@ export async function runAgentStep(
         try {
           if (!startedToolCallIndices.has(index)) {
             startedToolCallIndices.add(index);
+            
+            // Link tool call to planned mission step
+            const matchingStep = state.decomposedTask?.steps.find(s => s.tool === toolName);
+            const tracker = (runner as any).missionTracker;
+            if (matchingStep && tracker) {
+              tracker.startStep(matchingStep.id);
+              // Also record tool call for this step
+              const step = tracker.getStep(matchingStep.id);
+              if (step) {
+                const toolCalls = step.toolCalls || [];
+                if (!toolCalls.includes(toolName)) {
+                  tracker.updateStep(matchingStep.id, { toolCalls: [...toolCalls, toolName] });
+                }
+              }
+            }
+
             eventQueue?.push({ type: 'tool_call_start', index, toolName });
           }
           eventQueue?.push({ type: 'tool_call_chunk', index, argumentsDelta });
@@ -176,7 +192,6 @@ export async function runAgentStep(
         // First chunk received - clear initialization and show thinking
         if (!streamedText && !thoughtBuffer && !isThinking) {
            isThinking = true;
-           eventQueue?.push({ type: 'thought', content: `\n💭 ${nodeName.replace(/_/g, ' ').toUpperCase()}: Processing...` });
         }
         console.log(`[Stream] Received chunk: "${chunk}" (buffer: ${thoughtBuffer.length} chars)`);
         thoughtBuffer += chunk;

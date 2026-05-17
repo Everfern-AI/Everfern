@@ -56,7 +56,7 @@ class ArbiterAgent {
      * Produce a final, audited execution plan.
      */
     async arbitrateAndFinalize(proposal, review, context) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(context);
         const userPrompt = this.buildUserPrompt(proposal, review, context);
         try {
             const response = await this.client.chat({
@@ -78,12 +78,16 @@ class ArbiterAgent {
             throw new Error(`Arbiter failed to finalize plan: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
-    buildSystemPrompt() {
-        const prompt = (0, prompt_sync_1.loadPrompt)('debate-arbiter.md');
+    buildSystemPrompt(context) {
+        const toolsList = context.availableTools.join('\n- ');
+        let prompt = (0, prompt_sync_1.loadPrompt)('debate-arbiter.md');
         if (!prompt) {
             console.warn('[Arbiter] Could not load debate-arbiter.md prompt. Using fallback.');
             return `You are Arbiter, the Decision-Maker in a peer debate system for AI task planning.`;
         }
+        // Replace the placeholder with actual available tools
+        prompt = prompt.replace('{availableTools}', toolsList);
+        prompt = prompt.replace('{endnote}', `Current tools available: ${toolsList}`);
         return prompt;
     }
     buildUserPrompt(proposal, review, context) {

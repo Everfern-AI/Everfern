@@ -148,7 +148,7 @@ export function selectRoute(state: RouterState): RouteType {
  * Check if intent requires planning
  */
 function requiresPlanning(intent: IntentType): boolean {
-  return ['task', 'coding'].includes(intent);
+  return ['task', 'coding', 'research', 'fix', 'build', 'analyze', 'automate'].includes(intent);
 }
 
 /**

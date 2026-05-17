@@ -179,13 +179,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validateNvidiaModel: (modelId: string, apiKey: string) => ipcRenderer.invoke('acp:validate-nvidia-model', modelId, apiKey),
 
     // Mission Timeline Events
+    removeMissionListeners: () => {
+      ipcRenderer.removeAllListeners('acp:mission-step-update');
+      ipcRenderer.removeAllListeners('acp:mission-phase-change');
+      ipcRenderer.removeAllListeners('acp:mission-complete');
+    },
     onMissionStepUpdate: (cb: (data: { step: any; timeline: any }) => void) => {
+      ipcRenderer.removeAllListeners('acp:mission-step-update');
       ipcRenderer.on('acp:mission-step-update', (_e, data) => cb(data));
     },
     onMissionPhaseChange: (cb: (data: { phase: string; timeline: any }) => void) => {
+      ipcRenderer.removeAllListeners('acp:mission-phase-change');
       ipcRenderer.on('acp:mission-phase-change', (_e, data) => cb(data));
     },
     onMissionComplete: (cb: (data: { timeline: any; steps: any[] }) => void) => {
+      ipcRenderer.removeAllListeners('acp:mission-complete');
       ipcRenderer.on('acp:mission-complete', (_e, data) => cb(data));
     },
     onPlanCreated: (cb: (data: { plan: any }) => void) => {
@@ -255,9 +263,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:surface-action');
       ipcRenderer.removeAllListeners('acp:usage');
       ipcRenderer.removeAllListeners('agent:permission-request');
-      ipcRenderer.removeAllListeners('acp:mission-step-update');
-      ipcRenderer.removeAllListeners('acp:mission-phase-change');
-      ipcRenderer.removeAllListeners('acp:mission-complete');
+      // Intentionally NOT removing mission listeners here to allow persistent tracking
       ipcRenderer.removeAllListeners('acp:plan-created');
       ipcRenderer.removeAllListeners('acp:hitl-request');
       ipcRenderer.removeAllListeners('acp:hitl-response-processed');
@@ -517,6 +523,7 @@ export type ElectronAPI = {
     onToolCallChunk:       (cb: (data: { index: number; argumentsDelta: string }) => void) => void;
     onToolCallComplete:    (cb: (data: { index: number; toolName: string; arguments: Record<string, unknown> }) => void) => void;
     removeStreamListeners: () => void;
+    removeMissionListeners: () => void;
   };
   scheduledTasks: {
     list:   (projectId?: string) => Promise<any[]>;

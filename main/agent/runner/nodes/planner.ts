@@ -130,13 +130,14 @@ export const createPlannerNode = (runner: AgentRunner, eventQueue?: StreamEvent[
           title: state.decomposedTask.title,
           steps: state.decomposedTask.steps.map((s: any) => ({
             id: s.id,
+            title: s.title,
             description: s.description,
             tool: s.tool
           }))
         }
       });
 
-      eventQueue?.push({ type: 'thought', content: `Compiling execution pipeline for: ${state.decomposedTask.title}` });
+
 
       const systemMessage = `AS AN AGI ORCHESTRATOR, follow this task decomposition plan strictly:\n\n${planText}\n\n${agiHints}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable.`;
 

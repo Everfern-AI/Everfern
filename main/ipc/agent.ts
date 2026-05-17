@@ -323,6 +323,27 @@ export function registerAgentHandlers() {
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
         } else if (streamEvent.type === 'tool_call_complete') {
           safeSend('acp:tool-call-complete', { index: streamEvent.index, toolName: streamEvent.toolName, arguments: streamEvent.arguments });
+        } else if (streamEvent.type === 'mission_step_update') {
+          // ── Mission Step Update → acp:mission-step-update ──────────────
+          safeSend('acp:mission-step-update', {
+            step: (streamEvent as any).step,
+            timeline: (streamEvent as any).timeline,
+          });
+        } else if (streamEvent.type === 'mission_phase_change') {
+          // ── Mission Phase Change → acp:mission-phase-change ────────────
+          safeSend('acp:mission-phase-change', {
+            phase: (streamEvent as any).phase,
+            timeline: (streamEvent as any).timeline,
+          });
+        } else if (streamEvent.type === 'mission_complete') {
+          // ── Mission Complete — send BEFORE done:true so listeners are still alive ──
+          console.log('[AgentIPC] Mission complete event received');
+          safeSend('acp:mission-complete', {
+            timeline: (streamEvent as any).timeline,
+            steps: (streamEvent as any).steps,
+            thinkingDuration: (streamEvent as any).thinkingDuration,
+            title: (streamEvent as any).title,
+          });
         } else if (streamEvent.type === 'done') {
           flushBuffers();
 
@@ -352,6 +373,8 @@ export function registerAgentHandlers() {
             });
           }
 
+          // NOTE: done:true fires AFTER mission_complete so the frontend
+          // still has listeners active when mission_complete arrives.
           safeSend('acp:stream-chunk', { delta: '', done: true });
 
           // Self-Improvement: Trigger non-blocking memory reflection
@@ -363,7 +386,11 @@ export function registerAgentHandlers() {
           console.log('[AgentIPC] Forwarding debate event:', de.type, 'debateId:', de.debateId);
           safeSend('debate:stream', de);
         } else {
-          safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent);
+          // Generic fallback — skip already-handled event types to avoid double-sending
+          const skippedTypes = new Set(['mission_step_update', 'mission_phase_change', 'mission_complete', 'done']);
+          if (!skippedTypes.has(streamEvent.type)) {
+            safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent);
+          }
         }
       }
     } catch (error) {

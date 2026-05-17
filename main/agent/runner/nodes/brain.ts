@@ -159,10 +159,7 @@ async function determineRouting(
     const conversationHistory = state.messages?.slice(-3) || []; // Last 3 messages for context
 
     // Emit analysis phase
-    eventQueue?.push({
-      type: 'thought',
-      content: '\n🔍 Brain: Analyzing task requirements and available agents...'
-    });
+
 
     const intentConstraint = state.currentIntent
       ? `\nTRIAGE INTENT (HARD CONSTRAINT): "${state.currentIntent}"\n` +
@@ -222,10 +219,7 @@ Respond with JSON only:
     console.log(`[Brain] Routing decision response received in ${duration}ms`);
 
     // Emit decision analysis
-    eventQueue?.push({
-      type: 'thought',
-      content: `\n⏱️ Brain: Routing analysis completed in ${duration}ms`
-    });
+
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     console.log('[Brain] Raw routing response (first 500 chars):', content.slice(0, 500));
@@ -346,10 +340,7 @@ export const createBrainNode = (
     }
 
     // Emit initial brain activation message
-    eventQueue?.push({
-      type: 'thought',
-      content: '\n🧠 Brain Node: Analyzing task and determining optimal routing...'
-    });
+
 
     // ── EARLY RESEARCH INTENT DETECTION ──────────────────────────────────────
     // If the current intent is 'research' AND we haven't already routed to web-explorer
@@ -365,10 +356,7 @@ export const createBrainNode = (
     // do NOT route back to it — the task is done.
     if (state.currentIntent === 'research' && !state.returningFromSpecialist && !state.webExplorerComplete) {
       console.log('[Brain] Research intent detected → routing to web-explorer immediately');
-      eventQueue?.push({
-        type: 'thought',
-        content: '🧠 Brain: Research request detected → routing to web-explorer'
-      });
+
       return {
         pendingToolCalls: [],
         routingDecision: {
@@ -413,10 +401,7 @@ export const createBrainNode = (
     // This prevents unnecessary specialist routing when the task is already done.
     if (state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer') {
       console.log('[Brain] Web explorer complete detected → skipping specialist routing, generating completion signal');
-      eventQueue?.push({
-        type: 'thought',
-        content: '🧠 Brain: Web explorer workflow complete → generating completion signal'
-      });
+
       // Skip to completion signal generation below
     } else if (state.returningFromSpecialist) {
       console.log(`[Brain] Clearing returningFromSpecialist flag: ${state.returningFromSpecialist}`);
@@ -446,10 +431,7 @@ export const createBrainNode = (
     // Emit analysis of pending tools
     if (result.pendingToolCalls && result.pendingToolCalls.length > 0) {
       const toolNames = result.pendingToolCalls.map((tc: any) => tc.name).join(', ');
-      eventQueue?.push({
-        type: 'thought',
-        content: `\n🔧 Brain: Executing tools — ${toolNames}`
-      });
+
     }
 
     // If there are pending tool calls, continue with brain execution
@@ -497,10 +479,7 @@ export const createBrainNode = (
       const autoDecision = intentRoutingMap[state.currentIntent];
       if (autoDecision) {
         runner.telemetry.info(`[Brain] Auto-routing to ${autoDecision} for intent ${state.currentIntent} (brain produced no output)`);
-        eventQueue?.push({
-          type: 'thought',
-          content: `\n🧠 Brain: Auto-routing to ${autoDecision} for "${state.currentIntent}" intent`
-        });
+
         return {
           ...result,
           routingDecision: { decision: autoDecision, explanation: `Auto-routing for intent ${state.currentIntent} after brain produced no output` },
@@ -523,10 +502,7 @@ export const createBrainNode = (
 
         runner.telemetry.info(`Brain routing decision: ${routingDecision.decision} — ${routingDecision.explanation}`);
         console.log(`[Brain] Routing decision: ${routingDecision.decision} for intent: ${state.currentIntent}`);
-        eventQueue?.push({
-          type: 'thought',
-          content: `🧠 Brain Router: ${routingDecision.decision} — ${routingDecision.explanation}`
-        });
+
       }
 
       // Fallback: if routing LLM failed (Mistral Small JSON parse issue, etc.),
@@ -544,10 +520,7 @@ export const createBrainNode = (
         const fallbackDecision = fallbackRoutingMap[state.currentIntent];
         if (fallbackDecision) {
           runner.telemetry.warn(`[Brain] Routing LLM failed, falling back to intent-based routing: ${fallbackDecision} for intent ${state.currentIntent}`);
-          eventQueue?.push({
-            type: 'thought',
-            content: `\n🧠 Brain: Routing fallback — using intent "${state.currentIntent}" to route to ${fallbackDecision}`
-          });
+
           routingDecision = { decision: fallbackDecision, explanation: `Fallback routing for intent ${state.currentIntent} (routing LLM failed)` };
         }
       }
@@ -582,10 +555,10 @@ export const createBrainNode = (
 
     if (signal) {
       runner.telemetry.info(`Brain completion signal: ${signal.reason} — ${signal.explanation}`);
-      eventQueue?.push({ type: 'thought', content: `🧠 Brain: ${signal.reason} — ${signal.explanation}` });
+
     } else {
       runner.telemetry.warn('Brain completion signal failed');
-      eventQueue?.push({ type: 'thought', content: '🧠 Brain: completion signal failed' });
+
     }
 
     return {

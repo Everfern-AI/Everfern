@@ -8,6 +8,7 @@ export type TaskPhase = 'triage' | 'planning' | 'routing' | 'specialized_agent' 
 
 export interface TaskStep {
   id: string;
+  title?: string;
   description: string;
   tool: string;
   canParallelize: boolean;

@@ -55,7 +55,7 @@ class VanguardAgent {
      * Vanguard is optimistic and assumes best-case scenarios.
      */
     async proposeExecutionPlan(context) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = this.buildSystemPrompt(context);
         const userPrompt = this.buildUserPrompt(context);
         try {
             const response = await this.client.chat({
@@ -77,12 +77,16 @@ class VanguardAgent {
             throw new Error(`Vanguard failed to propose plan: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
-    buildSystemPrompt() {
-        const prompt = (0, prompt_sync_1.loadPrompt)('debate-vanguard.md');
+    buildSystemPrompt(context) {
+        const toolsList = context.availableTools.join('\n- ');
+        let prompt = (0, prompt_sync_1.loadPrompt)('debate-vanguard.md');
         if (!prompt) {
             console.warn('[Vanguard] Could not load debate-vanguard.md prompt. Using fallback.');
             return `You are Vanguard, the Proposer in a peer debate system for AI task planning.`;
         }
+        // Replace the placeholder with actual available tools
+        prompt = prompt.replace('{availableTools}', toolsList);
+        prompt = prompt.replace('{endnote}', `Current tools available: ${toolsList}`);
         return prompt;
     }
     buildUserPrompt(context) {

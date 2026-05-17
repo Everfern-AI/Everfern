@@ -273,50 +273,33 @@ class SubagentSpawner {
                                 flushReasoning();
                                 toolCalls.push(event.toolCall);
                             }
-                            // Pipe progress events to the parent session for the timeline
-                            if (event.type === 'thought' || event.type === 'tool_start' || event.type === 'tool_call') {
-                                flushReasoning();
-                                const progressType = event.type === 'thought' ? 'reasoning' : 'action';
-                                parentEvents.emit('subagent-progress', progressType, {
-                                    toolCallId: agent.toolCallId || agent.agentId,
-                                    timestamp: new Date().toISOString(),
-                                    content: event.type === 'thought' ? event.content : `Running tool: ${event.toolName || event.toolCall?.toolName}`,
-                                    metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },
-                                    timelineBranch: {
-                                        sessionId: agent.sessionKey,
-                                        parentId: agent.toolCallId || agent.parentSessionId,
-                                        parentSessionKey: agent.parentSessionId,
-                                        agentType: agent.agentType,
-                                        taskDescription: agent.task,
-                                        branchStatus: 'running',
-                                        branchLevel: agent.depth
-                                    }
-                                });
-                            }
                             // Forward subagent-progress events (e.g. rich navis browser actions)
                             if (event.type === 'subagent-progress') {
                                 flushReasoning();
                                 const nestedBranchLevel = event.data?.timelineBranch?.branchLevel
                                     ? event.data.timelineBranch.branchLevel + 1
                                     : agent.depth;
-                                parentEvents.emit('subagent-progress', event.data?.type || 'action', {
-                                    toolCallId: agent.toolCallId || agent.agentId,
-                                    timestamp: event.timestamp || new Date().toISOString(),
-                                    content: event.data?.content || event.data?.action || event.content || '',
-                                    action: event.data?.action,
-                                    stepNumber: event.data?.stepNumber,
-                                    totalSteps: event.data?.totalSteps,
-                                    metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },
-                                    timelineBranch: {
-                                        sessionId: agent.sessionKey,
-                                        parentId: agent.toolCallId || agent.parentSessionId,
-                                        parentSessionKey: agent.parentSessionId,
-                                        agentType: agent.agentType,
-                                        taskDescription: agent.task,
-                                        branchStatus: 'running',
-                                        branchLevel: nestedBranchLevel
-                                    }
-                                });
+                                // Only emit if it's a meaningful browser action or status update
+                                if (event.data?.action || event.data?.stepNumber) {
+                                    parentEvents.emit('subagent-progress', event.data?.type || 'action', {
+                                        toolCallId: agent.toolCallId || agent.agentId,
+                                        timestamp: event.timestamp || new Date().toISOString(),
+                                        content: event.data?.content || event.data?.action || event.content || '',
+                                        action: event.data?.action,
+                                        stepNumber: event.data?.stepNumber,
+                                        totalSteps: event.data?.totalSteps,
+                                        metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },
+                                        timelineBranch: {
+                                            sessionId: agent.sessionKey,
+                                            parentId: agent.toolCallId || agent.parentSessionId,
+                                            parentSessionKey: agent.parentSessionId,
+                                            agentType: agent.agentType,
+                                            taskDescription: agent.task,
+                                            branchStatus: 'running',
+                                            branchLevel: nestedBranchLevel
+                                        }
+                                    });
+                                }
                             }
                         }
                         if (reasoningTimer)

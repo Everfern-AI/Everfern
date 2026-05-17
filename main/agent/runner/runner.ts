@@ -483,6 +483,19 @@ export class AgentRunner {
       const { DurationTracker } = await import('./duration-tracker');
       const durationTracker = new DurationTracker();
 
+      // Create eventQueue early so we can push status updates
+      let pushResolver: any = null;
+      const eventQueue: StreamEvent[] = [];
+      const originalPush = eventQueue.push.bind(eventQueue);
+      eventQueue.push = (...items: StreamEvent[]) => {
+        const res = originalPush(...items);
+        if (pushResolver) {
+          pushResolver();
+          pushResolver = null;
+        }
+        return res;
+      };
+
       // Add initial mission steps
       missionTracker.addStep({
         id: 'step:triage',
@@ -497,7 +510,7 @@ export class AgentRunner {
           type: 'mission_step_update',
           step,
           timeline,
-        });
+        } as any); // Cast as any if type mismatch
       });
 
       missionTracker.onPhaseChange((phase, timeline) => {
@@ -505,7 +518,7 @@ export class AgentRunner {
           type: 'mission_phase_change',
           phase,
           timeline,
-        });
+        } as any);
       });
 
       // Check Context Window before proceeding
@@ -530,19 +543,6 @@ export class AgentRunner {
         console.log('[AgentRunner] Skills not yet loaded, loading now...');
         this.skills = await loadSkillsAsync();
       }
-
-      // Create eventQueue early so we can push status updates
-      let pushResolver: any = null;
-      const eventQueue: StreamEvent[] = [];
-      const originalPush = eventQueue.push.bind(eventQueue);
-      eventQueue.push = (...items: StreamEvent[]) => {
-        const res = originalPush(...items);
-        if (pushResolver) {
-          pushResolver();
-          pushResolver = null;
-        }
-        return res;
-      };
 
       // Reset abort state for new execution
       globalAbortManager.reset();
@@ -575,7 +575,7 @@ export class AgentRunner {
           this.tools,
         ));
 
-        yield { type: 'thought', content: '🎬 Let\'s do this!' };
+
 
         let graphDone = false;
         let currentAssistantMsgId = `msg-ast-${Date.now()}`;

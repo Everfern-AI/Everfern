@@ -30,6 +30,8 @@ type TerminalHeaderProps = Pick<
   "command" | "cwd" | "exitCode"
 > & {
   formattedDuration: string | null;
+  timestamp: string | null;
+  relativeTime: string;
   hasOutput: boolean;
   copiedId: string | null;
   onCopy: () => void;
@@ -42,6 +44,7 @@ type TerminalOutputProps = Pick<
   isCollapsed: boolean;
   shouldCollapse: boolean;
   lineCount: number;
+  command?: string;
   onToggleCollapse: () => void;
 };
 
@@ -49,6 +52,31 @@ function formatDuration(durationMs?: number): string | null {
   if (durationMs == null) return null;
   if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
   return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatTimestamp(date?: Date): string | null {
+  if (date == null) return null;
+  return date.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatRelativeTime(date?: Date): string {
+  if (date == null) return "";
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function getExitCodeLabel(exitCode: number): { label: string; className: string } {
+  if (exitCode === 0) return { label: "Success", className: "text-green-600 dark:text-green-400" };
+  if (exitCode > 0) return { label: `Error ${exitCode}`, className: "text-red-600 dark:text-red-400" };
+  // Negative = signal
+  const signalNum = Math.abs(exitCode);
+  const signals: Record<number, string> = { 1: "SIGHUP", 2: "SIGINT", 9: "SIGKILL", 15: "SIGTERM" };
+  const name = signals[signalNum] || `Signal ${signalNum}`;
+  return { label: name, className: "text-orange-600 dark:text-orange-400" };
 }
 
 function countOutputLines(output: string): number {
@@ -62,14 +90,23 @@ function TerminalHeader({
   cwd,
   exitCode,
   formattedDuration,
+  timestamp,
+  relativeTime,
   hasOutput,
   copiedId,
   onCopy,
 }: TerminalHeaderProps) {
+  const exitCodeInfo = getExitCodeLabel(exitCode);
+
   return (
     <div className="bg-card flex items-center justify-between border-b px-4 py-2">
-      <div className="flex items-center gap-2 overflow-hidden">
+      <div className="flex items-center gap-3 overflow-hidden">
         <TerminalIcon className="text-muted-foreground h-4 w-4 shrink-0" />
+        {timestamp && (
+          <span className="text-muted-foreground font-mono text-xs tabular-nums" title={relativeTime}>
+            {timestamp}
+          </span>
+        )}
         <code className="text-foreground truncate font-mono text-xs">
           {cwd && <span className="text-muted-foreground">{cwd}$ </span>}
           {command}
@@ -77,19 +114,20 @@ function TerminalHeader({
       </div>
       <div className="flex items-center gap-3">
         {formattedDuration && (
-          <span className="text-muted-foreground font-mono text-sm tabular-nums">
+          <span className="text-muted-foreground font-mono text-sm tabular-nums" title={`Duration: ${formattedDuration}`}>
             {formattedDuration}
           </span>
         )}
         <span
           className={cn(
-            "font-mono text-sm tabular-nums",
+            "font-mono text-xs px-1.5 py-0.5 rounded",
             exitCode === 0
-              ? "text-muted-foreground"
-              : "text-red-600 dark:text-red-400",
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
           )}
+          title={exitCodeInfo.label}
         >
-          {exitCode}
+          {exitCode === 0 ? "✓" : "✗"} {exitCode}
         </span>
         <Button
           variant="ghost"
@@ -123,8 +161,13 @@ function TerminalOutput({
   isCollapsed,
   shouldCollapse,
   lineCount,
+  command,
   onToggleCollapse,
 }: TerminalOutputProps) {
+  const stdoutLines = stdout ? stdout.split("\n") : [];
+  const stderrLines = stderr ? stderr.split("\n") : [];
+  const hasStderr = stderr && stderr.trim().length > 0;
+
   return (
     <Collapsible open={!isCollapsed}>
       <div
@@ -134,19 +177,53 @@ function TerminalOutput({
         )}
       >
         <div className="overflow-x-auto p-4">
+          {/* Command echo line */}
+          {command && (
+            <div className="mb-3 pb-2 border-b border-[#2d2d3a] text-[#6366f1] text-xs">
+              <span className="text-[#64748b] mr-2">$</span>
+              <span className="text-[#e2e8f0]">{command}</span>
+            </div>
+          )}
+
+          {/* Stdout with line numbers */}
           {stdout && (
-            <div className="text-foreground whitespace-pre">
-              <Ansi>{stdout}</Ansi>
+            <div className="flex gap-4">
+              <div className="text-[#4a4a5a] text-xs select-none text-right leading-[1.7]">
+                {stdoutLines.map((_, i) => (
+                  <div key={i}>{i + 1}</div>
+                ))}
+              </div>
+              <div className="text-foreground whitespace-pre flex-1">
+                <Ansi>{stdout}</Ansi>
+              </div>
             </div>
           )}
-          {stderr && (
-            <div className="mt-2 whitespace-pre text-red-500 dark:text-red-400">
-              <Ansi>{stderr}</Ansi>
+
+          {/* Stderr with prominent indicator */}
+          {hasStderr && (
+            <div className="mt-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-red-500 text-xs font-semibold uppercase tracking-wider">Stderr</span>
+              </div>
+              <div className="flex gap-4">
+                <div className="text-[#4a4a5a] text-xs select-none text-right leading-[1.7]">
+                  {stderrLines.map((_, i) => (
+                    <div key={i}>{i + 1}</div>
+                  ))}
+                </div>
+                <div className="text-red-400 whitespace-pre flex-1 border-l-2 border-red-500 pl-3">
+                  <Ansi>{stderr}</Ansi>
+                </div>
+              </div>
             </div>
           )}
+
+          {/* Truncation notice with char count */}
           {truncated && (
-            <div className="text-muted-foreground mt-2 text-xs italic">
-              Output truncated...
+            <div className="text-muted-foreground mt-3 text-xs italic flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              Output truncated... ({[stdout, stderr].filter(Boolean).reduce((a, s) => a + (s?.length || 0), 0)} chars hidden)
             </div>
           )}
         </div>
@@ -216,6 +293,8 @@ function TerminalRoot({
   const shouldCollapse =
     maxCollapsedLines !== undefined && lineCount > maxCollapsedLines;
   const isCollapsed = shouldCollapse && !isExpanded;
+  const timestamp = formatTimestamp(new Date());
+  const relativeTime = formatRelativeTime(new Date());
 
   const setExpanded = useCallback(
     (nextExpanded: boolean) => {
@@ -247,6 +326,8 @@ function TerminalRoot({
           cwd={cwd}
           exitCode={exitCode}
           formattedDuration={formattedDuration}
+          timestamp={timestamp}
+          relativeTime={relativeTime}
           hasOutput={hasOutput}
           copiedId={copiedId}
           onCopy={handleCopy}
@@ -260,6 +341,7 @@ function TerminalRoot({
             isCollapsed={isCollapsed}
             shouldCollapse={shouldCollapse}
             lineCount={lineCount}
+            command={command}
             onToggleCollapse={() => setExpanded(!isExpanded)}
           />
         )}

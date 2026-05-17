@@ -23,7 +23,7 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
     try {
       runner.telemetry.transition('triage');
       runner.telemetry.info('Analyzing user intent and decomposing task requirements...');
-      eventQueue?.push({ type: 'thought', content: '🤖 Triage in progress: Analyzing intent and conversation context...' });
+
 
       const lastUserMsg = state.messages.filter(m => {
         const msg = m as any;
@@ -41,10 +41,7 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
         classification = { intent: 'task', confidence: 0.5, reasoning: `Classification unavailable: ${msg}` };
       }
       runner.telemetry.info(`Intent identified: ${classification.intent.toUpperCase()} (${Math.round(classification.confidence * 100)}% confidence)`);
-      if (classification.reasoning) {
-        runner.telemetry.info(`Classification logic: ${classification.reasoning}`);
-        eventQueue?.push({ type: 'thought', content: `Intent Classification: ${classification.reasoning}` });
-      }
+
 
       eventQueue?.push({
         type: 'intent_classified',
