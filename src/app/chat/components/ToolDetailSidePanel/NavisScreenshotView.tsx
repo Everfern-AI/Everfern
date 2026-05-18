@@ -6,57 +6,10 @@
  */
 
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { NavisScreenshotViewProps, Screenshot } from './types';
 import { formatTimestamp } from './utils';
-
-/**
- * Zoom icon component
- */
-function ZoomIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M9 9L13 13"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Close icon component
- */
-function CloseIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M15 5L5 15M5 5L15 15"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+import { CameraOff, Maximize2, X, Globe } from 'lucide-react';
 
 /**
  * Screenshot card component
@@ -73,28 +26,19 @@ function ScreenshotCard({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  const handleZoomClick = () => {
-    onZoom(screenshot);
-  };
-
-  const handleZoomKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleZoomClick();
-    }
-  };
-
   return (
     <motion.div
-      className="border border-gray-200 rounded-lg overflow-hidden"
-      initial={{ opacity: 0, y: 10 }}
+      className="rounded-xl overflow-hidden bg-white border border-gray-200 hover:border-blue-200 transition-all duration-200 group cursor-pointer"
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
+      transition={{ delay: index * 0.04, type: 'spring', stiffness: 200, damping: 20 }}
+      onClick={() => onZoom(screenshot)}
     >
-      <div className="relative bg-gray-100 aspect-video">
+      {/* Image area */}
+      <div className="relative bg-gray-100 aspect-video overflow-hidden">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-6 h-6 border-3 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+          <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
@@ -102,33 +46,36 @@ function ScreenshotCard({
           <img
             src={`data:image/png;base64,${screenshot.base64}`}
             alt={`Screenshot ${index + 1}`}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-400 ease-out"
             onLoad={() => setIsLoading(false)}
-            onError={() => {
-              setIsLoading(false);
-              setHasError(true);
-            }}
+            onError={() => { setIsLoading(false); setHasError(true); }}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-            <p className="text-sm text-gray-500">Failed to load image</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400 gap-1.5">
+            <CameraOff className="w-6 h-6 opacity-50" />
+            <p className="text-[11px] font-medium">Failed to load</p>
           </div>
         )}
 
-        <button
-          className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
-          onClick={handleZoomClick}
-          onKeyDown={handleZoomKeyDown}
-          aria-label={`Zoom screenshot ${index + 1}`}
-          title="Click to zoom"
-        >
-          <ZoomIcon />
-        </button>
+        {/* Zoom overlay on hover */}
+        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+          <div className="p-2 bg-white/95 rounded-full">
+            <Maximize2 className="w-3.5 h-3.5 text-gray-700" />
+          </div>
+        </div>
+
+        {/* Step badge */}
+        <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/55 backdrop-blur-sm rounded text-[10px] font-bold text-white tracking-wide">
+          #{index + 1}
+        </div>
       </div>
 
-      <div className="px-3 py-2 bg-white border-t border-gray-200 flex items-center justify-between text-xs">
-        <span className="font-medium text-gray-900">#{index + 1}</span>
-        <span className="text-gray-500">{formatTimestamp(screenshot.timestamp)}</span>
+      {/* Footer */}
+      <div className="px-3 py-2 flex items-center justify-between bg-white border-t border-gray-100">
+        <span className="text-xs font-medium text-gray-600">Capture {index + 1}</span>
+        <span className="text-[10px] text-gray-400 font-mono">
+          {formatTimestamp(screenshot.timestamp).split(',')[1]?.trim() || formatTimestamp(screenshot.timestamp)}
+        </span>
       </div>
     </motion.div>
   );
@@ -137,51 +84,36 @@ function ScreenshotCard({
 /**
  * Zoom modal component
  */
-function ZoomModal({
-  screenshot,
-  onClose
-}: {
-  screenshot: Screenshot;
-  onClose: () => void;
-}) {
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
+function ZoomModal({ screenshot, onClose }: { screenshot: Screenshot; onClose: () => void }) {
   return (
     <motion.div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/85 backdrop-blur-lg flex items-center justify-center z-[100] p-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={handleBackdropClick}
-      onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Zoomed screenshot"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="relative max-w-4xl max-h-[90vh] w-full">
+      <div className="relative max-w-5xl w-full flex flex-col items-center gap-3">
         <button
-          className="absolute -top-10 right-0 p-2 text-white hover:bg-white/10 rounded transition-colors"
+          className="absolute -top-10 right-0 p-2 text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all cursor-pointer"
           onClick={onClose}
-          aria-label="Close zoom"
         >
-          <CloseIcon />
+          <X className="w-4.5 h-4.5" />
         </button>
 
-        <img
-          src={`data:image/png;base64,${screenshot.base64}`}
-          alt="Zoomed screenshot"
-          className="w-full h-full object-contain rounded-lg"
-        />
+        <motion.div
+          className="rounded-2xl overflow-hidden border border-white/10 w-full"
+          initial={{ scale: 0.94, y: 12 }}
+          animate={{ scale: 1, y: 0 }}
+          exit={{ scale: 0.94, y: 12 }}
+          transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+        >
+          <img
+            src={`data:image/png;base64,${screenshot.base64}`}
+            alt="Zoomed screenshot"
+            className="w-full max-h-[78vh] object-contain"
+          />
+        </motion.div>
       </div>
     </motion.div>
   );
@@ -190,35 +122,57 @@ function ZoomModal({
 /**
  * NAVIS Screenshot View Component
  */
-export default function NavisScreenshotView({
-  screenshots,
-  toolName
-}: NavisScreenshotViewProps) {
-  const [zoomedScreenshot, setZoomedScreenshot] = useState<Screenshot | null>(
-    null
-  );
+export default function NavisScreenshotView({ screenshots = [], toolName }: NavisScreenshotViewProps) {
+  const [zoomedScreenshot, setZoomedScreenshot] = useState<Screenshot | null>(null);
+  const safeScreenshots = Array.isArray(screenshots) ? screenshots : [];
 
-  if (screenshots.length === 0) {
+  if (safeScreenshots.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 px-4">
-        <p className="text-sm font-medium text-gray-900 mb-1">No screenshots captured</p>
-        <p className="text-xs text-gray-500">
-          {toolName} did not capture any screenshots during execution
-        </p>
+      <div className="flex flex-col h-full bg-white">
+        {/* Info banner at top */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+            Browser Session
+          </p>
+        </div>
+
+        {/* Empty state — top-aligned, not vertically centered */}
+        <div className="px-8 pt-16 pb-12 flex flex-col items-center text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center mb-6">
+            <CameraOff className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">No screenshots captured</h3>
+          <p className="text-xs text-gray-500 leading-relaxed max-w-[260px]">
+            {toolName} ran successfully but didn't generate any screen captures during this session.
+          </p>
+        </div>
+
+        {/* Hint strip at bottom */}
+        <div className="mx-6 mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-5 py-4 flex items-start gap-4">
+          <Globe className="w-4.5 h-4.5 text-blue-400 mt-0.5 flex-shrink-0" />
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Screenshots appear here in real-time as the browser agent navigates pages and completes actions.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 sticky top-0">
-        <p className="text-sm font-medium text-gray-900">
-          {screenshots.length} screenshot{screenshots.length !== 1 ? 's' : ''}
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Sticky subheader */}
+      <div className="px-6 py-4 border-b border-gray-100 bg-white sticky top-0 z-10 flex items-center justify-between">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+          Execution History
         </p>
+        <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full">
+          {safeScreenshots.length} capture{safeScreenshots.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-        {screenshots.map((screenshot, index) => (
+      {/* Screenshot grid */}
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+        {safeScreenshots.map((screenshot, index) => (
           <ScreenshotCard
             key={`${screenshot.timestamp}-${index}`}
             screenshot={screenshot}
@@ -228,12 +182,14 @@ export default function NavisScreenshotView({
         ))}
       </div>
 
-      {zoomedScreenshot && (
-        <ZoomModal
-          screenshot={zoomedScreenshot}
-          onClose={() => setZoomedScreenshot(null)}
-        />
-      )}
+      <AnimatePresence>
+        {zoomedScreenshot && (
+          <ZoomModal
+            screenshot={zoomedScreenshot}
+            onClose={() => setZoomedScreenshot(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

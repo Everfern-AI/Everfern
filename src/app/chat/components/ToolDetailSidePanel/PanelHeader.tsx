@@ -7,66 +7,56 @@
 
 import React from 'react';
 import { PanelHeaderProps } from './types';
+import { X, Terminal, Search, Globe, Cpu } from 'lucide-react';
 
-/**
- * Close icon component
- */
-function CloseIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M15 5L5 15M5 5L15 15"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+const TOOL_ICON_MAP: Record<string, { icon: React.ReactNode; color: string }> = {};
+
+function getToolMeta(toolName: string) {
+  const name = toolName.toLowerCase();
+  if (name.includes('web_search') || name.includes('search')) {
+    return { iconSrc: '/assets/tool-search.svg', bg: 'bg-emerald-50', border: 'border-emerald-100', color: 'text-emerald-600', label: 'Web Search' };
+  }
+  if (name.includes('navis') || name.includes('browser') || name.includes('computer_use')) {
+    return { iconSrc: '/assets/tool-browser.svg', bg: 'bg-blue-50', border: 'border-blue-100', color: 'text-blue-600', label: 'Browser' };
+  }
+  if (name.includes('run_command') || name.includes('bash') || name.includes('terminal')) {
+    return { iconSrc: '/assets/tool-terminal.svg', bg: 'bg-violet-50', border: 'border-violet-100', color: 'text-violet-600', label: 'Terminal' };
+  }
+  return { iconSrc: '/assets/tool-generic.svg', bg: 'bg-amber-50', border: 'border-amber-100', color: 'text-amber-600', label: 'Tool' };
 }
 
-/**
- * Panel Header Component
- */
-export default function PanelHeader({
-  agentName,
-  toolName,
-  onClose
-}: PanelHeaderProps) {
-  return (
-    <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
-      <div className="px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-semibold text-gray-900 break-words" id="panel-title">
-              {agentName && (
-                <>
-                  <span className="text-blue-600">{agentName}</span>
-                  <span className="text-gray-500 mx-1">is using</span>
-                </>
-              )}
-              <span className="text-gray-900">{toolName}</span>
-            </h2>
-          </div>
+export default function PanelHeader({ agentName, toolName, onClose }: PanelHeaderProps) {
+  const { iconSrc, bg, border, color } = getToolMeta(toolName);
 
-          <button
-            className="flex-shrink-0 p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-            onClick={onClose}
-            aria-label="Close panel"
-            aria-controls="tool-detail-panel"
-            title="Close (Esc)"
-          >
-            <CloseIcon />
-          </button>
+  return (
+    <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-shrink-0">
+      {/* Left: icon + title */}
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`w-8 h-8 rounded-lg ${bg} ${border} border flex items-center justify-center flex-shrink-0`}>
+          <img src={iconSrc} className={`w-4 h-4 ${color}`} alt="Tool Icon" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {agentName && (
+              <span className="text-sm font-semibold text-gray-800">{agentName}</span>
+            )}
+            <span className="text-sm text-gray-400">is using</span>
+            <code className="text-xs font-mono font-semibold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+              {toolName}
+            </code>
+          </div>
         </div>
       </div>
+
+      {/* Right: close button only */}
+      <button
+        className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+        onClick={onClose}
+        aria-label="Close panel"
+        title="Close (Esc)"
+      >
+        <X className="w-4 h-4" />
+      </button>
     </header>
   );
 }

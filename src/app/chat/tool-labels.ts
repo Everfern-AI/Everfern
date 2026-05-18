@@ -41,11 +41,11 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     case 'computer_use': {
       const task = typeof args?.task === 'string' ? args.task.trim() : '';
       const label = task ? truncate(task, 80) : 'Controlling computer';
-      return { icon: React.createElement(ComputerDesktopIcon, { width: 16, height: 16 }), label, color: '#6366f1' };
+      return { icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#6366f1' };
     }
 
     case 'take_screenshot':
-      return { icon: React.createElement(CameraIcon, { width: 16, height: 16 }), label: 'Taking screenshot', color: '#8b5cf6' };
+      return { icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }), label: 'Taking screenshot', color: '#8b5cf6' };
 
     case 'approve_actions':
       return { 
@@ -86,7 +86,7 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
           color: '#10b981'
         };
       }
-      return { icon: React.createElement(CommandLineIcon, { width: 16, height: 16 }), label, color: '#10b981' };
+      return { icon: React.createElement('img', { src: '/assets/tool-terminal.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#10b981' };
     }
 
     case 'create_plan':
@@ -110,7 +110,7 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
 
     case 'web_search': {
       const query = typeof args?.query === 'string' ? args.query.trim() : '';
-      return { icon: React.createElement(MagnifyingGlassIcon, { width: 16, height: 16 }), label: query ? `Searching for "${truncate(query, 60)}"` : 'Searching web', color: '#3b82f6' };
+      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: query ? `Searching for "${truncate(query, 60)}"` : 'Searching web', color: '#3b82f6' };
     }
 
     case 'read_file': {
@@ -210,7 +210,7 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     default: {
       const cleaned = toolName.replace(/_/g, ' ').trim();
       const label = cleaned ? capitalize(cleaned) : 'Running tool';
-      return { icon: React.createElement(Cog6ToothIcon, { width: 16, height: 16 }), label, color: '#71717a' };
+      return { icon: React.createElement('img', { src: '/assets/tool-generic.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#71717a' };
     }
   }
 }

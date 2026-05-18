@@ -70,6 +70,7 @@ import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
 import ProjectsPage from '../components/ProjectsPage';
 import { ComputerPane } from './components/ComputerPane';
+import ToolDetailSidePanel from './components/ToolDetailSidePanel';
 
 
 // Extracted components
@@ -235,21 +236,55 @@ export default function ChatPage() {
         args?: any;
     } | null>(null);
 
+    // Tool Detail Side Panel State
+    const [selectedToolCall, setSelectedToolCall] = useState<any | null>(null);
+    const [isToolDetailOpen, setIsToolDetailOpen] = useState(false);
+
     const handlePillClick = (tc: ToolCallDisplay) => {
-        const isComputerTool = tc.toolName === 'computer_use' || tc.toolName === 'navis' || tc.toolName.includes('browser') || tc.toolName.includes('web') || tc.toolName.includes('search');
-        if (isComputerTool) {
-            setActiveComputerData({
-                agentName: tc.toolName === 'navis' ? 'Navis' : tc.toolName.includes('search') ? 'Search' : 'Browser',
-                url: (tc.args?.url as string) || (tc.args?.url_to_visit as string) || (tc.args?.query as string) || 'https://www.google.com',
-                screenshot: tc.base64Image || tc.data?.screenshot,
-                toolName: tc.toolName,
-                results: tc.data?.results,
-                query: tc.args?.query as string,
-                output: tc.output,
-                args: tc.args
-            });
-            setIsComputerPaneOpen(true);
+        // Collect any real-time screenshots from subAgentProgress events
+        const progressEvents = subAgentProgress.get(tc.id) || [];
+        const progressScreenshots = progressEvents
+            .filter(e => e.type === 'screenshot' && e.screenshot?.base64)
+            .map(e => e.screenshot!.base64);
+
+        // Combine static screenshot and live streamed screenshots
+        const screenshotData: string[] = [];
+        
+        // Add progress screenshots first to keep it chronological
+        if (progressScreenshots.length > 0) {
+            screenshotData.push(...progressScreenshots);
         }
+        
+        // Add static screenshot if available and not already in the array
+        const staticScreenshot = tc.base64Image || tc.data?.screenshot || tc.data?.base64Image;
+        if (staticScreenshot && typeof staticScreenshot === 'string' && !screenshotData.includes(staticScreenshot)) {
+            screenshotData.push(staticScreenshot);
+        } else if (Array.isArray(staticScreenshot)) {
+            staticScreenshot.forEach((img: any) => {
+                if (typeof img === 'string' && !screenshotData.includes(img)) {
+                    screenshotData.push(img);
+                }
+            });
+        }
+
+        // Construct toolCall structure expected by ToolDetailSidePanel
+        const mappedToolCall = {
+            id: tc.id,
+            toolName: tc.toolName,
+            args: tc.args || {},
+            output: tc.output || '',
+            duration: tc.durationMs,
+            data: {
+                ...tc.data,
+                screenshot: screenshotData.length > 0 ? (screenshotData.length === 1 ? screenshotData[0] : screenshotData) : undefined,
+                base64Image: tc.base64Image || tc.data?.base64Image,
+                results: tc.data?.results,
+            },
+            agentName: tc.displayName || 'Fern',
+        };
+        setSelectedToolCall(mappedToolCall);
+        setIsToolDetailOpen(true);
+        setIsComputerPaneOpen(false); // Close computer pane to avoid overlap
     };
 
     const loadingMessages = ["marinating...", "schlepping...", "concocting...", "honking..."];
@@ -3323,6 +3358,7 @@ export default function ChatPage() {
                                                     debateData={debateData}
                                                     isDebating={isDebating}
                                                     missionTimeline={missionTimeline}
+                                                    onPillClick={handlePillClick}
                                                 />
                                                 {/* Live streaming tool call cards — show tool calls being built in real-time */}
                                                 {streamingToolCalls.length > 0 && (
@@ -3741,7 +3777,7 @@ export default function ChatPage() {
                         )}
 
                         {/* Right Sidebar — always-visible cards */}
-                        <div style={{ width: 280, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto", padding: "16px 16px", gap: 16 }}>
+                        <div style={{ width: 280, flexShrink: 0, display: isToolDetailOpen ? "none" : "flex", flexDirection: "column", overflowY: "auto", padding: "16px 16px", gap: 16 }}>
 
                             {/* Instructions card */}
                             <div style={{ backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
@@ -3932,6 +3968,14 @@ export default function ChatPage() {
                             isOpen={isComputerPaneOpen} 
                             onClose={() => setIsComputerPaneOpen(false)} 
                             data={activeComputerData} 
+                        />
+
+                        {/* Tool Detail Side Panel */}
+                        <ToolDetailSidePanel
+                            isOpen={isToolDetailOpen}
+                            toolCall={selectedToolCall}
+                            onClose={() => setIsToolDetailOpen(false)}
+                            conversationId={activeConversationId || ""}
                         />
                                     </div>
                 </motion.div>

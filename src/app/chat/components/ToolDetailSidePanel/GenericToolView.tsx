@@ -6,83 +6,9 @@
  */
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { GenericToolViewProps } from './types';
-
-/**
- * Copy icon component
- */
-function CopyIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M6 2H2v12h8V8h4V2H6z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Check icon component
- */
-function CheckIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M13 4L6 11L3 8"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Collapse/Expand icon component
- */
-function ChevronIcon({ isOpen }: { isOpen: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      style={{
-        transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform 0.2s ease'
-      }}
-    >
-      <path
-        d="M4 6L8 10L12 6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+import { Braces, Terminal, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
  * Arguments section component
@@ -97,24 +23,47 @@ function ArgumentsSection({ args }: { args: Record<string, unknown> }) {
   }
 
   return (
-    <div className="border-b border-gray-200">
+    <div className="border-b border-gray-150 bg-white">
       <button
-        className="w-full px-4 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors text-left"
+        className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-gray-50/50 transition-all duration-200 text-left font-sans cursor-pointer group"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
       >
-        <ChevronIcon isOpen={isOpen} />
-        <span className="text-sm font-medium text-gray-900">Arguments</span>
-        <span className="text-xs text-gray-500">({argEntries.length})</span>
+        <div className="flex items-center gap-2.5">
+          <div className="p-1 rounded-md bg-amber-50 border border-amber-100 text-amber-600">
+            <Braces className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-sm font-semibold text-gray-800">Arguments</span>
+            <span className="text-xs text-gray-400 font-medium ml-1.5 font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+              {argEntries.length} field{argEntries.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+        {isOpen ? (
+          <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+        )}
       </button>
 
-      {isOpen && (
-        <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
-          <pre className="font-mono text-xs overflow-auto bg-white p-3 rounded border border-gray-200 text-gray-900">
-            <code>{JSON.stringify(args, null, 2)}</code>
-          </pre>
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden bg-gray-50/45 border-t border-gray-100"
+          >
+            <div className="p-4">
+              <pre className="font-mono text-[11px] leading-relaxed overflow-x-auto bg-[#0b0f17] text-gray-300 p-4 rounded-xl border border-gray-800 max-h-[300px]">
+                <code>{JSON.stringify(args, null, 2)}</code>
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -124,8 +73,10 @@ function ArgumentsSection({ args }: { args: Record<string, unknown> }) {
  */
 function OutputSection({ output }: { output: string }) {
   const [copied, setCopied] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
 
-  const handleCopy = async () => {
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(output);
       setCopied(true);
@@ -140,35 +91,56 @@ function OutputSection({ output }: { output: string }) {
   }
 
   return (
-    <div className="border-b border-gray-200">
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-200 bg-gray-50">
-        <span className="text-sm font-medium text-gray-900">Output</span>
-        <button
-          className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-          onClick={handleCopy}
-          aria-label="Copy output"
-          title={copied ? 'Copied!' : 'Copy to clipboard'}
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </button>
-      </div>
+    <div className="border-b border-gray-150 bg-white">
+      <button
+        className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-gray-50/50 transition-all duration-200 text-left font-sans cursor-pointer group"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="p-1 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-600">
+            <Terminal className="w-4 h-4" />
+          </div>
+          <span className="text-sm font-semibold text-gray-800">Console Output</span>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <button
+            className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all duration-200 cursor-pointer active:scale-95 flex items-center gap-1 text-xs font-semibold"
+            onClick={handleCopy}
+            title={copied ? 'Copied!' : 'Copy to clipboard'}
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+          </button>
+          {isOpen ? (
+            <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
+          )}
+        </div>
+      </button>
 
-      <div className="px-4 py-3">
-        {output.length > 500 ? (
-          <details className="cursor-pointer">
-            <summary className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-              Show output ({output.length} characters)
-            </summary>
-            <pre className="mt-3 font-mono text-xs overflow-auto bg-gray-50 p-3 rounded border border-gray-200 text-gray-900">
-              <code>{output}</code>
-            </pre>
-          </details>
-        ) : (
-          <pre className="font-mono text-xs overflow-auto bg-gray-50 p-3 rounded border border-gray-200 text-gray-900">
-            <code>{output}</code>
-          </pre>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden bg-gray-50/45 border-t border-gray-100"
+          >
+            <div className="p-4">
+              <pre className="font-mono text-[11px] leading-relaxed overflow-x-auto bg-[#070a0f] text-gray-300 p-4 rounded-xl border border-gray-800 max-h-[400px]">
+                <code>{output}</code>
+              </pre>
+            </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -182,11 +154,11 @@ export default function GenericToolView({
   output
 }: GenericToolViewProps) {
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Tool name header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 sticky top-0">
-        <h3 className="text-sm font-semibold text-gray-900">{toolName}</h3>
-        <p className="text-xs text-gray-500 mt-1">Tool execution details</p>
+      <div className="px-6 py-5 border-b border-gray-150 bg-white">
+        <h3 className="text-sm font-semibold text-gray-900 mb-1.5">{toolName}</h3>
+        <p className="text-xs text-gray-500 font-medium">Generic tool execution diagnostics</p>
       </div>
 
       {/* Content */}
@@ -199,8 +171,14 @@ export default function GenericToolView({
 
         {/* Empty state */}
         {Object.keys(args).length === 0 && !output && (
-          <div className="flex flex-col items-center justify-center py-12 px-4">
-            <p className="text-sm text-gray-500">No data available for this tool execution</p>
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <div className="p-4 bg-gray-100 rounded-full text-gray-400 mb-4">
+              <Braces className="w-8 h-8" />
+            </div>
+            <h4 className="text-sm font-semibold text-gray-950 mb-1">No Diagnostic Data</h4>
+            <p className="text-xs text-gray-500 max-w-[280px]">
+              This tool executed successfully without generating arguments or terminal outputs.
+            </p>
           </div>
         )}
       </div>

@@ -47,7 +47,8 @@ export function detectToolType(toolName: string): ToolType {
 export function extractWebSearchData(toolCall: ToolCallDisplay): WebSearchData | null {
   try {
     const query = (toolCall.args?.query as string) || '';
-    const results = (toolCall.data?.results as SearchResult[]) || [];
+    const rawResults = toolCall.data?.results;
+    const results = Array.isArray(rawResults) ? (rawResults as SearchResult[]) : [];
     const totalResults = results.length;
 
     return {
@@ -67,36 +68,58 @@ export function extractWebSearchData(toolCall: ToolCallDisplay): WebSearchData |
 export function extractNavisData(toolCall: ToolCallDisplay): NavisData | null {
   try {
     const screenshots: Screenshot[] = [];
+    const addedBase64 = new Set<string>();
 
-    // Handle different screenshot data formats
+    const addScreenshot = (base64: string, timestamp: number, seq: number) => {
+      if (!base64) return;
+      
+      // Clean up base64 in case it has prefix like data:image/png;base64,
+      let cleanBase64 = base64;
+      if (cleanBase64.startsWith('data:image')) {
+        const commaIndex = cleanBase64.indexOf(',');
+        if (commaIndex !== -1) {
+          cleanBase64 = cleanBase64.substring(commaIndex + 1);
+        }
+      }
+      
+      if (!addedBase64.has(cleanBase64)) {
+        addedBase64.add(cleanBase64);
+        screenshots.push({
+          base64: cleanBase64,
+          timestamp,
+          sequenceNumber: seq
+        });
+      }
+    };
+
+    // 1. Handle toolCall.data.screenshots (array of screenshot objects or strings)
+    if (toolCall.data?.screenshots && Array.isArray(toolCall.data.screenshots)) {
+      toolCall.data.screenshots.forEach((s: any, index: number) => {
+        if (s && typeof s === 'object' && s.base64) {
+          addScreenshot(s.base64, s.timestamp || toolCall.timestamp || Date.now(), s.sequenceNumber !== undefined ? s.sequenceNumber : index);
+        } else if (typeof s === 'string') {
+          addScreenshot(s, toolCall.timestamp || Date.now(), index);
+        }
+      });
+    }
+
+    // 2. Handle toolCall.data.screenshot (single string or array of strings)
     if (toolCall.data?.screenshot) {
       const screenshot = toolCall.data.screenshot;
       if (typeof screenshot === 'string') {
-        screenshots.push({
-          base64: screenshot,
-          timestamp: toolCall.timestamp || Date.now(),
-          sequenceNumber: 0
-        });
+        addScreenshot(screenshot, toolCall.timestamp || Date.now(), screenshots.length);
       } else if (Array.isArray(screenshot)) {
         screenshot.forEach((img, index) => {
           if (typeof img === 'string') {
-            screenshots.push({
-              base64: img,
-              timestamp: toolCall.timestamp || Date.now(),
-              sequenceNumber: index
-            });
+            addScreenshot(img, toolCall.timestamp || Date.now(), screenshots.length);
           }
         });
       }
     }
 
-    // Handle base64Image field
+    // 3. Handle base64Image field
     if (toolCall.data?.base64Image && typeof toolCall.data.base64Image === 'string') {
-      screenshots.push({
-        base64: toolCall.data.base64Image,
-        timestamp: toolCall.timestamp || Date.now(),
-        sequenceNumber: screenshots.length
-      });
+      addScreenshot(toolCall.data.base64Image, toolCall.timestamp || Date.now(), screenshots.length);
     }
 
     return {

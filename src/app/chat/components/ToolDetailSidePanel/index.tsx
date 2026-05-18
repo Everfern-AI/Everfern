@@ -14,6 +14,7 @@ import WebSearchResultsView from './WebSearchResultsView';
 import NavisScreenshotView from './NavisScreenshotView';
 import TerminalOutputView from './TerminalOutputView';
 import GenericToolView from './GenericToolView';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 /**
  * Tool data cache with TTL
@@ -133,17 +134,19 @@ export default function ToolDetailSidePanel({
   const renderContent = () => {
     if (isLoading) {
       return (
-        <div className="flex flex-col items-center justify-center py-12 px-4">
-          <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin mb-4" />
-          <p className="text-gray-600">Loading tool details...</p>
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+          <Loader2 className="w-7 h-7 text-blue-500 animate-spin mb-3" />
+          <p className="text-sm font-semibold text-gray-700">Loading details…</p>
         </div>
       );
     }
 
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center py-12 px-4 bg-red-50 rounded-lg">
-          <p className="text-red-600 text-center">{error}</p>
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-red-50/50 border border-red-100 rounded-2xl mx-4 my-6">
+          <AlertCircle className="w-8 h-8 text-red-500 mb-3" />
+          <p className="text-sm font-semibold text-red-800">{error}</p>
+          <p className="text-xs text-red-500 mt-1">Please try opening the details panel again.</p>
         </div>
       );
     }
@@ -213,7 +216,7 @@ export default function ToolDetailSidePanel({
           {/* Panel */}
           <motion.div
             ref={panelRef}
-            className="fixed right-0 top-0 bottom-0 w-full lg:w-96 bg-white shadow-lg lg:shadow-none lg:border-l lg:border-gray-200 flex flex-col z-50 lg:z-auto lg:relative lg:bottom-auto"
+            className="fixed right-0 top-0 bottom-0 w-full lg:w-[600px] xl:w-[700px] bg-white lg:border-l lg:border-gray-200 flex flex-col z-50 lg:z-auto lg:relative lg:bottom-auto overflow-hidden"
             role="complementary"
             aria-label="Tool execution details"
             aria-hidden={!isOpen}
@@ -221,7 +224,7 @@ export default function ToolDetailSidePanel({
             initial={{ x: '100%', opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
           >
             {/* Header */}
             {toolCall && (
@@ -233,11 +236,12 @@ export default function ToolDetailSidePanel({
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 bg-white flex flex-col overflow-hidden">
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
+                className="flex-1 flex flex-col h-full"
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.2 }}
+                transition={{ delay: 0.08, duration: 0.18 }}
               >
                 {renderContent()}
               </motion.div>

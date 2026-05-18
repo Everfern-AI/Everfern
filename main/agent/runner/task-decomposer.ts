@@ -20,12 +20,79 @@ export interface TaskAnalysis {
     requiresCommandExecution: boolean;
 }
 
+// ── Robust JSON Extraction Helpers ───────────────────────────────────────
+
+/**
+ * Strips common LLM wrappers from response text:
+ * - <thinking>...</thinking> blocks (Claude extended thinking)
+ * - markdown code fences (```json ... ```)
+ * - plain backtick fences (``` ... ```)
+ */
+function stripLLMWrappers(raw: string): string {
+    let text = raw.trim();
+
+    // Remove <thinking>...</thinking> (Claude extended thinking mode)
+    text = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+
+    // Remove markdown json code fence: ```json ... ``` or ``` ... ```
+    const jsonFenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (jsonFenceMatch) {
+        return jsonFenceMatch[1].trim();
+    }
+
+    return text;
+}
+
+/**
+ * Extracts a JSON object { ... } from text robustly.
+ */
+function extractJSONObject(text: string): string | null {
+    const cleaned = stripLLMWrappers(text);
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+        return cleaned.substring(firstBrace, lastBrace + 1);
+    }
+    return null;
+}
+
+/**
+ * Extracts a JSON array [ ... ] from text robustly.
+ * Strategy 1: Try in fence-stripped text.
+ * Strategy 2: Fall back to raw bracket scan (handles prose-wrapped output).
+ */
+function extractJSONArray(text: string): string | null {
+    const cleaned = stripLLMWrappers(text);
+
+    // Strategy 1: Try to find array in fence-stripped text
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
+        const candidate = cleaned.substring(firstBracket, lastBracket + 1);
+        try {
+            const parsed = JSON.parse(candidate);
+            if (Array.isArray(parsed)) return candidate;
+        } catch {
+            // fall through to strategy 2
+        }
+    }
+
+    // Strategy 2: Scan raw text for array (covers surrounding prose edge cases)
+    const rawFirstBracket = text.indexOf('[');
+    const rawLastBracket = text.lastIndexOf(']');
+    if (rawFirstBracket !== -1 && rawLastBracket !== -1 && rawLastBracket >= rawFirstBracket) {
+        return text.substring(rawFirstBracket, rawLastBracket + 1);
+    }
+
+    return null;
+}
+
 // ── AI-powered Task Analysis ──────────────────────────────────────────────
 
 async function analyzeTaskWithAI(userInput: string, client: AIClient): Promise<TaskAnalysis> {
     const prompt = `Analyze this user request and respond with ONLY valid JSON (no markdown, no explanation):
 
-{"complexity":"simple|moderate|complex","taskType":"coding|research|build|fix|analyze|automate|task|conversation","entities":["subject1"],"canParallelize":true|false,"suggestedApproach":"sequential|parallel|hybrid","estimatedSteps":1-10,"requiresExternalData":true|false,"requiresFileOps":true|false,"requiresCommandExecution":true|false}
+{"complexity":"simple|moderate|complex","taskType":"coding|research|build|fix|analyze|automate|task|conversation","entities":["subject1"],"canParallelize":true,"suggestedApproach":"sequential|parallel|hybrid","estimatedSteps":3,"requiresExternalData":true,"requiresFileOps":false,"requiresCommandExecution":false}
 
 User request: "${userInput.slice(0, 500)}"
 
@@ -40,11 +107,8 @@ Respond with ONLY the JSON object, nothing else.`;
 
         const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
 
-        // Direct parse - expect clean JSON from prompt
-        const firstBrace = rawContent.indexOf('{');
-        const lastBrace = rawContent.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-            const jsonStr = rawContent.substring(firstBrace, lastBrace + 1);
+        const jsonStr = extractJSONObject(rawContent);
+        if (jsonStr) {
             const parsed = JSON.parse(jsonStr);
             return {
                 complexity: parsed.complexity || 'moderate',
@@ -59,7 +123,7 @@ Respond with ONLY the JSON object, nothing else.`;
             };
         }
 
-        throw new Error('No JSON found in response');
+        throw new Error('No JSON object found in response');
     } catch (err) {
         console.warn(`[TaskDecomposer] analyzeTaskWithAI failed: ${err instanceof Error ? err.message : String(err)}`);
         // Fallback to moderate for ambiguous cases
@@ -85,8 +149,8 @@ async function generateStepsWithAI(userInput: string, analysis: TaskAnalysis, av
     const prompt = `Decompose this task into execution steps. Respond with ONLY a JSON array, nothing else:
 
 [
-  {"id":"step_1","title":"Concise Step Title","description":"...","tool":"tool_name","dependsOn":[],"canParallelize":false,"estimatedComplexity":"low|medium|high","priority":"normal|critical"},
-  {"id":"step_2","title":"Concise Step Title","description":"...","tool":"tool_name","dependsOn":["step_1"],"canParallelize":false,"estimatedComplexity":"medium","priority":"normal"}
+  {"id":"step_1","title":"Step Title","description":"What to do","tool":"tool_name","dependsOn":[],"canParallelize":false,"estimatedComplexity":"low|medium|high","priority":"normal|critical"},
+  {"id":"step_2","title":"Step Title","description":"What to do","tool":"tool_name","dependsOn":["step_1"],"canParallelize":false,"estimatedComplexity":"medium","priority":"normal"}
 ]
 
 Task: "${userInput.slice(0, 500)}"
@@ -94,7 +158,7 @@ Task Type: ${analysis.taskType}
 Approach: ${analysis.suggestedApproach}
 Available Tools: ${toolList}
 
-Respond with ONLY the JSON array, no markdown, no explanation.`;
+Respond with ONLY the JSON array. No markdown fences, no explanation, no preamble.`;
 
     try {
         const response = await client.chat({
@@ -105,11 +169,8 @@ Respond with ONLY the JSON array, no markdown, no explanation.`;
 
         const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
 
-        // Direct extraction
-        const firstBracket = rawContent.indexOf('[');
-        const lastBracket = rawContent.lastIndexOf(']');
-        if (firstBracket !== -1 && lastBracket !== -1 && lastBracket >= firstBracket) {
-            const jsonStr = rawContent.substring(firstBracket, lastBracket + 1);
+        const jsonStr = extractJSONArray(rawContent);
+        if (jsonStr) {
             const steps = JSON.parse(jsonStr);
             if (Array.isArray(steps) && steps.length > 0) {
                 return steps;

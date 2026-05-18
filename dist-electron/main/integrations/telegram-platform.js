@@ -288,7 +288,7 @@ class TelegramPlatform extends platform_interface_1.MessagePlatform {
             // Extract bold text (**text**)
             let boldIndex = 0;
             formatted = formatted.replace(boldPattern, (match, content) => {
-                const placeholder = `__BOLD_${boldIndex}__`;
+                const placeholder = `@@BOLD${boldIndex}@@`;
                 boldMatches.push({ placeholder, content });
                 boldIndex++;
                 return placeholder;
@@ -296,7 +296,7 @@ class TelegramPlatform extends platform_interface_1.MessagePlatform {
             // Extract italic text (*text*)
             let italicIndex = 0;
             formatted = formatted.replace(italicPattern, (match, content) => {
-                const placeholder = `__ITALIC_${italicIndex}__`;
+                const placeholder = `@@ITALIC${italicIndex}@@`;
                 italicMatches.push({ placeholder, content });
                 italicIndex++;
                 return placeholder;
@@ -304,7 +304,7 @@ class TelegramPlatform extends platform_interface_1.MessagePlatform {
             // Extract code text (`text`)
             let codeIndex = 0;
             formatted = formatted.replace(codePattern, (match, content) => {
-                const placeholder = `__CODE_${codeIndex}__`;
+                const placeholder = `@@CODE${codeIndex}@@`;
                 codeMatches.push({ placeholder, content });
                 codeIndex++;
                 return placeholder;

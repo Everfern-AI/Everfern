@@ -290,6 +290,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const isLs = isTerminal && typeof cmdStr === 'string' && cmdStr.trim().startsWith('ls');
     const isRead = tc.toolName === 'read_file' || tc.toolName === 'read' || tc.toolName === 'view_file' || tc.toolName === 'cat';
     const isFind = tc.toolName === 'find_files' || tc.toolName === 'find' || tc.toolName === 'search_docs' || tc.toolName === 'web_search' || tc.toolName === 'remote_web_search' || tc.toolName === 'search' || tc.toolName === 'grep';
+    const isBrowser = tc.toolName === 'navis' || tc.toolName === 'browser' || tc.toolName === 'computer_use';
 
     let iconToDisplay = tc.icon;
     if (!iconToDisplay || (React.isValidElement(iconToDisplay) && (iconToDisplay.type === Cog6ToothIcon || iconToDisplay.type === Cog8ToothIcon))) {
@@ -297,12 +298,14 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
             iconToDisplay = <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" width="16" height="16"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" /></svg>;
         } else if (isRead) {
             iconToDisplay = <DocumentTextIcon width={16} height={16} />;
+        } else if (isBrowser) {
+            iconToDisplay = <img src="/assets/tool-browser.svg" className="w-4 h-4 opacity-75" alt="Browser" />;
         } else if (isFind) {
-            iconToDisplay = <MagnifyingGlassIcon width={16} height={16} />;
+            iconToDisplay = <img src="/assets/tool-search.svg" className="w-4 h-4 opacity-75" alt="Search" />;
         } else if (isTerminal) {
-            iconToDisplay = <CommandLineIcon width={16} height={16} />;
+            iconToDisplay = <img src="/assets/tool-terminal.svg" className="w-4 h-4 opacity-75" alt="Terminal" />;
         } else {
-            iconToDisplay = <Cog6ToothIcon width={16} height={16} />;
+            iconToDisplay = <img src="/assets/tool-generic.svg" className="w-4 h-4 opacity-75" alt="Generic" />;
         }
     }
 
@@ -393,11 +396,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 {/* Status Icon / Globe for Search */}
                 <div className="flex items-center justify-center w-4 h-4 bg-white">
                     {isSearchTool ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                            <path d="M2 12h20" />
-                        </svg>
+                        <img src="/assets/tool-search.svg" className="w-[18px] h-[18px] opacity-75" alt="Search" />
                     ) : statusIcon}
                 </div>
 
@@ -464,7 +463,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                             {queries.map((q, i) => (
                                                 <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-default transition-all duration-150 hover:bg-[#e5e7eb]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
-                                                    <MagnifyingGlassIcon width={14} height={14} color="#6b7280" strokeWidth={2.5} />
+                                                    <img src="/assets/tool-search.svg" className="w-3.5 h-3.5 opacity-70" alt="Search" />
                                                     {q}
                                                 </div>
                                             ))}
