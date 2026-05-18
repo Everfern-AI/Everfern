@@ -186,6 +186,7 @@ class NavisOrchestrator {
                         elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
                         lastUrl = url;
                         console.log('[Navis] Vision mode: screenshot captured successfully');
+                        this.logger.screenshot(steps, maxSteps, screenshotB64);
                     }
                     catch (err) {
                         // Vision mode screenshot timeout - ask AI what happened and return gracefully

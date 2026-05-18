@@ -252,6 +252,7 @@ export class NavisOrchestrator {
             lastUrl = url;
 
             console.log('[Navis] Vision mode: screenshot captured successfully');
+            this.logger.screenshot(steps, maxSteps, screenshotB64);
           } catch (err) {
             // Vision mode screenshot timeout - ask AI what happened and return gracefully
             const errMsg = err instanceof Error ? err.message : String(err);

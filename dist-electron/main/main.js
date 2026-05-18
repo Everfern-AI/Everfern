@@ -86,6 +86,7 @@ const electron_2 = require("electron");
 const chat_vectors_1 = require("./store/chat-vectors");
 const context_engine_1 = require("./context-engine");
 const vector_1 = require("./context-engine/vector");
+const electron_3 = require("electron");
 const skills_sync_1 = require("./lib/skills-sync");
 const registry_1 = require("./agent/tools/terminal/registry");
 const prompt_sync_1 = require("./lib/prompt-sync");
@@ -336,6 +337,20 @@ function createWindow() {
     });
     mainWindow.webContents.on('did-finish-load', () => {
         console.log('[Window] Page finished loading');
+    });
+    // Open external links in default browser
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith('http')) {
+            electron_3.shell.openExternal(url);
+            return { action: 'deny' };
+        }
+        return { action: 'allow' };
+    });
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (url.startsWith('http') && !url.includes('localhost')) {
+            event.preventDefault();
+            electron_3.shell.openExternal(url);
+        }
     });
     mainWindow.on('closed', () => {
         console.log('[Window] Window closed');

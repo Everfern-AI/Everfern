@@ -134,8 +134,9 @@ export class ChatHistoryStore {
         role: row.role as any,
         content: row.content,
         thought: row.thought,
-        reasoning_content: row.thought, // Restore reasoning_content from thought column
+        reasoning_content: row.reasoning_content || row.thought, // Use reasoning_content if available, fallback to thought
         toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+        missionTimeline: row.mission_timeline ? JSON.parse(row.mission_timeline) : undefined,
         hasTimeline: !!row.has_timeline,
       }));
 
@@ -194,15 +195,17 @@ export class ChatHistoryStore {
         const msgId = msg.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         await dbOps.run(
           `INSERT OR REPLACE INTO messages
-           (id, conversation_id, role, content, thought, tool_calls, has_timeline, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
+           (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, has_timeline, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
           [
             msgId,
             conversation.id,
             msg.role,
             typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-            msg.thought || msg.reasoning_content || null,
+            msg.thought || null,
+            msg.reasoning_content || null,
             msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+            (msg as any).missionTimeline ? JSON.stringify((msg as any).missionTimeline) : null,
             msg.hasTimeline ? 1 : 0,
             msgId,
             new Date().toISOString()

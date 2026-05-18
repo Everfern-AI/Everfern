@@ -36,6 +36,7 @@ export interface Message {
     generatedTitle?: string;
     planSteps?: Array<{ id: string; title?: string; description: string; tool?: string }> | null;
     planTitle?: string | null;
+    missionTimeline?: any;
 }
 
 export interface FileAttachment {

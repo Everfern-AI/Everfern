@@ -69,7 +69,9 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
       role TEXT NOT NULL,
       content TEXT,
       thought TEXT,
+      reasoning_content TEXT,
       tool_calls TEXT, -- JSON string
+      mission_timeline TEXT, -- JSON string
       has_timeline BOOLEAN DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -140,7 +142,9 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
       if (!err && columns) {
         const requiredColumns = [
           { name: 'thought', type: 'TEXT' },
+          { name: 'reasoning_content', type: 'TEXT' },
           { name: 'tool_calls', type: 'TEXT' },
+          { name: 'mission_timeline', type: 'TEXT' },
           { name: 'has_timeline', type: 'BOOLEAN DEFAULT 0' }
         ];
 

@@ -933,10 +933,12 @@ export default function ChatPage() {
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
+                            reasoning_content: streamingThoughtRef.current,
                             thinkingDuration: durationMs,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
+                            missionTimeline: missionTimeline,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
@@ -986,10 +988,12 @@ export default function ChatPage() {
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
+                            reasoning_content: streamingThoughtRef.current,
                             thinkingDuration: durationMs,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
+                            missionTimeline: missionTimeline,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
@@ -1016,10 +1020,12 @@ export default function ChatPage() {
                         role: "assistant",
                         content: finalContent,
                         thought: finalThought,
+                        reasoning_content: streamingThoughtRef.current,
                         thinkingDuration: durationMs,
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         generatedTitle: title,
+                        missionTimeline: missionTimeline,
                     };
                     setStreamingContent("");
                     setStreamingThought("");
@@ -1428,9 +1434,11 @@ export default function ChatPage() {
                 role: m.role,
                 content: m.content,
                 thought: m.thought,
+                reasoning_content: m.reasoning_content,
                 thinkingDuration: m.thinkingDuration,
                 stopped: m.stopped, // Preserve stopped flag
-                toolCalls: m.toolCalls ? m.toolCalls.map(({ icon, ...rest }) => rest) : undefined
+                toolCalls: m.toolCalls ? m.toolCalls.map(({ icon, ...rest }) => rest) : undefined,
+                missionTimeline: m.missionTimeline
             })),
             provider: config?.provider || "everfern",
             projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
@@ -1709,8 +1717,10 @@ export default function ChatPage() {
                                     role: "assistant",
                                     content: accumulated || "I have created an execution plan for your request.",
                                     thought: streamingThoughtRef.current,
+                                    reasoning_content: streamingThoughtRef.current,
                                     timestamp: new Date(),
-                                    toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
+                                    toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                                    missionTimeline: missionTimeline,
                                 };
                                 setMessages(prev => {
                                     // Prevent duplicate message if the last message is identical
@@ -1766,7 +1776,16 @@ export default function ChatPage() {
                     // Save any accumulated AI response before showing plan
                     if (accumulated || streamingThoughtRef.current) {
                         const finalToolCalls = liveToolCallsRef.current.map(t => t.status === 'running' ? { ...t, status: 'done' as const } : t);
-                        const assistantMsg: Message = { id: crypto.randomUUID(), role: "assistant", content: accumulated || "", thought: streamingThoughtRef.current, timestamp: new Date(), toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined };
+                        const assistantMsg: Message = {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            content: accumulated || "",
+                            thought: streamingThoughtRef.current,
+                            reasoning_content: streamingThoughtRef.current,
+                            timestamp: new Date(),
+                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                            missionTimeline: missionTimeline,
+                        };
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
                             if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content) {
@@ -1935,9 +1954,11 @@ export default function ChatPage() {
                                 role: "assistant",
                                 content: cleanContent || "",
                                 thought: finalThought,
+                                reasoning_content: streamingThoughtRef.current,
                                 timestamp: new Date(),
                                 toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                                 stopped: wasStopped,
+                                missionTimeline: missionTimeline,
                             };
 
                             setStreamingContent("");
@@ -1998,7 +2019,16 @@ export default function ChatPage() {
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 api?.removeStreamListeners?.();
                 const finalToolCalls = liveToolCallsRef.current.map(t => t.status === 'running' ? { ...t, status: 'error' as const } : t);
-                const assistantMsg: Message = { id: crypto.randomUUID(), role: "assistant", content: streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`, thought: streamingThoughtRef.current, toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined, timestamp: new Date() };
+                const assistantMsg: Message = {
+                    id: crypto.randomUUID(),
+                    role: "assistant",
+                    content: streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`,
+                    thought: streamingThoughtRef.current,
+                    reasoning_content: streamingThoughtRef.current,
+                    toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                    timestamp: new Date(),
+                    missionTimeline: missionTimeline,
+                };
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
                     if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content) {
@@ -2190,8 +2220,10 @@ export default function ChatPage() {
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
+                            reasoning_content: streamingThoughtRef.current,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                            missionTimeline: missionTimeline,
                         };
 
                         setStreamingContent("");
@@ -2557,9 +2589,11 @@ export default function ChatPage() {
                         role: "assistant",
                         content: stoppedContent,
                         thought: streamingThought || undefined,
+                        reasoning_content: streamingThought || undefined,
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         stopped: true, // Mark as stopped by user
+                        missionTimeline: missionTimeline,
                     };
 
                     setMessages(prev => {
@@ -3242,7 +3276,7 @@ export default function ChatPage() {
                                                                 currentNode={currentNode}
                                                                 subAgentProgress={subAgentProgress}
                                                                 generatedTitle={msg.generatedTitle}
-                                                                missionTimeline={missionTimeline}
+                                                                missionTimeline={msg.missionTimeline || missionTimeline}
                                                                 onPillClick={handlePillClick}
                                                             />
                                                         </div>

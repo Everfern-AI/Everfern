@@ -16,10 +16,8 @@ import {
     PencilSquareIcon,
     CubeTransparentIcon,
     WrenchScrewdriverIcon,
-    ClockIcon,
 } from "@heroicons/react/24/outline";
 
-import { Loader } from "./ui/animated-loading-svg-text-shimmer";
 import type { SubAgentProgressEvent } from "@/app/chat/types";
 import type { MissionTimeline as MissionTimelineType, MissionStep } from "./MissionTimeline";
 
@@ -58,10 +56,9 @@ interface AgentTimelineProps {
     isDebating?: boolean;
     missionTimeline?: MissionTimelineType | null;
     onPillClick?: (tc: ToolCallDisplay) => void;
-    reasoningContent?: string;
 }
 
-// ── Internal step names to hide (orchestration internals) ──────────────────────
+// ── Internal step names to hide ────────────────────────────────────────────────
 const HIDDEN_STEP_NAMES = new Set([
     "analyzing intent",
     "decomposer",
@@ -83,26 +80,80 @@ const isHiddenStep = (step: MissionStep): boolean => {
     return (
         HIDDEN_STEP_NAMES.has(name) ||
         HIDDEN_STEP_NAMES.has(id) ||
-        name.startsWith("step:") && HIDDEN_STEP_NAMES.has(name.replace("step:", ""))
+        (name.startsWith("step:") && HIDDEN_STEP_NAMES.has(name.replace("step:", "")))
     );
 };
 
-// ── Tool Icon ──────────────────────────────────────────────────────────────────
-const getToolIcon = (toolName: string, size = 13): React.ReactNode => {
+// ── Tool meta (icon + container shape) ────────────────────────────────────────
+type IconShape = "circle" | "square";
+
+const getToolMeta = (toolName: string, size = 13): { icon: React.ReactNode; shape: IconShape } => {
     const n = toolName.toLowerCase();
     const s = { width: size, height: size, flexShrink: 0 as const };
-    if (n.includes("search") || n.includes("find") || n.includes("query")) return <MagnifyingGlassIcon style={s} />;
-    if (n.includes("browse") || n.includes("visit") || n.includes("web") || n.includes("navis") || n.includes("url")) return <GlobeAltIcon style={s} />;
-    if (n.includes("bash") || n.includes("command") || n.includes("terminal") || n.includes("shell") || n.includes("exec")) return <CommandLineIcon style={s} />;
-    if (n.includes("write") || n.includes("create") || n.includes("save") || n.includes("artifact")) return <DocumentTextIcon style={s} />;
-    if (n.includes("read") || n.includes("open") || n.includes("load")) return <FolderOpenIcon style={s} />;
-    if (n.includes("edit") || n.includes("update") || n.includes("modify") || n.includes("patch")) return <PencilSquareIcon style={s} />;
-    if (n.includes("code") || n.includes("python") || n.includes("js")) return <CodeBracketIcon style={s} />;
-    if (n.includes("image") || n.includes("screenshot") || n.includes("photo")) return <PhotoIcon style={s} />;
-    if (n.includes("computer") || n.includes("mouse") || n.includes("click")) return <CpuChipIcon style={s} />;
-    if (n.includes("spawn") || n.includes("agent") || n.includes("sub")) return <CubeTransparentIcon style={s} />;
-    return <WrenchScrewdriverIcon style={s} />;
+
+    if (n.includes("search") || n.includes("find") || n.includes("query"))
+        return { icon: <MagnifyingGlassIcon style={s} />, shape: "circle" };
+
+    if (n.includes("browse") || n.includes("visit") || n.includes("web") || n.includes("navis") || n.includes("url"))
+        return { icon: <GlobeAltIcon style={s} />, shape: "square" };
+
+    if (n.includes("bash") || n.includes("command") || n.includes("terminal") || n.includes("shell") || n.includes("exec"))
+        return { icon: <CommandLineIcon style={s} />, shape: "square" };
+
+    if (n.includes("write") || n.includes("create") || n.includes("save") || n.includes("artifact"))
+        return { icon: <DocumentTextIcon style={s} />, shape: "square" };
+
+    if (n.includes("read") || n.includes("open") || n.includes("load"))
+        return { icon: <FolderOpenIcon style={s} />, shape: "square" };
+
+    if (n.includes("edit") || n.includes("update") || n.includes("modify") || n.includes("patch"))
+        return { icon: <PencilSquareIcon style={s} />, shape: "square" };
+
+    if (n.includes("code") || n.includes("python") || n.includes("js"))
+        return { icon: <CodeBracketIcon style={s} />, shape: "square" };
+
+    if (n.includes("image") || n.includes("screenshot") || n.includes("photo"))
+        return { icon: <PhotoIcon style={s} />, shape: "square" };
+
+    if (n.includes("computer") || n.includes("mouse") || n.includes("click"))
+        return { icon: <CpuChipIcon style={s} />, shape: "square" };
+
+    if (n.includes("spawn") || n.includes("agent") || n.includes("sub"))
+        return { icon: <CubeTransparentIcon style={s} />, shape: "square" };
+
+    return { icon: <WrenchScrewdriverIcon style={s} />, shape: "square" };
 };
+
+// ── Gallium icon container ─────────────────────────────────────────────────────
+const IconContainer = ({
+    icon,
+    shape,
+}: {
+    icon: React.ReactNode;
+    shape: IconShape;
+}) => (
+    <div
+        style={{
+            width: 24,
+            height: 24,
+            flexShrink: 0,
+            borderRadius: shape === "circle" ? "50%" : 7,
+            background: "#d3d3d0",
+            boxShadow: [
+                "inset 0 1px 0 rgba(255,255,255,0.70)",
+                "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                "inset 1px 0 rgba(255,255,255,0.45)",
+                "inset -1px 0 rgba(0,0,0,0.04)",
+            ].join(", "),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#555",
+        }}
+    >
+        {icon}
+    </div>
+);
 
 // ── Step Status Icon ───────────────────────────────────────────────────────────
 const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
@@ -126,7 +177,7 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
                     style={{
                         width: 20, height: 20, borderRadius: "50%",
                         border: "2px solid #e0e0e0",
-                        borderTopColor: "#9e9e9e",
+                        borderTopColor: "#111",
                         position: "absolute", inset: 0,
                     }}
                     animate={{ rotate: 360 }}
@@ -158,7 +209,9 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
 // ── Tool Pill ──────────────────────────────────────────────────────────────────
 const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }) => {
     const isRunning = tc.status === "running";
+    const isDone = tc.status === "done";
     const label = tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool");
+    const { icon, shape } = getToolMeta(tc.toolName);
 
     const desc = (() => {
         if (tc.args?.query) return String(tc.args.query);
@@ -171,6 +224,19 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
         return label;
     })();
 
+    // Gallium surface: layered inset shadows simulate liquid-metal light physics
+    const galliumSurface = {
+        background: "#ececea",
+        boxShadow: [
+            "inset 0 1px 0 rgba(255,255,255,0.72)",
+            "inset 0 -1px 0 rgba(0,0,0,0.06)",
+            "inset 1px 0 rgba(255,255,255,0.50)",
+            "inset -1px 0 rgba(0,0,0,0.04)",
+            "0 1px 3px rgba(0,0,0,0.07)",
+        ].join(", "),
+        border: "0.5px solid rgba(0,0,0,0.10)",
+    } as const;
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 3 }}
@@ -180,38 +246,49 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
             style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 7,
-                padding: "6px 12px",
-                background: "#f5f5f5",
-                border: "1px solid #e8e8e8",
-                borderRadius: 7,
+                gap: 10,
+                padding: "7px 14px 7px 8px",
+                borderRadius: 14,
                 cursor: onClick ? "pointer" : "default",
                 fontSize: 12.5,
-                color: "#444",
+                color: isDone ? "#aaa" : "#333",
                 lineHeight: 1.4,
                 marginBottom: 4,
                 position: "relative",
                 overflow: "hidden",
+                ...galliumSurface,
             }}
         >
-            <span style={{ color: "#888", flexShrink: 0 }}>
-                {getToolIcon(tc.toolName)}
-            </span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+            <IconContainer icon={icon} shape={shape} />
+
+            <span style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flex: 1,
+            }}>
                 {desc}
             </span>
+
             {isRunning && (
                 <motion.span
-                    style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }}
-                    animate={{ opacity: [1, 0.4, 1] }}
+                    style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "#22c55e",
+                        flexShrink: 0,
+                    }}
+                    animate={{ opacity: [1, 0.35, 1] }}
                     transition={{ repeat: Infinity, duration: 1.2 }}
                 />
             )}
+
             {isRunning && (
                 <motion.div
                     style={{
                         position: "absolute", inset: 0,
-                        background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
+                        background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.42) 50%, transparent 100%)",
                         pointerEvents: "none",
                     }}
                     animate={{ x: ["-100%", "100%"] }}
@@ -245,7 +322,6 @@ const MissionStepRow = ({
 
     const hasContent = toolCalls.length > 0 || !!step.description || !!step.result;
 
-    // Premium Truncation + Sentence Case for titles
     const rawName = step.name.charAt(0).toUpperCase() + step.name.slice(1);
     const displayName = rawName.length > 45 ? rawName.slice(0, 42) + "..." : rawName;
 
@@ -269,7 +345,6 @@ const MissionStepRow = ({
                 <span style={{
                     fontSize: 13, fontWeight: isActive ? 600 : 500,
                     color: isDone ? "#9ca3af" : isActive ? "#111827" : "#9ca3af",
-                    textDecoration: isDone ? "none" : "none",
                     flex: 1, letterSpacing: "-0.01em",
                 }}>
                     {displayName}
@@ -305,12 +380,12 @@ const MissionStepRow = ({
                             paddingLeft: 24,
                             paddingBottom: 10,
                             marginLeft: 6,
-                            borderLeft: "1px solid #f3f4f6"
+                            borderLeft: "1px solid #f3f4f6",
                         }}>
                             {step.description && (
                                 <p style={{
                                     fontSize: 12, color: "#6b7280", lineHeight: 1.6,
-                                    margin: "4px 0 10px", fontWeight: 400
+                                    margin: "4px 0 10px", fontWeight: 400,
                                 }}>
                                     {step.description}
                                 </p>
@@ -341,7 +416,7 @@ const MissionStepRow = ({
                                         ))}
                                     </div>
 
-                                    {isActive && toolCalls.some(tc => tc.status === 'running') && (
+                                    {isActive && toolCalls.some(tc => tc.status === "running") && (
                                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                                             <motion.div
                                                 style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981" }}
@@ -360,7 +435,7 @@ const MissionStepRow = ({
                                 <div style={{
                                     fontSize: 12, color: "#9ca3af", lineHeight: 1.5,
                                     marginTop: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6,
-                                    border: "1px solid #f3f4f6"
+                                    border: "1px solid #f3f4f6",
                                 }}>
                                     {step.result.slice(0, 150)}{step.result.length > 150 ? "…" : ""}
                                 </div>
@@ -404,7 +479,7 @@ const THOUGHT_NOISE_PATTERNS = [
     /\{[\s\n]*"tool_calls"[\s\S]*?\}/gi,
     /\{[\s\n]*"role"[\s\S]*?\}/gi,
     /(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gi,
-    /(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[:\-\s][^\n]*/gi
+    /(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[:\-\s][^\n]*/gi,
 ];
 
 const cleanThought = (text: string): string => {
@@ -421,7 +496,7 @@ const cleanThought = (text: string): string => {
         .trim();
 };
 
-// ── Main AgentTimeline ────────────────────────────────────────────────────────
+// ── Main AgentTimeline ─────────────────────────────────────────────────────────
 export const AgentTimeline = ({
     toolCalls,
     thought,
@@ -429,7 +504,6 @@ export const AgentTimeline = ({
     missionTimeline,
     generatedTitle,
     onPillClick,
-    reasoningContent,
 }: AgentTimelineProps) => {
     // Elapsed time
     const startTime = useRef(new Date());
@@ -444,31 +518,18 @@ export const AgentTimeline = ({
         return () => clearInterval(iv);
     }, [isLive]);
 
-    // Clean narrative
-    const narrative = useMemo(() => {
-        const raw = thought || "";
-        const cleaned = cleanThought(raw);
-        // If the cleaned narrative is just "Thinking..." or similar, treat it as empty
-        // as we'll show a dedicated loader instead.
-        const normalized = cleaned.toLowerCase().replace(/\./g, "").trim();
-        if (normalized === "thinking" || normalized === "thought") return "";
-        return cleaned;
-    }, [thought]);
+    const narrative = useMemo(() => cleanThought(thought || ""), [thought]);
 
-    // Visible user-facing steps (filter internals)
-    const visibleSteps = useMemo(
-        () => {
-            const hiddenNames = [
-                "analyzing intent", "decomposer", "planner", "brain",
-                "web explorer", "data analyst", "coding specialist",
-                "computer use", "execute tools", "multi tool orchestrator"
-            ];
-            return (missionTimeline?.steps || []).filter(s => !hiddenNames.includes(s.name.toLowerCase()));
-        },
-        [missionTimeline]
-    );
-
-    const hasMissionSteps = visibleSteps.length > 0;
+    const visibleSteps = useMemo(() => {
+        const hiddenNames = [
+            "analyzing intent", "decomposer", "planner", "brain",
+            "web explorer", "data analyst", "coding specialist",
+            "computer use", "execute tools", "multi tool orchestrator",
+        ];
+        return (missionTimeline?.steps || []).filter(
+            s => !hiddenNames.includes(s.name.toLowerCase())
+        );
+    }, [missionTimeline]);
 
     // Associate tool calls to steps
     const toolsByStep = useMemo((): Map<string, ToolCallDisplay[]> => {
@@ -493,7 +554,6 @@ export const AgentTimeline = ({
             }
         }
 
-        // Unmatched / no mapping → put under active step
         const assigned = new Set(Array.from(map.values()).flat().map(t => t.id));
         const unmatched = visible.filter(tc => !assigned.has(tc.id));
         if (unmatched.length) {
@@ -509,12 +569,14 @@ export const AgentTimeline = ({
 
     // Orphan tool calls when no steps exist
     const orphanTools = useMemo(
-        () => visibleSteps.length > 0 ? [] :
-            toolCalls.filter(tc => !["create_plan", "update_plan_step"].includes(tc.toolName)),
+        () =>
+            visibleSteps.length > 0
+                ? []
+                : toolCalls.filter(tc => !["create_plan", "update_plan_step"].includes(tc.toolName)),
         [toolCalls, visibleSteps]
     );
 
-    const hasAnything = visibleSteps.length > 0 || orphanTools.length > 0 || narrative || isLive || reasoningContent;
+    const hasAnything = visibleSteps.length > 0 || orphanTools.length > 0 || narrative || isLive;
     if (!hasAnything) return null;
 
     return (
@@ -527,14 +589,14 @@ export const AgentTimeline = ({
             {/* ── Header ────────────────────────────────── */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <div style={{
-                    width: 26, height: 26, borderRadius: 8,
-                    background: "#f5f4f0", border: "1px solid #e8e6d9",
+                    width: 30, height: 30, borderRadius: 8,
+
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 }}>
                     <img
                         src="/images/logos/black-logo-withoutbg.png"
                         alt="EverFern"
-                        width={25} height={25}
+                        width={40} height={40}
                         style={{ objectFit: "contain" }}
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
@@ -550,34 +612,19 @@ export const AgentTimeline = ({
                 )}
             </div>
 
-            {/* ── Narrative / Reasoning ─────────────────── */}
-            <div style={{ marginLeft: 34, marginBottom: 16 }}>
-                {isLive && !narrative && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9ca3af", fontStyle: "italic", fontSize: 13, marginBottom: narrative ? 12 : 0 }}>
-                        <Loader size={14} strokeWidth={2} className="text-zinc-400" />
-                        <span>Thinking...</span>
-                    </div>
-                )}
-                
-                {narrative && (
-                    <motion.p
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        style={{
-                            fontSize: 13.5, lineHeight: 1.65, color: "#374151",
-                            margin: 0, fontWeight: 400,
-                        }}
-                    >
-                        {narrative}
-                    </motion.p>
-                )}
-
-                {!narrative && !isLive && reasoningContent && (
-                    <div style={{ fontSize: 13, color: "#9ca3af", fontStyle: "italic", lineHeight: 1.6 }}>
-                        {reasoningContent.length > 150 ? reasoningContent.slice(0, 150) + "..." : reasoningContent}
-                    </div>
-                )}
-            </div>
+            {/* ── Narrative / overview ──────────────────── */}
+            {narrative && (
+                <motion.p
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                        fontSize: 13.5, lineHeight: 1.65, color: "#374151",
+                        margin: "0 0 16px 34px", fontWeight: 400,
+                    }}
+                >
+                    {narrative}
+                </motion.p>
+            )}
 
             {/* ── Mission Steps ─────────────────────────── */}
             {visibleSteps.length > 0 && (
@@ -607,7 +654,6 @@ export const AgentTimeline = ({
                     ))}
                 </div>
             )}
-
         </motion.div>
     );
 };

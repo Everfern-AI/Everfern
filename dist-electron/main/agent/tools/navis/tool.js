@@ -20,6 +20,7 @@ function mapNavisToProgressType(navisType) {
         case 'wait': return 'step';
         case 'ai_decision': return 'reasoning';
         case 'step_complete': return 'step';
+        case 'screenshot': return 'screenshot';
         case 'task_complete': return 'complete';
         case 'error': return 'abort';
         default: return 'step';
@@ -127,7 +128,7 @@ function createNavisTool(orchestrator) {
                         timestamp: new Date(event.timestamp).toISOString(),
                         stepNumber: event.step,
                         totalSteps: event.maxSteps,
-                        content: event.detail || (progressType === 'reasoning' ? event.action : undefined),
+                        content: event.type === 'screenshot' ? event.base64 : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
                         action: actionPayload,
                         timelineBranch: {
                             agentType: 'navis',

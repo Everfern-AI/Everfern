@@ -9,6 +9,7 @@ export type NavisEventType =
   | 'wait'
   | 'ai_decision'
   | 'step_complete'
+  | 'screenshot'
   | 'task_complete'
   | 'error';
 
@@ -22,6 +23,7 @@ export interface NavisEvent {
   position?: { x: number; y: number };
   url?: string;
   detail?: string;
+  base64?: string;
   timestamp: number;
 }
 
@@ -74,6 +76,9 @@ export class NavisLogger {
       case 'step_complete':
         parts.push(`Step complete → ${event.detail || ''}`);
         break;
+      case 'screenshot':
+        parts.push(`Screenshot captured${event.step !== undefined ? ` (Step ${event.step})` : ''}`);
+        break;
       case 'task_complete':
         parts.push(`Task complete — ${event.detail || ''}`);
         break;
@@ -99,6 +104,7 @@ export class NavisLogger {
   wait(step?: number, maxSteps?: number, detail?: string): void { this.emit({ type: 'wait', step, maxSteps, detail }); }
   aiDecision(step?: number, maxSteps?: number, goal?: string): void { this.emit({ type: 'ai_decision', step, maxSteps, action: goal }); }
   stepComplete(step?: number, maxSteps?: number, result?: string): void { this.emit({ type: 'step_complete', step, maxSteps, detail: result }); }
+  screenshot(step?: number, maxSteps?: number, base64?: string): void { this.emit({ type: 'screenshot', step, maxSteps, base64 }); }
   taskComplete(success: boolean, steps?: number, detail?: string): void { this.emit({ type: 'task_complete', detail: `${success ? 'success' : 'failed'} in ${steps ?? '?'} steps — ${detail || ''}` }); }
   error(detail: string): void { this.emit({ type: 'error', detail }); }
 }

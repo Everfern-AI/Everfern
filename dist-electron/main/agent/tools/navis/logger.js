@@ -47,6 +47,9 @@ class NavisLogger {
             case 'step_complete':
                 parts.push(`Step complete → ${event.detail || ''}`);
                 break;
+            case 'screenshot':
+                parts.push(`Screenshot captured${event.step !== undefined ? ` (Step ${event.step})` : ''}`);
+                break;
             case 'task_complete':
                 parts.push(`Task complete — ${event.detail || ''}`);
                 break;
@@ -72,6 +75,7 @@ class NavisLogger {
     wait(step, maxSteps, detail) { this.emit({ type: 'wait', step, maxSteps, detail }); }
     aiDecision(step, maxSteps, goal) { this.emit({ type: 'ai_decision', step, maxSteps, action: goal }); }
     stepComplete(step, maxSteps, result) { this.emit({ type: 'step_complete', step, maxSteps, detail: result }); }
+    screenshot(step, maxSteps, base64) { this.emit({ type: 'screenshot', step, maxSteps, base64 }); }
     taskComplete(success, steps, detail) { this.emit({ type: 'task_complete', detail: `${success ? 'success' : 'failed'} in ${steps ?? '?'} steps — ${detail || ''}` }); }
     error(detail) { this.emit({ type: 'error', detail }); }
 }
