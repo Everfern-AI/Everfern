@@ -617,7 +617,11 @@ export class AIClient {
       if (last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0)) {
         console.warn('[AIClient] Stripping trailing assistant message for NVIDIA NIM HF template compatibility');
         processedMessages.pop();
+      } else if (last.role === 'tool') {
+        console.warn('[AIClient] Appending user message after tool result for NVIDIA NIM HF template compatibility');
+        processedMessages.push({ role: 'user', content: 'Please proceed with the tool results.' });
       }
+      
       if (processedMessages.length === 0) {
         processedMessages.push({ role: 'user', content: 'Please continue.' });
       }

@@ -14,6 +14,7 @@ const prompt_sync_1 = require("../../../lib/prompt-sync");
 const logger_1 = require("./logger");
 const ai_optimization_1 = require("./ai-optimization");
 const parallel_processing_1 = require("./parallel-processing");
+const abort_manager_1 = require("../../runner/abort-manager");
 // ─────────────────────────────────────────────────────────────────────────────
 // JSON Schema for Navis decision output (strict validation)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +128,15 @@ class NavisOrchestrator {
             let lastGoal = '';
             let goalRepeatCount = 0;
             while (steps < maxSteps) {
+                if (abort_manager_1.globalAbortManager.streamAborted) {
+                    console.log('[Navis] 🛑 Abort signal detected in Navis orchestrator loop');
+                    this.logger.error('Execution aborted by user');
+                    return {
+                        success: false,
+                        output: 'Execution aborted by user',
+                        steps
+                    };
+                }
                 const page = this.session.page;
                 const t1 = Date.now();
                 const url = page.url();

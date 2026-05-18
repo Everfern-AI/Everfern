@@ -79,6 +79,12 @@ class BotIntegrationManager extends events_1.EventEmitter {
      * Register a platform
      */
     registerPlatform(name, platform) {
+        // If a platform with this name already exists, disconnect it first to prevent polling leaks!
+        const existing = this.platforms.get(name);
+        if (existing) {
+            console.log(`[BotManager] Disconnecting existing platform ${name} before registering new one...`);
+            existing.disconnect().catch(err => console.error(`Failed to disconnect existing platform ${name}:`, err));
+        }
         this.platforms.set(name, platform);
         // Set up platform event handlers
         platform.onMessage((message) => this.handleIncomingMessage(message));

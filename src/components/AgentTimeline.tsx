@@ -19,6 +19,7 @@ import {
     ClockIcon,
 } from "@heroicons/react/24/outline";
 
+import { Loader } from "./ui/animated-loading-svg-text-shimmer";
 import type { SubAgentProgressEvent } from "@/app/chat/types";
 import type { MissionTimeline as MissionTimelineType, MissionStep } from "./MissionTimeline";
 
@@ -57,6 +58,7 @@ interface AgentTimelineProps {
     isDebating?: boolean;
     missionTimeline?: MissionTimelineType | null;
     onPillClick?: (tc: ToolCallDisplay) => void;
+    reasoningContent?: string;
 }
 
 // ── Internal step names to hide (orchestration internals) ──────────────────────
@@ -427,6 +429,7 @@ export const AgentTimeline = ({
     missionTimeline,
     generatedTitle,
     onPillClick,
+    reasoningContent,
 }: AgentTimelineProps) => {
     // Elapsed time
     const startTime = useRef(new Date());
@@ -442,7 +445,15 @@ export const AgentTimeline = ({
     }, [isLive]);
 
     // Clean narrative
-    const narrative = useMemo(() => cleanThought(thought || ""), [thought]);
+    const narrative = useMemo(() => {
+        const raw = thought || "";
+        const cleaned = cleanThought(raw);
+        // If the cleaned narrative is just "Thinking..." or similar, treat it as empty
+        // as we'll show a dedicated loader instead.
+        const normalized = cleaned.toLowerCase().replace(/\./g, "").trim();
+        if (normalized === "thinking" || normalized === "thought") return "";
+        return cleaned;
+    }, [thought]);
 
     // Visible user-facing steps (filter internals)
     const visibleSteps = useMemo(
@@ -503,7 +514,7 @@ export const AgentTimeline = ({
         [toolCalls, visibleSteps]
     );
 
-    const hasAnything = visibleSteps.length > 0 || orphanTools.length > 0 || narrative || isLive;
+    const hasAnything = visibleSteps.length > 0 || orphanTools.length > 0 || narrative || isLive || reasoningContent;
     if (!hasAnything) return null;
 
     return (
@@ -539,19 +550,34 @@ export const AgentTimeline = ({
                 )}
             </div>
 
-            {/* ── Narrative / overview ──────────────────── */}
-            {narrative && (
-                <motion.p
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                        fontSize: 13.5, lineHeight: 1.65, color: "#374151",
-                        margin: "0 0 16px", fontWeight: 400,
-                    }}
-                >
-                    {narrative}
-                </motion.p>
-            )}
+            {/* ── Narrative / Reasoning ─────────────────── */}
+            <div style={{ marginLeft: 34, marginBottom: 16 }}>
+                {isLive && !narrative && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9ca3af", fontStyle: "italic", fontSize: 13, marginBottom: narrative ? 12 : 0 }}>
+                        <Loader size={14} strokeWidth={2} className="text-zinc-400" />
+                        <span>Thinking...</span>
+                    </div>
+                )}
+                
+                {narrative && (
+                    <motion.p
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        style={{
+                            fontSize: 13.5, lineHeight: 1.65, color: "#374151",
+                            margin: 0, fontWeight: 400,
+                        }}
+                    >
+                        {narrative}
+                    </motion.p>
+                )}
+
+                {!narrative && !isLive && reasoningContent && (
+                    <div style={{ fontSize: 13, color: "#9ca3af", fontStyle: "italic", lineHeight: 1.6 }}>
+                        {reasoningContent.length > 150 ? reasoningContent.slice(0, 150) + "..." : reasoningContent}
+                    </div>
+                )}
+            </div>
 
             {/* ── Mission Steps ─────────────────────────── */}
             {visibleSteps.length > 0 && (

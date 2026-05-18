@@ -111,30 +111,35 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
 };
 
 // ── Inline Link Component ─────────────────────────────────────────────────────
-export const InlineLink = ({ href, label }: { href: string; label: string }) => {
-    const [showPopup, setShowPopup] = useState(false);
+const InlineLink = ({ href, label }: { href: string, label: string }) => {
+    const openInBrowser = () => {
+        if ((window as any).electronAPI?.system?.openExternal) {
+            (window as any).electronAPI.system.openExternal(href);
+        } else {
+            window.open(href, '_blank', 'noopener,noreferrer');
+        }
+    };
+
     return (
-        <>
-            <span
-                onClick={e => { e.preventDefault(); e.stopPropagation(); setShowPopup(true); }}
-                style={{
-                    color: '#2563eb',
-                    textDecoration: 'underline',
-                    textDecorationColor: 'rgba(37,99,235,0.4)',
-                    textUnderlineOffset: 2,
-                    cursor: 'pointer',
-                    fontWeight: 'inherit',
-                    transition: 'color 0.1s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#1d4ed8'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#2563eb'; }}
-            >
-                {label}
-            </span>
-            {showPopup && <LinkPopup url={href} label={label} onClose={() => setShowPopup(false)} />}
-        </>
+        <span
+            onClick={e => { e.preventDefault(); e.stopPropagation(); openInBrowser(); }}
+            style={{
+                color: '#2563eb',
+                textDecoration: 'underline',
+                textDecorationColor: 'rgba(37,99,235,0.4)',
+                textUnderlineOffset: 2,
+                cursor: 'pointer',
+                fontWeight: 'inherit',
+                transition: 'color 0.1s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#1d4ed8'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#2563eb'; }}
+        >
+            {label}
+        </span>
     );
 };
+
 
 // ── Markdown Renderer ────────────────────────────────────────────────────────
 const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { content: string; isStreaming?: boolean }) => {

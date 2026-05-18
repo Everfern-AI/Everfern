@@ -47,3 +47,6 @@ next-env.d.ts
 gha-creds-*.json
 
 .claude/
+.opencode/
+.vscode/
+.everfern/

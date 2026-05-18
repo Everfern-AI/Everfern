@@ -24,6 +24,7 @@ import {
   ElementPrefetcher,
   ParallelProcessingCoordinator,
 } from './parallel-processing';
+import { globalAbortManager } from '../../runner/abort-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JSON Schema for Navis decision output (strict validation)
@@ -184,6 +185,16 @@ export class NavisOrchestrator {
       let goalRepeatCount = 0;
 
       while (steps < maxSteps) {
+        if (globalAbortManager.streamAborted) {
+            console.log('[Navis] 🛑 Abort signal detected in Navis orchestrator loop');
+            this.logger.error('Execution aborted by user');
+            return {
+                success: false,
+                output: 'Execution aborted by user',
+                steps
+            };
+        }
+
         const page = this.session.page;
         const t1 = Date.now();
         const url = page.url();

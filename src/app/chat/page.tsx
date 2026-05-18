@@ -540,6 +540,8 @@ export default function ChatPage() {
             'global_planner': 'Creating execution plan',
             'planner': 'Compiling execution pipeline',
             'planning': 'Designing approach',
+            'debate_chamber': 'AI agents are debating for you..',
+            'DEBATE_CHAMBER': 'AI agents are debating for you..',
 
             // Execution phase nodes
             'brain': 'Processing with AI',
@@ -2239,8 +2241,12 @@ export default function ChatPage() {
         // Clear live states
         setStreamingContent("");
         setStreamingThought("");
+        streamingContentRef.current = "";
+        streamingThoughtRef.current = "";
+        liveToolCallsRef.current = [];
         setLiveToolCalls([]);
         setStreamingToolCalls([]);
+        streamingToolCallsRef.current = [];
         setSubAgentProgress(new Map());
         setCurrentPhase(undefined);
         setCurrentNode("");
@@ -2269,8 +2275,12 @@ export default function ChatPage() {
                     // Clear live states before loading new conversation
                     setStreamingContent("");
                     setStreamingThought("");
+                    streamingContentRef.current = "";
+                    streamingThoughtRef.current = "";
+                    liveToolCallsRef.current = [];
                     setLiveToolCalls([]);
                     setStreamingToolCalls([]);
+                    streamingToolCallsRef.current = [];
                     setSubAgentProgress(new Map());
                     setCurrentPhase(undefined);
                     setCurrentNode("");
@@ -3226,6 +3236,7 @@ export default function ChatPage() {
                                                                 key={`timeline-${msg.id}`}
                                                                 toolCalls={msg.toolCalls?.filter(tc => tc.toolName !== 'write' && tc.toolName !== 'write_to_file' && tc.toolName !== 'write_file') || []}
                                                                 thought={msg.thought}
+                                                                reasoningContent={msg.reasoning_content}
                                                                 isLive={false}
                                                                 currentPhase={currentPhase}
                                                                 currentNode={currentNode}
@@ -3349,6 +3360,7 @@ export default function ChatPage() {
                                                     key={activeConversationId || 'new'}
                                                     toolCalls={liveToolCalls}
                                                     thought={streamingThought}
+                                                    reasoningContent={undefined}
                                                     isLive={true}
                                                     currentPhase={currentPhase}
                                                     currentNode={currentNode}
@@ -3414,7 +3426,7 @@ export default function ChatPage() {
                                                 })()}
 
                                                 {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && (
-                                                    <LoadingBreadcrumb text={getNodeDisplayName(currentNode)} />
+                                                    <LoadingBreadcrumb text={isDebating ? "AI agents are debating for you.." : getNodeDisplayName(currentNode)} />
                                                 )}
                                                 {(activeUserQuestions.length > 0 || showHitlApproval) && (
                                                     <div style={{
