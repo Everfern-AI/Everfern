@@ -128,31 +128,33 @@ export default function NavisScreenshotView({ screenshots = [], toolName }: Navi
 
   if (safeScreenshots.length === 0) {
     return (
-      <div className="flex flex-col h-full bg-white">
+      <div className="flex flex-col h-full bg-gray-50/30">
         {/* Info banner at top */}
-        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
+        <div className="px-4 py-3 border-b border-gray-150 bg-white">
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
             Browser Session
           </p>
         </div>
 
         {/* Empty state — top-aligned, not vertically centered */}
-        <div className="px-8 pt-16 pb-12 flex flex-col items-center text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center mb-6">
-            <CameraOff className="w-8 h-8 text-gray-400" />
+        <div className="flex-1 flex flex-col justify-between py-6 min-h-0">
+          <div className="px-6 pt-12 pb-8 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-white border border-gray-200/80 flex items-center justify-center mb-4 shadow-sm">
+              <CameraOff className="w-6 h-6 text-gray-400" />
+            </div>
+            <h3 className="text-sm font-semibold text-gray-800 mb-1.5">No screenshots captured</h3>
+            <p className="text-xs text-gray-500 leading-relaxed max-w-[240px]">
+              {toolName} ran successfully but didn't generate any screen captures during this session.
+            </p>
           </div>
-          <h3 className="text-sm font-semibold text-gray-800 mb-2">No screenshots captured</h3>
-          <p className="text-xs text-gray-500 leading-relaxed max-w-[260px]">
-            {toolName} ran successfully but didn't generate any screen captures during this session.
-          </p>
-        </div>
 
-        {/* Hint strip at bottom */}
-        <div className="mx-6 mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-5 py-4 flex items-start gap-4">
-          <Globe className="w-4.5 h-4.5 text-blue-400 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            Screenshots appear here in real-time as the browser agent navigates pages and completes actions.
-          </p>
+          {/* Hint strip at bottom */}
+          <div className="mx-4 rounded-xl border border-dashed border-gray-200 bg-white px-4 py-3 flex items-start gap-3 shadow-sm/50">
+            <Globe className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Screenshots appear here in real-time as the browser agent navigates pages and completes actions.
+            </p>
+          </div>
         </div>
       </div>
     );

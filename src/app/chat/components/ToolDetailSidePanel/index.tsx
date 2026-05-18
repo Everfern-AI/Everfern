@@ -213,10 +213,9 @@ export default function ToolDetailSidePanel({
             aria-hidden="true"
           />
 
-          {/* Panel */}
           <motion.div
             ref={panelRef}
-            className="fixed right-0 top-0 bottom-0 w-full lg:w-[600px] xl:w-[700px] bg-white lg:border-l lg:border-gray-200 flex flex-col z-50 lg:z-auto lg:relative lg:bottom-auto overflow-hidden"
+            className="fixed right-0 top-0 bottom-0 w-full lg:w-[600px] xl:w-[700px] bg-white lg:border-l lg:border-gray-200 flex flex-col z-50 lg:z-auto lg:relative lg:bottom-auto overflow-hidden lg:flex-shrink-0"
             role="complementary"
             aria-label="Tool execution details"
             aria-hidden={!isOpen}
@@ -236,9 +235,9 @@ export default function ToolDetailSidePanel({
             )}
 
             {/* Content */}
-            <div className="flex-1 bg-white flex flex-col overflow-hidden">
+            <div className="flex-1 bg-white flex flex-col overflow-hidden min-h-0">
               <motion.div
-                className="flex-1 flex flex-col h-full"
+                className="flex-1 flex flex-col min-h-0"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.08, duration: 0.18 }}
