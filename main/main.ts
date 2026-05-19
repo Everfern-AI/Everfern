@@ -171,6 +171,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   console.log('[Startup] ⚠️ Already running, quitting...');
   app.quit();
+  process.exit(0);
 } else {
   app.on('second-instance', (event, commandLine) => {
     console.log('[Startup] second-instance received:', commandLine);

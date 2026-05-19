@@ -59,7 +59,6 @@ import PlanViewerPanel from './PlanViewerPanel';
 import TasksPanel from './TasksPanel';
 import ScheduledTasksPanel from './components/ScheduledTasksPanel';
 import { useDebateStream } from './hooks/useDebateStream';
-import { InlineDebateProgress } from './components/InlineDebateProgress';
 import ScheduledTaskModal from './components/ScheduledTaskModal';
 import SitePreview from './SitePreview';
 import SettingsPage from './SettingsPage';
@@ -104,6 +103,8 @@ import { useAutoCollapse } from '../../hooks/use-auto-collapse';
 import type { ToolCallDisplay, Message, FileAttachment, FolderContext, ModelOption, SubAgentProgressEvent, LiveToolCall } from './types/index';
 import type { SurfaceData } from './SurfaceCanvas';
 import { stripAnsi, extractFileArtifacts } from './utils/helpers';
+import type { LocalExecutionRequest, LocalExecutionResponse } from '../../../preload/preload';
+import LocalExecutionPermissionCard from './components/LocalExecutionPermissionCard';
 
 
 
@@ -244,17 +245,17 @@ export default function ChatPage() {
         // Collect any real-time screenshots from subAgentProgress events
         const progressEvents = subAgentProgress.get(tc.id) || [];
         const progressScreenshots = progressEvents
-            .filter(e => e.type === 'screenshot' && e.screenshot?.base64)
-            .map(e => e.screenshot!.base64);
+            .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
+            .map(e => (e.screenshot?.base64 || e.content) as string);
 
         // Combine static screenshot and live streamed screenshots
         const screenshotData: string[] = [];
-        
+
         // Add progress screenshots first to keep it chronological
         if (progressScreenshots.length > 0) {
             screenshotData.push(...progressScreenshots);
         }
-        
+
         // Add static screenshot if available and not already in the array
         const staticScreenshot = tc.base64Image || tc.data?.screenshot || tc.data?.base64Image;
         if (staticScreenshot && typeof staticScreenshot === 'string' && !screenshotData.includes(staticScreenshot)) {
@@ -368,6 +369,15 @@ export default function ChatPage() {
 
     // Sub-agent progress state - stores progress events grouped by toolCallId
     const [subAgentProgress, setSubAgentProgress] = useState<Map<string, SubAgentProgressEvent[]>>(new Map());
+
+    // Local Execution Permission State (Task 7.1 & 7.2)
+    const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
+    const [localAlwaysAllowed, setLocalAlwaysAllowed] = useState(false);
+
+    // Reset localAlwaysAllowed when conversationId changes (Task 7.2)
+    useEffect(() => {
+        setLocalAlwaysAllowed(false);
+    }, [activeConversationId]);
 
     useEffect(() => {
         const handleProgress = (_: any, data: any) => {
@@ -1347,6 +1357,17 @@ export default function ChatPage() {
                     setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
                 } else if (data.action === 'delete') {
                     setActiveSurface(null);
+                }
+            });
+
+            // Task 7.3: Local Execution Request Listener
+            acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
+                if (localAlwaysAllowed) {
+                    // Auto-approve without showing UI
+                    acpApi.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
+                } else {
+                    // Show permission card
+                    setLocalExecutionRequest(request);
                 }
             });
 
@@ -3107,16 +3128,33 @@ export default function ChatPage() {
                                                     />
                                                 )}
 
-                                                {/* Debate Information - Attached to Prompt Input */}
-                                                {(debateData || isDebating) && (
-                                                    <div style={{ marginBottom: 12, paddingLeft: 0 }}>
-                                                        <InlineDebateProgress
-                                                            debate={debateData}
-                                                            isDebating={isDebating || false}
-                                                        />
-                                                    </div>
+                                                {/* Task 7.4: Local Execution Permission Card */}
+                                                {localExecutionRequest && (
+                                                    <LocalExecutionPermissionCard
+                                                        command={localExecutionRequest.command}
+                                                        shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
+                                                        reason={localExecutionRequest.reason}
+                                                        agentName="EverFern"
+                                                        onDeny={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            acpApi?.sendLocalExecutionResponse({ approved: false, alwaysAllow: false });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                        onAlwaysAllow={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            setLocalAlwaysAllowed(true);
+                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: true });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                        onAllowOnce={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                    />
                                                 )}
 
+                                                 {/* Progressive input container */}
                                                 <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
                                                     {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
@@ -3298,10 +3336,7 @@ export default function ChatPage() {
                                                                     <span>Stopped by user</span>
                                                                 </div>
                                                             )}
-                                                            {/* ── Reasoning content (chain-of-thought, shown as indented narrative) */}
-                                                            {msg.reasoning_content && (
-                                                                <ReasoningBlock content={msg.reasoning_content} />
-                                                            )}
+
 
                                                             {(() => {
                                                                 const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
@@ -3791,6 +3826,34 @@ export default function ChatPage() {
                                                 </div>
                                             )}
 
+                                            {/* Task 7.4: Local Execution Permission Card */}
+                                            {localExecutionRequest && (
+                                                <div style={{ padding: '16px 20px 0' }}>
+                                                    <LocalExecutionPermissionCard
+                                                        command={localExecutionRequest.command}
+                                                        shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
+                                                        reason={localExecutionRequest.reason}
+                                                        agentName="EverFern"
+                                                        onDeny={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            acpApi?.sendLocalExecutionResponse({ approved: false, alwaysAllow: false });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                        onAlwaysAllow={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            setLocalAlwaysAllowed(true);
+                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: true });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                        onAllowOnce={() => {
+                                                            const acpApi = (window as any).electronAPI?.acp;
+                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
+                                                            setLocalExecutionRequest(null);
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+
                                             {renderAttachmentStrip()}
                                             <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
                                                 <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
@@ -4010,10 +4073,10 @@ export default function ChatPage() {
                         </div>
 
                         {/* Fern's Computer Side Pane */}
-                        <ComputerPane 
-                            isOpen={isComputerPaneOpen} 
-                            onClose={() => setIsComputerPaneOpen(false)} 
-                            data={activeComputerData} 
+                        <ComputerPane
+                            isOpen={isComputerPaneOpen}
+                            onClose={() => setIsComputerPaneOpen(false)}
+                            data={activeComputerData}
                         />
 
                         {/* Tool Detail Side Panel */}
@@ -4022,6 +4085,7 @@ export default function ChatPage() {
                             toolCall={selectedToolCall}
                             onClose={() => setIsToolDetailOpen(false)}
                             conversationId={activeConversationId || ""}
+                            subAgentProgress={subAgentProgress}
                         />
                                     </div>
                 </motion.div>

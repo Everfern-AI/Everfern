@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 let agentPermissionResolver: ((granted: boolean) => void) | null = null;
+let localExecutionResponseResolver: ((response: { approved: boolean; alwaysAllow: boolean }) => void) | null = null;
 
 function loadConfigSync() {
   try {
@@ -162,6 +163,18 @@ export function registerAgentHandlers() {
     if (agentPermissionResolver) {
       agentPermissionResolver(granted);
       agentPermissionResolver = null;
+    }
+  });
+
+  ipcMain.handle('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+    // Import here to avoid circular dependencies
+    const { getLocalExecutionResolvers } = require('../agent/tools/pi-tools');
+    const resolvers = getLocalExecutionResolvers();
+
+    // Resolve the specific request
+    const resolver = resolvers.get(response.requestId);
+    if (resolver) {
+      resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow });
     }
   });
 
@@ -381,6 +394,15 @@ export function registerAgentHandlers() {
           reflectAndRemember(history, userInput, fullResponse, client);
         } else if (streamEvent.type === 'subagent-progress') {
           safeSend('acp:sub-agent-progress', streamEvent.data);
+        } else if (streamEvent.type === 'local_execution_request') {
+          // Forward local execution request to renderer
+          safeSend('acp:local-execution-request', {
+            requestId: (streamEvent as any).requestId,
+            command: (streamEvent as any).command,
+            shellType: (streamEvent as any).shellType,
+            reason: (streamEvent as any).reason,
+            conversationId: (streamEvent as any).conversationId
+          });
         } else if (streamEvent.type === 'debate_event' && (streamEvent as any).debateEvent) {
           const de = (streamEvent as any).debateEvent;
           console.log('[AgentIPC] Forwarding debate event:', de.type, 'debateId:', de.debateId);

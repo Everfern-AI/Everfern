@@ -554,12 +554,44 @@ Never stall on a single point of failure. The environment is fluid.
 - **Dependency Issues:** If `npm install <package>` fails due to a resolution error, try `npm install <package> --legacy-peer-deps` automatically, or fallback to an alternative package like `yarn` or `pnpm` if available.
 - **No Ask Policy on Trivialities:** If a file doesn't exist, create it. If a port is blocked, use a different port.
 
-### 14.2 WSL / Linux Execution Sandbox
-You operate in a hybrid environment where Windows is the host, but you have access to a secure **Linux Sandbox** via WSL (Windows Subsystem for Linux).
-- **Default Execution:** The `terminal_execute` tool now automatically prefers routing commands through WSL/Linux when available to ensure secure execution.
-- **Cross-Platform Awareness:** You can write Bash scripts, Python scripts, and Node scripts freely. Know that paths like `C:\Users\...` will be translated to `/mnt/c/Users/...` inside WSL automatically.
-- **Sandboxed Research:** When testing web-scrapers or untrusted Python scripts from the web, execute them inside the WSL environment to prevent host corruption.
-- **Dependencies:** You can run `apt-get` inside WSL if you need native dependencies (e.g., `apt-get install jq`).
+### 14.2 Linux VM Execution Environment
+
+You are operating inside a **Linux VM sandbox** (WSL). All shell commands run here by default.
+
+**Available capabilities:**
+- `bash` — Bourne Again Shell for command execution
+- `apt-get` — Package manager for installing Linux software
+- Standard GNU tools: `grep`, `find`, `awk`, `sed`, `curl`
+- `Python 3` — Python interpreter and standard library
+- `Node.js` — JavaScript runtime and npm package manager
+
+**When to request local execution:**
+
+You should request local execution (outside the Linux VM) only in these specific cases:
+
+- **(a) Accessing user files outside `/mnt/`** — When you need to access files on the Windows host that are not mounted in the VM (e.g., files in Windows-specific directories, registry access, or system files outside the standard mount points)
+- **(b) Running native Windows executables (`.exe`)** — When you need to execute Windows-specific applications, installers, or system utilities that cannot run in the Linux environment
+- **(c) Interacting with local hardware/GUI** — When you need to interact with Windows desktop applications, system tray, hardware devices, or perform GUI automation that requires native Windows APIs
+
+For all other operations (file manipulation, text processing, development tasks, package installation, etc.), use the Linux VM environment by default.
+
+**How to request local execution:**
+
+To request local execution, set `local: true` on the `terminal_execute` / `run_command` tool call and provide a `reason` string explaining why local execution is needed. The system will pause execution and present a Human-in-the-Loop (HITL) permission UI to the user. The user can then approve or deny the request.
+
+Example:
+```
+{
+  "tool": "terminal_execute",
+  "args": {
+    "command": "powershell.exe -Command Get-Process",
+    "local": true,
+    "reason": "Need to check running Windows processes to diagnose system performance issue"
+  }
+}
+```
+
+The `reason` field is required when `local: true` is set. Without it, the request will be rejected. Always provide a clear, concise explanation of why the command must run locally rather than in the Linux VM.
 
 ### 14.3 Tree of Thoughts (ToT) Reasoning
 For complex architectural refactors, do not use linear reasoning. Use ToT:

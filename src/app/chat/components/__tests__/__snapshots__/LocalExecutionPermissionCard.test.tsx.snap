@@ -1,0 +1,310 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LocalExecutionPermissionCard > Snapshot Tests > should match snapshot with PowerShell 1`] = `
+<div
+  class="space-y-3"
+  style="opacity: 0; transform: translateY(6px);"
+>
+  <div
+    class="bg-white rounded-xl border border-[#e5e7eb] shadow-sm p-4"
+  >
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="text-lg font-semibold text-gray-700"
+      >
+        ⊡
+      </div>
+      <h3
+        class="text-sm font-medium text-gray-800"
+      >
+        Allow 
+        EverFern
+         to execute commands locally?
+      </h3>
+    </div>
+    <div
+      class="mb-3 text-xs text-gray-600 italic"
+    >
+      Reason: 
+      Need to search for files on the local machine
+    </div>
+    <div
+      class="mt-3"
+    >
+      <div
+        class="text-xs font-bold text-gray-700 mb-1"
+      >
+        PowerShell
+      </div>
+      <div
+        class="bg-[#f9fafb] rounded-lg border border-[#e5e7eb] p-3"
+      >
+        <code
+          class="font-mono text-sm text-[#6366f1] whitespace-pre-wrap"
+        >
+          Get-ChildItem -Path C:\\\\ -Recurse
+        </code>
+      </div>
+    </div>
+    <div
+      class="mt-4 flex justify-end gap-2"
+    >
+      <button
+        aria-label="Deny local execution"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Deny
+      </button>
+      <button
+        aria-label="Always allow local execution for this session"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Always allow
+      </button>
+      <button
+        aria-label="Allow local execution once"
+        class="bg-[#1a1a1a] text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[#2a2a2a] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
+      >
+        Allow once
+      </button>
+    </div>
+  </div>
+  <div
+    class="flex items-center gap-2 mt-3 text-amber-500 text-sm italic"
+  >
+    <svg
+      class="w-4 h-4 animate-spin"
+      fill="none"
+      stroke-dasharray="4 4"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="2"
+      />
+      <path
+        class="opacity-75"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        fill="currentColor"
+      />
+    </svg>
+    <span>
+      EverFern
+       will continue working after your reply
+    </span>
+  </div>
+</div>
+`;
+
+exports[`LocalExecutionPermissionCard > Snapshot Tests > should match snapshot with default props 1`] = `
+<div
+  class="space-y-3"
+  style="opacity: 0; transform: translateY(6px);"
+>
+  <div
+    class="bg-white rounded-xl border border-[#e5e7eb] shadow-sm p-4"
+  >
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="text-lg font-semibold text-gray-700"
+      >
+        ⊡
+      </div>
+      <h3
+        class="text-sm font-medium text-gray-800"
+      >
+        Allow 
+        EverFern
+         to execute commands locally?
+      </h3>
+    </div>
+    <div
+      class="mb-3 text-xs text-gray-600 italic"
+    >
+      Reason: 
+      Need to search for files on the local machine
+    </div>
+    <div
+      class="mt-3"
+    >
+      <div
+        class="text-xs font-bold text-gray-700 mb-1"
+      >
+        Bash
+      </div>
+      <div
+        class="bg-[#f9fafb] rounded-lg border border-[#e5e7eb] p-3"
+      >
+        <code
+          class="font-mono text-sm text-[#6366f1] whitespace-pre-wrap"
+        >
+          grep -rnli "term" "/path/to/dir"
+        </code>
+      </div>
+    </div>
+    <div
+      class="mt-4 flex justify-end gap-2"
+    >
+      <button
+        aria-label="Deny local execution"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Deny
+      </button>
+      <button
+        aria-label="Always allow local execution for this session"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Always allow
+      </button>
+      <button
+        aria-label="Allow local execution once"
+        class="bg-[#1a1a1a] text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[#2a2a2a] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
+      >
+        Allow once
+      </button>
+    </div>
+  </div>
+  <div
+    class="flex items-center gap-2 mt-3 text-amber-500 text-sm italic"
+  >
+    <svg
+      class="w-4 h-4 animate-spin"
+      fill="none"
+      stroke-dasharray="4 4"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="2"
+      />
+      <path
+        class="opacity-75"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        fill="currentColor"
+      />
+    </svg>
+    <span>
+      EverFern
+       will continue working after your reply
+    </span>
+  </div>
+</div>
+`;
+
+exports[`LocalExecutionPermissionCard > Snapshot Tests > should match snapshot with long command 1`] = `
+<div
+  class="space-y-3"
+  style="opacity: 0; transform: translateY(6px);"
+>
+  <div
+    class="bg-white rounded-xl border border-[#e5e7eb] shadow-sm p-4"
+  >
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="text-lg font-semibold text-gray-700"
+      >
+        ⊡
+      </div>
+      <h3
+        class="text-sm font-medium text-gray-800"
+      >
+        Allow 
+        EverFern
+         to execute commands locally?
+      </h3>
+    </div>
+    <div
+      class="mb-3 text-xs text-gray-600 italic"
+    >
+      Reason: 
+      Need to search for files on the local machine
+    </div>
+    <div
+      class="mt-3"
+    >
+      <div
+        class="text-xs font-bold text-gray-700 mb-1"
+      >
+        Bash
+      </div>
+      <div
+        class="bg-[#f9fafb] rounded-lg border border-[#e5e7eb] p-3"
+      >
+        <code
+          class="font-mono text-sm text-[#6366f1] whitespace-pre-wrap"
+        >
+          find /path/to/search -type f -name '*.txt' -exec grep -l 'pattern' {} \\\\; | head -20
+        </code>
+      </div>
+    </div>
+    <div
+      class="mt-4 flex justify-end gap-2"
+    >
+      <button
+        aria-label="Deny local execution"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Deny
+      </button>
+      <button
+        aria-label="Always allow local execution for this session"
+        class="border border-[#e5e7eb] rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+      >
+        Always allow
+      </button>
+      <button
+        aria-label="Allow local execution once"
+        class="bg-[#1a1a1a] text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[#2a2a2a] transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
+      >
+        Allow once
+      </button>
+    </div>
+  </div>
+  <div
+    class="flex items-center gap-2 mt-3 text-amber-500 text-sm italic"
+  >
+    <svg
+      class="w-4 h-4 animate-spin"
+      fill="none"
+      stroke-dasharray="4 4"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        class="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="2"
+      />
+      <path
+        class="opacity-75"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        fill="currentColor"
+      />
+    </svg>
+    <span>
+      EverFern
+       will continue working after your reply
+    </span>
+  </div>
+</div>
+`;

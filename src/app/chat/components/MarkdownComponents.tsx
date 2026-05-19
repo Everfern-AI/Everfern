@@ -314,4 +314,4 @@ const StreamingMarkdown = ({ content, isLive, isLatest }: { content: string; isL
     );
 };
 
-export { MarkdownRenderer, StreamingMarkdown };
+export { MarkdownRenderer, StreamingMarkdown, InlineLink };

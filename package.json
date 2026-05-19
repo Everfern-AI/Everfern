@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "EverFern — Your autonomous AI workplace agent.",
   "author": "Everfern Community",
   "license": "MIT",
@@ -75,9 +75,9 @@
     },
     "nativeRebuilder": "legacy",
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
@@ -85,7 +85,11 @@
       "installerIcon": "public/images/logos/everfern.ico",
       "uninstallerIcon": "public/images/logos/everfern.ico",
       "installerHeaderIcon": "public/images/logos/everfern.ico",
-      "license": "build/license.txt"
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "license": "build/license.txt",
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {

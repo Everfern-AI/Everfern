@@ -13,6 +13,22 @@ import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
 export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
+// ── Type Definitions for Local Execution ──────────────────────────
+
+export interface LocalExecutionRequest {
+  type: 'local_execution_request';
+  requestId: string;
+  command: string;
+  shellType: string;
+  reason: string;
+  conversationId: string;
+}
+
+export interface LocalExecutionResponse {
+  approved: boolean;
+  alwaysAllow: boolean;
+}
+
 export interface ProviderMeta {
   type: ProviderType;
   name: string;
@@ -68,6 +84,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('system:ollama-pull-line');
     },
     openExternal: (url: string) => ipcRenderer.invoke('system:open-external', url),
+    fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -241,6 +258,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:tool-call-complete', (_e, data) => cb(data));
     },
 
+    // Local Execution Events
+    onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => {
+      ipcRenderer.on('acp:local-execution-request', (_e, data) => cb(data));
+    },
+    sendLocalExecutionResponse: (response: LocalExecutionResponse) => {
+      ipcRenderer.send('acp:local-execution-response', response);
+    },
+    removeLocalExecutionListeners: () => {
+      ipcRenderer.removeAllListeners('acp:local-execution-request');
+    },
+
     // Debate Stream Events
     onDebateStream: (cb: (event: any) => void) => {
       ipcRenderer.on('debate:stream', (_e, event) => cb(event));
@@ -271,6 +299,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:tool-call-start');
       ipcRenderer.removeAllListeners('acp:tool-call-chunk');
       ipcRenderer.removeAllListeners('acp:tool-call-complete');
+      ipcRenderer.removeAllListeners('acp:local-execution-request');
       // NOTE: debate:stream is NOT removed here — it's managed by useDebateStream's
       // own lifecycle (removeDebateStreamListener). Removing it here would kill the
       // debate listener during mid-stream resets and prevent the debate UI from showing.
@@ -456,6 +485,7 @@ export type ElectronAPI = {
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => void;
     removeOllamaListeners: () => void;
     openExternal: (url: string) => Promise<void>;
+    fetchMetadata: (url: string) => Promise<{ description?: string; favicon?: string } | null>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
@@ -522,6 +552,9 @@ export type ElectronAPI = {
     onToolCallStart:       (cb: (data: { index: number; toolName: string }) => void) => void;
     onToolCallChunk:       (cb: (data: { index: number; argumentsDelta: string }) => void) => void;
     onToolCallComplete:    (cb: (data: { index: number; toolName: string; arguments: Record<string, unknown> }) => void) => void;
+    onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => void;
+    sendLocalExecutionResponse: (response: LocalExecutionResponse) => void;
+    removeLocalExecutionListeners: () => void;
     removeStreamListeners: () => void;
     removeMissionListeners: () => void;
   };

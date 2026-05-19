@@ -180,6 +180,7 @@ const gotTheLock = electron_1.app.requestSingleInstanceLock();
 if (!gotTheLock) {
     console.log('[Startup] ⚠️ Already running, quitting...');
     electron_1.app.quit();
+    process.exit(0);
 }
 else {
     electron_1.app.on('second-instance', (event, commandLine) => {

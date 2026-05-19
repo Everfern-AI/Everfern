@@ -241,5 +241,47 @@ export function registerSystemHandlers() {
     }
     return { success: false, error: 'No URL provided' };
   });
-  }
 
+  ipcMain.handle('system:fetch-metadata', async (_event, url: string) => {
+    if (!url) return null;
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 4000);
+
+      const response = await fetch(url, {
+        headers: { 
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36' 
+        },
+        signal: controller.signal
+      });
+      clearTimeout(id);
+
+      const html = await response.text();
+
+      // Basic meta extraction
+      const getMeta = (prop: string) => {
+        const regex = new RegExp(`<meta[^>]*?(?:name|property)=["']${prop}["'][^>]*?content=["'](.*?)["']`, 'i');
+        const match = html.match(regex);
+        if (match) return match[1];
+        const altRegex = new RegExp(`<meta[^>]*?content=["'](.*?)["'][^>]*?(?:name|property)=["']${prop}["']`, 'i');
+        const altMatch = html.match(altRegex);
+        return altMatch ? altMatch[1] : null;
+      };
+
+      const description = getMeta('og:description') || getMeta('description') || '';
+      let favicon = html.match(/<link[^>]*?rel=["'](?:shortcut )?icon["'][^>]*?href=["'](.*?)["']/i)?.[1] || '';
+
+      if (favicon && !favicon.startsWith('http')) {
+        try {
+          const base = new URL(url);
+          favicon = new URL(favicon, base.origin).href;
+        } catch { /* ignore */ }
+      }
+
+      return { description, favicon };
+    } catch (err) {
+      console.warn(`[IPC] system:fetch-metadata failed for ${url}:`, err);
+      return null;
+    }
+  });
+  }

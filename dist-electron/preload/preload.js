@@ -204,6 +204,16 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         onToolCallComplete: (cb) => {
             electron_1.ipcRenderer.on('acp:tool-call-complete', (_e, data) => cb(data));
         },
+        // Local Execution Events
+        onLocalExecutionRequest: (cb) => {
+            electron_1.ipcRenderer.on('acp:local-execution-request', (_e, data) => cb(data));
+        },
+        sendLocalExecutionResponse: (response) => {
+            electron_1.ipcRenderer.send('acp:local-execution-response', response);
+        },
+        removeLocalExecutionListeners: () => {
+            electron_1.ipcRenderer.removeAllListeners('acp:local-execution-request');
+        },
         // Debate Stream Events
         onDebateStream: (cb) => {
             electron_1.ipcRenderer.on('debate:stream', (_e, event) => cb(event));
@@ -233,6 +243,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
             electron_1.ipcRenderer.removeAllListeners('acp:tool-call-start');
             electron_1.ipcRenderer.removeAllListeners('acp:tool-call-chunk');
             electron_1.ipcRenderer.removeAllListeners('acp:tool-call-complete');
+            electron_1.ipcRenderer.removeAllListeners('acp:local-execution-request');
             // NOTE: debate:stream is NOT removed here — it's managed by useDebateStream's
             // own lifecycle (removeDebateStreamListener). Removing it here would kill the
             // debate listener during mid-stream resets and prevent the debate UI from showing.

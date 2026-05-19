@@ -87,118 +87,68 @@ function extractJSONArray(text: string): string | null {
     return null;
 }
 
-// ── AI-powered Task Analysis ──────────────────────────────────────────────
+// ── AI-powered Unified Decomposition ─────────────────────────────────────
 
-async function analyzeTaskWithAI(userInput: string, client: AIClient): Promise<TaskAnalysis> {
-    const prompt = `Analyze this user request and respond with ONLY valid JSON (no markdown, no explanation):
+async function decomposeWithAIUnified(userInput: string, availableTools: string[], client: AIClient): Promise<{ analysis: TaskAnalysis; steps: TaskStep[] }> {
+    const toolList = availableTools.length > 0 ? availableTools.join(', ') : 'web_search, file_read, terminal_execute, computer_use';
 
-{"complexity":"simple|moderate|complex","taskType":"coding|research|build|fix|analyze|automate|task|conversation","entities":["subject1"],"canParallelize":true,"suggestedApproach":"sequential|parallel|hybrid","estimatedSteps":3,"requiresExternalData":true,"requiresFileOps":false,"requiresCommandExecution":false}
+    const prompt = `Analyze and decompose this task. Respond with ONLY valid JSON in this exact format:
+{
+  "analysis": {
+    "complexity": "simple|moderate|complex",
+    "taskType": "coding|research|build|fix|analyze|automate|task",
+    "suggestedApproach": "sequential|parallel|hybrid",
+    "canParallelize": true
+  },
+  "steps": [
+    {"id":"step_1","title":"Title","description":"...","tool":"tool_name","dependsOn":[]}
+  ]
+}
 
-User request: "${userInput.slice(0, 500)}"
+Task: "${userInput.slice(0, 500)}"
+Tools: ${toolList}
 
-Respond with ONLY the JSON object, nothing else.`;
+Respond with ONLY the JSON object.`;
 
     try {
         const response = await client.chat({
             messages: [{ role: 'user', content: prompt }],
             temperature: 0,
-            maxTokens: 300,
+            maxTokens: 2000,
         }) as any;
 
         const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
-
         const jsonStr = extractJSONObject(rawContent);
+        
         if (jsonStr) {
             const parsed = JSON.parse(jsonStr);
             return {
-                complexity: parsed.complexity || 'moderate',
-                taskType: parsed.taskType || 'task',
-                entities: parsed.entities || [],
-                canParallelize: !!parsed.canParallelize,
-                suggestedApproach: parsed.suggestedApproach || 'sequential',
-                estimatedSteps: parsed.estimatedSteps || 3,
-                requiresExternalData: !!parsed.requiresExternalData,
-                requiresFileOps: !!parsed.requiresFileOps,
-                requiresCommandExecution: !!parsed.requiresCommandExecution
+                analysis: {
+                    complexity: parsed.analysis?.complexity || 'moderate',
+                    taskType: parsed.analysis?.taskType || 'task',
+                    entities: [],
+                    canParallelize: !!parsed.analysis?.canParallelize,
+                    suggestedApproach: parsed.analysis?.suggestedApproach || 'sequential',
+                    estimatedSteps: parsed.steps?.length || 2,
+                    requiresExternalData: true,
+                    requiresFileOps: true,
+                    requiresCommandExecution: false
+                },
+                steps: Array.isArray(parsed.steps) ? parsed.steps : []
             };
         }
-
-        throw new Error('No JSON object found in response');
+        throw new Error('No JSON object found');
     } catch (err) {
-        console.warn(`[TaskDecomposer] analyzeTaskWithAI failed: ${err instanceof Error ? err.message : String(err)}`);
-        // Fallback to moderate for ambiguous cases
+        console.warn(`[TaskDecomposer] decomposeWithAIUnified failed: ${err instanceof Error ? err.message : String(err)}`);
         return {
-            complexity: 'moderate',
-            taskType: 'task',
-            entities: [],
-            canParallelize: false,
-            suggestedApproach: 'sequential',
-            estimatedSteps: 2,
-            requiresExternalData: true,
-            requiresFileOps: true,
-            requiresCommandExecution: false
+            analysis: { complexity: 'moderate', taskType: 'task', entities: [], canParallelize: false, suggestedApproach: 'sequential', estimatedSteps: 1, requiresExternalData: true, requiresFileOps: true, requiresCommandExecution: false },
+            steps: [{ id: 'step_1', title: 'Execute', description: userInput, tool: 'internal', dependsOn: [], canParallelize: false, estimatedComplexity: 'medium', priority: 'normal' }]
         };
     }
 }
 
-// ── AI-powered Step Generation ────────────────────────────────────────────
-
-async function generateStepsWithAI(userInput: string, analysis: TaskAnalysis, availableTools: string[], client: AIClient): Promise<TaskStep[]> {
-    const toolList = availableTools.length > 0 ? availableTools.join(', ') : 'web_search, file_read, terminal_execute, computer_use';
-
-    const prompt = `Decompose this task into execution steps. Respond with ONLY a JSON array, nothing else:
-
-[
-  {"id":"step_1","title":"Step Title","description":"What to do","tool":"tool_name","dependsOn":[],"canParallelize":false,"estimatedComplexity":"low|medium|high","priority":"normal|critical"},
-  {"id":"step_2","title":"Step Title","description":"What to do","tool":"tool_name","dependsOn":["step_1"],"canParallelize":false,"estimatedComplexity":"medium","priority":"normal"}
-]
-
-Task: "${userInput.slice(0, 500)}"
-Task Type: ${analysis.taskType}
-Approach: ${analysis.suggestedApproach}
-Available Tools: ${toolList}
-
-Respond with ONLY the JSON array. No markdown fences, no explanation, no preamble.`;
-
-    try {
-        const response = await client.chat({
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0,
-            maxTokens: 1500,
-        }) as any;
-
-        const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
-
-        const jsonStr = extractJSONArray(rawContent);
-        if (jsonStr) {
-            const steps = JSON.parse(jsonStr);
-            if (Array.isArray(steps) && steps.length > 0) {
-                return steps;
-            }
-        }
-
-        throw new Error('No valid JSON array found');
-    } catch (err) {
-        console.warn(`[TaskDecomposer] generateStepsWithAI failed: ${err instanceof Error ? err.message : String(err)}`);
-        // Minimum viable fallback step
-        return [{
-            id: 'step_1',
-            title: 'Analyze and Execute',
-            description: userInput,
-            tool: 'internal',
-            dependsOn: [],
-            canParallelize: false,
-            estimatedComplexity: 'medium',
-            priority: 'normal'
-        }];
-    }
-}
-
-// ── Public API ────────────────────────────────────────────────────────────
-
 /**
- * AI-powered decomposition with simple task detection.
- * Simple tasks skip AI decomposition and use fast fallback.
+ * AI-powered decomposition with unified single-call optimization.
  */
 export async function decomposeTaskWithAI(
     userInput: string,
@@ -209,8 +159,8 @@ export async function decomposeTaskWithAI(
         throw new Error('TaskDecomposer requires an AI client for task decomposition.');
     }
 
-    const analysis = await analyzeTaskWithAI(userInput, client);
-    const steps = await generateStepsWithAI(userInput, analysis, availableTools, client);
+    // Unified call: analysis + steps in ONE round-trip (2x faster than sequential calls)
+    const { analysis, steps } = await decomposeWithAIUnified(userInput, availableTools, client);
 
     const groups = new Set(
         steps.filter(s => s.parallelGroup !== undefined).map(s => s.parallelGroup)

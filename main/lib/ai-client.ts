@@ -228,10 +228,10 @@ export class AIClient {
     // Only apply cleaning for legacy providers if they contain noise
     // Ollama Cloud / Custom keys must be preserved exactly as provided
     if (['openai', 'anthropic', 'nvidia', 'deepseek'].includes(config.provider)) {
-        if (finalApiKey.includes(' ') || finalApiKey.includes('\n')) {
-            const match = finalApiKey.match(/(?:nvapi-[A-Za-z0-9_-]+|sk-[A-Za-z0-9T\-]+|[A-Za-z0-9]{32,})/);
-            if (match) finalApiKey = match[0];
-        }
+      if (finalApiKey.includes(' ') || finalApiKey.includes('\n')) {
+        const match = finalApiKey.match(/(?:nvapi-[A-Za-z0-9_-]+|sk-[A-Za-z0-9T\-]+|[A-Za-z0-9]{32,})/);
+        if (match) finalApiKey = match[0];
+      }
     }
 
     this.config = {
@@ -481,8 +481,8 @@ export class AIClient {
           if (last.role === 'system' && m.role !== 'user') {
             // If it's a tool after system, we MUST drop it as it's an orphan from slicing.
             if (m.role === 'tool') {
-                console.warn(`[AIClient] Dropping orphan tool message after system to prevent 400 error.`);
-                continue;
+              console.warn(`[AIClient] Dropping orphan tool message after system to prevent 400 error.`);
+              continue;
             }
             // If it's assistant after system, NIM might accept it but user is safer.
             // We'll inject a dummy user message.
@@ -493,8 +493,8 @@ export class AIClient {
           // Rule: Drop tool messages if we haven't seen an assistant message yet in this history slice.
           // (They are orphans from context window slicing).
           if (m.role === 'tool' && !hasAssistantSeen) {
-             console.warn(`[AIClient] Dropping orphan tool message (no assistant parent in slice).`);
-             continue;
+            console.warn(`[AIClient] Dropping orphan tool message (no assistant parent in slice).`);
+            continue;
           }
 
           // Rule: Deduplicate Tool results by ID
@@ -529,9 +529,9 @@ export class AIClient {
         } else {
           // First message
           if (m.role === 'tool') {
-             // A tool message cannot be the first message. Drop it.
-             console.warn(`[AIClient] Dropping first message as it is 'tool'.`);
-             continue;
+            // A tool message cannot be the first message. Drop it.
+            console.warn(`[AIClient] Dropping first message as it is 'tool'.`);
+            continue;
           }
           if (m.role === 'tool' && m.tool_call_id) {
             seenToolCallIds.add(m.tool_call_id);
@@ -617,11 +617,8 @@ export class AIClient {
       if (last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0)) {
         console.warn('[AIClient] Stripping trailing assistant message for NVIDIA NIM HF template compatibility');
         processedMessages.pop();
-      } else if (last.role === 'tool') {
-        console.warn('[AIClient] Appending user message after tool result for NVIDIA NIM HF template compatibility');
-        processedMessages.push({ role: 'user', content: 'Please proceed with the tool results.' });
       }
-      
+
       if (processedMessages.length === 0) {
         processedMessages.push({ role: 'user', content: 'Please continue.' });
       }
@@ -965,8 +962,8 @@ export class AIClient {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     // Ollama Cloud / Remote Ollama requires Authorization header
     const isRemote = this.config.provider === 'ollama-cloud' ||
-                     this.config.baseUrl.includes('ollama.com') ||
-                     !this.config.baseUrl.includes('localhost') && !this.config.baseUrl.includes('127.0.0.1');
+      this.config.baseUrl.includes('ollama.com') ||
+      !this.config.baseUrl.includes('localhost') && !this.config.baseUrl.includes('127.0.0.1');
 
     if (isRemote && this.config.apiKey) {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;

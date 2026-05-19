@@ -24,7 +24,7 @@ import type { MissionTimeline as MissionTimelineType, MissionStep } from "./Miss
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ToolCallDisplay {
     id: string;
-    toolName: string;
+    toolName?: string;
     icon?: React.ReactNode;
     label?: string;
     color?: string;
@@ -43,6 +43,7 @@ export interface ToolCallDisplay {
 interface AgentTimelineProps {
     toolCalls: ToolCallDisplay[];
     thought?: string;
+    reasoningContent?: string;
     isLive?: boolean;
     showOutput?: boolean;
     currentPhase?: "triage" | "planning" | "execution" | "validation" | "completion";
@@ -87,8 +88,8 @@ const isHiddenStep = (step: MissionStep): boolean => {
 // ── Tool meta (icon + container shape) ────────────────────────────────────────
 type IconShape = "circle" | "square";
 
-const getToolMeta = (toolName: string, size = 13): { icon: React.ReactNode; shape: IconShape } => {
-    const n = toolName.toLowerCase();
+const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: React.ReactNode; shape: IconShape } => {
+    const n = (toolName || "").toLowerCase();
     const s = { width: size, height: size, flexShrink: 0 as const };
 
     if (n.includes("search") || n.includes("find") || n.includes("query"))
@@ -496,6 +497,14 @@ const cleanThought = (text: string): string => {
         .trim();
 };
 
+const BrainIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+        <path d="M12 5v13" />
+    </svg>
+);
+
 // ── Main AgentTimeline ─────────────────────────────────────────────────────────
 export const AgentTimeline = ({
     toolCalls,
@@ -508,6 +517,13 @@ export const AgentTimeline = ({
     // Elapsed time
     const startTime = useRef(new Date());
     const [elapsed, setElapsed] = useState("0:00");
+    const [reasoningOpen, setReasoningOpen] = useState(!!isLive);
+
+    useEffect(() => {
+        if (isLive && thought) {
+            setReasoningOpen(true);
+        }
+    }, [isLive, thought]);
 
     useEffect(() => {
         if (!isLive) return;
@@ -535,7 +551,7 @@ export const AgentTimeline = ({
     const toolsByStep = useMemo((): Map<string, ToolCallDisplay[]> => {
         const map = new Map<string, ToolCallDisplay[]>();
         const visible = toolCalls.filter(
-            tc => !["create_plan", "update_plan_step"].includes(tc.toolName)
+            tc => !["create_plan", "update_plan_step"].includes(tc.toolName || "")
         );
         if (!visibleSteps.length) return map;
 
@@ -544,7 +560,7 @@ export const AgentTimeline = ({
             for (const step of visibleSteps) {
                 const stepTools = step.toolCalls || [];
                 const matched = visible.filter(tc => {
-                    const name = tc.toolName.toLowerCase();
+                    const name = (tc.toolName || "").toLowerCase();
                     return stepTools.some(st => {
                         const sName = st.toLowerCase();
                         return name.includes(sName) || sName.includes(name);
@@ -572,7 +588,7 @@ export const AgentTimeline = ({
         () =>
             visibleSteps.length > 0
                 ? []
-                : toolCalls.filter(tc => !["create_plan", "update_plan_step"].includes(tc.toolName)),
+                : toolCalls.filter(tc => !["create_plan", "update_plan_step"].includes(tc.toolName || "")),
         [toolCalls, visibleSteps]
     );
 
@@ -612,18 +628,66 @@ export const AgentTimeline = ({
                 )}
             </div>
 
-            {/* ── Narrative / overview ──────────────────── */}
+            {/* ── Narrative / overview (Reasoning Block) ── */}
             {narrative && (
-                <motion.p
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                        fontSize: 13.5, lineHeight: 1.65, color: "#374151",
-                        margin: "0 0 16px 34px", fontWeight: 400,
-                    }}
-                >
-                    {narrative}
-                </motion.p>
+                <div style={{ margin: "0 0 16px 34px" }}>
+                    <button
+                        onClick={() => setReasoningOpen(o => !o)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '4px 0',
+                            color: '#9ca3af',
+                            fontSize: 12.5,
+                            fontWeight: 500,
+                            outline: 'none',
+                            userSelect: 'none',
+                        }}
+                    >
+                        <BrainIcon />
+                        <span>{isLive ? "Thinking Process" : "Thought Process"}</span>
+                        <motion.span
+                            animate={{ rotate: reasoningOpen ? 180 : 0 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                            style={{ display: 'flex', marginLeft: 2 }}
+                        >
+                            <ChevronDownIcon style={{ width: 11, height: 11 }} />
+                        </motion.span>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                        {reasoningOpen && (
+                            <motion.div
+                                key="reasoning-content"
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                                style={{ overflow: 'hidden' }}
+                            >
+                                <div style={{
+                                    borderLeft: '1.5px solid #e5e7eb',
+                                    paddingLeft: 14,
+                                    marginLeft: 6,
+                                    marginTop: 6,
+                                    marginBottom: 6,
+                                    fontSize: 12.5,
+                                    lineHeight: 1.7,
+                                    color: '#6b7280',
+                                    fontStyle: 'italic',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                }}>
+                                    {narrative}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             )}
 
             {/* ── Mission Steps ─────────────────────────── */}
