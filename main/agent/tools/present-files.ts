@@ -1,4 +1,8 @@
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import type { AgentTool, ToolResult } from '../runner/types';
+import { translateLinuxPathToHost, translateWindowsPathToLinux, runInLinuxVM } from './linux-vm-executor';
 
 interface PresentFile {
   path: string;
@@ -7,7 +11,7 @@ interface PresentFile {
   title?: string;
 }
 
-export const presentFilesTool: AgentTool = {
+export const createPresentFilesTool = (runner?: any): AgentTool => ({
   name: 'present_files',
   description:
     'Present final output files (artifacts, reports, spreadsheets) to the user. ' +
@@ -74,6 +78,68 @@ export const presentFilesTool: AgentTool = {
       };
     }
 
+    // Determine artifacts directory to copy files to
+    const sessionId = runner?.currentConversationId || 'default';
+    let artifactsDir: string;
+    if (runner?.workspaceDir) {
+      artifactsDir = path.join(runner.workspaceDir, '.everfern', 'artifacts');
+    } else {
+      artifactsDir = path.join(os.homedir(), '.everfern', 'artifacts', sessionId);
+    }
+
+    // Auto-save files to the artifacts directory
+    for (const f of files) {
+      if (!f.path) continue;
+      
+      const fileName = path.basename(f.path);
+      const targetPath = path.join(artifactsDir, fileName);
+      
+      // If already in target path, skip copying
+      if (f.path === targetPath) continue;
+
+      let fileCopied = false;
+
+      if (process.platform === 'win32') {
+        // Check if the path is a WSL-internal path (e.g. starts with / and not /mnt/)
+        const isWslInternal = f.path.startsWith('/') && !f.path.startsWith('/mnt/');
+        if (isWslInternal) {
+          try {
+            // Translate target path to WSL
+            const wslTargetPath = translateWindowsPathToLinux(targetPath);
+            // Ensure target directory exists on host first
+            fs.mkdirSync(artifactsDir, { recursive: true });
+            // Copy file from WSL to the Windows mount
+            await runInLinuxVM(`cp "${f.path}" "${wslTargetPath}"`);
+            fileCopied = true;
+            console.log(`[PresentFiles] Copied WSL file ${f.path} to host artifacts at ${targetPath}`);
+          } catch (err) {
+            console.warn(`[PresentFiles] Failed to copy WSL file via VM:`, err);
+          }
+        }
+      }
+
+      if (!fileCopied) {
+        // Standard copy (handles /mnt/c/ translation via translateLinuxPathToHost)
+        try {
+          const hostPath = translateLinuxPathToHost(f.path);
+          if (fs.existsSync(hostPath)) {
+            fs.mkdirSync(artifactsDir, { recursive: true });
+            fs.copyFileSync(hostPath, targetPath);
+            fileCopied = true;
+            console.log(`[PresentFiles] Copied file from ${hostPath} to artifacts at ${targetPath}`);
+          } else {
+            console.warn(`[PresentFiles] Source file not found: ${hostPath}`);
+          }
+        } catch (err) {
+          console.warn(`[PresentFiles] Failed to copy host file to artifacts:`, err);
+        }
+      }
+
+      if (fileCopied) {
+        f.path = targetPath;
+      }
+    }
+
     const formatted = files
       .filter((f: any) => f && f.path)
       .map((f: PresentFile) => {
@@ -94,4 +160,6 @@ export const presentFilesTool: AgentTool = {
       }
     };
   }
-};
+});
+
+export const presentFilesTool = createPresentFilesTool();

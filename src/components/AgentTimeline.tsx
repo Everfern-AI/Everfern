@@ -38,6 +38,8 @@ export interface ToolCallDisplay {
     description?: string;
     phase?: "triage" | "planning" | "execution" | "validation" | "completion";
     thought?: string;
+    orderIndex?: number;
+    subAgentProgress?: any[];
 }
 
 interface AgentTimelineProps {
@@ -207,6 +209,135 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
     );
 };
 
+// ── Sub-Agent Progress Timeline ──────────────────────────────────────────────────
+const SubAgentProgressTimeline = ({
+    toolCallId,
+    events,
+}: {
+    toolCallId: string;
+    events: SubAgentProgressEvent[];
+}) => {
+    if (!events || events.length === 0) return null;
+
+    return (
+        <div style={{
+            marginLeft: 32,
+            marginTop: 4,
+            marginBottom: 8,
+            borderLeft: "1px dashed rgba(0,0,0,0.12)",
+            paddingLeft: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+        }}>
+            {events.map((event, idx) => {
+                const isStep = event.type === 'step';
+                const isAction = event.type === 'action';
+                const isReasoning = event.type === 'reasoning';
+                const isScreenshot = event.type === 'screenshot';
+                const isComplete = event.type === 'complete';
+                const isAbort = event.type === 'abort';
+
+                let iconColor = "#9ca3af";
+                let text = "";
+
+                if (isStep) {
+                    iconColor = "#3b82f6";
+                    text = event.content || `Step ${event.stepNumber || idx + 1}`;
+                    if (event.stepNumber && event.totalSteps) {
+                        text = `Step ${event.stepNumber}/${event.totalSteps}: ${event.content || ''}`;
+                    }
+                } else if (isAction) {
+                    iconColor = "#f59e0b";
+                    text = event.action?.description || `Action: ${event.action?.type || 'execute'}`;
+                } else if (isReasoning) {
+                    iconColor = "#8b5cf6";
+                    text = event.content || "Thinking...";
+                } else if (isScreenshot) {
+                    iconColor = "#10b981";
+                    text = "Captured screenshot";
+                } else if (isComplete) {
+                    iconColor = "#22c55e";
+                    text = "Sub-agent execution complete";
+                } else if (isAbort) {
+                    iconColor = "#ef4444";
+                    text = event.content || "Sub-agent aborted";
+                }
+
+                if (isReasoning && !event.content) return null;
+
+                return (
+                    <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -3 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.15 }}
+                        style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 2,
+                            fontSize: 11.5,
+                            color: "#555",
+                        }}
+                    >
+                        <div style={{ display: "flex", alignItems: "start", gap: 6 }}>
+                            <div style={{
+                                width: 5,
+                                height: 5,
+                                borderRadius: "50%",
+                                backgroundColor: iconColor,
+                                marginTop: 6,
+                                flexShrink: 0,
+                            }} />
+                            <div style={{ flex: 1, wordBreak: "break-word", lineHeight: 1.3 }}>
+                                <span style={{
+                                    fontWeight: (isStep || isComplete || isAbort) ? 600 : 400,
+                                    color: (isComplete) ? "#15803d" : (isAbort) ? "#b91c1c" : "#444"
+                                }}>
+                                    {text}
+                                </span>
+                            </div>
+                        </div>
+
+                        {isReasoning && event.content && (
+                            <div style={{
+                                marginLeft: 11,
+                                fontSize: 11,
+                                color: "#777",
+                                fontStyle: "italic",
+                                borderLeft: "2px solid #e5e7eb",
+                                paddingLeft: 6,
+                                marginTop: 1,
+                                marginBottom: 2
+                            }}>
+                                {event.content}
+                            </div>
+                        )}
+
+                        {isScreenshot && event.screenshot?.base64 && (
+                            <div style={{
+                                marginLeft: 11,
+                                marginTop: 4,
+                                borderRadius: 6,
+                                overflow: "hidden",
+                                border: "1px solid rgba(0,0,0,0.08)",
+                                maxWidth: 240,
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                            }}>
+                                <img
+                                    src={`data:image/png;base64,${event.screenshot.base64}`}
+                                    alt="Sub-agent screenshot"
+                                    style={{ width: "100%", height: "auto", display: "block" }}
+                                />
+                            </div>
+                        )}
+                    </motion.div>
+                );
+            })}
+        </div>
+    );
+};
+
 // ── Tool Pill ──────────────────────────────────────────────────────────────────
 const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }) => {
     const isRunning = tc.status === "running";
@@ -307,12 +438,14 @@ const MissionStepRow = ({
     isLive,
     defaultOpen,
     onPillClick,
+    subAgentProgress,
 }: {
     step: MissionStep;
     toolCalls: ToolCallDisplay[];
     isLive: boolean;
     defaultOpen: boolean;
     onPillClick?: (tc: ToolCallDisplay) => void;
+    subAgentProgress?: Map<string, SubAgentProgressEvent[]>;
 }) => {
     const [open, setOpen] = useState(defaultOpen);
     const isDone = step.status === "completed";

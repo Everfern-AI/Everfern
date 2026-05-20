@@ -425,7 +425,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                             >
-                                â† Back
+                                {"\u2190"} Back
                             </button>
 
                             {/* Filename and path */}

@@ -159,9 +159,9 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             // Strip computer:// links (handled by ReportLink/ReportPane)
             [/\[([^\]]*)\]\(computer:\/\/\/[^)]+\)/, () => null],
             // Markdown links — render as blue clickable with popup
-            [/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/, (m, k) => <InlineLink key={k} href={m[2]} label={m[1]} />],
+            [/\[([^\]]+)\]\(((?:https?|file):\/\/[^)]+)\)/, (m, k) => <InlineLink key={k} href={m[2]} label={m[1]} />],
             // Bare URLs
-            [/https?:\/\/[^\s"'<>)\]]+/, (m, k) => <InlineLink key={k} href={m[0]} label={m[0]} />],
+            [/(?:https?|file):\/\/[^\s"'<>)\]]+/, (m, k) => <InlineLink key={k} href={m[0]} label={m[0]} />],
             [/\*\*(.+?)\*\*/, (m, k) => <strong key={k} style={{ color: '#111111', fontWeight: 600 }}>{inlineRender(m[1], k)}</strong>],
             [/\*([^*]+)\*/, (m, k) => <em key={k} style={{ color: '#4a4846', fontStyle: 'italic' }}>{inlineRender(m[1], k)}</em>],
             [/`([^`]+)`/, (m, k) => <code key={k} style={{ backgroundColor: 'rgba(0, 0, 0, 0.05)', borderRadius: 4, padding: '2px 6px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, color: '#111111' }}>{m[1]}</code>],

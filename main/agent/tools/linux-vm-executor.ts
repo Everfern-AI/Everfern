@@ -107,28 +107,89 @@ async function runNatively(command: string, cwd?: string): Promise<LinuxVMExecut
 }
 
 /**
+ * Helper to decode buffer safely, supporting UTF-16LE and stripping null bytes
+ */
+function decodeBuffer(buf: Buffer): string {
+  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+    return buf.toString('utf16le');
+  }
+  if (buf.length >= 4 && buf[1] === 0x00 && buf[3] === 0x00) {
+    return buf.toString('utf16le');
+  }
+  return buf.toString('utf8').replace(/\0/g, '');
+}
+
+/**
+ * Checks if the Linux VM is available and ready.
+ */
+export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason?: string }> {
+  const platform = process.platform;
+  try {
+    if (platform === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 3000 });
+        return { available: true };
+      } catch (err: any) {
+        return { 
+          available: false, 
+          reason: 'WSL is not running or no Linux distribution (such as Ubuntu) is installed. Please set up WSL.' 
+        };
+      }
+    } else if (platform === 'darwin') {
+      try {
+        const { execSync } = require('child_process');
+        execSync('docker info', { stdio: 'ignore', timeout: 3000 });
+        return { available: true };
+      } catch (err: any) {
+        return { 
+          available: false, 
+          reason: 'Docker Desktop is not installed or not running. Please start Docker.' 
+        };
+      }
+    } else if (platform === 'linux') {
+      return { available: true };
+    }
+    return { available: false, reason: `Unsupported platform: ${platform}` };
+  } catch (err: any) {
+    return { available: false, reason: err.message };
+  }
+}
+
+/**
  * Generic command execution helper
  */
 function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionResult> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
-      shell: false
+      shell: process.platform === 'win32', // Use shell on Windows to ensure WSL runs properly in Electron
+      env: { ...process.env, WSL_UTF8: '1' } // Force WSL to output UTF-8
     });
 
-    let stdout = '';
+    const environmentType = process.platform === 'win32'
+      ? 'WSL (Ubuntu)'
+      : process.platform === 'darwin'
+      ? 'Docker (Ubuntu)'
+      : 'Native Linux';
+
+    const debugHeader = `[EverFern VM Debug - Environment: ${environmentType}]\n` +
+      `Command: ${cmd} ${args.join(' ')}\n` +
+      `--------------------------------------------------\n`;
+
+    let stdout = debugHeader;
     let stderr = '';
 
     const MAX_OUTPUT_LENGTH = 50000;
 
     proc.stdout?.on('data', (data) => {
-      stdout += data.toString();
+      stdout += decodeBuffer(data);
       if (stdout.length > MAX_OUTPUT_LENGTH) {
         stdout = '...[Output truncated]...\n' + stdout.slice(-MAX_OUTPUT_LENGTH);
       }
     });
 
     proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
+      stderr += decodeBuffer(data);
       if (stderr.length > MAX_OUTPUT_LENGTH) {
         stderr = '...[Output truncated]...\n' + stderr.slice(-MAX_OUTPUT_LENGTH);
       }
@@ -137,7 +198,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
     proc.on('close', (code) => {
       resolve({
         stdout,
-        stderr,
+        stderr: stderr ? debugHeader + stderr : '',
         exitCode: code ?? -1
       });
     });
@@ -145,7 +206,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
     proc.on('error', (err) => {
       resolve({
         stdout,
-        stderr: stderr + `\nError: ${err.message}`,
+        stderr: debugHeader + stderr + `\nError: ${err.message}`,
         exitCode: -1
       });
     });
@@ -155,7 +216,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
 /**
  * Ensures Docker container exists and is running for macOS
  */
-async function ensureDockerContainer(): Promise<void> {
+export async function ensureDockerContainer(): Promise<void> {
   try {
     // Check if Docker is running
     await execAsync('docker info');
@@ -230,4 +291,43 @@ export function translateMacOSPathToDocker(macOSPath: string): string {
 
   // For other paths, return as-is (they may not be accessible in container)
   return macOSPath;
+}
+
+/**
+ * Translates VM-style Linux paths back to Windows or macOS host paths.
+ *
+ * Windows examples:
+ * - /mnt/c/Users/... → C:\Users\...
+ * - /home/ubuntu/... → \\wsl.localhost\Ubuntu\home\ubuntu\...
+ *
+ * macOS examples:
+ * - /host/Users/... → /Users/...
+ */
+export function translateLinuxPathToHost(linuxPath: string): string {
+  if (process.platform === 'win32') {
+    let cleanPath = linuxPath.replace(/\\/g, '/');
+
+    // Check if it already starts with a drive letter (e.g. C:/ or c:/)
+    const isWindowsPath = cleanPath.match(/^([a-zA-Z]):[\\\/]/);
+    if (isWindowsPath) {
+      return cleanPath.replace(/\//g, '\\');
+    }
+
+    // Handle /mnt/c/ style paths
+    const mntMatch = cleanPath.match(/^\/mnt\/([a-zA-Z])(\/.*)?$/);
+    if (mntMatch) {
+      const drive = mntMatch[1].toUpperCase();
+      const rest = mntMatch[2] ? mntMatch[2].replace(/\//g, '\\') : '';
+      return `${drive}:${rest}`;
+    }
+
+    // Otherwise, translate to WSL localhost UNC path
+    const relativePath = cleanPath.startsWith('/') ? cleanPath.substring(1) : cleanPath;
+    return `\\\\wsl.localhost\\Ubuntu\\${relativePath.replace(/\//g, '\\')}`;
+  } else if (process.platform === 'darwin') {
+    if (linuxPath.startsWith('/host/Users/')) {
+      return linuxPath.replace('/host/Users/', '/Users/');
+    }
+  }
+  return linuxPath;
 }

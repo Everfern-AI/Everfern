@@ -70,6 +70,7 @@ import SurfaceCanvas from './SurfaceCanvas';
 import ProjectsPage from '../components/ProjectsPage';
 import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from './components/ToolDetailSidePanel';
+import FileViewerModal from './components/FileViewerModal';
 
 
 // Extracted components
@@ -180,6 +181,7 @@ export default function ChatPage() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [folderHover, setFolderHover] = useState(false);
     const [tooltipState, setTooltipState] = useState<{ visible: boolean; x: number; y: number; content: string }>({ visible: false, x: 0, y: 0, content: "" });
+    const [viewingFile, setViewingFile] = useState<{ name: string; path: string } | null>(null);
     const [mousePos, setMousePos] = useState({ x: -100, y: -100 });
     const [showArtifacts, setShowArtifacts] = useState(false);
     const [selectedArtifactName, setSelectedArtifactName] = useState<string | null>(null);
@@ -240,6 +242,14 @@ export default function ChatPage() {
     // Tool Detail Side Panel State
     const [selectedToolCall, setSelectedToolCall] = useState<any | null>(null);
     const [isToolDetailOpen, setIsToolDetailOpen] = useState(false);
+
+    const prevIsToolDetailOpen = useRef(isToolDetailOpen);
+    useEffect(() => {
+        if (prevIsToolDetailOpen.current && !isToolDetailOpen) {
+            textareaRef.current?.focus();
+        }
+        prevIsToolDetailOpen.current = isToolDetailOpen;
+    }, [isToolDetailOpen]);
 
     const handlePillClick = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
@@ -1274,10 +1284,31 @@ export default function ChatPage() {
                 }
                 const narrativeText = streamingContentRef.current.trim();
                 const display = resolveToolDisplay(toolName, toolArgs);
-                const newTc: ToolCallDisplay = { id: toolCallId || crypto.randomUUID(), toolName, ...display, status: 'running', args: toolArgs, description: narrativeText || undefined };
+
+                const placeholder = liveToolCallsRef.current.find(t =>
+                    t.id.startsWith('streaming-') && t.toolName === toolName
+                );
+                const inheritedOrderIndex = placeholder ? placeholder.orderIndex : liveToolCallsRef.current.length;
+                const inheritedSubAgentProgress = placeholder?.subAgentProgress || subAgentProgress.get(toolCallId || '') || [];
+
+                const newTc: ToolCallDisplay = {
+                    id: toolCallId || crypto.randomUUID(),
+                    toolName,
+                    ...display,
+                    status: 'running',
+                    args: toolArgs,
+                    description: narrativeText || undefined,
+                    orderIndex: inheritedOrderIndex,
+                    subAgentProgress: inheritedSubAgentProgress
+                };
+
+                const filtered = liveToolCallsRef.current.filter(t =>
+                    !(t.id.startsWith('streaming-') && t.toolName === toolName)
+                );
+
                 const mapKey = toolCallId || (toolName + '_running');
                 toolCallMap.current.set(mapKey, newTc.id);
-                liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
+                liveToolCallsRef.current = [...filtered, newTc];
                 setLiveToolCalls([...liveToolCallsRef.current]);
 
                 // Handle ask_user_question tool start - questions are set in onToolCall
@@ -1300,6 +1331,19 @@ export default function ChatPage() {
                     newMap.set(event.toolCallId, limitedEvents);
                     return newMap;
                 });
+
+                const updated = liveToolCallsRef.current.map(tc => {
+                    if (tc.id === event.toolCallId) {
+                        const currentEvents = tc.subAgentProgress || [];
+                        return {
+                            ...tc,
+                            subAgentProgress: [...currentEvents, event].slice(-100)
+                        };
+                    }
+                    return tc;
+                });
+                liveToolCallsRef.current = updated;
+                setLiveToolCalls(updated);
             });
             acpApi.onToolCall((record: any) => {
                 // Debug: Log the tool call structure
@@ -1484,7 +1528,7 @@ export default function ChatPage() {
         const conversation = {
             id,
             title: msgs[0].content.slice(0, 60) + (msgs[0].content.length > 60 ? "..." : ""),
-            messages: msgs.map(m => ({
+            messages: msgs.map((m, idx) => ({
                 id: m.id || crypto.randomUUID(),
                 role: m.role,
                 content: m.content,
@@ -1492,14 +1536,24 @@ export default function ChatPage() {
                 reasoning_content: m.reasoning_content,
                 thinkingDuration: m.thinkingDuration,
                 stopped: m.stopped, // Preserve stopped flag
-                toolCalls: m.toolCalls ? m.toolCalls.map(({ icon, ...rest }) => rest) : undefined,
-                missionTimeline: m.missionTimeline
+                toolCalls: m.toolCalls ? m.toolCalls.map((tc, tcIdx) => {
+                    const { icon, ...rest } = tc;
+                    return {
+                        ...rest,
+                        orderIndex: tc.orderIndex ?? tcIdx
+                    };
+                }) : undefined,
+                missionTimeline: m.missionTimeline,
+                attachments: m.attachments,
+                orderIndex: (m as any).orderIndex ?? idx,
+                createdAt: m.timestamp ? (m.timestamp instanceof Date ? m.timestamp.toISOString() : new Date(m.timestamp).toISOString()) : new Date().toISOString()
             })),
             provider: config?.provider || "everfern",
             projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
-            createdAt: msgs[0].timestamp.toISOString(),
+            createdAt: msgs[0]?.timestamp ? (msgs[0].timestamp instanceof Date ? msgs[0].timestamp.toISOString() : new Date(msgs[0].timestamp).toISOString()) : new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
+
         if ((window as any).electronAPI?.history?.save) await (window as any).electronAPI.history.save(conversation);
 
         // Non-blocking: generate a smart title from the first user message
@@ -1625,7 +1679,22 @@ export default function ChatPage() {
                     const display = resolveToolDisplay(toolName, toolArgs);
                     console.log('[Frontend] Resolved display for', toolName, ':', display);
 
-                    const newTc: ToolCallDisplay = { id: toolCallId || crypto.randomUUID(), toolName, ...display, status: 'running', args: toolArgs, description: narrativeText || undefined };
+                    const placeholder = liveToolCallsRef.current.find(t =>
+                        t.id.startsWith('streaming-') && t.toolName === toolName
+                    );
+                    const inheritedOrderIndex = placeholder ? placeholder.orderIndex : liveToolCallsRef.current.length;
+                    const inheritedSubAgentProgress = placeholder?.subAgentProgress || subAgentProgress.get(toolCallId || '') || [];
+
+                    const newTc: ToolCallDisplay = {
+                        id: toolCallId || crypto.randomUUID(),
+                        toolName,
+                        ...display,
+                        status: 'running',
+                        args: toolArgs,
+                        description: narrativeText || undefined,
+                        orderIndex: inheritedOrderIndex,
+                        subAgentProgress: inheritedSubAgentProgress
+                    };
                     const mapKey = toolCallId || (toolName + '_running');
 
                     console.log('[Frontend] Created new ToolCallDisplay:', { id: newTc.id, toolName: newTc.toolName, label: newTc.label, status: newTc.status });
@@ -1918,6 +1987,20 @@ export default function ChatPage() {
                         newMap.set(event.toolCallId, limitedEvents);
                         return newMap;
                     });
+
+                    // Update live tool calls ref & state
+                    const updated = liveToolCallsRef.current.map(tc => {
+                        if (tc.id === event.toolCallId) {
+                            const currentEvents = tc.subAgentProgress || [];
+                            return {
+                                ...tc,
+                                subAgentProgress: [...currentEvents, event].slice(-100)
+                            };
+                        }
+                        return tc;
+                    });
+                    liveToolCallsRef.current = updated;
+                    setLiveToolCalls(updated);
                 });
 
                 console.log('[Frontend handleSend] Registering NEW onStreamChunk handler');
@@ -1988,13 +2071,15 @@ export default function ChatPage() {
                                 const toolName = nameMatch[1];
                                 const existing = liveToolCallsRef.current.find(t => t.id === streamingId);
 
-                                if (!existing) {
+                                 if (!existing) {
                                     const display = resolveToolDisplay(toolName, {});
                                     const newTc: ToolCallDisplay = {
                                         id: streamingId,
                                         toolName,
                                         ...display,
-                                        status: 'running'
+                                        status: 'running',
+                                        orderIndex: liveToolCallsRef.current.length,
+                                        subAgentProgress: subAgentProgress.get(streamingId) || []
                                     };
                                     liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
                                     hasNewTools = true;
@@ -2426,7 +2511,23 @@ export default function ChatPage() {
                         setFolderContexts([]);
                     }
 
-                    setMessages(conv.messages.map((m: any) => ({ id: m.id || crypto.randomUUID(), role: m.role, content: m.content, thought: m.thought, thinkingDuration: m.thinkingDuration, toolCalls: m.toolCalls, attachments: m.attachments || [], timestamp: new Date(conv.updatedAt) })));
+                    setMessages(conv.messages.map((m: any) => ({
+                        id: m.id || crypto.randomUUID(),
+                        role: m.role,
+                        content: m.content,
+                        thought: m.thought,
+                        thinkingDuration: m.thinkingDuration,
+                        toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
+                            const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
+                            return {
+                                ...display,
+                                ...tc
+                            };
+                        }) : undefined,
+                        attachments: m.attachments || [],
+                        timestamp: m.createdAt ? new Date(m.createdAt) : new Date(conv.updatedAt),
+                        stopped: !!m.stopped
+                    })));
                     setCurrentPlan(null);
                     setContextItems([]);
                     setExecutionPlan(null);
@@ -2968,6 +3069,12 @@ export default function ChatPage() {
             <div style={{ height: "100vh", backgroundColor: "#f5f4f0", color: "#201e24", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
                 <PermissionDialog />
                 <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
+                <FileViewerModal
+                    file={viewingFile}
+                    onClose={() => setViewingFile(null)}
+                    chatId={activeConversationId || "default"}
+                    projectPath={folderContexts[0]?.path}
+                />
                 <PlanViewerPanel isOpen={showPlanViewer} onClose={() => setShowPlanViewer(false)} content={planViewerContent} onApprove={handleApprovePlan} />
 
                 <VoiceAssistantUI
@@ -3418,14 +3525,13 @@ export default function ChatPage() {
                                                                             </div>
                                                                         ) : null}
                                                                         {artifacts.map((art, i) => (
-                                                                            <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                                                                            <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
                                                                                 <FileArtifact
                                                                                     path={art.path}
                                                                                     description={art.description}
                                                                                     chatId={activeConversationId || ""}
                                                                                     onOpenArtifact={(name) => {
-                                                                                        setSelectedArtifactName(name);
-                                                                                        setShowArtifacts(true);
+                                                                                        setViewingFile({ name, path: art.path });
                                                                                     }}
                                                                                 />
                                                                             </div>
@@ -3437,8 +3543,7 @@ export default function ChatPage() {
                                                                 content={msg.content}
                                                                 onView={(label, path) => {
                                                                     const filename = path.split(/[\\/]/).pop() || label;
-                                                                    setSelectedArtifactName(filename);
-                                                                    setShowArtifacts(true);
+                                                                    setViewingFile({ name: filename, path });
                                                                 }}
                                                             />
                                                             {msg.role === "assistant" && currentSites.length > 0 && currentSites.some(site => site.chatId === activeConversationId) && (
@@ -3529,14 +3634,13 @@ export default function ChatPage() {
                                                         <>
                                                             {cleanContent && <StreamingMarkdown content={cleanContent} isLive={true} />}
                                                             {artifacts.map((art, i) => (
-                                                                <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                                                                <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
                                                                     <FileArtifact
                                                                         path={art.path}
                                                                         description={art.description}
                                                                         chatId={activeConversationId || ""}
                                                                         onOpenArtifact={(name) => {
-                                                                            setSelectedArtifactName(name);
-                                                                            setShowArtifacts(true);
+                                                                            setViewingFile({ name, path: art.path });
                                                                         }}
                                                                     />
                                                                 </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
@@ -76,7 +76,24 @@ const RenderLabel = ({ label }: { label: string }) => {
 // ── Report Preview Pane ────────────────────────────────────────────────────────
 const ReportPane = ({ isOpen, onClose, label, path }: { isOpen: boolean; onClose: () => void; label: string; path: string }) => {
     const isHtml = /\.(html?|htm)$/i.test(path);
-    const fileUrl = `file:///${path.replace(/\\/g, '/')}`;
+    const [hostPath, setHostPath] = useState(path);
+
+    useEffect(() => {
+        const translate = async () => {
+            try {
+                const api = (window as any).electronAPI;
+                if (api?.system?.toHostPath) {
+                    const translated = await api.system.toHostPath(path);
+                    setHostPath(translated);
+                }
+            } catch (err) {
+                console.error('Failed to translate path:', err);
+            }
+        };
+        translate();
+    }, [path]);
+
+    const fileUrl = `file:///${hostPath.replace(/\\/g, '/')}`;
 
     return (
         <AnimatePresence>

@@ -9,7 +9,7 @@ import { webSearchTool } from '../tools/web-search';
 import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
-import { presentFilesTool } from '../tools/present-files';
+import { createPresentFilesTool } from '../tools/present-files';
 import { createWorkspaceRequestTool, allowFileDeleteTool } from '../tools/control-plane';
 import { terminalTool, terminalStatusTool } from '../tools/terminal';
 import { searchMcpRegistryTool, connectMcpServerTool, listMcpToolsTool } from '../tools/mcp-registry-tool';
@@ -100,7 +100,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     todoWriteTool,
     askUserTool,
     skillTool,
-    presentFilesTool,
+    createPresentFilesTool(runner),
     ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),
     createWorkspaceRequestTool(config.requestPermission),
     allowFileDeleteTool,

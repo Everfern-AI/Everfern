@@ -120,6 +120,15 @@ function adaptTool(definition, executor, customName) {
                         }
                     }
                     if (!local) {
+                        // First check if Linux VM is available
+                        const vmCheck = await (0, linux_vm_executor_1.isLinuxVMAvailable)();
+                        if (!vmCheck.available) {
+                            return {
+                                success: false,
+                                output: `ERROR: Linux VM is not available. This action cannot be done.\nReason: ${vmCheck.reason || 'Unknown error'}\n\nPlease install/configure the VM before executing commands. Alternatively, you can explicitly request local execution by passing local: true (requires user permission).`,
+                                error: `Linux VM is not available: ${vmCheck.reason || 'Unknown error'}`
+                            };
+                        }
                         // Route through Linux VM by default
                         try {
                             const result = await (0, linux_vm_executor_1.runInLinuxVM)(command);

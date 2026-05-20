@@ -141,7 +141,7 @@ export function validateAndCorrectToolArgs(
     '{{PLAN_PATH}}': `${ACTUAL_USER_PATH}/.everfern/chat/plan/${safeConvId}`
   };
 
-  const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'CommandLine'];
+  const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'CommandLine', 'Cwd', 'cwd'];
 
   for (const key of pathKeys) {
     const value = correctedArgs[key];

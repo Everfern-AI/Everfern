@@ -22,6 +22,10 @@ export interface ChatMessage {
   toolCalls?: any[];
   attachments?: any[];
   hasTimeline?: boolean;
+  orderIndex?: number;
+  thinkingDuration?: number;
+  stopped?: boolean;
+  createdAt?: string;
 }
 
 // ── Request / Response ──────────────────────────────────────────────

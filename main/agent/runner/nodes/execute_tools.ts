@@ -186,9 +186,12 @@ export const createExecuteToolsNode = (
     let pauseGenFlag = false;
 
     // AGI: Parallel Execution Strategy
+    const homedirNorm = os.homedir().replace(/\\/g, '/');
+    const safeConvId = conversationId || 'current';
+    
     const analysis = analyzeToolDependencies(state.pendingToolCalls.map(tc => ({
       name: tc.name,
-      args: tc.arguments,
+      args: validateAndCorrectToolArgs(tc.name, tc.arguments, homedirNorm, safeConvId),
       id: tc.id
     })));
 

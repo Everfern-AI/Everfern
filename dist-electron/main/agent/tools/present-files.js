@@ -1,7 +1,44 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.presentFilesTool = void 0;
-exports.presentFilesTool = {
+exports.presentFilesTool = exports.createPresentFilesTool = void 0;
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
+const linux_vm_executor_1 = require("./linux-vm-executor");
+const createPresentFilesTool = (runner) => ({
     name: 'present_files',
     description: 'Present final output files (artifacts, reports, spreadsheets) to the user. ' +
         'Surfaces them as interactive cards. Mandatory final step after work.',
@@ -66,6 +103,66 @@ exports.presentFilesTool = {
                 error: 'Empty files array'
             };
         }
+        // Determine artifacts directory to copy files to
+        const sessionId = runner?.currentConversationId || 'default';
+        let artifactsDir;
+        if (runner?.workspaceDir) {
+            artifactsDir = path.join(runner.workspaceDir, '.everfern', 'artifacts');
+        }
+        else {
+            artifactsDir = path.join(os.homedir(), '.everfern', 'artifacts', sessionId);
+        }
+        // Auto-save files to the artifacts directory
+        for (const f of files) {
+            if (!f.path)
+                continue;
+            const fileName = path.basename(f.path);
+            const targetPath = path.join(artifactsDir, fileName);
+            // If already in target path, skip copying
+            if (f.path === targetPath)
+                continue;
+            let fileCopied = false;
+            if (process.platform === 'win32') {
+                // Check if the path is a WSL-internal path (e.g. starts with / and not /mnt/)
+                const isWslInternal = f.path.startsWith('/') && !f.path.startsWith('/mnt/');
+                if (isWslInternal) {
+                    try {
+                        // Translate target path to WSL
+                        const wslTargetPath = (0, linux_vm_executor_1.translateWindowsPathToLinux)(targetPath);
+                        // Ensure target directory exists on host first
+                        fs.mkdirSync(artifactsDir, { recursive: true });
+                        // Copy file from WSL to the Windows mount
+                        await (0, linux_vm_executor_1.runInLinuxVM)(`cp "${f.path}" "${wslTargetPath}"`);
+                        fileCopied = true;
+                        console.log(`[PresentFiles] Copied WSL file ${f.path} to host artifacts at ${targetPath}`);
+                    }
+                    catch (err) {
+                        console.warn(`[PresentFiles] Failed to copy WSL file via VM:`, err);
+                    }
+                }
+            }
+            if (!fileCopied) {
+                // Standard copy (handles /mnt/c/ translation via translateLinuxPathToHost)
+                try {
+                    const hostPath = (0, linux_vm_executor_1.translateLinuxPathToHost)(f.path);
+                    if (fs.existsSync(hostPath)) {
+                        fs.mkdirSync(artifactsDir, { recursive: true });
+                        fs.copyFileSync(hostPath, targetPath);
+                        fileCopied = true;
+                        console.log(`[PresentFiles] Copied file from ${hostPath} to artifacts at ${targetPath}`);
+                    }
+                    else {
+                        console.warn(`[PresentFiles] Source file not found: ${hostPath}`);
+                    }
+                }
+                catch (err) {
+                    console.warn(`[PresentFiles] Failed to copy host file to artifacts:`, err);
+                }
+            }
+            if (fileCopied) {
+                f.path = targetPath;
+            }
+        }
         const formatted = files
             .filter((f) => f && f.path)
             .map((f) => {
@@ -84,4 +181,6 @@ exports.presentFilesTool = {
             }
         };
     }
-};
+});
+exports.createPresentFilesTool = createPresentFilesTool;
+exports.presentFilesTool = (0, exports.createPresentFilesTool)();

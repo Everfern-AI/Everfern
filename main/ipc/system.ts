@@ -3,8 +3,66 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { memorySaveTool } from '../agent/tools/memory-save';
+import { ensureDockerContainer } from '../agent/tools/linux-vm-executor';
 
 export function registerSystemHandlers() {
+  ipcMain.handle('system:checkWSL', async () => {
+    try {
+      const { execSync } = require('child_process');
+      execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 5000 });
+      const list = execSync('wsl.exe --list --quiet', { encoding: 'utf8', timeout: 5000 });
+      return list && list.trim().length > 0;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('system:checkDocker', async () => {
+    try {
+      const { execSync } = require('child_process');
+      execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('system:installWSL', async () => {
+    return new Promise((resolve) => {
+      const { spawn } = require('child_process');
+      const proc = spawn('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        'Start-Process wsl.exe -ArgumentList "--install -d Ubuntu --no-launch" -Verb RunAs -Wait'
+      ], { shell: false });
+
+      proc.on('close', (code: number | null) => {
+        try {
+          const { execSync } = require('child_process');
+          execSync('wsl.exe -d Ubuntu -e echo ok', { stdio: 'ignore', timeout: 5000 });
+          resolve({ success: true });
+        } catch {
+          resolve({ success: true, warning: 'Reboot may be required' });
+        }
+      });
+
+      proc.on('error', (err: Error) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+  });
+
+  ipcMain.handle('system:setupDockerUbuntu', async () => {
+    try {
+      await ensureDockerContainer();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('system:get-username', () => {
     return os.userInfo().username;
   });
@@ -88,10 +146,25 @@ export function registerSystemHandlers() {
     }
   });
 
+  ipcMain.handle('system:to-host-path', (_event, pathStr: string) => {
+    try {
+      const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+      return translateLinuxPathToHost(pathStr);
+    } catch {
+      return pathStr;
+    }
+  });
+
   ipcMain.handle('system:open-folder', async (_event, folderPath: string) => {
-    if (folderPath && fs.existsSync(folderPath)) {
-      shell.openPath(folderPath);
-      return { success: true };
+    if (folderPath) {
+      try {
+        const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+        const hostPath = translateLinuxPathToHost(folderPath);
+        shell.openPath(hostPath);
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
     }
     return { success: false, error: 'Folder not found' };
   });
@@ -232,6 +305,22 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:open-external', async (_event, url: string) => {
     if (url) {
       try {
+        if (url.startsWith('file://')) {
+          let decodedUrl = decodeURIComponent(url);
+          let filePath = decodedUrl.replace(/^file:\/\/\/?/, '');
+
+          const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+          const hostPath = translateLinuxPathToHost(filePath);
+
+          console.log(`[IPC] system:open-external: Original file:// url: ${url}, Translated host path: ${hostPath}`);
+
+          const resultMsg = await shell.openPath(hostPath);
+          if (resultMsg) {
+            return { success: false, error: resultMsg };
+          }
+          return { success: true };
+        }
+
         await shell.openExternal(url);
         return { success: true };
       } catch (err: any) {

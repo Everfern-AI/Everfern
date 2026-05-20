@@ -20,6 +20,8 @@ export interface ToolCallDisplay {
     phase?: "triage" | "planning" | "execution" | "validation" | "completion";
     thought?: string;
     currentNode?: string;
+    orderIndex?: number;
+    subAgentProgress?: any[];
 }
 
 export interface Message {

@@ -56,7 +56,9 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                 boxShadow: isHovered ? '0 8px 24px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.03)',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 gap: 12,
-                position: 'relative'
+                position: 'relative',
+                width: '100%',
+                maxWidth: '480px'
             }}
         >
             {/* File Icon */}

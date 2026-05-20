@@ -40,6 +40,11 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         },
         openExternal: (url) => electron_1.ipcRenderer.invoke('system:open-external', url),
         fetchMetadata: (url) => electron_1.ipcRenderer.invoke('system:fetch-metadata', url),
+        checkWSL: () => electron_1.ipcRenderer.invoke('system:checkWSL'),
+        checkDocker: () => electron_1.ipcRenderer.invoke('system:checkDocker'),
+        installWSL: () => electron_1.ipcRenderer.invoke('system:installWSL'),
+        setupDockerUbuntu: () => electron_1.ipcRenderer.invoke('system:setupDockerUbuntu'),
+        toHostPath: (pathStr) => electron_1.ipcRenderer.invoke('system:to-host-path', pathStr),
     },
     // ── System Tray ──────────────────────────────────────────────────
     tray: {

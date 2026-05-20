@@ -6,7 +6,7 @@
  */
 
 import type { AgentTool, ToolResult } from '../runner/types';
-import { runInLinuxVM } from './linux-vm-executor';
+import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
@@ -132,6 +132,16 @@ function adaptTool(
           }
 
           if (!local) {
+            // First check if Linux VM is available
+            const vmCheck = await isLinuxVMAvailable();
+            if (!vmCheck.available) {
+              return {
+                success: false,
+                output: `ERROR: Linux VM is not available. This action cannot be done.\nReason: ${vmCheck.reason || 'Unknown error'}\n\nPlease install/configure the VM before executing commands. Alternatively, you can explicitly request local execution by passing local: true (requires user permission).`,
+                error: `Linux VM is not available: ${vmCheck.reason || 'Unknown error'}`
+              };
+            }
+
             // Route through Linux VM by default
             try {
               const result = await runInLinuxVM(command);

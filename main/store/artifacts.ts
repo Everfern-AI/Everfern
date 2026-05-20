@@ -59,14 +59,23 @@ function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
   }
 
   for (const file of files) {
-    if (file.startsWith('.') || !file.endsWith('.html')) continue; // ignore hidden files and non-html
+    if (file.startsWith('.')) continue;
+    const ext = path.extname(file).toLowerCase();
+    const ALLOWED_EXTS = ['.html', '.htm', '.txt', '.md', '.json', '.pdf', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    if (!ALLOWED_EXTS.includes(ext)) continue;
 
     const filePath = path.join(dirPath, file);
     try {
         const stats = fs.statSync(filePath);
-        // Read snippet securely
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const snippet = content.slice(0, 500).trim();
+        // Read snippet securely if text, otherwise show binary file info
+        let snippet = '';
+        const isText = ['.html', '.htm', '.txt', '.md', '.json', '.csv'].includes(ext);
+        if (isText) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          snippet = content.slice(0, 500).trim();
+        } else {
+          snippet = `[Binary File] Size: ${(stats.size / 1024).toFixed(2)} KB`;
+        }
 
         results.push({
           id: file,

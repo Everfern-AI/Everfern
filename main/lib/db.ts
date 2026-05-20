@@ -73,6 +73,10 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
       tool_calls TEXT, -- JSON string
       mission_timeline TEXT, -- JSON string
       has_timeline BOOLEAN DEFAULT 0,
+      order_index INTEGER DEFAULT 0,
+      thinking_duration INTEGER,
+      stopped BOOLEAN DEFAULT 0,
+      attachments TEXT, -- JSON string
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
@@ -145,7 +149,11 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
           { name: 'reasoning_content', type: 'TEXT' },
           { name: 'tool_calls', type: 'TEXT' },
           { name: 'mission_timeline', type: 'TEXT' },
-          { name: 'has_timeline', type: 'BOOLEAN DEFAULT 0' }
+          { name: 'has_timeline', type: 'BOOLEAN DEFAULT 0' },
+          { name: 'order_index', type: 'INTEGER DEFAULT 0' },
+          { name: 'thinking_duration', type: 'INTEGER' },
+          { name: 'stopped', type: 'BOOLEAN DEFAULT 0' },
+          { name: 'attachments', type: 'TEXT' }
         ];
 
         for (const col of requiredColumns) {

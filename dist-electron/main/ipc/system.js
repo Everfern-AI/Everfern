@@ -39,7 +39,63 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
 const memory_save_1 = require("../agent/tools/memory-save");
+const linux_vm_executor_1 = require("../agent/tools/linux-vm-executor");
 function registerSystemHandlers() {
+    electron_1.ipcMain.handle('system:checkWSL', async () => {
+        try {
+            const { execSync } = require('child_process');
+            execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 5000 });
+            const list = execSync('wsl.exe --list --quiet', { encoding: 'utf8', timeout: 5000 });
+            return list && list.trim().length > 0;
+        }
+        catch {
+            return false;
+        }
+    });
+    electron_1.ipcMain.handle('system:checkDocker', async () => {
+        try {
+            const { execSync } = require('child_process');
+            execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+            return true;
+        }
+        catch {
+            return false;
+        }
+    });
+    electron_1.ipcMain.handle('system:installWSL', async () => {
+        return new Promise((resolve) => {
+            const { spawn } = require('child_process');
+            const proc = spawn('powershell.exe', [
+                '-NoProfile',
+                '-ExecutionPolicy',
+                'Bypass',
+                '-Command',
+                'Start-Process wsl.exe -ArgumentList "--install -d Ubuntu --no-launch" -Verb RunAs -Wait'
+            ], { shell: false });
+            proc.on('close', (code) => {
+                try {
+                    const { execSync } = require('child_process');
+                    execSync('wsl.exe -d Ubuntu -e echo ok', { stdio: 'ignore', timeout: 5000 });
+                    resolve({ success: true });
+                }
+                catch {
+                    resolve({ success: true, warning: 'Reboot may be required' });
+                }
+            });
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+    electron_1.ipcMain.handle('system:setupDockerUbuntu', async () => {
+        try {
+            await (0, linux_vm_executor_1.ensureDockerContainer)();
+            return { success: true };
+        }
+        catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
     electron_1.ipcMain.handle('system:get-username', () => {
         return os.userInfo().username;
     });
@@ -117,10 +173,26 @@ function registerSystemHandlers() {
             return { success: false, error: err.message };
         }
     });
+    electron_1.ipcMain.handle('system:to-host-path', (_event, pathStr) => {
+        try {
+            const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+            return translateLinuxPathToHost(pathStr);
+        }
+        catch {
+            return pathStr;
+        }
+    });
     electron_1.ipcMain.handle('system:open-folder', async (_event, folderPath) => {
-        if (folderPath && fs.existsSync(folderPath)) {
-            electron_1.shell.openPath(folderPath);
-            return { success: true };
+        if (folderPath) {
+            try {
+                const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+                const hostPath = translateLinuxPathToHost(folderPath);
+                electron_1.shell.openPath(hostPath);
+                return { success: true };
+            }
+            catch (err) {
+                return { success: false, error: err.message };
+            }
         }
         return { success: false, error: 'Folder not found' };
     });
@@ -246,6 +318,18 @@ function registerSystemHandlers() {
     electron_1.ipcMain.handle('system:open-external', async (_event, url) => {
         if (url) {
             try {
+                if (url.startsWith('file://')) {
+                    let decodedUrl = decodeURIComponent(url);
+                    let filePath = decodedUrl.replace(/^file:\/\/\/?/, '');
+                    const { translateLinuxPathToHost } = require('../agent/tools/linux-vm-executor');
+                    const hostPath = translateLinuxPathToHost(filePath);
+                    console.log(`[IPC] system:open-external: Original file:// url: ${url}, Translated host path: ${hostPath}`);
+                    const resultMsg = await electron_1.shell.openPath(hostPath);
+                    if (resultMsg) {
+                        return { success: false, error: resultMsg };
+                    }
+                    return { success: true };
+                }
                 await electron_1.shell.openExternal(url);
                 return { success: true };
             }

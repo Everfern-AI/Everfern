@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
-  Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause
+  Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
+  BookOpen
 } from 'lucide-react';
 
 /* ============================================================
@@ -15,6 +16,7 @@ export const ToolType = {
   WEB_SEARCH: 'web_search',
   NAVIS: 'navis',
   TERMINAL: 'terminal',
+  SKILL: 'skill',
   GENERIC: 'generic',
 };
 
@@ -61,6 +63,7 @@ const T = {
    ============================================================ */
 export function detectToolType(toolName: string | undefined | null): string {
   const n = (toolName || "").toLowerCase();
+  if (n === 'skill') return ToolType.SKILL;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.NAVIS;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
@@ -82,6 +85,7 @@ export function getFaviconUrl(domain: string): string {
 
 function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
+  if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
@@ -186,11 +190,11 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
             boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
             cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
           }}
-          onMouseEnter={e => { 
+          onMouseEnter={e => {
             e.currentTarget.style.transform = 'scale(1.05)';
             e.currentTarget.style.color = '#000';
           }}
-          onMouseLeave={e => { 
+          onMouseLeave={e => {
             e.currentTarget.style.transform = 'scale(1)';
             e.currentTarget.style.color = '#333';
           }}
@@ -230,7 +234,7 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       {right && (
         <span style={{
           fontSize: 10.5, fontWeight: 700, color: '#111',
-          background: '#ececea', 
+          background: '#ececea',
           border: '0.5px solid rgba(0,0,0,0.1)',
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
           padding: '3px 12px', borderRadius: 100, fontFamily: T.mono,
@@ -418,6 +422,106 @@ function ScreenshotCard({ screenshot, index, onZoom }: { screenshot: any; index:
 /* ============================================================
    ZOOM MODAL
    ============================================================ */
+const CursorOverlayOnImage = ({ coordinate, action }: { coordinate: any, action: string }) => {
+  let x = 0;
+  let y = 0;
+  if (Array.isArray(coordinate)) {
+    x = Number(coordinate[0]);
+    y = Number(coordinate[1]);
+  } else if (coordinate && typeof coordinate === 'object') {
+    x = Number(coordinate.x);
+    y = Number(coordinate.y);
+  } else {
+    return null;
+  }
+  if (isNaN(x) || isNaN(y)) return null;
+
+  const maxVal = Math.max(x, y);
+  const scaleWidth = maxVal <= 1000 ? 1000 : 1920;
+  const scaleHeight = maxVal <= 1000 ? 1000 : 1080;
+
+  const leftPercent = (x / scaleWidth) * 100;
+  const topPercent = (y / scaleHeight) * 100;
+
+  return (
+    <motion.div
+      style={{
+        position: 'absolute',
+        transform: 'translate(-50%, -50%)',
+        pointerEvents: 'none',
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      animate={{
+        left: `${leftPercent}%`,
+        top: `${topPercent}%`,
+      }}
+      transition={{
+        type: 'spring',
+        stiffness: 400,
+        damping: 28
+      }}
+    >
+      {(action?.toLowerCase().includes('click') || action?.toLowerCase().includes('tap') || action?.toLowerCase().includes('drag')) && (
+        <div
+          style={{
+            position: 'absolute',
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            border: '2.5px solid rgba(59, 130, 246, 0.8)',
+            animation: 'ripple-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      <svg
+        width="26"
+        height="26"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{
+          filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.5))',
+        }}
+      >
+        <rect
+          x="6"
+          y="6"
+          width="12"
+          height="12"
+          rx="3"
+          ry="3"
+          fill="rgba(255, 255, 255, 0.95)"
+          stroke="rgba(0, 0, 0, 0.15)"
+          strokeWidth="0.5"
+        />
+        <rect
+          x="8"
+          y="8"
+          width="8"
+          height="8"
+          rx="2"
+          ry="2"
+          fill="none"
+          stroke="rgba(0, 0, 0, 0.08)"
+          strokeWidth="0.5"
+        />
+      </svg>
+      
+      <style>{`
+        @keyframes ripple-ping {
+          0% { transform: scale(0.5); opacity: 1; }
+          100% { transform: scale(1.8); opacity: 0; }
+        }
+      `}</style>
+    </motion.div>
+  );
+};
+
 function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => void }) {
   return (
     <motion.div
@@ -429,34 +533,44 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ position: 'relative', maxWidth: '90vw', width: '100%' }}>
+      <div style={{ position: 'relative', maxWidth: '90vw', width: '100%', display: 'flex', justifyContent: 'center' }}>
         <button
           onClick={onClose}
           style={{
-            position: 'absolute', top: -44, right: 0,
+            position: 'absolute', top: -44, right: 24,
             background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
             borderRadius: T.r8, width: 32, height: 32, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.7)',
             transition: 'background 0.15s',
+            zIndex: 110,
           }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.13)'}
           onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
         >
           <X size={14} />
         </button>
-        <motion.img
-          src={`data:image/png;base64,${screenshot.base64}`}
-          alt="Full screenshot"
-          style={{
-            width: '100%', maxHeight: '84vh', objectFit: 'contain',
-            borderRadius: T.r12, border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 32px 64px rgba(0,0,0,0.6)',
-          }}
-          initial={{ scale: 0.96, y: 16 }}
-          animate={{ scale: 1, y: 0 }}
-          exit={{ scale: 0.96, y: 16 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-        />
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          <motion.img
+            src={`data:image/png;base64,${screenshot.base64}`}
+            alt="Full screenshot"
+            style={{
+              width: '100%', maxHeight: '84vh', objectFit: 'contain',
+              borderRadius: T.r12, border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 32px 64px rgba(0,0,0,0.6)',
+              display: 'block',
+            }}
+            initial={{ scale: 0.96, y: 16 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.96, y: 16 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+          />
+          {screenshot.action?.params?.coordinate && (
+            <CursorOverlayOnImage
+              coordinate={screenshot.action.params.coordinate}
+              action={screenshot.action.type}
+            />
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -468,11 +582,11 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolName: string }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
-  
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
-  
+
   useEffect(() => {
     let interval: any;
     if (isPlaying && safe.length > 0) {
@@ -523,9 +637,9 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ 
-          background: T.surface, 
-          borderRadius: T.r12, 
+        <div style={{
+          background: T.surface,
+          borderRadius: T.r12,
           border: `1px solid ${T.border}`,
           padding: '16px',
           display: 'flex',
@@ -533,48 +647,57 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
           gap: 16
         }}>
           {/* Main Image */}
-          <div 
-            style={{ 
-              width: '100%', 
+          <div
+            style={{
+              width: '100%',
               background: T.surfaceRaised,
               borderRadius: T.r8,
               border: `1px solid ${T.borderSubtle}`,
               overflow: 'hidden',
               position: 'relative',
-              cursor: 'zoom-in',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               minHeight: 300
             }}
-            onClick={() => setZoomed(currentScreenshot)}
           >
-            <img 
-              src={`data:image/jpeg;base64,${currentScreenshot.base64}`} 
-              alt="Navis frame"
-              style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain' }}
-            />
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <img
+                src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
+                alt="Navis frame"
+                style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
+                onClick={() => setZoomed(currentScreenshot)}
+              />
+              {currentScreenshot.action?.params?.coordinate && (
+                <CursorOverlayOnImage
+                  coordinate={currentScreenshot.action.params.coordinate}
+                  action={currentScreenshot.action.type}
+                />
+              )}
+            </div>
             <div style={{
-              position: 'absolute', bottom: 12, left: 12, 
-              background: 'rgba(0,0,0,0.6)', color: '#fff', 
+              position: 'absolute', bottom: 12, left: 12,
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)'
+              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
+              zIndex: 10
             }}>
               Step {currentScreenshot.sequenceNumber ?? (currentIndex + 1)}
             </div>
             <div style={{
-              position: 'absolute', bottom: 12, right: 12, 
-              background: 'rgba(0,0,0,0.6)', color: '#fff', 
+              position: 'absolute', bottom: 12, right: 12,
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)'
+              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
+              zIndex: 10
             }}>
               {formatTimestamp(currentScreenshot.timestamp).split(',')[1]?.trim() || ''}
             </div>
           </div>
 
           {/* Slider and Controls */}
-          <div style={{ 
-            display: 'flex', alignItems: 'center', gap: 12, 
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
             padding: '6px 16px 6px 6px',
             background: "#ececea",
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 2px 5px rgba(0,0,0,0.05)",
@@ -593,8 +716,8 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
                 width: 34, height: 34, borderRadius: '50%',
                 background: isPlaying ? '#111' : '#f9f9f9',
                 color: isPlaying ? '#fff' : '#111',
-                boxShadow: isPlaying 
-                  ? 'inset 0 1px 3px rgba(0,0,0,0.3)' 
+                boxShadow: isPlaying
+                  ? 'inset 0 1px 3px rgba(0,0,0,0.3)'
                   : 'inset 0 1px 0 rgba(255,255,255,1), 0 1px 2px rgba(0,0,0,0.05)',
                 border: isPlaying ? 'none' : '0.5px solid rgba(0,0,0,0.1)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -604,8 +727,8 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
             >
               {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" style={{ marginLeft: 2 }} />}
             </button>
-            
-            <input 
+
+            <input
               type="range"
               className="gallium-slider"
               min={0}
@@ -652,113 +775,161 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
     </div>
   );
 }
-
 /* ============================================================
-   TERMINAL VIEW
+   TERMINAL VIEW — drop-in replacement
    ============================================================ */
-function TerminalView({ command, output, exitCode, duration }: { command: string; output: string; exitCode?: number; duration?: number }) {
-  const isError = exitCode !== undefined && exitCode !== 0;
-  const clean = output?.replace(/\x1b\[[0-9;]*m/g, '') || '';
 
+const TERM = {
+  bg:       '#0c0c0c',
+  border:   'rgba(255,255,255,0.08)',
+  divider:  'rgba(255,255,255,0.05)',
+
+  textCmd:  'rgba(255,255,255,0.88)',
+  textOut:  'rgba(255,255,255,0.55)',
+  textErr:  '#ff5f57',
+  textDim:  'rgba(255,255,255,0.2)',
+  textMeta: 'rgba(255,255,255,0.3)',
+
+  psUser:   '#5af78e',
+  psAt:     'rgba(255,255,255,0.25)',
+  psHost:   '#57c7ff',
+  psSep:    'rgba(255,255,255,0.2)',
+  psPath:   '#f3f99d',
+  psDollar: 'rgba(255,255,255,0.4)',
+
+  okBg:     'rgba(40,201,64,0.1)',
+  okBorder: 'rgba(40,201,64,0.18)',
+  okText:   '#28c940',
+  errBg:    'rgba(255,95,87,0.1)',
+  errBorder:'rgba(255,95,87,0.18)',
+  errText:  '#ff5f57',
+};
+
+const monoStack = '"Geist Mono","Berkeley Mono",ui-monospace,"SF Mono",Menlo,monospace';
+
+function PS1({ user = 'ubuntu', host = 'localhost', path = '~' }: { user?: string; host?: string; path?: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: T.inkBg, overflow: 'hidden' }}>
-      {/* Bar */}
-      <div style={{
-        padding: '14px 24px',
-        background: T.inkSurface,
-        borderBottom: `1px solid ${T.inkBorder}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Traffic lights */}
-          <div style={{ display: 'flex', gap: 5 }}>
-            {['#ff5f57', '#febc2e', '#28c840'].map(c => (
-              <div key={c} style={{ width: 11, height: 11, borderRadius: '50%', background: c, opacity: 0.85 }} />
-            ))}
-          </div>
-          <span style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: T.sans }}>
-            Terminal
-          </span>
-        </div>
-        <CopyBtn text={output} dark />
-      </div>
-
-      {/* Command */}
-      <div style={{ padding: '18px 24px 14px', background: T.inkSurface, borderBottom: `1px solid ${T.inkBorder}`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 10, fontFamily: T.mono }}>
-          <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 13, userSelect: 'none', flexShrink: 0 }}>$</span>
-          <code style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 1.7, wordBreak: 'break-all', fontWeight: 500 }}>{command}</code>
-        </div>
-      </div>
-
-      {/* Status bar */}
-      {(exitCode !== undefined || duration !== undefined) && (
-        <div style={{
-          padding: '10px 24px',
-          background: T.inkBg,
-          borderBottom: `1px solid ${T.inkBorder}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
-        }}>
-          {exitCode !== undefined && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                fontSize: 10.5, fontWeight: 700, padding: '3px 10px', borderRadius: 20, fontFamily: T.sans,
-                background: isError ? 'rgba(239,68,68,0.12)' : 'rgba(74,222,128,0.09)',
-                border: `1px solid ${isError ? 'rgba(239,68,68,0.22)' : 'rgba(74,222,128,0.18)'}`,
-                color: isError ? '#f87171' : '#4ade80',
-              }}>
-                {isError ? <AlertTriangle size={10} /> : <CheckCircle size={10} />}
-                {isError ? `exit ${exitCode}` : 'ok'}
-              </div>
-            </div>
-          )}
-          {duration !== undefined && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.inkMuted, fontSize: 11, fontFamily: T.mono }}>
-              <Clock size={11} />
-              {formatDuration(duration)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Output */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <pre style={{
-          margin: 0, padding: '24px',
-          fontFamily: T.mono, fontSize: 12.5, lineHeight: 1.9,
-          color: isError ? '#fca5a5' : T.inkText,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>
-          <code>{clean || <span style={{ color: T.inkMuted, fontStyle: 'italic' }}>(no output)</span>}</code>
-        </pre>
-      </div>
-
-      {/* Footer */}
-      {exitCode !== undefined && (
-        <div style={{
-          padding: '10px 24px', flexShrink: 0,
-          borderTop: `1px solid ${T.inkBorder}`,
-          background: isError ? 'rgba(239,68,68,0.05)' : 'rgba(74,222,128,0.04)',
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <motion.div
-            style={{ width: 6, height: 6, borderRadius: '50%', background: isError ? T.red : T.green }}
-            animate={isError ? { opacity: [1, 0.3, 1] } : {}}
-            transition={{ repeat: Infinity, duration: 1.8 }}
-          />
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-            fontFamily: T.sans, color: isError ? '#f87171' : '#4ade80',
-          }}>
-            {isError ? 'exited with errors' : 'completed'}
-          </span>
-        </div>
-      )}
-    </div>
+    <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
+      <span style={{ color: TERM.psUser }}>{user}</span>
+      <span style={{ color: TERM.psAt }}>@</span>
+      <span style={{ color: TERM.psHost }}>{host}</span>
+      <span style={{ color: TERM.psSep }}>:</span>
+      <span style={{ color: TERM.psPath }}>{path}</span>
+      <span style={{ color: TERM.psDollar, margin: '0 8px 0 4px' }}>$</span>
+    </span>
   );
 }
 
+function BlinkCursor() {
+  return (
+    <motion.span
+      style={{
+        display: 'inline-block', width: 7, height: 14,
+        background: 'rgba(255,255,255,0.6)', borderRadius: 1,
+        verticalAlign: 'text-bottom', marginLeft: 1,
+      }}
+      animate={{ opacity: [1, 1, 0, 0] }}
+      transition={{ repeat: Infinity, duration: 1.1, times: [0, 0.45, 0.5, 0.95], ease: 'linear' }}
+    />
+  );
+}
+
+export function TerminalView({
+  command,
+  output,
+  exitCode,
+  duration,
+}: {
+  command: string;
+  output: string;
+  exitCode?: number;
+  duration?: number;
+}) {
+  const isError = exitCode !== undefined && exitCode !== 0;
+  const clean   = output?.replace(/\x1b\[[0-9;]*m/g, '') || '';
+
+  // Try to detect user/host/path from prompt strings baked into command, fall back to defaults
+  const user = 'ubuntu';
+  const host = 'localhost';
+  const path = '~';
+
+  const showExit = exitCode !== undefined || duration !== undefined;
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100%',
+      background: TERM.bg, overflow: 'hidden',
+      fontFamily: monoStack,
+    }}>
+
+      {/* ── Body ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Prompt + command */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
+          <PS1 user={user} host={host} path={path} />
+          <code style={{
+            fontSize: 13, color: TERM.textCmd, lineHeight: 1.6,
+            wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack,
+          }}>
+            {command}
+          </code>
+        </div>
+
+        {/* Output */}
+        {clean ? (
+          <pre style={{
+            fontSize: 12.5, lineHeight: 1.75,
+            color: isError ? TERM.textErr : TERM.textOut,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            margin: '0 0 8px', fontFamily: monoStack,
+          }}>
+            {clean}
+          </pre>
+        ) : (
+          <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: TERM.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
+            (no output)
+          </pre>
+        )}
+
+        {/* Exit / duration */}
+        {showExit && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            marginTop: 6, paddingTop: 12,
+            borderTop: `1px solid ${TERM.divider}`,
+          }}>
+            {exitCode !== undefined && (
+              <span style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                fontFamily: monoStack, letterSpacing: '0.03em',
+                background: isError ? TERM.errBg : TERM.okBg,
+                border: `1px solid ${isError ? TERM.errBorder : TERM.okBorder}`,
+                color: isError ? TERM.errText : TERM.okText,
+              }}>
+                {isError ? `exit ${exitCode}` : 'ok'}
+              </span>
+            )}
+            {duration !== undefined && (
+              <span style={{
+                fontSize: 11, color: TERM.textDim,
+                fontFamily: monoStack, marginLeft: 'auto',
+              }}>
+                {formatDuration(duration)}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Idle prompt with cursor */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
+          <PS1 user={user} host={host} path={path} />
+          <BlinkCursor />
+        </div>
+      </div>
+    </div>
+  );
+}
 /* ============================================================
    SEARCH RESULT CARD
    ============================================================ */
@@ -775,7 +946,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
         try {
           const api = (window as any).electronAPI;
           if (!api?.system?.fetchMetadata) return;
-          
+
           const meta = await api.system.fetchMetadata(url);
           if (meta) {
             if (!initialDescription && meta.description) setDescription(meta.description);
@@ -797,7 +968,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
       displayDomain = new URL(url).hostname;
     } catch { /* ignore */ }
   }
-  
+
   return (
     <motion.article
       onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
@@ -988,6 +1159,65 @@ function GenericView({ toolName, args, output }: { toolName: string; args?: any;
 }
 
 /* ============================================================
+   SKILL VIEW
+   ============================================================ */
+function SkillView({ skillName, name, path, content }: { skillName: string; name: string; path: string; content: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Subtitle bar */}
+      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: 0, letterSpacing: '-0.015em', fontFamily: T.sans }}>
+            {name}
+          </h3>
+          <span style={{
+            fontSize: 9.5, fontWeight: 700, color: T.green, background: T.greenFaint,
+            border: `1px solid rgba(34,197,94,0.15)`, padding: '2px 8px', borderRadius: 20, fontFamily: T.sans
+          }}>
+            Skill Loaded
+          </span>
+        </div>
+        {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', background: T.bg, padding: '20px 24px 28px' }}>
+        {content && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <CopyBtn text={content} />
+            </div>
+            <pre style={{
+              margin: 0, fontFamily: T.mono, fontSize: 12, lineHeight: 1.85,
+              background: T.inkBg, color: T.inkText,
+              padding: '18px 20px', borderRadius: T.r10,
+              border: `1px solid ${T.inkBorder}`, maxHeight: 600, overflowY: 'auto',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+            }}>
+              <code>{content}</code>
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function extractSkillData(tc: any) {
+  try {
+    const skillName = tc.args?.name || tc.args?.skill || '';
+    const skill = tc.data?.skill || null;
+    return {
+      skillName,
+      name: skill?.name || skillName || 'Skill',
+      path: skill?.path || '',
+      content: skill?.content || tc.output || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ============================================================
    DATA EXTRACTION
    ============================================================ */
 export function extractWebSearchData(tc: any) {
@@ -995,7 +1225,7 @@ export function extractWebSearchData(tc: any) {
     const query = tc.args?.query || '';
     const raw = tc.data?.results;
     const results = Array.isArray(raw) ? raw : [];
-    
+
     // Process results to include domain and ensure favicon fallback
     const processed = results.map(r => {
       let domain = r.domain || '';
@@ -1020,21 +1250,25 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     console.log('[extractNavisData] tc:', tc, 'progressEvents:', progressEvents);
     const screenshots: any[] = [];
     const seen = new Set();
-    const add = (b64: string, ts: any, seq: number) => {
+    const add = (b64: string, ts: any, seq: number, actionInfo?: any) => {
       if (!b64) return;
       const clean = b64.startsWith('data:image') ? b64.substring(b64.indexOf(',') + 1) : b64;
       if (!seen.has(clean)) {
         seen.add(clean);
-        screenshots.push({ base64: clean, timestamp: ts, sequenceNumber: seq });
+        screenshots.push({ base64: clean, timestamp: ts, sequenceNumber: seq, action: actionInfo });
       }
     };
+
+    let lastAction: any = null;
 
     // 1. Process real-time progress events first (higher priority for live view)
     if (Array.isArray(progressEvents)) {
       progressEvents.forEach((e: any, i: number) => {
-        if (e.type === 'screenshot') {
+        if (e.type === 'action') {
+          lastAction = e.action;
+        } else if (e.type === 'screenshot') {
           const b64 = e.screenshot?.base64 || e.content || e.base64;
-          if (b64) add(b64, e.timestamp || Date.now(), i);
+          if (b64) add(b64, e.timestamp || Date.now(), i, lastAction);
         }
       });
     }
@@ -1043,23 +1277,40 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     const sData = tc.data?.screenshot;
     if (Array.isArray(sData)) {
       sData.forEach((s: any, i: number) => {
-        if (typeof s === 'string') add(s, Date.now(), i);
-        else if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i);
+        if (typeof s === 'string') add(s, Date.now(), i, lastAction || (s as any).action);
+        else if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction);
       });
     } else if (typeof sData === 'string') {
-      add(sData, Date.now(), 0);
+      add(sData, Date.now(), 0, lastAction);
     }
 
     // 3. Process historical screenshots
     if (Array.isArray(tc.data?.screenshots)) {
       tc.data.screenshots.forEach((s: any, i: number) => {
-        if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i);
-        else if (typeof s === 'string') add(s, Date.now(), i);
+        if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction);
+        else if (typeof s === 'string') add(s, Date.now(), i, lastAction);
       });
     }
-    
-    if (typeof tc.data?.base64Image === 'string') add(tc.data.base64Image, Date.now(), screenshots.length);
-    
+
+    if (typeof tc.data?.base64Image === 'string') add(tc.data.base64Image, Date.now(), screenshots.length, lastAction);
+
+    // 4. Attach tool call action if no event action was found
+    if (screenshots.length > 0) {
+      const toolCallAction = tc.args?.coordinate || tc.args?.action ? {
+        type: tc.args.action || tc.args.type || 'click',
+        params: tc.args,
+        description: tc.args.text || tc.args.query || ''
+      } : null;
+
+      if (toolCallAction) {
+        screenshots.forEach((s) => {
+          if (!s.action) {
+            s.action = toolCallAction;
+          }
+        });
+      }
+    }
+
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
     return { screenshots, url: tc.args?.url, action: tc.args?.action };
@@ -1104,18 +1355,18 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
 
   useEffect(() => {
     if (!isOpen || !toolCall) { setToolData(null); setError(null); return; }
-    
+
     // For live Navis sessions, we don't want to show loading spinner every time a screenshot comes in
     // if we already have some data.
     if (!toolData || toolData.toolCallId !== toolCall.id) {
-        setIsLoading(true); 
+        setIsLoading(true);
     }
-    
+
     setError(null);
     try {
       const type = detectToolType(toolCall.toolName);
       setToolType(type);
-      
+
       let extracted: any;
       if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
@@ -1124,18 +1375,20 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractNavisData(toolCall, progress);
       } else if (type === ToolType.TERMINAL) {
         extracted = extractTerminalData(toolCall);
+      } else if (type === ToolType.SKILL) {
+        extracted = extractSkillData(toolCall);
       } else {
         extracted = extractGenericData(toolCall);
       }
-      
-      if (!extracted && type !== ToolType.GENERIC) { 
-        setToolType(ToolType.GENERIC); 
-        extracted = extractGenericData(toolCall); 
+
+      if (!extracted && type !== ToolType.GENERIC) {
+        setToolType(ToolType.GENERIC);
+        extracted = extractGenericData(toolCall);
       }
-      
+
       // Store ID to help with re-loading logic
       if (extracted) extracted.toolCallId = toolCall.id;
-      
+
       setToolData(extracted);
     } catch { setError('Failed to load details'); }
     setIsLoading(false);
@@ -1143,7 +1396,6 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
 
   useEffect(() => {
     if (!isOpen) return;
-    panelRef.current?.focus();
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', esc as any);
     return () => document.removeEventListener('keydown', esc as any);
@@ -1182,6 +1434,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
     if (toolType === ToolType.NAVIS) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Navis'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
+    if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     return <GenericView {...toolData} />;
   };
 

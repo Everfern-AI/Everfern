@@ -152,17 +152,28 @@ class ChatHistoryStore {
         WHERE c.id = ?`, [id]);
             if (!convRow)
                 return null;
-            const msgRows = await db_1.dbOps.all('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC', [id]);
-            const messages = msgRows.map(row => ({
-                id: row.id,
-                role: row.role,
-                content: row.content,
-                thought: row.thought,
-                reasoning_content: row.reasoning_content || row.thought, // Use reasoning_content if available, fallback to thought
-                toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
-                missionTimeline: row.mission_timeline ? JSON.parse(row.mission_timeline) : undefined,
-                hasTimeline: !!row.has_timeline,
-            }));
+            const msgRows = await db_1.dbOps.all('SELECT * FROM messages WHERE conversation_id = ? ORDER BY order_index ASC, created_at ASC', [id]);
+            const messages = msgRows.map(row => {
+                let toolCalls = row.tool_calls ? JSON.parse(row.tool_calls) : undefined;
+                if (Array.isArray(toolCalls)) {
+                    toolCalls.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+                }
+                return {
+                    id: row.id,
+                    role: row.role,
+                    content: row.content,
+                    thought: row.thought,
+                    reasoning_content: row.reasoning_content || row.thought,
+                    toolCalls,
+                    missionTimeline: row.mission_timeline ? JSON.parse(row.mission_timeline) : undefined,
+                    hasTimeline: !!row.has_timeline,
+                    orderIndex: row.order_index ?? 0,
+                    thinkingDuration: row.thinking_duration ?? undefined,
+                    stopped: row.stopped === 1 || row.stopped === true,
+                    attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+                    createdAt: row.created_at
+                };
+            });
             return {
                 id: convRow.id,
                 title: convRow.title,
@@ -209,23 +220,46 @@ class ChatHistoryStore {
                 conversation.updatedAt || new Date().toISOString(),
             ]);
             // 2. Sync Messages (Upsert to prevent UNIQUE constraint failures on concurrent saves)
-            for (const msg of conversation.messages) {
+            const savedIds = [];
+            for (let i = 0; i < conversation.messages.length; i++) {
+                const msg = conversation.messages[i];
                 const msgId = msg.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+                savedIds.push(msgId);
+                let stampedToolCalls = msg.toolCalls;
+                if (Array.isArray(stampedToolCalls)) {
+                    stampedToolCalls = stampedToolCalls.map((tc, tcIdx) => ({
+                        ...tc,
+                        orderIndex: tc.orderIndex ?? tcIdx
+                    }));
+                }
                 await db_1.dbOps.run(`INSERT OR REPLACE INTO messages
-           (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, has_timeline, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`, [
+           (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, has_timeline, order_index, thinking_duration, stopped, attachments, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`, [
                     msgId,
                     conversation.id,
                     msg.role,
                     typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
                     msg.thought || null,
                     msg.reasoning_content || null,
-                    msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+                    stampedToolCalls ? JSON.stringify(stampedToolCalls) : null,
                     msg.missionTimeline ? JSON.stringify(msg.missionTimeline) : null,
                     msg.hasTimeline ? 1 : 0,
+                    msg.orderIndex ?? i,
+                    msg.thinkingDuration ?? null,
+                    msg.stopped ? 1 : 0,
+                    msg.attachments ? JSON.stringify(msg.attachments) : null,
                     msgId,
-                    new Date().toISOString()
+                    msg.createdAt || new Date().toISOString()
                 ]);
+            }
+            // Cleanup orphaned/stale messages that are no longer part of this conversation
+            if (savedIds.length > 0) {
+                const placeholders = savedIds.map(() => '?').join(',');
+                await db_1.dbOps.run(`DELETE FROM messages 
+           WHERE conversation_id = ? AND id NOT IN (${placeholders})`, [conversation.id, ...savedIds]);
+            }
+            else {
+                await db_1.dbOps.run('DELETE FROM messages WHERE conversation_id = ?', [conversation.id]);
             }
             return { success: true };
         }

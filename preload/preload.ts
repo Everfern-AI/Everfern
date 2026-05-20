@@ -85,6 +85,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     openExternal: (url: string) => ipcRenderer.invoke('system:open-external', url),
     fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
+    checkWSL:       () => ipcRenderer.invoke('system:checkWSL'),
+    checkDocker:    () => ipcRenderer.invoke('system:checkDocker'),
+    installWSL:     () => ipcRenderer.invoke('system:installWSL'),
+    setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
+    toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -486,6 +491,11 @@ export type ElectronAPI = {
     removeOllamaListeners: () => void;
     openExternal: (url: string) => Promise<void>;
     fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
+    checkWSL:       () => Promise<boolean>;
+    checkDocker:    () => Promise<boolean>;
+    installWSL:     () => Promise<{ success: boolean; warning?: string; error?: string }>;
+    setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;
+    toHostPath:     (pathStr: string) => Promise<string>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
