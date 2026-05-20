@@ -1268,13 +1268,15 @@ export default function ChatPage() {
                 }
                 setShowPermissionModal(true);
             });
-            acpApi.onToolStart(({ toolName, toolArgs }: { toolName: string; toolArgs: Record<string, unknown> }) => {
+            acpApi.onToolStart(({ toolName, toolArgs, toolCallId }: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string }) => {
                 if (toolName === 'ask_user_question') {
                     console.log('[Frontend] Received ask_user_question tool_start:', JSON.stringify({ toolName, toolArgs }, null, 2));
                 }
                 const narrativeText = streamingContentRef.current.trim();
                 const display = resolveToolDisplay(toolName, toolArgs);
-                const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName, ...display, status: 'running', args: toolArgs, description: narrativeText || undefined };
+                const newTc: ToolCallDisplay = { id: toolCallId || crypto.randomUUID(), toolName, ...display, status: 'running', args: toolArgs, description: narrativeText || undefined };
+                const mapKey = toolCallId || (toolName + '_running');
+                toolCallMap.current.set(mapKey, newTc.id);
                 liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
                 setLiveToolCalls([...liveToolCallsRef.current]);
 
@@ -1284,16 +1286,48 @@ export default function ChatPage() {
                     activeUserQuestionRef.current = true;
                 }
             });
+            acpApi.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
+                console.log('[SubAgent Progress] Event received:', event.type, 'for toolCallId:', event.toolCallId);
+                setSubAgentProgress(prev => {
+                    const newMap = new Map(prev);
+                    if (newMap.size >= 10 && !newMap.has(event.toolCallId)) {
+                        const firstKey = newMap.keys().next().value;
+                        if (firstKey) newMap.delete(firstKey);
+                    }
+                    const existingEvents = newMap.get(event.toolCallId) || [];
+                    const updatedEvents = [...existingEvents, event];
+                    const limitedEvents = updatedEvents.slice(-100);
+                    newMap.set(event.toolCallId, limitedEvents);
+                    return newMap;
+                });
+            });
             acpApi.onToolCall((record: any) => {
                 // Debug: Log the tool call structure
                 if (record.toolName === 'ask_user_question') {
 
                     console.log('[Frontend] 📥 Received ask_user_question tool call');
                 }
-                const existingIdx = liveToolCallsRef.current.findIndex(t => t.toolName === record.toolName && t.status === 'running');
+                const key = record.toolCallId || (record.toolName + '_running');
+                let existingId = toolCallMap.current.get(key);
+                if (!existingId) {
+                    const runningTc = liveToolCallsRef.current.find(t => t.toolName === record.toolName && t.status === 'running');
+                    if (runningTc) {
+                        existingId = runningTc.id;
+                    }
+                }
+                const existingIdx = existingId ? liveToolCallsRef.current.findIndex(t => t.id === existingId) : -1;
                 if (existingIdx >= 0) {
                     const updated = [...liveToolCallsRef.current];
-                    updated[existingIdx] = { ...updated[existingIdx], status: 'done' as const, output: typeof record.result === 'string' ? record.result : JSON.stringify(record.result) };
+                    updated[existingIdx] = { 
+                        ...updated[existingIdx], 
+                        status: 'done' as const, 
+                        output: typeof record.result === 'string' 
+                            ? record.result 
+                            : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)),
+                        data: record.result?.data,
+                        base64Image: record.result?.base64Image,
+                        durationMs: record.durationMs 
+                    };
                     liveToolCallsRef.current = updated;
                     setLiveToolCalls(updated);
 
@@ -1506,6 +1540,18 @@ export default function ChatPage() {
         const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
         const newMessages = [...messages, userMessage];
         setMessages(newMessages);
+        
+        // Ensure conversation ID is established synchronously before any async operations
+        let currentConvId = activeConversationIdRef.current;
+        if (!currentConvId) {
+            currentConvId = crypto.randomUUID();
+            activeConversationIdRef.current = currentConvId;
+            setActiveConversationId(currentConvId);
+        }
+        
+        // Immediately save the user message to prevent data loss
+        saveConversation(newMessages);
+        
         if (typeof overrideValue !== 'string') setInputValue("");
         setAttachments([]);
 
@@ -1809,9 +1855,14 @@ export default function ChatPage() {
                         };
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
-                            if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content) {
-                                console.warn('[Chat] Duplicate plan detail message prevented');
-                                return prev;
+                            if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                                const prevMsg = prev[prev.length - 1];
+                                const isDuplicateContent = prevMsg.content === assistantMsg.content;
+                                const isDuplicateToolCalls = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
+                                if (isDuplicateContent && isDuplicateToolCalls) {
+                                    console.warn('[Chat] Duplicate plan detail message prevented');
+                                    return prev;
+                                }
                             }
                             const updatedMessages = [...prev, assistantMsg];
                             saveConversation(updatedMessages);
@@ -1991,9 +2042,14 @@ export default function ChatPage() {
                             setIsComputerUseActive(false);
                             setMessages(prev => {
                                 // Prevent duplicate message if the last message is identical
-                                if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content && !wasStopped) {
-                                    console.warn('[Chat] Duplicate message prevented:', assistantMsg.content.substring(0, 50));
-                                    return prev;
+                                if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && !wasStopped) {
+                                    const prevMsg = prev[prev.length - 1];
+                                    const isDuplicateContent = prevMsg.content === assistantMsg.content;
+                                    const isDuplicateToolCalls = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
+                                    if (isDuplicateContent && isDuplicateToolCalls) {
+                                        console.warn('[Chat] Duplicate message prevented:', assistantMsg.content.substring(0, 50));
+                                        return prev;
+                                    }
                                 }
                                 const final = [...prev, assistantMsg];
                                 saveConversation(final);
@@ -2031,7 +2087,7 @@ export default function ChatPage() {
                     }),
                     model: selectedModel,
                     providerType: currentM?.providerType || 'everfern',
-                    conversationId: activeConversationId || crypto.randomUUID(),
+                    conversationId: activeConversationIdRef.current,
                     projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined
                 });
             } catch (err) {
@@ -2052,9 +2108,14 @@ export default function ChatPage() {
                 };
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
-                    if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content) {
-                        console.warn('[Chat] Duplicate error message prevented');
-                        return prev;
+                    if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                        const prevMsg = prev[prev.length - 1];
+                        const isDuplicateContent = prevMsg.content === assistantMsg.content;
+                        const isDuplicateToolCalls = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
+                        if (isDuplicateContent && isDuplicateToolCalls) {
+                            console.warn('[Chat] Duplicate error message prevented');
+                            return prev;
+                        }
                     }
                     const final = [...prev, assistantMsg];
                     saveConversation(final);
@@ -3000,7 +3061,7 @@ export default function ChatPage() {
                                     {isEmpty && (
                                         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
                                             style={{ marginTop: "14vh", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", maxWidth: 740 }}>
-                                            {folderContexts.length === 0 && (
+                                            {/* {folderContexts.length === 0 && (
                                                 <div style={{ marginBottom: 26, textAlign: "center" }}>
                                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 8, backgroundColor: "rgba(0, 0, 0, 0.04)", border: "1px solid rgba(0, 0, 0, 0.08)", color: "#717171", fontSize: 13 }}>
                                                         <span>Free plan</span>
@@ -3008,7 +3069,7 @@ export default function ChatPage() {
                                                         <button type="button" style={{ background: "transparent", border: "none", color: "#4a4846", cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline" }} onClick={() => setShowSettings(true)}>Upgrade</button>
                                                     </div>
                                                 </div>
-                                            )}
+                                            )} */}
                                             {folderContexts.length > 0 ? (
                                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
                                                     <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "#201e24", letterSpacing: "-0.01em" }}>
@@ -3170,26 +3231,26 @@ export default function ChatPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Quick prompt chips — hidden when a project is selected */}
-                                                {folderContexts.length === 0 && (
-                                                    <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                                                        {[
-                                                            { label: "Code", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
-                                                            { label: "Write", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
-                                                            { label: "Learn", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
-                                                            { label: "Life stuff", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
-                                                            { label: "Fern's choice", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
-                                                        ].map(c => (
-                                                            <button key={c.label} type="button" onClick={() => setInputValue(prev => prev || c.label + ": ")}
-                                                                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid #f7f5f2", color: "#201e24", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
-                                                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f7f5f2"; e.currentTarget.style.color = "#111111"; }}
-                                                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#201e24"; }}>
-                                                                <span style={{ display: 'flex' }}>{c.icon}</span>
-                                                                <span style={{ fontWeight: 400 }}>{c.label}</span>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                 {/* Quick prompt chips — hidden when a project is selected */}
+                                                 {folderContexts.length === 0 && (
+                                                     <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                                                         {[
+                                                             { label: "Code", prompt: "Write a Python script that ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
+                                                             { label: "Write", prompt: "Draft an email to my manager explaining ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
+                                                             { label: "Learn", prompt: "Explain how the following concept works: ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
+                                                             { label: "Life stuff", prompt: "Create a weekly meal planner for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
+                                                             { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
+                                                         ].map(c => (
+                                                             <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
+                                                                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid #f7f5f2", color: "#201e24", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
+                                                                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f7f5f2"; e.currentTarget.style.color = "#111111"; }}
+                                                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#201e24"; }}>
+                                                                 <span style={{ display: 'flex' }}>{c.icon}</span>
+                                                                 <span style={{ fontWeight: 400 }}>{c.label}</span>
+                                                             </button>
+                                                         ))}
+                                                     </div>
+                                                 )}
                                                 {/* Project mode empty state cue */}
                                                 {folderContexts.length > 0 && (
                                                     <div style={{ marginTop: 60, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>

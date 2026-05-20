@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
-  Braces, ChevronDown, AlertCircle, ArrowUpRight
+  Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause
 } from 'lucide-react';
 
 /* ============================================================
@@ -143,11 +143,11 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
         {/* Icon */}
         <div style={{
           width: 36, height: 36, borderRadius: T.r10, flexShrink: 0,
-          background: T.surfaceRaised, border: `1px solid ${T.border}`,
+          background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.04)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08)',
         }}>
-          <Icon size={16} color={T.textSecondary} strokeWidth={1.75} />
+          <Icon size={16} color={'#333'} strokeWidth={1.75} />
         </div>
 
         {/* Text stack */}
@@ -160,8 +160,9 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
               </>
             )}
             <code style={{
-              fontSize: 11.5, fontFamily: T.mono, fontWeight: 600, color: T.text,
-              background: T.surfaceRaised, border: `1px solid ${T.border}`,
+              fontSize: 11.5, fontFamily: T.mono, fontWeight: 700, color: '#111',
+              background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
               padding: '2px 8px', borderRadius: T.r6,
             }}>
               {toolName}
@@ -180,14 +181,27 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
           onClick={onClose}
           aria-label="Close"
           style={{
-            width: 30, height: 30, borderRadius: T.r8, border: `1px solid ${T.border}`,
-            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: T.textMuted, transition: 'background 0.12s, color 0.12s',
+            width: 32, height: 32, borderRadius: T.r8, border: '0.5px solid rgba(0,0,0,0.1)',
+            background: '#ececea', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+            cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = T.surfaceRaised; e.currentTarget.style.color = T.text; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textMuted; }}
+          onMouseEnter={e => { 
+            e.currentTarget.style.transform = 'scale(1.05)';
+            e.currentTarget.style.color = '#000';
+          }}
+          onMouseLeave={e => { 
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.color = '#333';
+          }}
+          onMouseDown={e => {
+            e.currentTarget.style.transform = 'scale(0.95)';
+          }}
+          onMouseUp={e => {
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }}
         >
-          <X size={13} strokeWidth={2} />
+          <X size={14} strokeWidth={2.5} />
         </button>
       </div>
     </header>
@@ -215,9 +229,11 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       </span>
       {right && (
         <span style={{
-          fontSize: 10.5, fontWeight: 600, color: T.textSecondary,
-          background: T.surfaceRaised, border: `1px solid ${T.border}`,
-          padding: '3px 10px', borderRadius: 20, fontFamily: T.mono,
+          fontSize: 10.5, fontWeight: 700, color: '#111',
+          background: '#ececea', 
+          border: '0.5px solid rgba(0,0,0,0.1)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+          padding: '3px 12px', borderRadius: 100, fontFamily: T.mono,
         }}>
           {right}
         </span>
@@ -452,13 +468,47 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolName: string }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
+  
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
+  const prevLengthRef = useRef(safe.length);
+  
+  useEffect(() => {
+    let interval: any;
+    if (isPlaying && safe.length > 0) {
+      interval = setInterval(() => {
+        setCurrentIndex((prev) => {
+          if (prev >= safe.length - 1) {
+            // Stay at the end and wait for next frame
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying, safe.length]);
+
+  // Live update: automatically track the latest frame when new ones arrive
+  useEffect(() => {
+    if (safe.length > prevLengthRef.current) {
+      setCurrentIndex(safe.length - 1);
+    }
+    prevLengthRef.current = safe.length;
+  }, [safe.length]);
+
+  useEffect(() => {
+    if (currentIndex >= safe.length && safe.length > 0) {
+      setCurrentIndex(safe.length - 1);
+    }
+  }, [safe.length, currentIndex]);
 
   if (safe.length === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <SectionLabel>Browser session</SectionLabel>
         <EmptyState
-          icon={IconCamera}
+          icon={CameraOff}
           title="No captures yet"
           description={`${toolName} ran but didn't produce screenshots during this session.`}
           note="Frames appear here in real-time as the browser navigates."
@@ -467,11 +517,134 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
     );
   }
 
+  const currentScreenshot = safe[currentIndex] || safe[0];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <SectionLabel right={`${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {safe.map((s, i) => <ScreenshotCard key={`${s.timestamp}-${i}`} screenshot={s} index={i} onZoom={setZoomed} />)}
+      <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ 
+          background: T.surface, 
+          borderRadius: T.r12, 
+          border: `1px solid ${T.border}`,
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16
+        }}>
+          {/* Main Image */}
+          <div 
+            style={{ 
+              width: '100%', 
+              background: T.surfaceRaised,
+              borderRadius: T.r8,
+              border: `1px solid ${T.borderSubtle}`,
+              overflow: 'hidden',
+              position: 'relative',
+              cursor: 'zoom-in',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 300
+            }}
+            onClick={() => setZoomed(currentScreenshot)}
+          >
+            <img 
+              src={`data:image/jpeg;base64,${currentScreenshot.base64}`} 
+              alt="Navis frame"
+              style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain' }}
+            />
+            <div style={{
+              position: 'absolute', bottom: 12, left: 12, 
+              background: 'rgba(0,0,0,0.6)', color: '#fff', 
+              padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              Step {currentScreenshot.sequenceNumber ?? (currentIndex + 1)}
+            </div>
+            <div style={{
+              position: 'absolute', bottom: 12, right: 12, 
+              background: 'rgba(0,0,0,0.6)', color: '#fff', 
+              padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              {formatTimestamp(currentScreenshot.timestamp).split(',')[1]?.trim() || ''}
+            </div>
+          </div>
+
+          {/* Slider and Controls */}
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: 12, 
+            padding: '6px 16px 6px 6px',
+            background: "#ececea",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 2px 5px rgba(0,0,0,0.05)",
+            border: "0.5px solid rgba(0,0,0,0.10)",
+            borderRadius: 100,
+            marginTop: 4
+          }}>
+            <button
+              onClick={() => {
+                if (!isPlaying && currentIndex >= safe.length - 1) {
+                  setCurrentIndex(0);
+                }
+                setIsPlaying(!isPlaying);
+              }}
+              style={{
+                width: 34, height: 34, borderRadius: '50%',
+                background: isPlaying ? '#111' : '#f9f9f9',
+                color: isPlaying ? '#fff' : '#111',
+                boxShadow: isPlaying 
+                  ? 'inset 0 1px 3px rgba(0,0,0,0.3)' 
+                  : 'inset 0 1px 0 rgba(255,255,255,1), 0 1px 2px rgba(0,0,0,0.05)',
+                border: isPlaying ? 'none' : '0.5px solid rgba(0,0,0,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" style={{ marginLeft: 2 }} />}
+            </button>
+            
+            <input 
+              type="range"
+              className="gallium-slider"
+              min={0}
+              max={safe.length - 1}
+              value={currentIndex}
+              onChange={(e) => {
+                setIsPlaying(false);
+                setCurrentIndex(Number(e.target.value));
+              }}
+              style={{ flex: 1, cursor: 'pointer' }}
+            />
+            <style>{`
+              .gallium-slider { -webkit-appearance: none; background: transparent; height: 24px; }
+              .gallium-slider:focus { outline: none; }
+              .gallium-slider::-webkit-slider-runnable-track {
+                width: 100%; height: 6px; border-radius: 4px;
+                background: rgba(0,0,0,0.06);
+                box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+                border: 0.5px solid rgba(255,255,255,0.4);
+              }
+              .gallium-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                height: 20px; width: 20px; border-radius: 50%;
+                background: #fafafa;
+                box-shadow: inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.15);
+                border: 0.5px solid rgba(0,0,0,0.15);
+                margin-top: -7.5px;
+                transition: transform 0.1s;
+              }
+              .gallium-slider::-webkit-slider-thumb:hover {
+                transform: scale(1.05);
+              }
+              .gallium-slider::-webkit-slider-thumb:active {
+                transform: scale(0.95);
+                background: #f0f0f0;
+              }
+            `}</style>
+          </div>
+        </div>
       </div>
       <AnimatePresence>
         {zoomed && <ZoomModal screenshot={zoomed} onClose={() => setZoomed(null)} />}
@@ -592,10 +765,12 @@ function TerminalView({ command, output, exitCode, duration }: { command: string
 function ResultCard({ title, url, snippet, description: initialDescription, domain, favicon: initialFavicon }: { title: string; url: string; snippet?: string; description?: string; domain: string; favicon?: string }) {
   const [description, setDescription] = useState(initialDescription);
   const [favicon, setFavicon] = useState(initialFavicon);
+  const [displayTitle, setDisplayTitle] = useState(title || '');
 
   useEffect(() => {
     // If we're missing rich info, try to fetch it lazily
-    if (!initialDescription || !initialFavicon) {
+    const isTitleURLOrDomain = !title || title.startsWith('http') || (title.includes('.') && !title.includes(' '));
+    if (!initialDescription || !initialFavicon || isTitleURLOrDomain) {
       const fetchMeta = async () => {
         try {
           const api = (window as any).electronAPI;
@@ -605,15 +780,23 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
           if (meta) {
             if (!initialDescription && meta.description) setDescription(meta.description);
             if (!initialFavicon && meta.favicon) setFavicon(meta.favicon);
+            if (meta.title) setDisplayTitle(meta.title);
           }
         } catch { /* ignore */ }
       };
       fetchMeta();
     }
-  }, [url, initialDescription, initialFavicon]);
+  }, [url, initialDescription, initialFavicon, title]);
 
   const content = description || snippet || '';
   const displayFavicon = favicon || getFaviconUrl(domain);
+  const finalTitle = displayTitle?.trim() || domain || url || 'Search Result';
+  let displayDomain = domain || 'Unknown';
+  if (displayDomain === 'Unknown' && url) {
+    try {
+      displayDomain = new URL(url).hostname;
+    } catch { /* ignore */ }
+  }
   
   return (
     <motion.article
@@ -635,7 +818,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
             onError={e => e.currentTarget.style.display = 'none'} />
         )}
         <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: T.sans }}>
-          {domain}
+          {displayDomain}
         </span>
       </div>
 
@@ -644,31 +827,19 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
         fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 8px',
         lineHeight: 1.45, letterSpacing: '-0.015em', fontFamily: T.sans,
       }}>
-        {title}
+        {finalTitle}
       </h3>
 
       {/* Snippet / Description */}
       {content && (
         <p style={{
-          fontSize: 12.5, color: T.textSecondary, lineHeight: 1.7, margin: '0 0 14px',
+          fontSize: 12.5, color: T.textSecondary, lineHeight: 1.7, margin: 0,
           display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
           fontFamily: T.sans,
         }}>
           {content}
         </p>
       )}
-
-      {/* URL row */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderTop: `1px solid ${T.borderSubtle}`, paddingTop: 12,
-      }}>
-        <span style={{ fontSize: 10.5, color: T.textMuted, fontFamily: T.mono, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Link2 size={10} color={T.textPlaceholder} strokeWidth={2} />
-          {truncateText(url, 44)}
-        </span>
-        <ArrowUpRight size={12} color={T.textMuted} strokeWidth={1.75} />
-      </div>
     </motion.article>
   );
 }
@@ -833,7 +1004,11 @@ export function extractWebSearchData(tc: any) {
           domain = new URL(r.url).hostname;
         } catch { /* ignore */ }
       }
-      return { ...r, domain };
+      return {
+        ...r,
+        domain,
+        description: r.description || r.snippet || '',
+      };
     });
 
     return { query, results: processed.slice(0, 50), totalResults: results.length };
@@ -842,6 +1017,7 @@ export function extractWebSearchData(tc: any) {
 
 export function extractNavisData(tc: any, progressEvents: any[] = []) {
   try {
+    console.log('[extractNavisData] tc:', tc, 'progressEvents:', progressEvents);
     const screenshots: any[] = [];
     const seen = new Set();
     const add = (b64: string, ts: any, seq: number) => {
@@ -857,7 +1033,7 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     if (Array.isArray(progressEvents)) {
       progressEvents.forEach((e: any, i: number) => {
         if (e.type === 'screenshot') {
-          const b64 = e.screenshot?.base64 || e.content;
+          const b64 = e.screenshot?.base64 || e.content || e.base64;
           if (b64) add(b64, e.timestamp || Date.now(), i);
         }
       });
@@ -884,8 +1060,9 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     
     if (typeof tc.data?.base64Image === 'string') add(tc.data.base64Image, Date.now(), screenshots.length);
     
-    // Sort by timestamp/sequence to ensure correct order before reversing
-    return { screenshots: screenshots.reverse(), url: tc.args?.url, action: tc.args?.action };
+    // Ensure correct chronological order for video playback
+    screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
+    return { screenshots, url: tc.args?.url, action: tc.args?.action };
   } catch { return null; }
 }
 

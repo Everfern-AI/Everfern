@@ -268,7 +268,26 @@ export function registerSystemHandlers() {
         return altMatch ? altMatch[1] : null;
       };
 
-      const description = getMeta('og:description') || getMeta('description') || '';
+      const cleanText = (text: string) => {
+        if (!text) return '';
+        return text
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&apos;/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const rawTitle = getMeta('og:title') || (titleMatch ? titleMatch[1] : '') || '';
+      const title = cleanText(rawTitle);
+
+      const rawDescription = getMeta('og:description') || getMeta('description') || '';
+      const description = cleanText(rawDescription);
+
       let favicon = html.match(/<link[^>]*?rel=["'](?:shortcut )?icon["'][^>]*?href=["'](.*?)["']/i)?.[1] || '';
 
       if (favicon && !favicon.startsWith('http')) {
@@ -278,10 +297,10 @@ export function registerSystemHandlers() {
         } catch { /* ignore */ }
       }
 
-      return { description, favicon };
+      return { title, description, favicon };
     } catch (err) {
       console.warn(`[IPC] system:fetch-metadata failed for ${url}:`, err);
       return null;
     }
   });
-  }
+}

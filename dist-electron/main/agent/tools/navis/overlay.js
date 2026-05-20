@@ -144,9 +144,9 @@ const RAW_SCRIPT = `
         align-items: center; \
         gap: 10px; \
         white-space: nowrap; \
-        background: rgba(255, 255, 255, 0.08); \
-        backdrop-filter: blur(32px) saturate(180%) brightness(1.15); \
-        -webkit-backdrop-filter: blur(32px) saturate(180%) brightness(1.15); \
+        background: rgba(255, 255, 255, 0.12); \
+        backdrop-filter: blur(48px) saturate(200%) brightness(1.2); \
+        -webkit-backdrop-filter: blur(48px) saturate(200%) brightness(1.2); \
         border: 1px solid rgba(255, 255, 255, 0.22); \
         box-shadow: \
           inset 0  2px 0 rgba(255, 255, 255, 0.18), \

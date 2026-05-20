@@ -13,7 +13,7 @@ type VMStatus = "checking" | "ready" | "not-installed" | "installing" | "error";
 
 export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupStepProps) {
   const [vmStatus, setVmStatus] = useState<VMStatus>("checking");
-  const [platform, setPlatform] = useState<"windows" | "macos" | "linux" | null>(null);
+  const [platform, setPlatform] = useState<"windows" | "win32" | "macos" | "darwin" | "linux" | null>(null);
   const [installProgress, setInstallProgress] = useState(0);
   const [installMessage, setInstallMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");

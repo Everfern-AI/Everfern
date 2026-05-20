@@ -245,9 +245,9 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                             style={{ overflow: 'hidden', marginTop: 4 }}
                         >
                             <div style={{ backgroundColor: '#f5f4f0', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid #eceae4', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
-                                {(tc.base64Image || tc.data?.screenshot) && (
+                                {(tc.base64Image || tc.data?.screenshot || (tc.data?.screenshots && tc.data.screenshots.length > 0)) && (
                                     <div style={{ padding: 10, borderBottom: '1px solid #eceae4' }}>
-                                        <img src={`data:image/jpeg;base64,${tc.base64Image || tc.data?.screenshot}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid #e8e6d9' }} />
+                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid #e8e6d9' }} />
                                     </div>
                                 )}
                                 {tc.data?.preClickB64 && (

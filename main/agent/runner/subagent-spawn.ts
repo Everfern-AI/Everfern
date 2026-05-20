@@ -374,12 +374,13 @@ class SubagentSpawner {
                                     : agent.depth;
                                 
                                 // Only emit if it's a meaningful browser action or status update
-                                if (event.data?.action || event.data?.stepNumber) {
+                                if (event.data?.action || event.data?.stepNumber || event.data?.type === 'screenshot') {
                                     parentEvents.emit('subagent-progress', event.data?.type || 'action', {
                                         toolCallId: agent.toolCallId || agent.agentId,
                                         timestamp: event.timestamp || new Date().toISOString(),
                                         content: event.data?.content || event.data?.action || event.content || '',
                                         action: event.data?.action,
+                                        screenshot: event.data?.screenshot,
                                         stepNumber: event.data?.stepNumber,
                                         totalSteps: event.data?.totalSteps,
                                         metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },

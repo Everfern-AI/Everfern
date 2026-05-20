@@ -86,10 +86,18 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
     async execute(args: any, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
       const logger = orchestrator.getEventLogger();
       const toolStartTime = Date.now();
+      const screenshots: any[] = [];
 
       console.log('[Navis Tool] 🚀 NAVIS TOOL EXECUTION STARTED');
 
-      logger.on((event: NavisEvent) => {
+      const unsubscribe = logger.on((event: NavisEvent) => {
+        if (event.type === 'screenshot' && event.base64) {
+          screenshots.push({
+            base64: event.base64,
+            timestamp: event.timestamp,
+            sequenceNumber: event.step
+          });
+        }
         let label = '';
         switch (event.type) {
           case 'browser_launch': label = '🚀 Browser launched'; break;
@@ -116,14 +124,20 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             type: 'subagent-progress',
             toolCallId: toolCallId || '',
             timestamp: new Date(event.timestamp).toISOString(),
-            stepNumber: event.step,
-            totalSteps: event.maxSteps,
-            content: event.type === 'screenshot' ? event.base64 : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
-            action: actionPayload,
-            timelineBranch: {
-              agentType: 'navis' as const,
-              branchStatus: event.type === 'error' ? 'failed' : event.type === 'task_complete' ? 'completed' : 'running',
-              taskDescription: args.task,
+            data: {
+              type: progressType,
+              toolCallId: toolCallId || '',
+              timestamp: new Date(event.timestamp).toISOString(),
+              stepNumber: event.step,
+              totalSteps: event.maxSteps,
+              content: event.type === 'screenshot' ? event.base64 : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
+              action: actionPayload,
+              screenshot: event.type === 'screenshot' ? { base64: event.base64, width: 1280, height: 720 } : undefined,
+              timelineBranch: {
+                agentType: 'navis' as const,
+                branchStatus: event.type === 'error' ? 'failed' : event.type === 'task_complete' ? 'completed' : 'running',
+                taskDescription: args.task,
+              }
             }
           });
         }
@@ -150,7 +164,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         return {
           success: result.success,
           output: result.output,
-          data: { steps: result.steps },
+          data: { steps: result.steps, screenshots },
         };
       } catch (toolErr) {
         const executionTime = Date.now() - toolStartTime;
@@ -158,6 +172,8 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         logger.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms): ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
 
         throw toolErr;
+      } finally {
+        unsubscribe();
       }
     },
   };

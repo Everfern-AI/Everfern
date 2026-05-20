@@ -39,6 +39,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
             electron_1.ipcRenderer.removeAllListeners('system:ollama-pull-line');
         },
         openExternal: (url) => electron_1.ipcRenderer.invoke('system:open-external', url),
+        fetchMetadata: (url) => electron_1.ipcRenderer.invoke('system:fetch-metadata', url),
     },
     // ── System Tray ──────────────────────────────────────────────────
     tray: {

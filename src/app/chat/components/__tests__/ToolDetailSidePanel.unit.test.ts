@@ -98,4 +98,18 @@ describe('extractWebSearchData', () => {
     expect(result?.results).toEqual([]);
     expect(result?.totalResults).toBe(0);
   });
+
+  it('should extract domain from url if domain is missing', () => {
+    const tc = {
+      args: { query: 'test' },
+      data: {
+        results: [
+          { title: 'Result', url: 'https://example.org/path' }
+        ]
+      }
+    };
+    const result = extractWebSearchData(tc);
+    expect(result?.results[0].domain).toBe('example.org');
+  });
 });
+

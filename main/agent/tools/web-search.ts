@@ -21,6 +21,7 @@ interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+  description?: string;
 }
 
 function searchViaEngine(engine: 'Google' | 'Yahoo', query: string): Promise<SearchResult[]> {
@@ -149,6 +150,79 @@ async function search(query: string): Promise<SearchResult[]> {
   return searchDDG(query);
 }
 
+async function fetchUrlMetadata(url: string): Promise<{ title?: string; description?: string }> {
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 3000); // 3-second timeout per site
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(id);
+
+    if (!res.ok) return {};
+    const html = await res.text();
+
+    const getMeta = (prop: string) => {
+      const regex = new RegExp(`<meta[^>]*?(?:name|property)=["']${prop}["'][^>]*?content=["'](.*?)["']`, 'i');
+      const match = html.match(regex);
+      if (match) return match[1];
+      const altRegex = new RegExp(`<meta[^>]*?content=["'](.*?)["'][^>]*?(?:name|property)=["']${prop}["']`, 'i');
+      const altMatch = html.match(altRegex);
+      return altMatch ? altMatch[1] : null;
+    };
+
+    const cleanText = (text: string) => {
+      if (!text) return '';
+      return text
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = getMeta('og:title') || (titleMatch ? titleMatch[1] : '') || '';
+    const description = getMeta('og:description') || getMeta('description') || '';
+
+    return {
+      title: cleanText(title) || undefined,
+      description: cleanText(description) || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function enrichResults(results: SearchResult[]): Promise<SearchResult[]> {
+  const promises = results.map(async (r) => {
+    try {
+      const meta = await fetchUrlMetadata(r.url);
+      const title = meta.title || r.title;
+      const desc = meta.description || r.snippet;
+      return {
+        ...r,
+        title,
+        snippet: desc,
+        description: desc,
+      };
+    } catch {
+      return {
+        ...r,
+        description: r.snippet,
+      };
+    }
+  });
+  return Promise.all(promises);
+}
+
 // ── Tool Definition ──────────────────────────────────────────────────
 
 export const webSearchTool: AgentTool = {
@@ -249,14 +323,17 @@ export const webSearchTool: AgentTool = {
           : r.snippet,
       }));
 
-      const formatted = truncatedResults
+      // Enrich results with actual page titles and OG descriptions
+      const enrichedResults = await enrichResults(truncatedResults);
+
+      const formatted = enrichedResults
         .map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`)
         .join('\n\n');
 
       return {
         success: true,
-        output: `🔍 Found ${results.length} result(s) for "${query}" (showing top ${truncatedResults.length}):\n\n${formatted}`,
-        data: { query, results: truncatedResults, totalCount: results.length },
+        output: `🔍 Found ${results.length} result(s) for "${query}" (showing top ${enrichedResults.length}):\n\n${formatted}`,
+        data: { query, results: enrichedResults, totalCount: results.length },
       };
     } catch (err) {
       return {

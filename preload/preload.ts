@@ -144,7 +144,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onModelCallInfo: (cb: (data: { model: string; toolsCount: number }) => void) => {
       ipcRenderer.on('acp:model-call-info', (_e, data) => cb(data));
     },
-    onToolStart: (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => {
+    onToolStart: (cb: (record: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string }) => void) => {
       ipcRenderer.on('acp:tool-start', (_e, record) => {
         if (record.toolName === 'ask_user_question') {
           console.log('[Preload] Received ask_user_question tool-start:', JSON.stringify(record, null, 2));
@@ -485,7 +485,7 @@ export type ElectronAPI = {
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => void;
     removeOllamaListeners: () => void;
     openExternal: (url: string) => Promise<void>;
-    fetchMetadata: (url: string) => Promise<{ description?: string; favicon?: string } | null>;
+    fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;

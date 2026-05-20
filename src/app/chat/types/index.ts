@@ -4,7 +4,7 @@ import React from 'react';
 
 export interface ToolCallDisplay {
     id: string;
-    toolName: string;
+    toolName?: string;
     agentName?: string;
     icon?: React.ReactNode;
     label?: string;

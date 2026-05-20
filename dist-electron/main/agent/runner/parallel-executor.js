@@ -147,7 +147,8 @@ async function executeSynchronizedParallelGroup(group, tools, groupIndex, eventQ
         eventQueue?.push({
             type: 'tool_start',
             toolName: tc.name,
-            toolArgs: tc.args
+            toolArgs: tc.args,
+            toolCallId: tc.id
         });
         try {
             const result = await tool.execute(tc.args, (update) => {

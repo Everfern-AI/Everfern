@@ -185,8 +185,11 @@ class NavisOrchestrator {
                         snapshot = elemSnapshot;
                         elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
                         lastUrl = url;
+                        // Capture screenshot for the frontend UI (with the Navis overlay visible)
+                        const uiScreenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60, fullPage: false }).catch(() => null);
+                        const uiScreenshotB64 = uiScreenshotBuffer ? uiScreenshotBuffer.toString('base64') : screenshotB64;
                         console.log('[Navis] Vision mode: screenshot captured successfully');
-                        this.logger.screenshot(steps, maxSteps, screenshotB64);
+                        this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
                     }
                     catch (err) {
                         // Vision mode screenshot timeout - ask AI what happened and return gracefully

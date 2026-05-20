@@ -1,6 +1,18 @@
 import React, { useState } from 'react';
 import { MarkdownRenderer } from './MarkdownComponents';
-import { CodingPlanCard } from './CodingPlanCard';
+import {
+    CommandLineIcon,
+    DocumentTextIcon,
+    FolderOpenIcon,
+    CodeBracketIcon,
+    PhotoIcon,
+    CpuChipIcon,
+    PencilSquareIcon,
+    CubeTransparentIcon,
+    WrenchScrewdriverIcon,
+    ChevronDownIcon,
+    ChevronUpIcon
+} from "@heroicons/react/24/outline";
 
 // Add CSS animation for spinner
 const spinnerStyle = `
@@ -59,111 +71,195 @@ function parseToolEntries(text: string): ParsedTool[] {
 
 // ── Tool icon / colour helper ────────────────────────────────────────────────
 function getToolMeta(name: string) {
-    if (name.includes('write') || name.includes('file'))
-        return { icon: '📝', color: '#dc3545', bg: '#fff5f5', border: '#ffc9c9' };
-    if (name.includes('terminal') || name.includes('execute') || name.includes('run') || name.includes('command'))
-        return { icon: '⚡', color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
-    if (name.includes('read') || name.includes('search') || name.includes('fetch'))
-        return { icon: '🔍', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
-    if (name.includes('update') || name.includes('plan') || name.includes('step'))
-        return { icon: '🔄', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' };
-    return { icon: '🛠️', color: '#6f42c1', bg: '#f8f0ff', border: '#e9d5ff' };
+    const n = name.toLowerCase();
+    const s = { width: 14, height: 14 };
+
+    if (n.includes("bash") || n.includes("command") || n.includes("terminal") || n.includes("shell") || n.includes("exec") || n.includes("run_command"))
+        return { icon: <CommandLineIcon style={s} /> };
+
+    if (n.includes("write") || n.includes("create") || n.includes("save") || n.includes("artifact") || n.includes("write_to_file"))
+        return { icon: <DocumentTextIcon style={s} /> };
+
+    if (n.includes("read") || n.includes("open") || n.includes("load") || n.includes("view_file") || n.includes("read_file"))
+        return { icon: <FolderOpenIcon style={s} /> };
+
+    if (n.includes("edit") || n.includes("update") || n.includes("modify") || n.includes("patch") || n.includes("replace_file") || n.includes("multi_replace_file"))
+        return { icon: <PencilSquareIcon style={s} /> };
+
+    if (n.includes("code") || n.includes("python") || n.includes("js"))
+        return { icon: <CodeBracketIcon style={s} /> };
+
+    if (n.includes("image") || n.includes("screenshot") || n.includes("photo"))
+        return { icon: <PhotoIcon style={s} /> };
+
+    if (n.includes("computer") || n.includes("mouse") || n.includes("click"))
+        return { icon: <CpuChipIcon style={s} /> };
+
+    if (n.includes("spawn") || n.includes("agent") || n.includes("sub") || n.includes("subagent"))
+        return { icon: <CubeTransparentIcon style={s} /> };
+
+    return { icon: <WrenchScrewdriverIcon style={s} /> };
 }
 
 // ── Single tool card ─────────────────────────────────────────────────────────
 const ToolCard = ({ tool }: { tool: ParsedTool }) => {
-    const { icon, color, bg, border } = getToolMeta(tool.name);
+    const [isOpen, setIsOpen] = useState(false);
+    const { icon } = getToolMeta(tool.name);
     const label = tool.name.replace(/_/g, ' ');
+
+    const desc = (() => {
+        if (tool.jsonValue?.query) return String(tool.jsonValue.query);
+        if (tool.jsonValue?.url) return String(tool.jsonValue.url);
+        if (tool.jsonValue?.url_to_visit) return String(tool.jsonValue.url_to_visit);
+        if (tool.jsonValue?.command) return String(tool.jsonValue.command).slice(0, 80);
+        if (tool.jsonValue?.CommandLine) return String(tool.jsonValue.CommandLine).slice(0, 80);
+        if (tool.jsonValue?.TargetFile) return String(tool.jsonValue.TargetFile);
+        if (tool.jsonValue?.path) return String(tool.jsonValue.path);
+        if (tool.jsonValue?.content) return String(tool.jsonValue.content).slice(0, 60) + "…";
+        return label;
+    })();
+
+    const galliumSurface = {
+        background: "#ececea",
+        boxShadow: [
+            "inset 0 1px 0 rgba(255,255,255,0.72)",
+            "inset 0 -1px 0 rgba(0,0,0,0.06)",
+            "inset 1px 0 rgba(255,255,255,0.50)",
+            "inset -1px 0 rgba(0,0,0,0.04)",
+            "0 1px 3px rgba(0,0,0,0.07)",
+        ].join(", "),
+        border: "0.5px solid rgba(0,0,0,0.10)",
+    };
+
+    const hasDetails = !!tool.jsonValue || !!tool.rawValue;
 
     return (
         <div style={{
-            backgroundColor: bg,
-            border: `1px solid ${border}`,
-            borderRadius: 8,
+            ...galliumSurface,
+            borderRadius: 14,
             overflow: 'hidden',
-            marginBottom: 8,
+            marginBottom: 6,
         }}>
-            {/* Header */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 12px',
-                borderBottom: `1px solid ${border}`,
-                backgroundColor: `${color}10`,
-            }}>
-                <span style={{ fontSize: 14 }}>{icon}</span>
-                <span style={{
-                    color,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
+            {/* Header / Pill */}
+            <div 
+                onClick={hasDetails ? () => setIsOpen(!isOpen) : undefined}
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "7px 14px 7px 8px",
+                    cursor: hasDetails ? "pointer" : "default",
+                    fontSize: 12.5,
+                    color: "#333",
+                    lineHeight: 1.4,
+                    userSelect: "none",
+                }}
+            >
+                <div style={{
+                    width: 24,
+                    height: 24,
+                    flexShrink: 0,
+                    borderRadius: 7,
+                    background: "#d3d3d0",
+                    boxShadow: [
+                        "inset 0 1px 0 rgba(255,255,255,0.70)",
+                        "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                        "inset 1px 0 rgba(255,255,255,0.45)",
+                        "inset -1px 0 rgba(0,0,0,0.04)",
+                    ].join(", "),
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#555",
                 }}>
-                    {label}
-                </span>
-            </div>
+                    {icon}
+                </div>
 
-            {/* Body */}
-            <div style={{ padding: '10px 12px' }}>
-                {tool.jsonValue ? (
-                    // Render JSON fields as key-value rows
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {Object.entries(tool.jsonValue).map(([k, v]) => {
-                            const strVal = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
-                            const isLong = strVal.length > 80;
-                            const isCommand = k === 'command';
-                            return (
-                                <div key={k}>
-                                    <span style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: '#9ca3af',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.07em',
-                                    }}>
-                                        {k.replace(/_/g, ' ')}
-                                    </span>
-                                    <div style={{
-                                        marginTop: 3,
-                                        padding: '5px 8px',
-                                        borderRadius: 5,
-                                        fontSize: 12,
-                                        fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
-                                        wordBreak: 'break-all',
-                                        whiteSpace: 'pre-wrap',
-                                        maxHeight: isLong ? 90 : 'none',
-                                        overflowY: isLong ? 'auto' : 'visible',
-                                        ...(isCommand
-                                            ? { backgroundColor: '#1a1a1a', color: '#4ade80', border: '1px solid #333' }
-                                            : { backgroundColor: '#ffffff', color: '#374151', border: `1px solid ${border}` }
-                                        ),
-                                    }}>
-                                        {isCommand ? `$ ${strVal}` : strVal}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    // Non-JSON (terminal command, etc.)
-                    <div style={{
-                        backgroundColor: '#1a1a1a',
-                        color: '#4ade80',
-                        border: '1px solid #333',
-                        borderRadius: 5,
-                        padding: '6px 10px',
-                        fontSize: 12,
-                        fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all',
-                        maxHeight: 120,
-                        overflowY: 'auto',
-                    }}>
-                        $ {tool.rawValue}
-                    </div>
+                <span style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                    fontWeight: 500,
+                }}>
+                    {desc}
+                </span>
+
+                {hasDetails && (
+                    <span style={{ color: "#888", display: "flex", alignItems: "center" }}>
+                        {isOpen ? (
+                            <ChevronUpIcon style={{ width: 14, height: 14 }} />
+                        ) : (
+                            <ChevronDownIcon style={{ width: 14, height: 14 }} />
+                        )}
+                    </span>
                 )}
             </div>
+
+            {/* Collapsible Body */}
+            {isOpen && hasDetails && (
+                <div style={{ 
+                    padding: '12px 14px', 
+                    backgroundColor: '#ffffff',
+                    borderTop: '1px solid rgba(0,0,0,0.06)'
+                }}>
+                    {tool.jsonValue ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {Object.entries(tool.jsonValue).map(([k, v]) => {
+                                const strVal = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
+                                const isLong = strVal.length > 80;
+                                const isCommand = k === 'command' || k === 'CommandLine';
+                                return (
+                                    <div key={k}>
+                                        <span style={{
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            color: '#9ca3af',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.07em',
+                                        }}>
+                                            {k.replace(/_/g, ' ')}
+                                        </span>
+                                        <div style={{
+                                            marginTop: 3,
+                                            padding: '5px 8px',
+                                            borderRadius: 5,
+                                            fontSize: 12,
+                                            fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+                                            wordBreak: 'break-all',
+                                            whiteSpace: 'pre-wrap',
+                                            maxHeight: isLong ? 150 : 'none',
+                                            overflowY: isLong ? 'auto' : 'visible',
+                                            ...(isCommand
+                                                ? { backgroundColor: '#1a1a1a', color: '#4ade80', border: '1px solid #333' }
+                                                : { backgroundColor: '#fcfcfb', color: '#374151', border: '1px solid rgba(0,0,0,0.06)' }
+                                            ),
+                                        }}>
+                                            {isCommand ? `$ ${strVal}` : strVal}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div style={{
+                            backgroundColor: '#1a1a1a',
+                            color: '#4ade80',
+                            border: '1px solid #333',
+                            borderRadius: 5,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                            maxHeight: 120,
+                            overflowY: 'auto',
+                        }}>
+                            $ {tool.rawValue}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -247,35 +343,57 @@ const HitlApprovalForm = ({
 
     return (
         <div style={{
-            backgroundColor: '#fff3cd',
-            border: '1px solid #ffeaa7',
+            background: "#ececea",
+            boxShadow: [
+                "inset 0 1px 0 rgba(255,255,255,0.72)",
+                "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                "inset 1px 0 rgba(255,255,255,0.50)",
+                "inset -1px 0 rgba(0,0,0,0.04)",
+                "0 1px 3px rgba(0,0,0,0.07)",
+            ].join(", "),
+            border: "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
             padding: 24,
-            margin: '16px 0',
-            maxHeight: '400px',
-            overflowY: 'auto',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+            margin: '24px 0',
+            fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
             display: 'flex',
             flexDirection: 'column'
         }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: '#856404', fontSize: 14, fontWeight: 600 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                </svg>
-                ⚠️ High-risk action requires your approval
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: '#111111', fontSize: 14, fontWeight: 600 }}>
+                <div style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 7,
+                    background: "#d3d3d0",
+                    boxShadow: [
+                        "inset 0 1px 0 rgba(255,255,255,0.70)",
+                        "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                        "inset 1px 0 rgba(255,255,255,0.45)",
+                        "inset -1px 0 rgba(0,0,0,0.04)",
+                    ].join(", "),
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#555",
+                }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                </div>
+                <span>High-risk action requires your approval</span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#dc3545', fontSize: 13, fontWeight: 500 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
                 <span>🚨</span>
                 <span>Dangerous tool detected</span>
             </div>
 
-            <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#1f2937' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#111111' }}>
                 {request.question}
             </h3>
 
-            <div style={{ backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-                <div style={{ fontWeight: 600, marginBottom: 12, color: '#495057', fontSize: 14 }}>
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 12, color: '#111111', fontSize: 14 }}>
                     Actions to execute:
                 </div>
                 {/* Scrollable tools list */}
@@ -283,7 +401,7 @@ const HitlApprovalForm = ({
                     {request.details.tools && request.details.tools.length > 0 ? (
                         renderToolDetails(request.details.tools)
                     ) : (
-                        <div style={{ backgroundColor: '#f0f4f8', border: '1px solid #d1d5db', borderRadius: 6, padding: 12, fontSize: 13, color: '#495057' }}>
+                        <div style={{ backgroundColor: '#fcfcfb', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 12, fontSize: 13, color: '#374151' }}>
                             <div style={{ marginBottom: 4 }}><strong>Summary:</strong> {request.details.summary}</div>
                             <div><strong>Reason:</strong> {request.details.reasoning}</div>
                         </div>
@@ -292,12 +410,12 @@ const HitlApprovalForm = ({
             </div>
 
             {showFollowUpInput && (
-                <div style={{ backgroundColor: '#f0f4f8', border: '1px solid #d1d5db', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                     <textarea
                         value={followUpQuestion}
                         onChange={(e) => setFollowUpQuestion(e.target.value)}
                         placeholder="Ask a follow-up question..."
-                        style={{ width: '100%', minHeight: 60, padding: 8, borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                        style={{ width: '100%', minHeight: 60, padding: 8, borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
                     />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
                         <button onClick={() => { setShowFollowUpInput(false); setFollowUpQuestion(''); }}
@@ -305,7 +423,7 @@ const HitlApprovalForm = ({
                             Cancel
                         </button>
                         <button onClick={handleAskQuestion} disabled={!followUpQuestion.trim()}
-                            style={{ padding: '8px 16px', borderRadius: 6, border: 'none', backgroundColor: followUpQuestion.trim() ? '#6366f1' : '#d1d5db', color: '#ffffff', fontSize: 13, fontWeight: 600, cursor: followUpQuestion.trim() ? 'pointer' : 'not-allowed' }}>
+                            style={{ padding: '8px 16px', borderRadius: 6, border: 'none', backgroundColor: followUpQuestion.trim() ? '#111111' : '#d1d5db', color: '#ffffff', fontSize: 13, fontWeight: 600, cursor: followUpQuestion.trim() ? 'pointer' : 'not-allowed' }}>
                             Ask Question
                         </button>
                     </div>
@@ -313,23 +431,23 @@ const HitlApprovalForm = ({
             )}
 
             {userDecision && (
-                <div style={{ backgroundColor: userDecision === 'approved' ? '#d1fae5' : '#fee2e2', border: `1px solid ${userDecision === 'approved' ? '#10b981' : '#ef4444'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ backgroundColor: userDecision === 'approved' ? '#e8f5e9' : '#ffebee', border: `1px solid ${userDecision === 'approved' ? '#a5d6a7' : '#ef9a9a'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 16 }}>{userDecision === 'approved' ? '✅' : '❌'}</span>
-                    <span style={{ color: userDecision === 'approved' ? '#065f46' : '#991b1b', fontWeight: 600, fontSize: 14 }}>
+                    <span style={{ color: userDecision === 'approved' ? '#1b5e20' : '#b71c1c', fontWeight: 600, fontSize: 14 }}>
                         {userDecision === 'approved'
                             ? `Operation ${sendAsMessage ? 'approved (message sent)' : 'approved (silent)'}`
                             : `Operation ${sendAsMessage ? 'rejected (message sent)' : 'rejected (silent)'}`}
                     </span>
                     {isProcessing && (
-                        <div style={{ marginLeft: 'auto', width: 16, height: 16, border: '2px solid transparent', borderTop: `2px solid ${userDecision === 'approved' ? '#10b981' : '#ef4444'}`, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                        <div style={{ marginLeft: 'auto', width: 16, height: 16, border: '2px solid transparent', borderTop: `2px solid ${userDecision === 'approved' ? '#2e7d32' : '#c62828'}`, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                     )}
                 </div>
             )}
 
             {!userDecision && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 12px', backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 12px', backgroundColor: '#ffffff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8 }}>
                     <input type="checkbox" id="sendAsMessage" checked={sendAsMessage} onChange={(e) => setSendAsMessage(e.target.checked)} style={{ margin: 0 }} />
-                    <label htmlFor="sendAsMessage" style={{ fontSize: 13, color: '#495057', cursor: 'pointer', userSelect: 'none' }}>
+                    <label htmlFor="sendAsMessage" style={{ fontSize: 13, color: '#374151', cursor: 'pointer', userSelect: 'none' }}>
                         Send approval/rejection as a chat message (visible in conversation)
                     </label>
                 </div>
@@ -338,8 +456,8 @@ const HitlApprovalForm = ({
             {!userDecision && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                     <button onClick={() => setShowFollowUpInput(!showFollowUpInput)}
-                        style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #6366f1', backgroundColor: '#ffffff', color: '#6366f1', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
+                        style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #111111', backgroundColor: '#ffffff', color: '#111111', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f3'; }}
                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}>
                         {showFollowUpInput ? 'Cancel' : 'Ask Question'}
                     </button>
@@ -351,9 +469,9 @@ const HitlApprovalForm = ({
                             Reject
                         </button>
                         <button onClick={handleApprove} disabled={isProcessing}
-                            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: '#28a745', color: '#ffffff', fontSize: 14, fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
-                            onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#218838'; }}
-                            onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#28a745'; }}>
+                            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: '#111111', color: '#ffffff', fontSize: 14, fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
+                            onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#222222'; }}
+                            onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#111111'; }}>
                             Approve
                         </button>
                     </div>
@@ -570,28 +688,51 @@ const UserQuestionForm = ({
 
     return (
         <div style={{
-            backgroundColor: '#f8f9fa',
-            border: '1px solid #e9ecef',
-            borderRadius: 12,
-            padding: 20,
-            margin: '16px 0',
-            maxHeight: 520,
-            overflowY: 'auto',
+            background: "#ececea",
+            boxShadow: [
+                "inset 0 1px 0 rgba(255,255,255,0.72)",
+                "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                "inset 1px 0 rgba(255,255,255,0.50)",
+                "inset -1px 0 rgba(0,0,0,0.04)",
+                "0 1px 3px rgba(0,0,0,0.07)",
+            ].join(", "),
+            border: "0.5px solid rgba(0,0,0,0.10)",
+            borderRadius: 16,
+            padding: 24,
+            margin: '24px 0',
+            fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
         }}>
             {/* Hidden file input */}
             <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} />
 
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366f1', fontSize: 14, fontWeight: 600 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M9,9h6v6H9z" />
-                    </svg>
-                    Waiting for your input
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#111111', fontSize: 14, fontWeight: 600 }}>
+                    <div style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 7,
+                        background: "#d3d3d0",
+                        boxShadow: [
+                            "inset 0 1px 0 rgba(255,255,255,0.70)",
+                            "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                            "inset 1px 0 rgba(255,255,255,0.45)",
+                            "inset -1px 0 rgba(0,0,0,0.04)",
+                        ].join(", "),
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#555",
+                    }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M9,9h6v6H9z" />
+                        </svg>
+                    </div>
+                    <span>Waiting for your input</span>
                 </div>
                 {total > 1 && (
-                    <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>
+                    <span style={{ fontSize: 12, color: '#717171', fontWeight: 600 }}>
                         {currentIndex + 1} / {total}
                     </span>
                 )}
@@ -599,10 +740,10 @@ const UserQuestionForm = ({
 
             {/* Progress bar */}
             {total > 1 && (
-                <div style={{ height: 3, backgroundColor: '#e5e7eb', borderRadius: 2, marginBottom: 16 }}>
+                <div style={{ height: 3, backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 2, marginBottom: 16 }}>
                     <div style={{
                         height: '100%',
-                        backgroundColor: '#6366f1',
+                        backgroundColor: '#111111',
                         borderRadius: 2,
                         width: `${((currentIndex + 1) / total) * 100}%`,
                         transition: 'width 0.2s ease',
@@ -612,14 +753,78 @@ const UserQuestionForm = ({
 
             {/* Coding plan preview — shown when the agent presents a plan for approval */}
             {previewMarkdown && (
-                <CodingPlanCard previewMarkdown={previewMarkdown} />
+                <div 
+                    style={{ 
+                        marginBottom: 20,
+                        background: "#ececea",
+                        boxShadow: [
+                            "inset 0 1px 0 rgba(255,255,255,0.72)",
+                            "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                            "inset 1px 0 rgba(255,255,255,0.50)",
+                            "inset -1px 0 rgba(0,0,0,0.04)",
+                            "0 1px 3px rgba(0,0,0,0.07)",
+                        ].join(", "),
+                        border: "0.5px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        overflow: 'hidden'
+                    }}
+                >
+                    <div 
+                        style={{ 
+                            padding: '10px 16px',
+                            background: "linear-gradient(to right, rgba(255,255,255,0.6), rgba(255,255,255,0.2))",
+                            borderBottom: '1px solid rgba(0,0,0,0.08)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                        }}
+                    >
+                        <div style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: 7,
+                            background: "#d3d3d0",
+                            boxShadow: [
+                                "inset 0 1px 0 rgba(255,255,255,0.70)",
+                                "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                                "inset 1px 0 rgba(255,255,255,0.45)",
+                                "inset -1px 0 rgba(0,0,0,0.04)",
+                            ].join(", "),
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#555",
+                        }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="16 18 22 12 16 6" />
+                                <polyline points="8 6 2 12 8 18" />
+                            </svg>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#111111', fontFamily: "'Matter', system-ui, sans-serif" }}>
+                            Implementation Plan
+                        </span>
+                    </div>
+                    <div 
+                        style={{ 
+                            padding: 16,
+                            maxHeight: 280,
+                            overflowY: 'auto',
+                            backgroundColor: '#ffffff',
+                            fontSize: 13.5,
+                            lineHeight: 1.6
+                        }}
+                        className="custom-scrollbar"
+                    >
+                        <MarkdownRenderer content={previewMarkdown} />
+                    </div>
+                </div>
             )}
 
             {/* Question content */}
             {isHighRisk
                 ? renderHighRiskContent()
                 : (
-                    <div style={{ margin: '0 0 20px 0', fontSize: 14, fontWeight: 500, color: '#1f2937', lineHeight: 1.6 }}>
+                    <div style={{ margin: '0 0 20px 0', fontSize: 15, fontWeight: 600, color: '#111111', lineHeight: 1.6 }}>
                         <MarkdownRenderer content={current.question} />
                     </div>
                 )}
@@ -637,25 +842,25 @@ const UserQuestionForm = ({
                             style={{
                                 padding: '14px 16px',
                                 borderRadius: 10,
-                                border: selected ? '1px solid #6366f1' : '1px solid transparent',
-                                backgroundColor: selected ? '#eef2ff' : '#f8f9fa',
-                                color: selected ? '#4338ca' : '#4b5563',
+                                border: selected ? '1px solid #111111' : '1px solid rgba(0,0,0,0.06)',
+                                backgroundColor: selected ? '#ffffff' : '#fcfcfb',
+                                color: '#111111',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 fontSize: 14,
                                 fontWeight: option.isRecommended ? 600 : 500,
                                 transition: 'all 0.2s ease',
-                                boxShadow: selected ? '0 0 0 1px #6366f1' : 'inset 0 0 0 1px rgba(0,0,0,0.02)',
+                                boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
                             }}
-                            onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
-                            onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+                            onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                            onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#fcfcfb'; }}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <div style={{
                                     width: 18, height: 18,
                                     borderRadius: current.multiSelect ? 4 : '50%',
                                     border: selected ? 'none' : '1px solid #cbd5e1',
-                                    backgroundColor: selected ? '#6366f1' : '#ffffff',
+                                    backgroundColor: selected ? '#111111' : '#ffffff',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                     boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
                                 }}>
@@ -665,14 +870,14 @@ const UserQuestionForm = ({
                                         </svg>
                                     )}
                                 </div>
-                                <span>{option.label}</span>
+                                <span style={{ color: '#111111' }}>{option.label}</span>
                                 {isFileOption && (
-                                    <span style={{ fontSize: 11, color: '#6366f1', marginLeft: 4 }}>
+                                    <span style={{ fontSize: 11, color: '#111111', marginLeft: 4, opacity: 0.8 }}>
                                         📎 {fileAttached ? '✓ File attached' : 'Click to attach file'}
                                     </span>
                                 )}
                                 {option.isRecommended && (
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#059669', backgroundColor: '#d1fae5', padding: '2px 6px', borderRadius: 4, marginLeft: 'auto' }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
                                         RECOMMENDED
                                     </span>
                                 )}
@@ -684,13 +889,13 @@ const UserQuestionForm = ({
 
             {/* Attached files summary */}
             {attachedFiles.length > 0 && (
-                <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8 }}>
+                <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
                     {attachedFiles.map((f, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#166534' }}>
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1b5e20' }}>
                             <span>📎</span>
                             <span style={{ fontWeight: 500 }}>{f.name}</span>
                             <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
-                                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 12 }}>
+                                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontSize: 12 }}>
                                 ✕
                             </button>
                         </div>
@@ -702,18 +907,18 @@ const UserQuestionForm = ({
             <div style={{ display: 'flex', justifyContent: total > 1 ? 'space-between' : 'flex-end', gap: 8 }}>
                 {total > 1 && (
                     <button onClick={handleBack} disabled={currentIndex === 0}
-                        style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #d1d5db', backgroundColor: currentIndex === 0 ? '#f3f4f6' : '#ffffff', color: currentIndex === 0 ? '#9ca3af' : '#374151', fontSize: 14, fontWeight: 500, cursor: currentIndex === 0 ? 'not-allowed' : 'pointer' }}>
+                        style={{ padding: '10px 16px', borderRadius: 8, border: currentIndex === 0 ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(0,0,0,0.12)', backgroundColor: currentIndex === 0 ? 'transparent' : '#ffffff', color: currentIndex === 0 ? '#b5b2aa' : '#111111', fontSize: 14, fontWeight: currentIndex === 0 ? 500 : 600, cursor: currentIndex === 0 ? 'not-allowed' : 'pointer', boxShadow: currentIndex === 0 ? 'none' : '0 1px 2px rgba(0,0,0,0.04)' }}>
                         Back
                     </button>
                 )}
                 {currentIndex < total - 1 ? (
                     <button onClick={handleNext} disabled={!isAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? '#6366f1' : '#d1d5db', color: '#ffffff', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? '#111111' : '#c5c5c2', color: isAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
                         Next
                     </button>
                 ) : (
                     <button onClick={handleSubmit} disabled={!allAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? '#6366f1' : '#d1d5db', color: allAnswered ? '#ffffff' : '#9ca3af', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? '#111111' : '#c5c5c2', color: allAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
                         Submit {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
                     </button>
                 )}

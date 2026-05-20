@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import WindowControls from "../components/WindowControls";
+import LinuxVMSetupStep from "./LinuxVMSetupStep";
 
 // ── Provider Logos ────────────────
 
@@ -371,7 +372,7 @@ export default function SetupPage() {
             setModelInstalled(res.modelInstalled);
             // If both are installed, and we are on step 4, we can finish early
             if (res.installed && res.modelInstalled && step === 4) {
-                handleSave();
+                setStep(5);
             }
         }
     };
@@ -554,7 +555,7 @@ export default function SetupPage() {
                 setPullPct(100);
                 setModelInstalled(true);
                 // Go to final step (save) directly since we use an Omni model
-                setTimeout(() => handleSave(), 1500);
+                setTimeout(() => setStep(5), 1500);
             } else {
                 setOllamaLogs(prev => [...prev, `✗ Model pull failed with code ${res.code}`]);
             }
@@ -1064,20 +1065,20 @@ export default function SetupPage() {
                                                 <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
                                             </div>
                                         </div>
-                                        <button onClick={handleSave} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? "#201e24" : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? "#f5f4f0" : "#8a8886", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+                                        <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? "#201e24" : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? "#f5f4f0" : "#8a8886", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                             {isSaving ? "Saving..." : "Save & Continue"}
                                         </button>
                                     </div>
                                 )}
                             </div>
 
-                            <button onClick={handleSave} style={{ marginTop: 24, fontSize: 13, color: "#8a8886", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = "#201e24"} onMouseLeave={e => e.currentTarget.style.color = "#8a8886"}>
-                                Skip local AI setup & Complete
+                            <button onClick={() => setStep(5)} style={{ marginTop: 24, fontSize: 13, color: "#8a8886", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = "#201e24"} onMouseLeave={e => e.currentTarget.style.color = "#8a8886"}>
+                                Skip local AI setup & Continue
                             </button>
                         </motion.div>
                     )}
 
-                    {/* ── Step 5: Vision Grounding ── */}
+                    {/* ── Step 5: Linux VM Setup ── */}
                     {step === 5 && (
                         <motion.div
                             key="step5"
@@ -1086,390 +1087,15 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
-                            style={{ width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                            style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(4)} />
                             </div>
-
-                            <div style={{ marginBottom: 36 }}>
-                                <h2 style={{
-                                    fontSize: 36, fontWeight: 600,
-                                    letterSpacing: "-0.03em", fontStyle: "italic",
-                                    marginBottom: 10,
-                                    background: "linear-gradient(90deg, #ffffff 0%, #ffffff 55%, #3f3f46 100%)",
-                                    WebkitBackgroundClip: "text",
-                                    WebkitTextFillColor: "transparent",
-                                    backgroundClip: "text",
-                                    lineHeight: 1.1,
-                                }}>
-                                    Vision Grounding
-                                </h2>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 14 }}>
-                                    <span style={{ height: 1, width: 28, background: "linear-gradient(to right, transparent, #27272a)" }} />
-                                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.2em", color: "#3f3f46" }}>Optional Capability</span>
-                                    <span style={{ height: 1, width: 28, background: "linear-gradient(to left, transparent, #27272a)" }} />
-                                </div>
-                                <p style={{ color: "#71717a", fontSize: 14, lineHeight: 1.7, maxWidth: 420, margin: "0 auto" }}>
-                                    EverFern can use <strong style={{ color: "#d4d4d8", fontWeight: 500 }}>ShowUI</strong> — a high-precision local AI model — to see your screen and interact with applications autonomously.
-                                </p>
-                            </div>
-
-                            {/* Option cards */}
-                            {useShowUI === null && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                                    <button
-                                        onClick={() => setUseShowUI(true)}
-                                        style={{
-                                            width: "100%", padding: "22px 24px", borderRadius: 18,
-                                            background: "rgba(255,255,255,0.03)",
-                                            border: "1px solid rgba(255,255,255,0.08)",
-                                            cursor: "pointer", textAlign: "left",
-                                            display: "flex", alignItems: "center", gap: 18,
-                                            transition: "all 0.18s ease",
-                                        }}
-                                        onMouseEnter={e => {
-                                            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.13)";
-                                        }}
-                                        onMouseLeave={e => {
-                                            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)";
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: 48, height: 48, borderRadius: 14,
-                                            background: "rgba(96,165,250,0.08)",
-                                            border: "1px solid rgba(96,165,250,0.15)",
-                                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                                        }}>
-                                            <Sparkles size={20} style={{ color: "#60a5fa" }} />
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                                <span style={{ fontWeight: 600, fontSize: 15, color: "#f4f4f5" }}>Yes, set up ShowUI</span>
-                                                <span style={{
-                                                    fontSize: 9, fontWeight: 700,
-                                                    background: "rgba(59,130,246,0.15)", color: "#60a5fa",
-                                                    padding: "2px 7px", borderRadius: 999,
-                                                    textTransform: "uppercase", letterSpacing: "0.1em",
-                                                }}>Recommended</span>
-                                            </div>
-                                            <p style={{ color: "#52525b", fontSize: 12, lineHeight: 1.5 }}>
-                                                Automatic installation of the vision grounding engine. Private and high-performance.
-                                            </p>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        onClick={handleSave}
-                                        disabled={isSaving}
-                                        style={{
-                                            width: "100%", padding: "22px 24px", borderRadius: 18,
-                                            background: "transparent",
-                                            border: "1px solid rgba(255,255,255,0.04)",
-                                            cursor: "pointer", textAlign: "left",
-                                            display: "flex", alignItems: "center", gap: 18,
-                                            transition: "all 0.18s ease",
-                                        }}
-                                        onMouseEnter={e => {
-                                            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.07)";
-                                        }}
-                                        onMouseLeave={e => {
-                                            (e.currentTarget as HTMLElement).style.background = "transparent";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.04)";
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: 48, height: 48, borderRadius: 14,
-                                            background: "rgba(255,255,255,0.02)",
-                                            border: "1px solid rgba(255,255,255,0.05)",
-                                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                                        }}>
-                                            <ArrowRight size={20} style={{ color: "#3f3f46" }} />
-                                        </div>
-                                        <div>
-                                            <p style={{ fontWeight: 500, fontSize: 15, marginBottom: 4, color: "#52525b" }}>Skip for now</p>
-                                            <p style={{ color: "#3f3f46", fontSize: 12, lineHeight: 1.5 }}>Use the built-in vision fallback. Setup can be finalized later.</p>
-                                        </div>
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* ShowUI Install flow */}
-                            {useShowUI === true && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}
-                                >
-                                    {installLogs.length === 0 ? (
-                                        /* ── Pre-install screen ── */
-                                        <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
-                                            <div style={{
-                                                borderRadius: 14,
-                                                background: "rgba(249,115,22,0.04)",
-                                                border: "1px solid rgba(249,115,22,0.15)",
-                                                padding: "16px 18px",
-                                                display: "flex", alignItems: "flex-start", gap: 14,
-                                            }}>
-                                                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#fb923c", marginTop: 4, flexShrink: 0, boxShadow: "0 0 8px rgba(251,146,60,0.5)" }} />
-                                                <p style={{ fontSize: 12, color: "rgba(254,215,170,0.65)", lineHeight: 1.65, textAlign: "left", margin: 0 }}>
-                                                    <strong style={{ color: "#fdba74", fontWeight: 600 }}>Prerequisites:</strong> Ensure{" "}
-                                                    <code style={{ fontFamily: "monospace", background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>conda</code> and{" "}
-                                                    <code style={{ fontFamily: "monospace", background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>git</code> are installed. The installer creates a new{" "}
-                                                    <code style={{ fontFamily: "monospace", background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>showui</code> environment.
-                                                </p>
-                                            </div>
-
-                                            <button
-                                                onClick={startInstall}
-                                                style={{
-                                                    width: "100%", height: 52,
-                                                    background: "rgba(255,255,255,0.05)",
-                                                    border: "1px solid rgba(255,255,255,0.09)",
-                                                    borderRadius: 14, color: "#e5e5e5",
-                                                    fontWeight: 600, fontSize: 14,
-                                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                                    gap: 10, cursor: "pointer", transition: "all 0.18s",
-                                                    letterSpacing: "0.01em",
-                                                }}
-                                                onMouseEnter={e => {
-                                                    (e.currentTarget as HTMLElement).style.background = "#e5e5e5";
-                                                    (e.currentTarget as HTMLElement).style.color = "#09090b";
-                                                    (e.currentTarget as HTMLElement).style.borderColor = "#e5e5e5";
-                                                }}
-                                                onMouseLeave={e => {
-                                                    (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)";
-                                                    (e.currentTarget as HTMLElement).style.color = "#e5e5e5";
-                                                    (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.09)";
-                                                }}
-                                            >
-                                                <Cpu size={16} /> Start Automatic Installation
-                                            </button>
-
-                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                                                {[
-                                                    { icon: "📦", title: "Conda Env", desc: "Python 3.11" },
-                                                    { icon: "🌐", title: "Clone Repo", desc: "Latest ShowUI" },
-                                                    { icon: "🧱", title: "Dependencies", desc: "Torch & Vision" },
-                                                ].map((s, i) => (
-                                                    <div key={i} style={{
-                                                        display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                                                        padding: "14px 10px", borderRadius: 12,
-                                                        background: "rgba(255,255,255,0.015)",
-                                                        border: "1px solid rgba(255,255,255,0.04)",
-                                                        opacity: 0.5,
-                                                    }}>
-                                                        <span style={{ fontSize: 18 }}>{s.icon}</span>
-                                                        <div style={{ fontSize: 10, fontWeight: 700, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.title}</div>
-                                                        <div style={{ fontSize: 10, color: "#3f3f46" }}>{s.desc}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            <div style={{ display: "flex", justifyContent: "center", paddingTop: 4 }}>
-                                                <button
-                                                    onClick={() => { setUseShowUI(null); setInstallLogs([]); setInstallError(null); }}
-                                                    style={{ color: "#3f3f46", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, transition: "color 0.15s" }}
-                                                    onMouseEnter={e => (e.currentTarget.style.color = "#a1a1aa")}
-                                                    onMouseLeave={e => (e.currentTarget.style.color = "#3f3f46")}
-                                                >
-                                                    <ChevronLeft size={13} /> Back to options
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        /* ── Active install screen ── */
-                                        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-                                            {/* Coffee break banner — shown while installing */}
-                                            {isInstalling && (
-                                                <CoffeeBreakBanner
-                                                    currentPkg={pipPkg}
-                                                    pipPct={pipPct}
-                                                    pipSpeed={pipSpeed}
-                                                    overallPct={overallPct}
-                                                />
-                                            )}
-
-                                            {/* Step pills */}
-                                            <StepPills installStep={installStep} />
-
-                                            {/* Terminal */}
-                                            <div style={{
-                                                width: "100%",
-                                                background: "#0d0d0d",
-                                                border: "1px solid rgba(255,255,255,0.07)",
-                                                borderRadius: 12,
-                                                overflow: "hidden",
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                fontFamily: "monospace",
-                                                fontSize: 11.5,
-                                            }}>
-                                                {/* Terminal titlebar */}
-                                                <div style={{
-                                                    display: "flex", alignItems: "center", gap: 5,
-                                                    padding: "7px 12px",
-                                                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                                                    background: "rgba(255,255,255,0.015)",
-                                                }}>
-                                                    <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444", opacity: 0.5 }} />
-                                                    <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#f59e0b", opacity: 0.5 }} />
-                                                    <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#22c55e", opacity: 0.5 }} />
-                                                    <span style={{ marginLeft: 8, fontSize: 10, color: "#3f3f46", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                                        Installation Log
-                                                    </span>
-                                                    {isInstalling && (
-                                                        <div style={{
-                                                            marginLeft: "auto",
-                                                            width: 8, height: 8,
-                                                            border: "1.5px solid rgba(59,130,246,0.3)",
-                                                            borderTopColor: "#3b82f6",
-                                                            borderRadius: "50%",
-                                                            animation: "spinnerAnim 0.8s linear infinite",
-                                                        }} />
-                                                    )}
-                                                </div>
-
-                                                {/* Pip progress bar — live download indicator */}
-                                                {pipPkg && (
-                                                    <PipProgressBar
-                                                        pkg={pipPkg}
-                                                        pct={pipPct}
-                                                        speed={pipSpeed}
-                                                        eta={pipEta}
-                                                    />
-                                                )}
-
-                                                {/* Log lines */}
-                                                <div style={{
-                                                    height: 200,
-                                                    overflowY: "auto",
-                                                    padding: "10px 14px",
-                                                    display: "flex",
-                                                    flexDirection: "column",
-                                                    gap: 2,
-                                                }}>
-                                                    {installLogs.map((log, i) => (
-                                                        <div key={i} style={{
-                                                            whiteSpace: "pre-wrap",
-                                                            color: logColor(log.kind),
-                                                            fontWeight: (log.kind === "done" || log.kind === "fail") ? 700 : 400,
-                                                            lineHeight: 1.5,
-                                                        }}>
-                                                            {log.line}
-                                                        </div>
-                                                    ))}
-                                                    {isInstalling && (
-                                                        <motion.div
-                                                            animate={{ opacity: [0, 1, 0] }}
-                                                            transition={{ duration: 1, repeat: Infinity }}
-                                                            style={{ width: 7, height: 14, background: "#3f3f46", marginTop: 4 }}
-                                                        />
-                                                    )}
-                                                    <div ref={logEndRef} />
-                                                </div>
-                                            </div>
-
-                                            {/* Error display */}
-                                            {installError && (
-                                                <div style={{
-                                                    padding: "14px 16px", borderRadius: 12,
-                                                    background: "rgba(239,68,68,0.04)",
-                                                    border: "1px solid rgba(239,68,68,0.15)",
-                                                    color: "#f87171", fontSize: 12, lineHeight: 1.6, textAlign: "left",
-                                                }}>
-                                                    {installError}
-                                                </div>
-                                            )}
-
-                                            {/* Success state */}
-                                            {!isInstalling && !installError && (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                    <div style={{
-                                                        padding: "14px 16px", borderRadius: 12,
-                                                        background: "rgba(34,197,94,0.04)",
-                                                        border: "1px solid rgba(34,197,94,0.15)",
-                                                        display: "flex", alignItems: "center", gap: 14,
-                                                    }}>
-                                                        <div style={{
-                                                            width: 30, height: 30, borderRadius: 8,
-                                                            background: "rgba(34,197,94,0.08)",
-                                                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                                                        }}>
-                                                            <Sparkles size={14} style={{ color: "#4ade80" }} />
-                                                        </div>
-                                                        <div>
-                                                            <p style={{ fontSize: 13, color: "rgba(187,247,208,0.8)", marginBottom: 2, fontWeight: 500 }}>Ready to launch!</p>
-                                                            <p style={{ fontSize: 11, color: "#52525b", lineHeight: 1.5 }}>ShowUI is installed. Click below to start the model server and continue.</p>
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        onClick={handleSave}
-                                                        style={{
-                                                            width: "100%", height: 52,
-                                                            background: "#e5e5e5", color: "#09090b",
-                                                            borderRadius: 12, fontWeight: 600, fontSize: 14,
-                                                            display: "flex", alignItems: "center", justifyContent: "center",
-                                                            gap: 8, cursor: "pointer", border: "none",
-                                                            transition: "background 0.15s", letterSpacing: "0.01em",
-                                                        }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = "#ffffff")}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = "#e5e5e5")}
-                                                    >
-                                                        Finalize & Finish Setup <ArrowRight size={16} strokeWidth={2.5} />
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Retry on error */}
-                                            {installError && (
-                                                <button
-                                                    onClick={startInstall}
-                                                    style={{
-                                                        width: "100%", height: 46,
-                                                        background: "rgba(255,255,255,0.04)",
-                                                        border: "1px solid rgba(255,255,255,0.08)",
-                                                        borderRadius: 12, color: "#d4d4d8",
-                                                        fontSize: 13, cursor: "pointer", transition: "all 0.15s",
-                                                    }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
-                                                >
-                                                    Retry Installation
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
-                                        <button
-                                            onClick={() => { setUseShowUI(null); setInstallLogs([]); setInstallError(null); setPipPkg(""); setPipPct(0); setOverallPct(0); }}
-                                            style={{
-                                                padding: "8px 20px", borderRadius: 999,
-                                                background: "transparent",
-                                                border: "1px solid rgba(255,255,255,0.05)",
-                                                color: "#3f3f46", fontSize: 12, fontWeight: 500,
-                                                cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
-                                                transition: "all 0.15s",
-                                            }}
-                                            onMouseEnter={e => {
-                                                (e.currentTarget as HTMLElement).style.color = "#a1a1aa";
-                                                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.1)";
-                                            }}
-                                            onMouseLeave={e => {
-                                                (e.currentTarget as HTMLElement).style.color = "#3f3f46";
-                                                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.05)";
-                                            }}
-                                        >
-                                            <X size={12} /> Discard and go back
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            )}
+                            <LinuxVMSetupStep
+                                onComplete={handleSave}
+                                onSkip={handleSave}
+                            />
                         </motion.div>
                     )}
                 </AnimatePresence>

@@ -192,7 +192,8 @@ export async function executeSynchronizedParallelGroup(
         eventQueue?.push({
             type: 'tool_start',
             toolName: tc.name,
-            toolArgs: tc.args
+            toolArgs: tc.args,
+            toolCallId: tc.id
         });
 
         try {

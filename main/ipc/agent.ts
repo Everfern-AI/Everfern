@@ -325,7 +325,11 @@ export function registerAgentHandlers() {
           thoughtBuffer += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
         } else if (streamEvent.type === 'tool_start') {
-          safeSend('acp:tool-start', { toolName: streamEvent.toolName, toolArgs: streamEvent.toolArgs });
+          safeSend('acp:tool-start', { 
+            toolName: streamEvent.toolName, 
+            toolArgs: streamEvent.toolArgs,
+            toolCallId: (streamEvent as any).toolCallId
+          });
         } else if (streamEvent.type === 'tool_call') {
           safeSend('acp:tool-call', streamEvent.toolCall);
         } else if (streamEvent.type === 'tool_call_start') {
@@ -393,7 +397,8 @@ export function registerAgentHandlers() {
           // Self-Improvement: Trigger non-blocking memory reflection
           reflectAndRemember(history, userInput, fullResponse, client);
         } else if (streamEvent.type === 'subagent-progress') {
-          safeSend('acp:sub-agent-progress', streamEvent.data);
+          const progressPayload = streamEvent.data !== undefined ? streamEvent.data : streamEvent;
+          safeSend('acp:sub-agent-progress', progressPayload);
         } else if (streamEvent.type === 'local_execution_request') {
           // Forward local execution request to renderer
           safeSend('acp:local-execution-request', {

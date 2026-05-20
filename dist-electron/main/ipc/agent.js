@@ -338,7 +338,11 @@ function registerAgentHandlers() {
                         flushBuffers();
                 }
                 else if (streamEvent.type === 'tool_start') {
-                    safeSend('acp:tool-start', { toolName: streamEvent.toolName, toolArgs: streamEvent.toolArgs });
+                    safeSend('acp:tool-start', {
+                        toolName: streamEvent.toolName,
+                        toolArgs: streamEvent.toolArgs,
+                        toolCallId: streamEvent.toolCallId
+                    });
                 }
                 else if (streamEvent.type === 'tool_call') {
                     safeSend('acp:tool-call', streamEvent.toolCall);
@@ -412,7 +416,8 @@ function registerAgentHandlers() {
                     (0, memory_manager_1.reflectAndRemember)(history, userInput, fullResponse, client);
                 }
                 else if (streamEvent.type === 'subagent-progress') {
-                    safeSend('acp:sub-agent-progress', streamEvent.data);
+                    const progressPayload = streamEvent.data !== undefined ? streamEvent.data : streamEvent;
+                    safeSend('acp:sub-agent-progress', progressPayload);
                 }
                 else if (streamEvent.type === 'local_execution_request') {
                     // Forward local execution request to renderer
