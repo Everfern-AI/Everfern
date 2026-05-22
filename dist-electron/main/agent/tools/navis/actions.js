@@ -322,15 +322,26 @@ async function executeWait(args, logger, step, maxSteps) {
 }
 async function executeExtractContent(args, page, logger, step, maxSteps) {
     const content = await page.evaluate(() => {
-        // Remove noise
-        const scripts = document.querySelectorAll('script, style, noscript, iframe, svg, nav, footer');
-        scripts.forEach(s => s.remove());
         // Try to find main content
         const main = document.querySelector('main, [role="main"], article, #content, .content, .main');
         const root = main || document.body;
+        // Clone the root to avoid modifying the live page
+        const clone = root.cloneNode(true);
+        // Create an off-screen container so innerText works properly
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'absolute';
+        wrapper.style.left = '-99999px';
+        wrapper.style.top = '0';
+        wrapper.appendChild(clone);
+        document.body.appendChild(wrapper);
+        // Remove noise from the clone
+        const noise = clone.querySelectorAll('script, style, noscript, iframe, svg, nav, footer');
+        noise.forEach(s => s.remove());
         // Get text and clean it
-        let text = root.innerText || '';
+        let text = clone.innerText || '';
         text = text.replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+        // Clean up the DOM
+        wrapper.remove();
         return text;
     }).catch(() => '');
     const truncated = content.length > 8000 ? content.slice(0, 8000) + '\n...(truncated)' : content;

@@ -241,9 +241,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     /**
      * Register a callback for sub-agent progress events.
-     * Event type: SubAgentProgressEvent (see src/app/chat/types.ts)
+     * Always replaces any previously registered listener to prevent handler stacking.
      */
     onSubAgentProgress: (cb: (event: SubAgentProgressEvent) => void) => {
+      // Remove any existing listener first so we never stack up multiple handlers
+      ipcRenderer.removeAllListeners('acp:sub-agent-progress');
       ipcRenderer.on('acp:sub-agent-progress', (_e, event) => cb(event));
     },
     /**
@@ -379,6 +381,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminal: {
     listProcesses: () => ipcRenderer.invoke('terminal:list-processes'),
     killProcess:   (id: string) => ipcRenderer.invoke('terminal:kill-process', id),
+    getStatus:     (id: string) => ipcRenderer.invoke('terminal:get-status', id),
   },
 
   // ── ShowUI Local ──────────────────────────────────────────────────
@@ -450,6 +453,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     } else {
       ipcRenderer.removeAllListeners(channel);
     }
+  },
+
+  // ── Screenshot Loader ──────────────────────────────────────────────
+  screenshot: {
+    /** Load a screenshot from disk by its absolute path. Returns { base64, dataUrl } or { error }. */
+    load: (filePath: string) => ipcRenderer.invoke('screenshot:load', filePath),
   },
 });
 
@@ -619,6 +628,7 @@ export type ElectronAPI = {
   terminal: {
     listProcesses: () => Promise<{ id: string; commandLine: string; status: 'running' | 'done'; exitCode?: number | null; bufferSize: number }[]>;
     killProcess:   (id: string) => Promise<{ success: boolean }>;
+    getStatus:     (id: string) => Promise<{ success: boolean; status?: 'running' | 'done'; output?: string; exitCode?: number | null; error?: string }>;
   };
   showui: {
     install: () => Promise<{ success: boolean; showuiDir?: string; error?: string }>;
@@ -673,5 +683,9 @@ export type ElectronAPI = {
   };
   chat: {
     generateTitle: (conversationId: string, firstMessage: string) => Promise<{ queued: boolean }>;
+  };
+  screenshot: {
+    /** Load a screenshot from disk by absolute path. Returns { base64, dataUrl } or { error }. */
+    load: (filePath: string) => Promise<{ base64?: string; dataUrl?: string; error?: string }>;
   };
 };

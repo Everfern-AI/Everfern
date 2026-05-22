@@ -110,9 +110,9 @@ const ClickRipple: React.FC<{ isActive: boolean; scale: number; opacity: number 
 };
 
 /**
- * Drag Trail Component
+ * Mouse Trail Component
  */
-const DragTrail: React.FC<{ points: Array<{ x: number; y: number; timestamp: number }> }> = ({
+const MouseTrail: React.FC<{ points: Array<{ x: number; y: number; timestamp: number }> }> = ({
   points,
 }) => {
   if (points.length < 2) return null;
@@ -139,13 +139,13 @@ const DragTrail: React.FC<{ points: Array<{ x: number; y: number; timestamp: num
     >
       <path
         d={pathData}
-        stroke="rgba(255, 255, 255, 0.6)"
-        strokeWidth="2"
+        stroke="rgba(167, 139, 250, 0.8)"
+        strokeWidth="5"
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
         style={{
-          filter: 'drop-shadow(0 0 2px rgba(255, 255, 255, 0.4))',
+          filter: 'drop-shadow(0 0 8px rgba(139, 92, 246, 0.8)) drop-shadow(0 0 16px rgba(139, 92, 246, 0.5))',
         }}
       />
     </svg>
@@ -224,15 +224,11 @@ export const CursorOverlaySystem: React.FC<CursorOverlayProps> = ({
         const newX = prev.position.x + dx * speed;
         const newY = prev.position.y + dy * speed;
 
-        // Update trail points for drag action
+        // Update trail points for all movements
         let newTrailPoints = [...prev.trailPoints];
-        if (action === 'drag') {
-          newTrailPoints.push({ x: newX, y: newY, timestamp: now });
-          // Keep only recent trail points (last 500ms)
-          newTrailPoints = newTrailPoints.filter((point) => now - point.timestamp < 500);
-        } else {
-          newTrailPoints = [];
-        }
+        newTrailPoints.push({ x: newX, y: newY, timestamp: now });
+        // Keep only recent trail points (last 500ms) for a smooth fading trail
+        newTrailPoints = newTrailPoints.filter((point) => now - point.timestamp < 500);
 
         return {
           ...prev,
@@ -332,8 +328,8 @@ export const CursorOverlaySystem: React.FC<CursorOverlayProps> = ({
         height: `${screenDimensions.height}px`,
       }}
     >
-      {/* Drag trail */}
-      {state.animationState === 'dragging' && <DragTrail points={state.trailPoints} />}
+      {/* Mouse trail */}
+      <MouseTrail points={state.trailPoints} />
 
       {/* Cursor */}
       <motion.div

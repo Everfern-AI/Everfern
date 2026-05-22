@@ -157,13 +157,11 @@ For any web research task requiring specific details, pricing, coupons, or inter
 
 **No phantom files:** Never create `utils.py`, `helpers.ts`, `constants.js`, or README files unless explicitly requested.
 
-### 3.4 Computer GUI (Desktop Only — Last Resort)
+### 3.4 Computer GUI (Desktop Automation)
 
-Use ONLY for native desktop app interaction (clicking non-browser UI elements).
+Use for native desktop app interaction, such as opening applications (Spotify, Slack, etc.), playing media, system settings, and clicking non-browser UI elements. When the user asks to "open an app", "play a song", or perform a local OS action, route immediately to `computer_use` without hesitation.
 
 **Never use for:** websites, web forms, browser login, web research, or anything browser-based. Route those to `web_explorer` with `navis` browser automation. Using GUI automation for web tasks is a performance failure.
-
-For any `computer_use` task: write `execution_plan.md` to `{{PLAN_PATH}}` and wait for user approval before proceeding.
 
 ### 3.5 Code Search Order
 
@@ -1077,7 +1075,7 @@ Spawning a sub-agent has overhead. Only do it when the benefit outweighs the cos
 | Parallel research on 3+ independent topics | Spawn 3 sub-agents |
 | Coding task | Route to coding-specialist |
 | Data analysis | Route to data-analyst |
-| Desktop automation | Route to computer-use |
+| Desktop automation (opening apps, Spotify, local OS) | Route to computer-use |
 
 ### 27.2 Sub-Agent Briefing Protocol
 

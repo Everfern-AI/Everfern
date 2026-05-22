@@ -148,24 +148,22 @@ Available routing options:
 - "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, web_search + navis for detailed extraction)
 - "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
 - "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
-- "route_computer_use" — Route to Computer Use agent ONLY for DESKTOP GUI automation (clicking desktop UI elements, interacting with native apps like Excel, VS Code, Discord desktop app). NEVER use for web research, searching the internet, visiting websites, or filling forms on websites.
 - "route_web_explorer" — Route to Web Explorer for complex multi-step web research (multiple page visits, form filling, login workflows). For simple web lookups or single-page research, use your available web_search/navis tools directly.
 - "complete_task"      — Task is complete, no further routing needed
 
 CRITICAL ROUTING RULES:
 1. If user asks to "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app" → ALWAYS use "route_coding" (Coding Specialist handles project creation)
-2. "route_computer_use" is ONLY for tasks that require clicking on desktop GUI elements, interacting with native apps, or automating screen interactions. It is NOT for web browsing or research.
-3. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), prefer "continue_brain" to use web_search + navis directly. Only use "route_web_explorer" for complex multi-step workflows.
-4. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
-5. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis. NEVER use "route_computer_use" for visiting websites.
-6. You have web_search and navis available directly — use them for most web research tasks. The two-phase approach (search then extract) handles 90% of web research needs without routing to specialists.
-7. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available.
-8. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
-9. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
+2. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), prefer "continue_brain" to use web_search + navis directly. Only use "route_web_explorer" for complex multi-step workflows.
+3. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
+4. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis.
+5. You have web_search and navis available directly — use them for most web research tasks. The two-phase approach (search then extract) handles 90% of web research needs without routing to specialists.
+6. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available.
+7. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
+8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
 
 Respond with JSON only:
 {
-  "decision": "continue_brain" | "route_coding" | "route_data_analyst" | "route_computer_use" | "route_web_explorer" | "complete_task",
+  "decision": "continue_brain" | "route_coding" | "route_data_analyst" | "route_web_explorer" | "complete_task",
   "explanation": "one sentence explaining the routing decision"
 }`;
         console.log('[Brain] Determining routing decision...');
@@ -206,7 +204,7 @@ Respond with JSON only:
         }
         const validDecisions = [
             'continue_brain', 'route_coding', 'route_data_analyst',
-            'route_computer_use', 'route_web_explorer', 'complete_task'
+            'route_web_explorer', 'complete_task'
         ];
         if (!validDecisions.includes(routing.decision)) {
             console.warn('[Brain] Invalid routing decision:', routing.decision);
@@ -396,7 +394,7 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
                 'build': 'route_coding',
                 'fix': 'route_coding',
                 'analyze': 'route_data_analyst',
-                'automate': 'route_computer_use',
+                'automate': 'continue_brain',
             };
             const autoDecision = intentRoutingMap[state.currentIntent];
             if (autoDecision) {
@@ -430,7 +428,7 @@ const createBrainNode = (runner, eventQueue, missionTracker, toolDefs, shouldAbo
                     'build': 'route_coding',
                     'fix': 'route_coding',
                     'analyze': 'route_data_analyst',
-                    'automate': 'route_computer_use',
+                    'automate': 'continue_brain',
                 };
                 const fallbackDecision = fallbackRoutingMap[state.currentIntent];
                 if (fallbackDecision) {

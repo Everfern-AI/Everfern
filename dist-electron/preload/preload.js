@@ -189,9 +189,11 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         },
         /**
          * Register a callback for sub-agent progress events.
-         * Event type: SubAgentProgressEvent (see src/app/chat/types.ts)
+         * Always replaces any previously registered listener to prevent handler stacking.
          */
         onSubAgentProgress: (cb) => {
+            // Remove any existing listener first so we never stack up multiple handlers
+            electron_1.ipcRenderer.removeAllListeners('acp:sub-agent-progress');
             electron_1.ipcRenderer.on('acp:sub-agent-progress', (_e, event) => cb(event));
         },
         /**
@@ -315,6 +317,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     terminal: {
         listProcesses: () => electron_1.ipcRenderer.invoke('terminal:list-processes'),
         killProcess: (id) => electron_1.ipcRenderer.invoke('terminal:kill-process', id),
+        getStatus: (id) => electron_1.ipcRenderer.invoke('terminal:get-status', id),
     },
     // ── ShowUI Local ──────────────────────────────────────────────────
     showui: {
@@ -377,5 +380,10 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         else {
             electron_1.ipcRenderer.removeAllListeners(channel);
         }
+    },
+    // ── Screenshot Loader ──────────────────────────────────────────────
+    screenshot: {
+        /** Load a screenshot from disk by its absolute path. Returns { base64, dataUrl } or { error }. */
+        load: (filePath) => electron_1.ipcRenderer.invoke('screenshot:load', filePath),
     },
 });

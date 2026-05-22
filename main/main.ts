@@ -30,6 +30,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { acpManager } from './acp/manager';
+import { getComputerOverlayManager } from './computer-overlay';
 import type { ProviderType } from './acp/types';
 import { ChatHistoryStore } from './store/history';
 import { AgentRunner } from './agent/runner/runner';
@@ -563,8 +564,10 @@ Your goal is to be the ultimate workplace companion.
 
   // Ensure system prompt exists (fallback for prompt sync)
   ensureSystemPromptExists();
-
   voiceOverlayManager = new VoiceOverlayManager();
+
+  // Initialize and preload the computer-use cursor overlay at startup to trigger Next.js compilation early and avoid HMR refresh mid-chat
+  getComputerOverlayManager();
   // ── Protocol Handlers ──────────────────────────────────────────────
 
   // Custom protocol for the main application (Next.js out folder)

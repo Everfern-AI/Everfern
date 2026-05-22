@@ -108,6 +108,8 @@ async function decomposeWithAIUnified(userInput: string, availableTools: string[
 Task: "${userInput.slice(0, 500)}"
 Tools: ${toolList}
 
+IMPORTANT: If the task requires "computer_use" (like clicking on the OS, opening a physical app, moving mouse, typing globally), DO NOT break it down into multiple steps. Output a SINGLE step using the "computer_use" tool with the full original instructions.
+
 Respond with ONLY the JSON object.`;
 
     try {

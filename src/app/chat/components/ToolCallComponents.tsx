@@ -540,98 +540,7 @@ const scrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 `;
 
-const WriteDiffCard = ({ tc }: { tc: any }) => {
-    const [expanded, setExpanded] = useState(false);
 
-    const path = (tc.args?.path as string) || '';
-    const filename = path.split(/[/\\]/).pop() || 'file';
-    const content = (tc.args?.content as string) || '';
-    const oldContent = (tc.args?.old_content as string) || '';
-    const hasDiff = !!oldContent && oldContent !== content;
-    const isNew = !hasDiff;
-
-    if (tc.status !== 'done' && tc.status !== 'running') return null;
-
-    return (
-        <div className="w-full max-w-3xl">
-            <SimpleFileNotification
-                filename={filename}
-                content={content}
-                size={content.length}
-                isNew={isNew}
-                status={tc.status === 'running' ? 'creating' : tc.status === 'done' ? 'success' : 'error'}
-                onViewFile={() => setExpanded(!expanded)}
-                onCopyContent={() => navigator.clipboard.writeText(content)}
-                onOpenInEditor={() => {
-                    const blob = new Blob([content], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                }}
-            />
-
-            <AnimatePresence>
-                {expanded && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ type: "spring", duration: 0.4, bounce: 0 }}
-                        className="overflow-hidden mt-1"
-                    >
-                        <div className="relative rounded-b-2xl border-x border-b border-gray-200 bg-white shadow-sm">
-                            <div className="absolute top-0 left-4 w-3.5 h-3.5 bg-[#201e24] rounded-full border-[3px] border-[#F5F4F0] z-20 shadow-sm" />
-                            {/* Sub-header / Breadcrumbs */}
-                            <div className="flex items-center justify-between px-4 py-2 bg-gray-50/50 border-b border-gray-100">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-[#111] animate-pulse" />
-                                    <span className="text-[11px] font-mono text-gray-400 truncate max-w-[300px]">
-                                        {path || filename}
-                                    </span>
-                                </div>
-
-                                <button
-                                    onClick={() => setExpanded(false)}
-                                    className="group p-1 hover:bg-gray-200/50 rounded-md transition-colors"
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-400 group-hover:text-gray-600">
-                                        <path d="M18 6L6 18M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            {/* Diff Area */}
-                            <div className="p-1 max-h-[500px] overflow-y-auto custom-scrollbar">
-                                <div className="rounded-xl overflow-hidden border border-gray-100">
-                                    <DiffViewer
-                                        oldFile={hasDiff ? { content: oldContent, name: filename } : { content: '', name: filename }}
-                                        newFile={{ content, name: filename }}
-                                        viewMode="unified"
-                                        showLineNumbers
-                                        showStats
-                                        variant="ghost"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Footer / Status */}
-                            <div className="px-4 py-2 border-t border-gray-50 flex justify-end">
-                                <p className="text-[10px] uppercase tracking-widest font-bold text-gray-300">
-                                    {hasDiff ? 'Modification' : 'New File'}
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            </div>
-        );
-    };
 
 // ── ComputerUseResultCard ────────────────────────────────────────────────────
 const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
@@ -738,8 +647,6 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
         return () => window.removeEventListener('computer-use-progress', handleProgressEvent);
     }, []);
 
-    if (tc.status !== 'done') return null;
-
     let tcData: any = tc.data || {};
     if (tc.output) {
         try {
@@ -748,13 +655,16 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
         } catch(e) {}
     }
 
-    const outputMatch = tcData.detail || (tc.output && tc.output.includes('Success: ') ? tc.output.split('Success: ')[1] : tc.output || '');
+    const tcOutputStr = tc.output || '';
+    const outputMatch = tcData.detail || (tcOutputStr.includes('Success: ') ? tcOutputStr.split('Success: ')[1] : tcOutputStr);
     const appName = typeof tcData?.appName === 'string' && tcData.appName.trim() ? tcData.appName : "Application";
 
+    // Once completed, the standard AgentTimeline pill takes over.
+    // We unmount the custom card to prevent the empty duplicate pill shown in the user's screenshot.
+    if (tc.status === 'done') return null;
+
     // Determine final status based on task completion
-    // 4.2: Success state transitions - green tint (#22C55E)
-    // 4.3: Error state transitions - red tint (#EF4444)
-    const finalStatus = tc.status === 'done' ? 'success' : 'error';
+    const finalStatus = tc.status === 'error' ? 'error' : 'executing';
 
     return (
         <AnimatePresence>
@@ -798,7 +708,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                     <div className="flex items-center flex-wrap gap-3 text-xs">
                         <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
                             <span className="font-medium">Tool used</span>
-                            <div className="flex items-center gap-1 bg-[#22c55e] text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold">
+                            <div className={`flex items-center gap-1 text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold ${finalStatus === 'executing' ? 'bg-[#3b82f6]' : finalStatus === 'error' ? 'bg-[#ef4444]' : 'bg-[#22c55e]'}`}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                                     <line x1="3" y1="9" x2="21" y2="9"></line>
@@ -807,13 +717,17 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                                 {appName}
                             </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
-                            <span>Duration</span>
-                            <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
-                        </div>
+                        {finalStatus !== 'executing' && (
+                            <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                                <span>Duration</span>
+                                <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
+                            </div>
+                        )}
                         <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
                             <span>Status</span>
-                            <span className="font-semibold text-[#22c55e]">Success</span>
+                            <span className={`font-semibold ${finalStatus === 'executing' ? 'text-[#3b82f6]' : finalStatus === 'error' ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
+                                {finalStatus === 'executing' ? 'Executing...' : finalStatus === 'error' ? 'Error' : 'Success'}
+                            </span>
                         </div>
                     </div>
                 </motion.div>
@@ -922,4 +836,4 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
     );
 };
 
-export { ToolCallTag, ToolCallRow, WriteDiffCard, ComputerUseResultCard, SearchResultCard };
+export { ToolCallTag, ToolCallRow, ComputerUseResultCard, SearchResultCard };

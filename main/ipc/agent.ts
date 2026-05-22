@@ -48,6 +48,39 @@ export function registerAgentHandlers() {
 
   // Provider management
   ipcMain.handle('acp:list-providers', () => acpManager.listProviders());
+
+  // ── Screenshot Loader ─────────────────────────────────────────────────────
+  // Allows the renderer to load a screenshot from disk by its absolute path.
+  // Security: only files inside ~/.everfern/screenshots/ are allowed.
+  ipcMain.handle('screenshot:load', async (_event, filePath: string) => {
+    try {
+      const allowedDir = path.normalize(path.join(os.homedir(), '.everfern', 'screenshots'));
+      const resolved = path.normalize(path.resolve(filePath));
+
+      // Case-insensitive comparison on Windows; case-sensitive on macOS/Linux.
+      const isWindows = process.platform === 'win32';
+      const allowedDirNorm = isWindows ? allowedDir.toLowerCase() : allowedDir;
+      const resolvedNorm   = isWindows ? resolved.toLowerCase()   : resolved;
+
+      // Ensure the resolved path is *inside* the allowed dir (trailing sep prevents path-traversal)
+      const prefix = allowedDirNorm.endsWith(path.sep) ? allowedDirNorm : allowedDirNorm + path.sep;
+      if (!resolvedNorm.startsWith(prefix)) {
+        return { error: 'Access denied: path is outside the screenshots directory.' };
+      }
+      if (!fs.existsSync(resolved)) {
+        return { error: 'File not found.' };
+      }
+      const buf = fs.readFileSync(resolved);
+      const ext = path.extname(resolved).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+      const base64 = buf.toString('base64');
+      return { base64, dataUrl: `data:${mime};base64,${base64}` };
+    } catch (err) {
+      console.error('[screenshot:load] Error:', err);
+      return { error: String(err) };
+    }
+  });
+
   ipcMain.handle('acp:set-provider', async (_event, config) => {
     return acpManager.setProvider(config);
   });
@@ -178,6 +211,14 @@ export function registerAgentHandlers() {
     }
   });
 
+  ipcMain.handle('terminal:get-status', (_event, id: string) => {
+    const { CommandRegistry } = require('../agent/tools/terminal/registry');
+    const registry = CommandRegistry.getInstance();
+    const info = registry.listCommands().find((c: any) => c.id === id);
+    if (!info) return { success: false, error: 'Command not found' };
+    return { success: true, status: info.status, output: info.output, exitCode: info.exitCode };
+  });
+
   // ACP Chat Handler (Non-streaming)
   ipcMain.handle('acp:chat', async (_event, request: {
     messages: any[],
@@ -222,7 +263,8 @@ export function registerAgentHandlers() {
     conversationId?: string,
     projectId?: string,
     providerType?: string,
-    apiKey?: string
+    apiKey?: string,
+    assistantMessageId?: string
   }) => {
     const streamSender = event.sender;
     const config = loadConfigSync();
@@ -310,9 +352,15 @@ export function registerAgentHandlers() {
       const userInput = request.messages[request.messages.length - 1].content;
 
       let fullResponse = '';
-      for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId)) {
+      for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId, false, request.assistantMessageId)) {
         if (globalAbortManager.streamAborted) {
           flushBuffers();
+          try {
+            const { getComputerOverlayManager } = require('../computer-overlay');
+            getComputerOverlayManager().hide();
+          } catch (e) {
+            console.error('[AgentIPC] Failed to hide overlay:', e);
+          }
           streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true });
           break;
         }
@@ -363,6 +411,13 @@ export function registerAgentHandlers() {
           });
         } else if (streamEvent.type === 'done') {
           flushBuffers();
+
+          try {
+            const { getComputerOverlayManager } = require('../computer-overlay');
+            getComputerOverlayManager().hide();
+          } catch (e) {
+            console.error('[AgentIPC] Failed to hide overlay:', e);
+          }
 
           // Trigger cleanup sequence when execution completes
           console.log('[AgentIPC] Execution complete, triggering cleanup sequence...');
@@ -422,6 +477,10 @@ export function registerAgentHandlers() {
       }
     } catch (error) {
       console.error('[AgentIPC] Stream Error:', error);
+      try {
+        const { getComputerOverlayManager } = require('../computer-overlay');
+        getComputerOverlayManager().hide();
+      } catch (e) {}
       streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true });
     }
   });

@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
-export type AgentType = 'generic' | 'coding-specialist' | 'web-explorer' | 'data-analyst' | 'computer-use';
+export type AgentType = 'generic' | 'coding-specialist' | 'web-explorer' | 'data-analyst';
 
 export interface SubagentEntry {
     agentId: string;

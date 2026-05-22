@@ -27,10 +27,17 @@ exports.skillTool = {
             const fuzzy = skills.find(s => s.name.toLowerCase().includes(skillName) || skillName.includes(s.name.toLowerCase()));
             if (fuzzy) {
                 onUpdate?.(`🎯 Fuzzy match found: ${fuzzy.name}`);
+                let fuzzyContent = '';
+                try {
+                    fuzzyContent = require('fs').readFileSync(fuzzy.path, 'utf8');
+                }
+                catch (e) {
+                    console.error(`[SkillTool] Failed to read skill file at ${fuzzy.path}`, e);
+                }
                 return {
                     success: true,
-                    output: `Resolved skill "${skillName}" to ${fuzzy.name}. Path: ${fuzzy.path}`,
-                    data: { skill: fuzzy }
+                    output: `Resolved skill "${skillName}" to ${fuzzy.name}. Path: ${fuzzy.path}\n\n${fuzzyContent}`,
+                    data: { skill: { ...fuzzy, content: fuzzyContent } }
                 };
             }
             return {
@@ -39,10 +46,17 @@ exports.skillTool = {
                 error: 'skill_not_found'
             };
         }
+        let fileContent = '';
+        try {
+            fileContent = require('fs').readFileSync(matched.path, 'utf8');
+        }
+        catch (e) {
+            console.error(`[SkillTool] Failed to read skill file at ${matched.path}`, e);
+        }
         return {
             success: true,
-            output: `Resolved skill "${skillName}" to ${matched.name}. Path: ${matched.path}`,
-            data: { skill: matched }
+            output: `Resolved skill "${skillName}" to ${matched.name}. Path: ${matched.path}\n\n${fileContent}`,
+            data: { skill: { ...matched, content: fileContent } }
         };
     }
 };

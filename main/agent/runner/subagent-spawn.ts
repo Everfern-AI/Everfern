@@ -23,7 +23,6 @@ import {
 export const AGENT_TIMEOUTS: Record<AgentType, number> = {
     'web-explorer': 900000, // 15 minutes
     'coding-specialist': 600000, // 10 minutes
-    'computer-use': 600000,
     'data-analyst': 600000,
     'generic': 300000, // 5 minutes
 };
@@ -129,7 +128,6 @@ class SubagentSpawner {
             'web-explorer': 'web-explorer.md',
             'coding-specialist': 'coding-specialist.md',
             'data-analyst': 'data-analyst.md',
-            'computer-use': 'computer-use.md',
             'generic': 'SYSTEM_PROMPT.md',
         };
         const promptFile = PROMPT_MAP[agentType] || 'SYSTEM_PROMPT.md';

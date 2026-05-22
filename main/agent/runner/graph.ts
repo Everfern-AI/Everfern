@@ -9,7 +9,6 @@ import { createDecomposerNode } from './nodes/decomposer';
 import { loadPrompt } from '../../lib/prompt-sync';
 import { createDebateChamberNode } from './nodes/debate-chamber';
 import {
-  createComputerUseNode,
   createCodingSpecialistNode,
   createDataAnalystNode,
   createWebExplorerNode,
@@ -310,15 +309,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return node(state);
   };
 
-  const computerUseNode = async (state: GraphStateType, config?: any) => {
-    const ctx = getContext(config);
-    // Guard: Check abort before node execution
-    if (ctx.shouldAbort?.()) {
-      throw new Error('Execution aborted by user (stop button clicked)');
-    }
-    const node = createComputerUseNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, toolDefs);
-    return node(state);
-  };
 
   const codingNode = async (state: GraphStateType, config?: any) => {
     const ctx = getContext(config);
@@ -377,7 +367,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
     .addNode('global_planner', plannerNode)
     .addNode('debate_chamber', debateChamberNode)
     .addNode('brain', brainNode)
-    .addNode('computer_use_agent', computerUseNode)
     .addNode('coding_specialist', codingNode)
     .addNode('data_analyst', dataAnalystNode)
     .addNode('web_explorer', webExplorerNode)
@@ -439,8 +428,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     return 'coding_specialist';
                 case 'route_data_analyst':
                     return 'data_analyst';
-                case 'route_computer_use':
-                    return 'computer_use_agent';
                 case 'route_web_explorer':
                     // Always use web_explorer for web research tasks to ensure navis is used
                     return 'web_explorer';
@@ -466,7 +453,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
-        computer_use_agent: 'computer_use_agent',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         [END]: END,
@@ -517,27 +503,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         brain: 'brain',
     })
 
-    .addConditionalEdges('computer_use_agent', (state) => {
-        const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
-
-        if (hasTools) {
-            console.log('[Graph] 🔀 Computer use agent has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
-        }
-
-        // Keep specialist in control if not complete
-        if (!state.computerUseComplete) {
-            console.log('[Graph] 🔀 Computer use agent not complete → computer_use_agent');
-            return 'computer_use_agent';
-        }
-
-        console.log('[Graph] 🔀 Computer use agent complete → brain');
-        return 'brain';
-    }, {
-        multi_tool_orchestrator: 'multi_tool_orchestrator',
-        computer_use_agent: 'computer_use_agent',
-        brain: 'brain',
-    })
 
     .addConditionalEdges('web_explorer', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
@@ -624,7 +589,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
             switch (specialist) {
                 case 'coding_specialist': return 'coding_specialist';
                 case 'data_analyst': return 'data_analyst';
-                case 'computer_use_agent': return 'computer_use_agent';
                 case 'web_explorer': return 'web_explorer';
                 case 'deep_research': return 'deep_research';
             }
@@ -634,7 +598,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
     }, {
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
-        computer_use_agent: 'computer_use_agent',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         brain: 'brain',

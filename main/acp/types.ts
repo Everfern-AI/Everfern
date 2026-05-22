@@ -20,6 +20,7 @@ export interface ChatMessage {
   thought?: string;
   reasoning_content?: string;
   toolCalls?: any[];
+  missionTimeline?: any;
   attachments?: any[];
   hasTimeline?: boolean;
   orderIndex?: number;

@@ -48,7 +48,7 @@ class CommandRegistry {
         }
         return CommandRegistry.instance;
     }
-    async execute(id, command, cwd = path.join(os.homedir(), '.everfern')) {
+    async execute(id, command, cwd = path.join(os.homedir(), '.everfern'), onData) {
         const info = {
             id,
             command,
@@ -78,30 +78,31 @@ class CommandRegistry {
         if (isWin) {
             let isWslAvailable = false;
             try {
-                // Test if wsl.exe is available by running echo
+                // Test if wsl is available by running echo
                 const { execSync } = require('child_process');
-                execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 3000 });
+                execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 3000 });
                 isWslAvailable = true;
             }
             catch (e) {
-                console.warn('[CommandRegistry] wsl.exe not found or not working, falling back to powershell...');
+                console.warn('[CommandRegistry] wsl.exe not found or not working, falling back to cmd...');
             }
             if (isWslAvailable) {
-                shell = 'wsl.exe';
+                shell = 'wsl';
                 const { translateWindowsPathToLinux } = require('../linux-vm-executor');
                 const linuxCwd = translateWindowsPathToLinux(cwd);
-                const wslCommand = `cd "${linuxCwd}" && ${command}`;
+                const wslCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
                 args = ['--exec', 'bash', '-c', wslCommand];
-                spawnOptions = { shell: true, env: { ...process.env, WSL_UTF8: '1' } }; // DO NOT pass Windows path as cwd to wsl.exe spawnOptions, use shell for WSL
+                spawnOptions = { shell: true, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } }; // DO NOT pass Windows path as cwd to wsl spawnOptions, use shell for WSL
             }
             else {
-                shell = 'powershell.exe';
-                args = ['-NoProfile', '-Command', command];
+                shell = 'cmd.exe';
+                args = ['/c', command];
+                spawnOptions.shell = true;
             }
         }
         // Create a detailed debug header to prepend to output
         const environmentType = process.platform === 'win32'
-            ? (shell === 'wsl.exe' ? 'WSL (Ubuntu)' : 'Host Fallback (PowerShell)')
+            ? (shell === 'wsl' ? 'WSL (Ubuntu)' : 'Host Fallback (CMD)')
             : process.platform === 'darwin'
                 ? 'Host (macOS)'
                 : 'Native Linux';
@@ -123,13 +124,19 @@ class CommandRegistry {
             return buf.toString('utf8').replace(/\0/g, '');
         };
         proc.stdout?.on('data', (data) => {
-            info.output += decodeBuffer(data);
+            const decoded = decodeBuffer(data);
+            console.log(`[Terminal] ${decoded.trimEnd()}`);
+            info.output += decoded;
+            onData?.(decoded);
             if (info.output.length > MAX_OUTPUT_LENGTH) {
                 info.output = '...[Output truncated]...\n' + info.output.slice(-MAX_OUTPUT_LENGTH);
             }
         });
         proc.stderr?.on('data', (data) => {
-            info.output += decodeBuffer(data);
+            const decoded = decodeBuffer(data);
+            console.error(`[Terminal Error] ${decoded.trimEnd()}`);
+            info.output += decoded;
+            onData?.(decoded);
             if (info.output.length > MAX_OUTPUT_LENGTH) {
                 info.output = '...[Output truncated]...\n' + info.output.slice(-MAX_OUTPUT_LENGTH);
             }

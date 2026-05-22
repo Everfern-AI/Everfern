@@ -473,7 +473,6 @@ export default function SetupPage() {
                 model: "qwen3-vl:2b",
                 baseUrl: "http://localhost:11434"
             };
-            // If the user's primary engine is also local, set the provider
             if (engine === "local") {
                 config.provider = "ollama";
             }
@@ -481,6 +480,26 @@ export default function SetupPage() {
         if ((window as any).electronAPI?.saveConfig) {
             await (window as any).electronAPI.saveConfig(config);
         }
+
+        // Mark onboarding complete via landing API (fire-and-forget — best effort)
+        try {
+            const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
+            const stored = localStorage.getItem("everfern_cloud_session");
+            if (stored) {
+                const { accessToken } = JSON.parse(stored);
+                await fetch(`${LANDING_URL}/api/user/onboarding-done`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${accessToken}` },
+                });
+                // Update local session cache too
+                const session = JSON.parse(stored);
+                session.user.onboardingDone = true;
+                localStorage.setItem("everfern_cloud_session", JSON.stringify(session));
+            }
+        } catch {
+            // Not signed in as cloud user — skip silently
+        }
+
         setTimeout(() => router.push("/chat"), 800);
     };
 
@@ -626,16 +645,19 @@ export default function SetupPage() {
                                 {[
                                     { id: "local", name: "Local Engine", icon: Cpu, desc: "Ollama or LM Studio" },
                                     { id: "online", name: "AI Provider", icon: Cloud, desc: "OpenAI, Anthropic, etc." },
-                                    { id: "everfern", name: "EverFern Cloud", icon: EverFernBglessLogo, desc: "Managed & Optimized", comingSoon: true }
+                                    { id: "everfern", name: "EverFern Cloud", icon: EverFernBglessLogo, desc: "Managed & Optimized" }
                                 ].map(opt => (
                                     <button
                                         key={opt.id}
                                         onClick={() => { 
-                                            if (opt.comingSoon) return;
+                                            if (opt.id === "everfern") {
+                                                router.push("/auth");
+                                                return;
+                                            }
                                             setEngine(opt.id as any); 
                                             setStep(2); 
                                         }}
-                                        disabled={opt.comingSoon}
+                                        disabled={false}
                                         style={{
                                             background: "rgba(255,255,255,0.02)",
                                             border: "1px solid #e2e2e2",
@@ -646,42 +668,25 @@ export default function SetupPage() {
                                             alignItems: "center",
                                             justifyContent: "center",
                                             gap: 20,
-                                            cursor: opt.comingSoon ? "not-allowed" : "pointer",
+                                            cursor: "pointer",
                                             transition: "all 0.18s ease",
                                             aspectRatio: "1",
-                                            opacity: opt.comingSoon ? 0.6 : 1,
+                                            opacity: 1,
                                             position: "relative",
                                             overflow: "hidden"
                                         }}
                                         onMouseEnter={e => {
-                                            if (opt.comingSoon) return;
                                             (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)";
                                             (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
                                             (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
                                         }}
                                         onMouseLeave={e => {
-                                            if (opt.comingSoon) return;
                                             (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
                                             (e.currentTarget as HTMLElement).style.borderColor = "#e2e2e2";
                                             (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
                                         }}
                                     >
-                                        {opt.comingSoon && (
-                                            <div style={{
-                                                position: "absolute",
-                                                top: 10,
-                                                right: -25,
-                                                background: "#201e24",
-                                                color: "white",
-                                                fontSize: 8,
-                                                fontWeight: 600,
-                                                padding: "2px 25px",
-                                                transform: "rotate(45deg)",
-                                                textTransform: "uppercase"
-                                            }}>
-                                                Soon
-                                            </div>
-                                        )}
+
                                         <div style={{
                                             width: 52, height: 52, borderRadius: 14,
                                             background: "rgba(255,255,255,0.04)",

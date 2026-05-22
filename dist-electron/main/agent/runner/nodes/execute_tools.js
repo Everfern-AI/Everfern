@@ -34,7 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createExecuteToolsNode = void 0;
+const os = __importStar(require("os"));
 const parallel_executor_1 = require("../parallel-executor");
+const utils_1 = require("../utils");
 const mission_integrator_1 = require("../mission-integrator");
 /**
  * Determine if an error should trigger automatic retry with correction
@@ -177,9 +179,11 @@ const createExecuteToolsNode = (runner, tools, config, eventQueue, conversationI
             const newRecords = [];
             let pauseGenFlag = false;
             // AGI: Parallel Execution Strategy
+            const homedirNorm = os.homedir().replace(/\\/g, '/');
+            const safeConvId = conversationId || 'current';
             const analysis = (0, parallel_executor_1.analyzeToolDependencies)(state.pendingToolCalls.map(tc => ({
                 name: tc.name,
-                args: tc.arguments,
+                args: (0, utils_1.validateAndCorrectToolArgs)(tc.name, tc.arguments, homedirNorm, safeConvId),
                 id: tc.id
             })));
             const parallelGroups = (0, parallel_executor_1.groupParallelTools)(analysis);

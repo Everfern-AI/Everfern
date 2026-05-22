@@ -20,6 +20,7 @@ import {
 
 import type { SubAgentProgressEvent } from "@/app/chat/types";
 import type { MissionTimeline as MissionTimelineType, MissionStep } from "./MissionTimeline";
+import { ReasoningBlock } from "@/app/chat/components/ReasoningComponents";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ToolCallDisplay {
@@ -124,6 +125,16 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
     if (n.includes("spawn") || n.includes("agent") || n.includes("sub"))
         return { icon: <CubeTransparentIcon style={s} />, shape: "square" };
 
+    if (n.includes("skill"))
+        return {
+            icon: (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+            ),
+            shape: "square"
+        };
+
     return { icon: <WrenchScrewdriverIcon style={s} />, shape: "square" };
 };
 
@@ -209,6 +220,19 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
     );
 };
 
+// ── Gallium surface: layered inset shadows simulate liquid-metal light physics
+const galliumSurface = {
+    background: "#ececea",
+    boxShadow: [
+        "inset 0 1px 0 rgba(255,255,255,0.72)",
+        "inset 0 -1px 0 rgba(0,0,0,0.06)",
+        "inset 1px 0 rgba(255,255,255,0.50)",
+        "inset -1px 0 rgba(0,0,0,0.04)",
+        "0 1px 3px rgba(0,0,0,0.07)",
+    ].join(", "),
+    border: "0.5px solid rgba(0,0,0,0.10)",
+} as const;
+
 // ── Sub-Agent Progress Timeline ──────────────────────────────────────────────────
 const SubAgentProgressTimeline = ({
     toolCallId,
@@ -280,37 +304,48 @@ const SubAgentProgressTimeline = ({
                             color: "#555",
                         }}
                     >
-                        <div style={{ display: "flex", alignItems: "start", gap: 6 }}>
+                        {isAction || isStep ? (
                             <div style={{
-                                width: 5,
-                                height: 5,
-                                borderRadius: "50%",
-                                backgroundColor: iconColor,
-                                marginTop: 6,
-                                flexShrink: 0,
-                            }} />
-                            <div style={{ flex: 1, wordBreak: "break-word", lineHeight: 1.3 }}>
-                                <span style={{
-                                    fontWeight: (isStep || isComplete || isAbort) ? 600 : 400,
-                                    color: (isComplete) ? "#15803d" : (isAbort) ? "#b91c1c" : "#444"
-                                }}>
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                padding: "7px 14px 7px 8px",
+                                borderRadius: 14,
+                                fontSize: 12.5,
+                                color: "#333",
+                                lineHeight: 1.4,
+                                position: "relative",
+                                overflow: "hidden",
+                                ...galliumSurface,
+                            }}>
+                                <IconContainer 
+                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).icon} 
+                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).shape} 
+                                />
+                                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {text}
                                 </span>
                             </div>
-                        </div>
-
-                        {isReasoning && event.content && (
-                            <div style={{
-                                marginLeft: 11,
-                                fontSize: 11,
-                                color: "#777",
-                                fontStyle: "italic",
-                                borderLeft: "2px solid #e5e7eb",
-                                paddingLeft: 6,
-                                marginTop: 1,
-                                marginBottom: 2
-                            }}>
-                                {event.content}
+                        ) : isReasoning && event.content ? (
+                            <ReasoningBlock content={event.content} />
+                        ) : (
+                            <div style={{ display: "flex", alignItems: "start", gap: 6 }}>
+                                <div style={{
+                                    width: 5,
+                                    height: 5,
+                                    borderRadius: "50%",
+                                    backgroundColor: iconColor,
+                                    marginTop: 6,
+                                    flexShrink: 0,
+                                }} />
+                                <div style={{ flex: 1, wordBreak: "break-word", lineHeight: 1.3 }}>
+                                    <span style={{
+                                        fontWeight: (isComplete || isAbort) ? 600 : 400,
+                                        color: (isComplete) ? "#15803d" : (isAbort) ? "#b91c1c" : "#444"
+                                    }}>
+                                        {text}
+                                    </span>
+                                </div>
                             </div>
                         )}
 
@@ -352,22 +387,17 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
         if (tc.args?.command) return String(tc.args.command).slice(0, 80);
         if (tc.args?.path) return String(tc.args.path);
         if (tc.args?.content) return String(tc.args.content).slice(0, 60) + "…";
-        if (tc.description) return tc.description;
+        if (tc.description) {
+            const trimmed = tc.description.trim();
+            if (trimmed.startsWith("{") && (trimmed.includes('"messages"') || trimmed.includes('"tool_calls"'))) {
+                return label;
+            }
+            return tc.description;
+        }
         return label;
     })();
 
-    // Gallium surface: layered inset shadows simulate liquid-metal light physics
-    const galliumSurface = {
-        background: "#ececea",
-        boxShadow: [
-            "inset 0 1px 0 rgba(255,255,255,0.72)",
-            "inset 0 -1px 0 rgba(0,0,0,0.06)",
-            "inset 1px 0 rgba(255,255,255,0.50)",
-            "inset -1px 0 rgba(0,0,0,0.04)",
-            "0 1px 3px rgba(0,0,0,0.07)",
-        ].join(", "),
-        border: "0.5px solid rgba(0,0,0,0.10)",
-    } as const;
+    // using globally defined galliumSurface
 
     return (
         <motion.div
@@ -541,13 +571,26 @@ const MissionStepRow = ({
                             {toolCalls.length > 0 && (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                                        {toolCalls.map((tc, idx) => (
-                                            <ToolPill
-                                                key={tc.id || `tc-${idx}`}
-                                                tc={tc}
-                                                onClick={onPillClick ? () => onPillClick(tc) : undefined}
-                                            />
-                                        ))}
+                                        {toolCalls.length > 50 && (
+                                            <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                                                ... {toolCalls.length - 50} older actions hidden for performance
+                                            </div>
+                                        )}
+                                        {toolCalls.slice(-50).map((tc, idx) => {
+                                            const events = tc.subAgentProgress || subAgentProgress?.get(tc.id) || [];
+                                            return (
+                                                <React.Fragment key={tc.id || `tc-${idx}`}>
+                                                    <ToolPill
+                                                        tc={tc}
+                                                        onClick={onPillClick ? () => onPillClick(tc) : undefined}
+                                                    />
+                                                    <SubAgentProgressTimeline
+                                                        toolCallId={tc.id}
+                                                        events={events}
+                                                    />
+                                                </React.Fragment>
+                                            );
+                                        })}
                                     </div>
 
                                     {isActive && toolCalls.some(tc => tc.status === "running") && (
@@ -646,6 +689,7 @@ export const AgentTimeline = ({
     missionTimeline,
     generatedTitle,
     onPillClick,
+    subAgentProgress,
 }: AgentTimelineProps) => {
     // Elapsed time
     const startTime = useRef(new Date());
@@ -834,6 +878,7 @@ export const AgentTimeline = ({
                             isLive={!!isLive}
                             defaultOpen={step.status === "in-progress" || step.status === "completed"}
                             onPillClick={onPillClick}
+                            subAgentProgress={subAgentProgress}
                         />
                     ))}
                 </div>
@@ -842,13 +887,26 @@ export const AgentTimeline = ({
             {/* ── Orphan tool calls (no steps yet) ─────── */}
             {orphanTools.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                    {orphanTools.map((tc, idx) => (
-                        <ToolPill
-                            key={tc.id || `orphan-${idx}`}
-                            tc={tc}
-                            onClick={onPillClick ? () => onPillClick(tc) : undefined}
-                        />
-                    ))}
+                    {orphanTools.length > 50 && (
+                        <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                            ... {orphanTools.length - 50} older actions hidden for performance
+                        </div>
+                    )}
+                    {orphanTools.slice(-50).map((tc, idx) => {
+                        const events = tc.subAgentProgress || subAgentProgress?.get(tc.id) || [];
+                        return (
+                            <React.Fragment key={tc.id || `orphan-${idx}`}>
+                                <ToolPill
+                                    tc={tc}
+                                    onClick={onPillClick ? () => onPillClick(tc) : undefined}
+                                />
+                                <SubAgentProgressTimeline
+                                    toolCallId={tc.id}
+                                    events={events}
+                                />
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
             )}
         </motion.div>

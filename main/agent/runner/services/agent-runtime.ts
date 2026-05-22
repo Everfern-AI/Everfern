@@ -148,10 +148,18 @@ export async function runAgentStep(
 
     let limitedMessages: typeof prunedMessages;
     if (estimateTokens(prunedMessages) > COMPACT_THRESHOLD) {
-      // Keep system message + last 20 messages
+      // Keep system message + first user message + last 20 messages
       const systemMsg = prunedMessages[0]?.role === 'system' ? [prunedMessages[0]] : [];
       const rest = prunedMessages.filter(m => m.role !== 'system');
-      limitedMessages = [...systemMsg, ...rest.slice(-20)];
+      const firstUserMsg = rest[0];
+      const recentMsgs = rest.slice(-20);
+      const hasFirstMessage = firstUserMsg && recentMsgs.includes(firstUserMsg);
+      
+      limitedMessages = [
+        ...systemMsg, 
+        ...(firstUserMsg && !hasFirstMessage ? [firstUserMsg] : []), 
+        ...recentMsgs
+      ];
     } else {
       limitedMessages = prunedMessages;
     }

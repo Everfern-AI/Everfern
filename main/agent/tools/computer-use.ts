@@ -1514,7 +1514,8 @@ class ComputerUseAgent {
     private task: string,
     private temperature = 0,
     private maxTurns = 40,
-    private historyWindow = 12
+    private historyWindow = 12,
+    private toolCallId = ''
   ) {
     this.historyWindow = Math.max(1, historyWindow);
     this.messages = [{ role: "system", content: SYSTEM_PROMPT }];
@@ -1579,7 +1580,7 @@ class ComputerUseAgent {
         // Emit step progress event
         onProgress?.({
           type: 'step',
-          toolCallId: '',
+          toolCallId: this.toolCallId,
           timestamp: new Date().toISOString(),
           stepNumber: step,
           totalSteps: this.maxTurns,
@@ -1605,7 +1606,7 @@ class ComputerUseAgent {
           console.log(`[Sub-Agent] 🧠 Reasoning: ${content.substring(0, 200)}...`);
           onProgress?.({
             type: 'reasoning',
-            toolCallId: '',
+            toolCallId: this.toolCallId,
             timestamp: new Date().toISOString(),
             stepNumber: step,
             content: content,
@@ -1670,7 +1671,7 @@ class ComputerUseAgent {
 
             onProgress?.({
               type: 'action',
-              toolCallId: '',
+              toolCallId: this.toolCallId,
               timestamp: new Date().toISOString(),
               stepNumber: step,
               action: {
@@ -1694,15 +1695,19 @@ class ComputerUseAgent {
               this.lastScreenshot = payload.screenshot;
               onProgress?.({
                 type: 'screenshot',
-                toolCallId: '',
+                toolCallId: this.toolCallId,
                 timestamp: new Date().toISOString(),
                 stepNumber: step,
                 screenshot: {
                   base64: payload.screenshot,
                   width: payload.downscaled_size?.width || payload.display?.width || 1920,
                   height: payload.downscaled_size?.height || payload.display?.height || 1080,
+                  // screenshotPath is persisted so the frontend can reload images from disk after page refresh
+                  screenshotPath: (payload as any).screenshot_path,
                 },
-              });
+                // Also at top-level for easier access in extractNavisData
+                screenshotPath: (payload as any).screenshot_path,
+              } as any);
             }
 
             this.messages.push({
@@ -2056,6 +2061,9 @@ export function createComputerUseTool(
     },
 
     async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<AgentToolResult> {
+      const { getComputerOverlayManager } = require('../../computer-overlay');
+      const overlay = getComputerOverlayManager();
+      
       const task = (args.task as string) || "Perform a visual audit of the current desktop.";
       onUpdate?.(`Initializing sub-agent for task: "${task}"...`);
 
@@ -2063,88 +2071,102 @@ export function createComputerUseTool(
         subAgentClient,
         tool,
         subAgentModel,
-        task
+        task,
+        0, // temperature
+        40, // maxTurns
+        12, // historyWindow
+        toolCallId || ''
       );
 
       activeAgentInstance = agent;
+      
+      // Use computer use overlay when computer use is being used
+      overlay.show(`Executing: ${task}`);
 
-      // Create ProgressEventEmitter for sub-agent progress streaming with timeline branch support
-      // Requirements: 1.1, 1.2, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2
-      const mainWindow = (global as any).mainWindow;
-      const sender = mainWindow?.webContents || null;
-      const effectiveToolCallId = toolCallId || crypto.randomUUID();
-
-      // Extract timeline branch metadata from context or parameters
-      const timelineBranchMetadata = {
-        parentId: toolCallId, // The parent tool call that spawned this subagent
-        agentType: 'computer-use', // This is a computer-use subagent
-        branchLevel: 1, // First level subagent (could be enhanced to track actual depth)
-        sessionId: effectiveToolCallId,
-        taskDescription: task || 'Computer use automation task',
+      // Set up the custom sender to redirect buffered/prioritized ProgressEventEmitter events to emitEvent
+      const customSender = {
+        isDestroyed: () => false,
+        send: (channel: string, serialized: string) => {
+          if (emitEvent) {
+            try {
+              const batch = JSON.parse(serialized);
+              if (batch && Array.isArray(batch.events)) {
+                for (const ev of batch.events) {
+                  emitEvent({
+                    type: 'subagent-progress',
+                    toolCallId: toolCallId || '',
+                    timestamp: ev.timestamp || new Date().toISOString(),
+                    data: ev
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('[ComputerUse] Failed to parse and forward progress event:', err);
+            }
+          }
+        }
       };
 
-      const progressEmitter = new ProgressEventEmitter(
-        effectiveToolCallId,
-        sender,
-        timelineBranchMetadata
-      );
+      const progressEmitter = toolCallId && emitEvent
+        ? new ProgressEventEmitter(toolCallId, customSender as any)
+        : null;
 
-      // Emit branch start event for timeline visualization
-      progressEmitter.emitBranchStart(task);
+      if (progressEmitter) {
+        tool.setProgressEmitter(progressEmitter, toolCallId!);
+      }
 
-      // 5.2: Set progress emitter on the tool for cursor position and status event emission
-      tool.setProgressEmitter(progressEmitter, effectiveToolCallId);
+      const screenshotPaths: string[] = [];
 
       try {
         const { finalAnswer, lastScreenshot } = await agent.run(
-          (update) => onUpdate?.(update),
+          (update) => {
+            onUpdate?.(update);
+            overlay.show(update);
+          },
           (event) => {
-            // Set toolCallId for each event before emitting
-            event.toolCallId = effectiveToolCallId;
-            progressEmitter.emit(event);
+            // Update the overlay with the current action/step
+            if (event.type === 'action' && event.action?.description) {
+              overlay.show(event.action.description);
+            } else if (event.type === 'step' && event.content) {
+              overlay.show(event.content);
+            }
+
+            // Collect screenshot paths for persistence (so they survive page refresh)
+            if (event.type === 'screenshot' && (event as any).screenshotPath) {
+              screenshotPaths.push((event as any).screenshotPath);
+            }
+
+            // Emit the progress event to the frontend
+            emitEvent?.({
+              type: 'subagent-progress',
+              toolCallId: toolCallId || '',
+              timestamp: new Date().toISOString(),
+              data: {
+                ...event,
+                toolCallId: toolCallId || ''
+              }
+            });
           }
         );
         const b64 = lastScreenshot?.split(',')[1];
 
         const finalOutput = finalAnswer || `Successfully completed GUI task: ${task}`;
 
-        // Emit timeline branch completion event
-        progressEmitter.emitBranchComplete(finalOutput);
-
-        // Also emit traditional completion event for backward compatibility
-        progressEmitter.emit({
-          type: 'complete',
-          toolCallId: effectiveToolCallId,
-          timestamp: new Date().toISOString(),
-        });
-
         return {
           success: true,
           output: finalOutput,
           base64Image: b64,
-          data: { task, finalAnswer: finalOutput, screenshot: b64 }
+          data: { task, finalAnswer: finalOutput, screenshot: b64, screenshotPaths }
         };
       } catch (error) {
-        // Emit timeline branch abort event on error
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        progressEmitter.emitBranchAbort(`Task failed: ${errorMessage}`);
-
-        // Also emit traditional abort event for backward compatibility
-        progressEmitter.emit({
-          type: 'abort',
-          toolCallId: effectiveToolCallId,
-          timestamp: new Date().toISOString(),
-          content: errorMessage,
-        });
-
-        // Re-throw the error to maintain existing error handling behavior
         throw error;
       } finally {
-        // Destroy emitter to flush remaining events and clean up
-        progressEmitter.destroy();
-
         if (activeAgentInstance === agent) {
           activeAgentInstance = null;
+        }
+        overlay.hide();
+        if (progressEmitter) {
+          progressEmitter.destroy();
         }
       }
     },

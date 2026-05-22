@@ -59,7 +59,7 @@ exports.terminalTool = {
         const registry = registry_1.CommandRegistry.getInstance();
         const command = args.command;
         const cwd = args.cwd || AGENT_DEFAULT_CWD;
-        const id = args.id || `term_${Date.now()}`;
+        const id = args.id || toolCallId || `term_${Date.now()}`;
         onUpdate?.(`Terminal [${id}]: Executing "${command}"...`);
         const info = await registry.execute(id, command, cwd);
         if (info.status === 'completed') {

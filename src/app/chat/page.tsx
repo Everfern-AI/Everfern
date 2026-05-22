@@ -89,7 +89,7 @@ import {
 import { WaveformIcon, FernStarburst } from './components/UIIcons';
 import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
 import { ContextTokenRing, VoiceButton, RateLimitContinueButton } from './components/UIHelpers';
-import { ToolCallTag, ToolCallRow, WriteDiffCard, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
+import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
 import { ReportContainer } from './components/ReportComponents';
 import { InlineVisualization } from './components/InlineVisualization';
 import { PlanReviewCard, AgentWorkspaceCards } from './components/PlanComponents';
@@ -182,7 +182,7 @@ export default function ChatPage() {
     const [folderHover, setFolderHover] = useState(false);
     const [tooltipState, setTooltipState] = useState<{ visible: boolean; x: number; y: number; content: string }>({ visible: false, x: 0, y: 0, content: "" });
     const [viewingFile, setViewingFile] = useState<{ name: string; path: string } | null>(null);
-    const [mousePos, setMousePos] = useState({ x: -100, y: -100 });
+
     const [showArtifacts, setShowArtifacts] = useState(false);
     const [selectedArtifactName, setSelectedArtifactName] = useState<string | null>(null);
     const [showPlanViewer, setShowPlanViewer] = useState(false);
@@ -253,7 +253,7 @@ export default function ChatPage() {
 
     const handlePillClick = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
-        const progressEvents = subAgentProgress.get(tc.id) || [];
+        const progressEvents = subAgentProgressRef.current.get(tc.id) || [];
         const progressScreenshots = progressEvents
             .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
             .map(e => (e.screenshot?.base64 || e.content) as string);
@@ -367,9 +367,6 @@ export default function ChatPage() {
     const [ollamaInstallPhase, setOllamaInstallPhase] = useState<"downloading" | "finalizing" | "done">("downloading");
     const [isPullingModel, setIsPullingModel] = useState(false);
     const [pullPct, setPullPct] = useState(0);
-    const [isComputerUseActive, setIsComputerUseActive] = useState(false);
-    const [computerUseStep, setComputerUseStep] = useState("");
-    const [currentComputerUseToolCallId, setCurrentComputerUseToolCallId] = useState<string | null>(null);
     const [liveToolCalls, setLiveToolCalls] = useState<ToolCallDisplay[]>([]);
     const [streamingToolCalls, setStreamingToolCalls] = useState<LiveToolCall[]>([]);
     const [streamingContent, setStreamingContent] = useState("");
@@ -377,8 +374,13 @@ export default function ChatPage() {
     const [activePlanSteps, setActivePlanSteps] = useState<Array<{ id: string; description: string; tool?: string }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
 
-    // Sub-agent progress state - stores progress events grouped by toolCallId
-    const [subAgentProgress, setSubAgentProgress] = useState<Map<string, SubAgentProgressEvent[]>>(new Map());
+    // Sub-agent progress — stored in a REF so updates never trigger page re-renders.
+    // A lightweight version counter is bumped only when the tool detail panel is open,
+    // so the side panel can reactively update without re-rendering the whole chat.
+    const subAgentProgressRef = useRef<Map<string, SubAgentProgressEvent[]>>(new Map());
+    const [subAgentProgressVersion, setSubAgentProgressVersion] = useState(0);
+    // Stable getter — components that need the live map read from here
+    const subAgentProgress = subAgentProgressRef.current;
 
     // Local Execution Permission State (Task 7.1 & 7.2)
     const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
@@ -388,6 +390,57 @@ export default function ChatPage() {
     useEffect(() => {
         setLocalAlwaysAllowed(false);
     }, [activeConversationId]);
+
+    useEffect(() => {
+        if (selectedToolCall && isToolDetailOpen) {
+            for (const msg of messages) {
+                const updatedTc = msg.toolCalls?.find(tc => tc.id === selectedToolCall.id);
+                if (updatedTc) {
+                    if (updatedTc.status !== selectedToolCall.status || updatedTc.output !== selectedToolCall.output) {
+                        const progressEvents = subAgentProgressRef.current.get(updatedTc.id) || [];
+                        const progressScreenshots = progressEvents
+                            .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
+                            .map(e => (e.screenshot?.base64 || e.content) as string);
+                        
+                        const screenshotData: string[] = [];
+                        if (progressScreenshots.length > 0) {
+                            screenshotData.push(...progressScreenshots);
+                        }
+                        
+                        const staticScreenshot = updatedTc.base64Image || updatedTc.data?.screenshot || updatedTc.data?.base64Image;
+                        if (staticScreenshot && typeof staticScreenshot === 'string' && !screenshotData.includes(staticScreenshot)) {
+                            screenshotData.push(staticScreenshot);
+                        } else if (Array.isArray(staticScreenshot)) {
+                            staticScreenshot.forEach((img: any) => {
+                                if (typeof img === 'string' && !screenshotData.includes(img)) {
+                                    screenshotData.push(img);
+                                }
+                            });
+                        }
+
+                        const mappedToolCall = {
+                            id: updatedTc.id,
+                            toolName: updatedTc.toolName,
+                            args: updatedTc.args || {},
+                            output: updatedTc.output || '',
+                            duration: updatedTc.durationMs,
+                            data: {
+                                ...updatedTc.data,
+                                screenshot: screenshotData.length > 0 ? (screenshotData.length === 1 ? screenshotData[0] : screenshotData) : undefined,
+                                base64Image: updatedTc.base64Image || updatedTc.data?.base64Image,
+                                results: updatedTc.data?.results,
+                            },
+                            agentName: updatedTc.displayName || 'Fern',
+                        };
+                        setSelectedToolCall(mappedToolCall);
+                    }
+                    break;
+                }
+            }
+        }
+    // subAgentProgressVersion replaces subAgentProgress in the dep array — it's a counter that
+    // only increments when the tool detail panel is open, preventing spurious re-renders.
+    }, [messages, selectedToolCall, isToolDetailOpen, subAgentProgressVersion]);
 
     useEffect(() => {
         const handleProgress = (_: any, data: any) => {
@@ -513,6 +566,8 @@ export default function ChatPage() {
             sessionStorage.removeItem('everfern_is_loading');
         }
     }, [streamingThought, liveToolCalls, isLoading]);
+
+    const assistantMessageIdRef = useRef<string | null>(null);
 
     // User question form state
     const [activeUserQuestions, setActiveUserQuestions] = useState<Array<{
@@ -661,8 +716,9 @@ export default function ChatPage() {
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
+    const missionTimelineRef = useRef<MissionTimelineType | null>(null);
 
-    const isEmpty = messages.length === 0;
+    const isEmpty = messages.length === 0 && !isLoading && liveToolCalls.length === 0 && !streamingContent;
     const isProjectLocked = !isEmpty && folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
     const displayName = (config?.userName || onboardingName || "there").toString();
 
@@ -720,18 +776,7 @@ export default function ChatPage() {
         setContextTokens({ used: totalTokens, max: 128000 });
     }, [messages, inputValue]);
 
-    useEffect(() => {
-        if (!settingsMotionBlur) return;
-        let ticking = false;
-        const handleMouseMove = (e: MouseEvent) => {
-            if (!ticking) {
-                window.requestAnimationFrame(() => { setMousePos({ x: e.clientX, y: e.clientY }); ticking = false; });
-                ticking = true;
-            }
-        };
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, [settingsMotionBlur]);
+
 
     useEffect(() => {
         const loadInitialData = async () => {
@@ -917,6 +962,7 @@ export default function ChatPage() {
         acpApi.onMissionStepUpdate(({ step, timeline }: { step: any; timeline: MissionTimelineType }) => {
             console.log('[Mission] Step update received (persistent):', step?.name, step?.status);
             setMissionTimeline(timeline);
+            missionTimelineRef.current = timeline;
             setIsExecutionPlanPaneOpen(false);
             if (step?.name) {
                 setCurrentNode(step.name);
@@ -926,6 +972,7 @@ export default function ChatPage() {
         acpApi.onMissionPhaseChange(({ phase, timeline }: { phase: string; timeline: MissionTimelineType }) => {
             console.log('[Mission] Phase change received (persistent):', phase);
             setMissionTimeline(timeline);
+            missionTimelineRef.current = timeline;
             setIsExecutionPlanPaneOpen(false);
             setCurrentPhase(phase as any);
         });
@@ -949,7 +996,7 @@ export default function ChatPage() {
                     const durationMs = thinkingDuration?.duration;
                     if (finalContent || finalThought || finalToolCalls.length > 0) {
                         const assistantMsg: Message = {
-                            id: crypto.randomUUID(),
+                            id: assistantMessageIdRef.current || crypto.randomUUID(),
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
@@ -958,18 +1005,18 @@ export default function ChatPage() {
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            missionTimeline: missionTimeline,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
                         streamingToolCallsRef.current = [];
                         setMessages(prev => {
-                            const prevMsg = prev[prev.length - 1];
-                            if (prev.length > 0 && prevMsg.role === 'assistant' &&
-                                prevMsg.content === assistantMsg.content &&
-                                prevMsg.thought === assistantMsg.thought &&
-                                JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
-                                return prev;
+                            const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
+                            if (existingIdx >= 0) {
+                                const final = [...prev];
+                                final[existingIdx] = assistantMsg;
+                                saveConversation(final);
+                                return final;
                             }
                             const final = [...prev, assistantMsg];
                             saveConversation(final);
@@ -1004,7 +1051,7 @@ export default function ChatPage() {
                     const hasAnything = finalContent || finalThought || finalToolCalls.length > 0;
                     if (hasAnything) {
                         const assistantMsg: Message = {
-                            id: crypto.randomUUID(),
+                            id: assistantMessageIdRef.current || crypto.randomUUID(),
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
@@ -1013,18 +1060,18 @@ export default function ChatPage() {
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            missionTimeline: missionTimeline,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
                         streamingToolCallsRef.current = [];
                         setMessages(prev => {
-                            const prevMsg = prev[prev.length - 1];
-                            if (prev.length > 0 && prevMsg.role === 'assistant' &&
-                                prevMsg.content === assistantMsg.content &&
-                                prevMsg.thought === assistantMsg.thought &&
-                                JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
-                                return prev;
+                            const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
+                            if (existingIdx >= 0) {
+                                const final = [...prev];
+                                final[existingIdx] = assistantMsg;
+                                saveConversation(final);
+                                return final;
                             }
                             const final = [...prev, assistantMsg];
                             saveConversation(final);
@@ -1036,7 +1083,7 @@ export default function ChatPage() {
 
                 if (finalContent || finalThought || finalToolCalls.length > 0) {
                     const assistantMsg: Message = {
-                        id: crypto.randomUUID(),
+                        id: assistantMessageIdRef.current || crypto.randomUUID(),
                         role: "assistant",
                         content: finalContent,
                         thought: finalThought,
@@ -1045,7 +1092,7 @@ export default function ChatPage() {
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         generatedTitle: title,
-                        missionTimeline: missionTimeline,
+                        missionTimeline: missionTimelineRef.current,
                     };
                     setStreamingContent("");
                     setStreamingThought("");
@@ -1054,13 +1101,12 @@ export default function ChatPage() {
                     streamingToolCallsRef.current = [];
                     setIsLoading(false);
                     setMessages(prev => {
-                        const prevMsg = prev[prev.length - 1];
-                        if (prev.length > 0 && prevMsg.role === 'assistant' &&
-                            prevMsg.content === assistantMsg.content &&
-                            prevMsg.thought === assistantMsg.thought &&
-                            JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
-                            console.warn('[Chat] Duplicate plan message prevented');
-                            return prev;
+                        const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
+                        if (existingIdx >= 0) {
+                            const final = [...prev];
+                            final[existingIdx] = assistantMsg;
+                            saveConversation(final);
+                            return final;
                         }
                         const final = [...prev, assistantMsg];
                         saveConversation(final);
@@ -1097,7 +1143,8 @@ export default function ChatPage() {
     useEffect(() => {
         return () => {
             // Clear sub-agent progress state on unmount
-            setSubAgentProgress(new Map());
+            subAgentProgressRef.current.clear();
+            setSubAgentProgressVersion(0);
             // Listener cleanup is handled by removeStreamListeners() which is called
             // at the start of each handleSend and after mission complete
         };
@@ -1266,7 +1313,7 @@ export default function ChatPage() {
 
             acpApi.removeStreamListeners();
             // Clear sub-agent progress state when starting a new message
-            setSubAgentProgress(new Map());
+            setSubAgentProgressVersion(0);
             acpApi.onAgentPermissionRequest(() => {
                 const soundUrl = acpApi?.getPermissionSoundUrl?.();
                 if (soundUrl) {
@@ -1318,32 +1365,36 @@ export default function ChatPage() {
                 }
             });
             acpApi.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
-                console.log('[SubAgent Progress] Event received:', event.type, 'for toolCallId:', event.toolCallId);
-                setSubAgentProgress(prev => {
-                    const newMap = new Map(prev);
-                    if (newMap.size >= 10 && !newMap.has(event.toolCallId)) {
-                        const firstKey = newMap.keys().next().value;
-                        if (firstKey) newMap.delete(firstKey);
-                    }
-                    const existingEvents = newMap.get(event.toolCallId) || [];
-                    const updatedEvents = [...existingEvents, event];
-                    const limitedEvents = updatedEvents.slice(-100);
-                    newMap.set(event.toolCallId, limitedEvents);
-                    return newMap;
-                });
+                // Write directly to ref — NO state update, NO re-render
+                const map = subAgentProgressRef.current;
+                if (map.size >= 10 && !map.has(event.toolCallId)) {
+                    const firstKey = map.keys().next().value;
+                    if (firstKey) map.delete(firstKey);
+                }
+                const existing = map.get(event.toolCallId) || [];
+                map.set(event.toolCallId, [...existing, event].slice(-100));
 
-                const updated = liveToolCallsRef.current.map(tc => {
-                    if (tc.id === event.toolCallId) {
-                        const currentEvents = tc.subAgentProgress || [];
-                        return {
-                            ...tc,
-                            subAgentProgress: [...currentEvents, event].slice(-100)
-                        };
-                    }
-                    return tc;
-                });
-                liveToolCallsRef.current = updated;
-                setLiveToolCalls(updated);
+                // Only trigger a React re-render if the detail panel is currently open
+                if (isToolDetailOpen) {
+                    setSubAgentProgressVersion(v => v + 1);
+                }
+
+                // Only update liveToolCalls state if this event actually matches a live tc
+                const matchIdx = liveToolCallsRef.current.findIndex(tc => tc.id === event.toolCallId);
+                if (matchIdx !== -1) {
+                    const updated = liveToolCallsRef.current.map(tc => {
+                        if (tc.id === event.toolCallId) {
+                            const currentEvents = tc.subAgentProgress || [];
+                            return {
+                                ...tc,
+                                subAgentProgress: [...currentEvents, event].slice(-100)
+                            };
+                        }
+                        return tc;
+                    });
+                    liveToolCallsRef.current = updated;
+                    setLiveToolCalls(updated);
+                }
             });
             acpApi.onToolCall((record: any) => {
                 // Debug: Log the tool call structure
@@ -1351,7 +1402,7 @@ export default function ChatPage() {
 
                     console.log('[Frontend] 📥 Received ask_user_question tool call');
                 }
-                const key = record.toolCallId || (record.toolName + '_running');
+                const key = record.id || record.toolCallId || (record.toolName + '_running');
                 let existingId = toolCallMap.current.get(key);
                 if (!existingId) {
                     const runningTc = liveToolCallsRef.current.find(t => t.toolName === record.toolName && t.status === 'running');
@@ -1503,11 +1554,13 @@ export default function ChatPage() {
             // They are not registered per-message to prevent listener cleanup race conditions.
 
             try {
+                assistantMessageIdRef.current = crypto.randomUUID();
                 await acpApi.stream({
                     messages: newMessages.map(m => ({ role: m.role, content: m.content })),
                     model: currentM?.id,
                     providerType: currentM?.providerType,
                     conversationId: activeConversationId,
+                    assistantMessageId: assistantMessageIdRef.current,
                 });
             } catch (err) { console.error("Stream error:", err); }
             finally { setIsLoading(false); }
@@ -1626,6 +1679,7 @@ export default function ChatPage() {
         liveToolCallsRef.current = [];
         streamingContentRef.current = "";
         streamingThoughtRef.current = "";
+        missionTimelineRef.current = null;
         toolCallMap.current.clear();
         hasReceivedUsageData.current = false;
 
@@ -1666,15 +1720,7 @@ export default function ChatPage() {
                     if (toolName === 'ask_user_question' || toolName === 'approve_actions') {
                         console.log(`[Frontend] Received ${toolName} tool_start:`, JSON.stringify({ toolName, toolArgs }, null, 2));
                     }
-                    if (toolName === 'computer_use') {
-                        setIsComputerUseActive(true);
-                        setComputerUseStep('Starting...');
-                        if (toolCallId) setCurrentComputerUseToolCallId(toolCallId);
-                    }
-                    if (toolName === 'create_artifact') {
-                        // Artifact created - no UI panel needed
-                    }
-
+                    
                     const narrativeText = streamingContentRef.current.trim();
                     const display = resolveToolDisplay(toolName, toolArgs);
                     console.log('[Frontend] Resolved display for', toolName, ':', display);
@@ -1818,11 +1864,8 @@ export default function ChatPage() {
                         console.error('[Frontend] Record:', JSON.stringify(record, null, 2));
                     }
 
-                    if (record.toolName === 'computer_use' && record.toolCallId === currentComputerUseToolCallId) {
-                        setIsComputerUseActive(false);
-                        setComputerUseStep('');
-                        setCurrentComputerUseToolCallId(null);
-                    }
+                    const recordTcId = record.id || record.toolCallId;
+                    
                     if (record.toolName === 'create_plan' || record.toolName === 'update_plan_step') { if (record.result?.success && record.result?.data) setCurrentPlan(record.result.data); }
                     if (record.toolName === 'todo_write') {
                         if (record.result?.success && record.result?.data) {
@@ -1856,7 +1899,7 @@ export default function ChatPage() {
                                     reasoning_content: streamingThoughtRef.current,
                                     timestamp: new Date(),
                                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                                    missionTimeline: missionTimeline,
+                                    missionTimeline: missionTimelineRef.current,
                                 };
                                 setMessages(prev => {
                                     // Prevent duplicate message if the last message is identical
@@ -1877,9 +1920,8 @@ export default function ChatPage() {
                     }
                     if (record.result?.success) {
                         if (record.toolName === 'read_file') { setContextItems(prev => { const exists = prev.some(i => i.label === record.result.data?.name || i.label === record.args.path); if (!exists) return [...prev, { id: crypto.randomUUID(), type: 'file', label: record.result.data?.name || record.args.path }]; return prev; }); }
-                        else if (record.toolName === 'computer_use') { setContextItems(prev => { const action = record.args.action || 'computer_use'; const target = record.args.query ? ` "${record.args.query}"` : ''; return [...prev.filter(i => i.type !== 'app'), { id: crypto.randomUUID(), type: 'app', label: `Computer Use: ${action}${target}`, base64Image: record.result?.base64Image, appName: record.result?.appName, appLogo: record.result?.appLogo }]; }); }
                     }
-                    const key = record.toolCallId || (record.toolName + '_running');
+                    const key = record.id || record.toolCallId || (record.toolName + '_running');
                     const existingId = toolCallMap.current.get(key);
                     if (existingId) {
                         const updatedToolCalls = liveToolCallsRef.current.map(t => t.id === existingId ? { ...t, status: 'done' as const, output: typeof record.result === 'string' ? record.result : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)), data: record.result?.data, base64Image: record.result?.base64Image, durationMs: record.durationMs } : t);
@@ -1901,7 +1943,6 @@ export default function ChatPage() {
                     setContextTokens({ used: totalTokens, max: 128000 });
                 });
                 api.onOptima(({ event, details }: { event: string; details: string }) => { setStreamingThought(prev => { const icon = event === 'cache_hit' ? '⚡' : '✂️'; const label = event === 'cache_hit' ? 'Semantic Cache Hit' : 'Prompt Slimmed'; return `> [!NOTE]\n> **Optima**: ${icon} ${label} — ${details}\n\n` + prev; }); });
-                api.onToolUpdate?.(({ toolName, update }: { toolName: string; update: string }) => { if (toolName === 'computer_use') setComputerUseStep(update); });
                 api.onShowArtifact?.(({ name }: { name: string }) => { setSelectedArtifactName(name); setShowArtifacts(true); });
 
                 api.onShowPlan?.(({ content }: { chatId: string; content: string }) => {
@@ -1920,7 +1961,7 @@ export default function ChatPage() {
                             reasoning_content: streamingThoughtRef.current,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            missionTimeline: missionTimeline,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
@@ -1967,40 +2008,42 @@ export default function ChatPage() {
 
                 // Listen to sub-agent progress events
                 api.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
-                    console.log('[SubAgent Progress] Event received:', event.type, 'for toolCallId:', event.toolCallId);
-                    setSubAgentProgress(prev => {
-                        const newMap = new Map(prev);
+                    // Update the ref map directly to prevent full re-renders
+                    const newMap = subAgentProgressRef.current;
 
-                        // If we have too many tool calls, remove the oldest one to prevent memory issues
-                        if (newMap.size >= 10 && !newMap.has(event.toolCallId)) {
-                            const firstKey = newMap.keys().next().value;
-                            if (firstKey) newMap.delete(firstKey);
-                        }
+                    // If we have too many tool calls, remove the oldest one to prevent memory issues
+                    if (newMap.size >= 10 && !newMap.has(event.toolCallId)) {
+                        const firstKey = newMap.keys().next().value;
+                        if (firstKey) newMap.delete(firstKey);
+                    }
 
-                        // Get existing events and add new event
-                        const existingEvents = newMap.get(event.toolCallId) || [];
-                        const updatedEvents = [...existingEvents, event];
+                    // Get existing events and add new event
+                    const existingEvents = newMap.get(event.toolCallId) || [];
+                    const updatedEvents = [...existingEvents, event];
 
-                        // Limit to last 100 events per tool call
-                        const limitedEvents = updatedEvents.slice(-100);
+                    // Limit to last 100 events per tool call
+                    const limitedEvents = updatedEvents.slice(-100);
 
-                        newMap.set(event.toolCallId, limitedEvents);
-                        return newMap;
-                    });
+                    newMap.set(event.toolCallId, limitedEvents);
+                    setSubAgentProgressVersion(v => v + 1);
 
-                    // Update live tool calls ref & state
-                    const updated = liveToolCallsRef.current.map(tc => {
-                        if (tc.id === event.toolCallId) {
-                            const currentEvents = tc.subAgentProgress || [];
-                            return {
-                                ...tc,
-                                subAgentProgress: [...currentEvents, event].slice(-100)
-                            };
-                        }
-                        return tc;
-                    });
-                    liveToolCallsRef.current = updated;
-                    setLiveToolCalls(updated);
+                    // Only update liveToolCalls state if this event actually matches a live tc
+                    // This prevents expensive full-page re-renders on every computer_use step
+                    const matchIdx = liveToolCallsRef.current.findIndex(tc => tc.id === event.toolCallId);
+                    if (matchIdx !== -1) {
+                        const updated = liveToolCallsRef.current.map(tc => {
+                            if (tc.id === event.toolCallId) {
+                                const currentEvents = tc.subAgentProgress || [];
+                                return {
+                                    ...tc,
+                                    subAgentProgress: [...currentEvents, event].slice(-100)
+                                };
+                            }
+                            return tc;
+                        });
+                        liveToolCallsRef.current = updated;
+                        setLiveToolCalls(updated);
+                    }
                 });
 
                 console.log('[Frontend handleSend] Registering NEW onStreamChunk handler');
@@ -2096,9 +2139,30 @@ export default function ChatPage() {
 
                         const finalContent = accumulated || "";
                         const finalThought = streamingThoughtRef.current;
-                        const finalToolCalls = liveToolCallsRef.current.map(t =>
-                            t.status === 'running' ? { ...t, status: 'done' as const } : t
-                        );
+                        const finalToolCalls = liveToolCallsRef.current.map(t => {
+                            // Strip heavy base64 screenshots before saving to avoid IPC/SQLite crashes,
+                            // but KEEP the screenshotPath so images can be reloaded from disk on refresh.
+                            const strippedProgress = t.subAgentProgress?.map(ev => 
+                                ev.type === 'screenshot' && ev.screenshot
+                                    ? { ...ev, screenshot: { ...ev.screenshot, base64: '' } }
+                                    : ev
+                            );
+                            // Collect screenshot paths from progress events as a fallback for persistence
+                            const progressPaths: string[] = (strippedProgress || [])
+                                .filter((ev: any) => ev.type === 'screenshot' && ev.screenshotPath)
+                                .map((ev: any) => ev.screenshotPath as string);
+                            // Merge with any paths already in result data (from computer_use tool result)
+                            const existingPaths: string[] = t.data?.screenshotPaths || [];
+                            const mergedPaths = Array.from(new Set([...existingPaths, ...progressPaths]));
+                            return {
+                                ...t,
+                                status: t.status === 'running' ? 'done' as const : t.status,
+                                subAgentProgress: strippedProgress,
+                                data: mergedPaths.length > 0
+                                    ? { ...t.data, screenshotPaths: mergedPaths }
+                                    : t.data,
+                            };
+                        });
 
                         // Check if the message was stopped by user
                         const wasStopped = finalContent.includes('🛑 Stopped by user.');
@@ -2107,7 +2171,7 @@ export default function ChatPage() {
                         // Only create assistant message if there's actual content or tool calls
                         if (cleanContent || finalThought || finalToolCalls.length > 0 || wasStopped) {
                             const assistantMsg: Message = {
-                                id: crypto.randomUUID(),
+                                id: assistantMessageIdRef.current || crypto.randomUUID(),
                                 role: "assistant",
                                 content: cleanContent || "",
                                 thought: finalThought,
@@ -2115,7 +2179,7 @@ export default function ChatPage() {
                                 timestamp: new Date(),
                                 toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                                 stopped: wasStopped,
-                                missionTimeline: missionTimeline,
+                                missionTimeline: missionTimelineRef.current,
                             };
 
                             setStreamingContent("");
@@ -2124,17 +2188,13 @@ export default function ChatPage() {
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
                             setIsLoading(false);
-                            setIsComputerUseActive(false);
                             setMessages(prev => {
-                                // Prevent duplicate message if the last message is identical
-                                if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && !wasStopped) {
-                                    const prevMsg = prev[prev.length - 1];
-                                    const isDuplicateContent = prevMsg.content === assistantMsg.content;
-                                    const isDuplicateToolCalls = JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls);
-                                    if (isDuplicateContent && isDuplicateToolCalls) {
-                                        console.warn('[Chat] Duplicate message prevented:', assistantMsg.content.substring(0, 50));
-                                        return prev;
-                                    }
+                                const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
+                                if (existingIdx >= 0) {
+                                    const final = [...prev];
+                                    final[existingIdx] = assistantMsg;
+                                    saveConversation(final);
+                                    return final;
                                 }
                                 const final = [...prev, assistantMsg];
                                 saveConversation(final);
@@ -2151,7 +2211,6 @@ export default function ChatPage() {
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
                             setIsLoading(false);
-                            setIsComputerUseActive(false);
                         }
 
                         if (activeConversationId) {
@@ -2173,7 +2232,8 @@ export default function ChatPage() {
                     model: selectedModel,
                     providerType: currentM?.providerType || 'everfern',
                     conversationId: activeConversationIdRef.current,
-                    projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined
+                    projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
+                    assistantMessageId: assistantMessageIdRef.current,
                 });
             } catch (err) {
                 if (isMessageCommittedRef.current) return;
@@ -2189,7 +2249,7 @@ export default function ChatPage() {
                     reasoning_content: streamingThoughtRef.current,
                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                     timestamp: new Date(),
-                    missionTimeline: missionTimeline,
+                    missionTimeline: missionTimelineRef.current,
                 };
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
@@ -2212,7 +2272,6 @@ export default function ChatPage() {
                 setStreamingContent("");
                 setStreamingThought("");
                 setIsLoading(false);
-                setIsComputerUseActive(false);
             }
         })();
     }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan]);
@@ -2234,6 +2293,7 @@ export default function ChatPage() {
         streamingContentRef.current = "";
         streamingThoughtRef.current = "";
         liveToolCallsRef.current = [];
+        missionTimelineRef.current = null;
         isMessageCommittedRef.current = false; // Reset so next run's streaming content appears
         activeUserQuestionRef.current = false;
 
@@ -2390,7 +2450,7 @@ export default function ChatPage() {
                             reasoning_content: streamingThoughtRef.current,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            missionTimeline: missionTimeline,
+                            missionTimeline: missionTimelineRef.current,
                         };
 
                         setStreamingContent("");
@@ -2446,7 +2506,8 @@ export default function ChatPage() {
         setLiveToolCalls([]);
         setStreamingToolCalls([]);
         streamingToolCallsRef.current = [];
-        setSubAgentProgress(new Map());
+        subAgentProgressRef.current.clear();
+        setSubAgentProgressVersion(0);
         setCurrentPhase(undefined);
         setCurrentNode("");
         setMissionTimeline(null);
@@ -2480,7 +2541,8 @@ export default function ChatPage() {
                     setLiveToolCalls([]);
                     setStreamingToolCalls([]);
                     streamingToolCallsRef.current = [];
-                    setSubAgentProgress(new Map());
+                    subAgentProgressRef.current.clear();
+                    setSubAgentProgressVersion(0);
                     setCurrentPhase(undefined);
                     setCurrentNode("");
                     setMissionTimeline(null);
@@ -2516,7 +2578,9 @@ export default function ChatPage() {
                         role: m.role,
                         content: m.content,
                         thought: m.thought,
+                        reasoning_content: m.reasoning_content,
                         thinkingDuration: m.thinkingDuration,
+                        missionTimeline: m.missionTimeline,
                         toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
                             const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
                             return {
@@ -2776,7 +2840,7 @@ export default function ChatPage() {
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         stopped: true, // Mark as stopped by user
-                        missionTimeline: missionTimeline,
+                        missionTimeline: missionTimelineRef.current,
                     };
 
                     setMessages(prev => {
@@ -3474,7 +3538,7 @@ export default function ChatPage() {
                                                         >
                                                             <AgentTimeline
                                                                 key={`timeline-${msg.id}`}
-                                                                toolCalls={msg.toolCalls?.filter(tc => tc.toolName !== 'write' && tc.toolName !== 'write_to_file' && tc.toolName !== 'write_file') || []}
+                                                                toolCalls={msg.toolCalls || []}
                                                                 thought={msg.thought}
                                                                 reasoningContent={msg.reasoning_content}
                                                                 isLive={false}
@@ -3551,14 +3615,7 @@ export default function ChatPage() {
                                                                     {currentSites.filter(site => site.chatId === activeConversationId).map(site => <SitePreview key={site.id} chatId={activeConversationId || ""} filename={site.id} />)}
                                                                 </div>
                                                             )}
-                                                            {msg.toolCalls?.filter(tc => tc.toolName === 'write' || tc.toolName === 'write_to_file' || tc.toolName === 'write_file').map(tc => (
-                                                                <div className="my-6" key={`write-${tc.id}`}>
-                                                                    <WriteDiffCard tc={tc} />
-                                                                </div>
-                                                            ))}
-                                                            {msg.toolCalls?.filter(tc => tc.toolName === 'computer_use').map(tc => (
-                                                                <ComputerUseResultCard key={`cu-${tc.id}`} tc={tc} />
-                                                            ))}
+
                                                             {msg.toolCalls?.filter(tc => tc.toolName === 'visualize').map(tc => (
                                                                 <InlineVisualization
                                                                     key={tc.id}
@@ -3747,7 +3804,7 @@ export default function ChatPage() {
                             {!isEmpty && (
                                 <div style={{ padding: "0 24px 12px", width: "100%", maxWidth: 848, margin: "0 auto", position: "relative", zIndex: 50 }}>
                                     <AnimatePresence>
-                                        {(isComputerUseActive || showPermissionModal) && (
+                                        {showPermissionModal && (
                                             <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ duration: 0.2 }} style={{ width: "96%", maxWidth: 840, margin: "0 auto", position: "relative", zIndex: 1 }}>
                                                 <div style={{ width: "100%", background: "#161615", border: "1px solid rgba(255, 255, 255, 0.12)", borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
                                                     {/* Header with Title and Controls */}
@@ -3758,113 +3815,17 @@ export default function ChatPage() {
                                                             </div>
                                                             <div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{showPermissionModal ? "Fern needs permission to access your system files" : "EverFern is controlling your PC"}</div>
-                                                                    {!showPermissionModal && <div style={{ width: 6, height: 6, borderRadius: 3, background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />}
+                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>Fern needs permission to access your system files</div>
                                                                 </div>
-                                                                <div style={{ fontSize: 12, color: showPermissionModal ? "#fcd34d" : "#a1a1aa", marginTop: 2, fontFamily: showPermissionModal ? "inherit" : "monospace" }}>{showPermissionModal ? "Fern will be able to read and organize files in the folders you share." : computerUseStep || 'Preparing...'}</div>
+                                                                <div style={{ fontSize: 12, color: "#fcd34d", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
                                                             </div>
                                                         </div>
 
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                            {!showPermissionModal && isComputerUseActive && (
-                                                                <button
-                                                                    onClick={() => {
-                                                                        (window as any).electronAPI?.acp?.stop?.();
-                                                                        setIsComputerUseActive(false);
-                                                                    }}
-                                                                    style={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: 6,
-                                                                        padding: '6px 12px',
-                                                                        backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                                                                        color: '#ef4444',
-                                                                        border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                                        borderRadius: 12,
-                                                                        fontSize: 11,
-                                                                        fontWeight: 600,
-                                                                        cursor: 'pointer',
-                                                                        transition: 'all 0.2s ease'
-                                                                    }}
-                                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'}
-                                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'}
-                                                                >
-                                                                    <StopCircleIcon width={14} height={14} strokeWidth={2.5} /> Stop Agent
-                                                                </button>
-                                                            )}
-
-                                                            {showPermissionModal ? (
-                                                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                                                    <button onClick={() => { setShowPermissionModal(false); setIsComputerUseActive(false); (window as any).electronAPI?.acp?.agentPermissionResponse?.(false); }} style={{ padding: "7px 15px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", backgroundColor: "transparent", color: "#a1a1aa", fontSize: 12, fontWeight: 600, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>Deny</button>
-                                                                    <button onClick={() => { setPermissionsGranted(true); setShowPermissionModal(false); (window as any).electronAPI?.acp?.agentPermissionResponse?.(true); }} style={{ padding: "7px 18px", borderRadius: 14, border: "none", backgroundColor: "#fbbf24", color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 0 16px rgba(251, 191, 36, 0.3)" }} onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f59e0b"; e.currentTarget.style.transform = "scale(1.03)"; }} onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#fbbf24"; e.currentTarget.style.transform = "scale(1)"; }}>
-                                                                        <CheckCircleIcon width={13} height={13} strokeWidth={2.5} /> Allow Access
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{ fontSize: 11, color: "#52525b", flexShrink: 0 }}>
-                                                                    <kbd style={{ padding: "2px 6px", borderRadius: 5, border: "1px solid rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.04)", fontSize: 10 }}>⌘⇧X</kbd> to abort
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     </div>
 
                                                     {/* Progress and Visual History */}
-                                                    {!showPermissionModal && isComputerUseActive && currentComputerUseToolCallId && (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
-                                                            {/* Screenshot History Strip */}
-                                                            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none', minHeight: 45 }}>
-                                                                {subAgentProgress.get(currentComputerUseToolCallId)?.filter(e => e.type === 'screenshot').map((e, idx) => (
-                                                                    <motion.div
-                                                                        key={idx}
-                                                                        initial={{ opacity: 0, scale: 0.9 }}
-                                                                        animate={{ opacity: 1, scale: 1 }}
-                                                                        style={{ position: 'relative', flexShrink: 0 }}
-                                                                    >
-                                                                        <div onClick={() => setZoomedScreenshot(e.screenshot?.base64 || null)} style={{ cursor: 'pointer', transition: 'transform 0.2s' }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
-                                                                            <Image
-                                                                                src={e.screenshot?.base64 || ''}
-                                                                                alt={`Step ${e.stepNumber}`}
-                                                                                width={80}
-                                                                                height={45}
-                                                                                style={{ borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', objectFit: 'cover' }}
-                                                                            />
-                                                                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', borderRadius: 8 }} />
-                                                                            <div style={{ position: 'absolute', bottom: 2, right: 6, fontSize: 10, color: '#fff', fontWeight: 800 }}>{e.stepNumber}</div>
-                                                                        </div>
-                                                                    </motion.div>
-                                                                ))}
-                                                                {(!subAgentProgress.get(currentComputerUseToolCallId)?.some(e => e.type === 'screenshot')) && (
-                                                                    <div style={{ width: 80, height: 45, borderRadius: 8, border: '1px dashed rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                        <EyeIcon width={14} height={14} style={{ color: '#27272a' }} />
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            {/* Action Log / Reasoning */}
-                                                            <div style={{ maxHeight: 120, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 14px', background: 'rgba(0,0,0,0.3)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
-                                                                {subAgentProgress.get(currentComputerUseToolCallId)?.filter(e => e.type === 'reasoning' || e.type === 'action').slice(-15).map((e, idx) => (
-                                                                    <div key={idx} style={{ fontSize: 11.5, display: 'flex', gap: 10, lineHeight: 1.5, opacity: idx === (subAgentProgress.get(currentComputerUseToolCallId)?.filter(ev => ev.type === 'reasoning' || ev.type === 'action').length || 0) - 1 ? 1 : 0.6 }}>
-                                                                        <span style={{ color: '#52525b', flexShrink: 0, fontFamily: 'monospace' }}>{new Date(e.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                                                                        <div style={{ color: e.type === 'action' ? '#fff' : '#a1a1aa', fontWeight: e.type === 'action' ? 600 : 400 }}>
-                                                                            {e.type === 'action' ? (
-                                                                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                                    <span style={{ color: '#6366f1' }}>▶</span> {e.action?.description}
-                                                                                </span>
-                                                                            ) : (
-                                                                                <span>💭 {e.content}</span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                                {(!subAgentProgress.get(currentComputerUseToolCallId)?.some(e => e.type === 'reasoning' || e.type === 'action')) && (
-                                                                    <div style={{ fontSize: 11.5, color: '#52525b', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                        <ArrowPathIcon width={12} height={12} className="animate-spin" />
-                                                                        Waiting for agent strategy...
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </motion.div>
                                         )}
@@ -3895,7 +3856,7 @@ export default function ChatPage() {
                                     </AnimatePresence>
 
                                     <div style={{ width: "96%", maxWidth: 840, margin: "0 auto 8px auto", display: "flex", flexDirection: "column" }}>
-                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#ffffff", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: (isComputerUseActive || showPermissionModal) ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
+                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#ffffff", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: showPermissionModal ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
                                             {/* Memory Preference Banner */}
                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                 <motion.div
@@ -4251,6 +4212,7 @@ export default function ChatPage() {
                             onClose={() => setIsToolDetailOpen(false)}
                             conversationId={activeConversationId || ""}
                             subAgentProgress={subAgentProgress}
+                            subAgentProgressVersion={subAgentProgressVersion}
                         />
                                     </div>
                 </motion.div>

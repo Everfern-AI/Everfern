@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, ClipboardIcon, ArrowTopRightOnSquareIcon, DocumentDuplicateIcon, ListBulletIcon, DocumentTextIcon, TableCellsIcon, PresentationChartBarIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ClipboardIcon, ArrowTopRightOnSquareIcon, DocumentDuplicateIcon, ListBulletIcon, DocumentTextIcon, TableCellsIcon, PresentationChartBarIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import FileIcon from '../FileIcon';
 
 interface FileViewerModalProps {
@@ -11,7 +11,7 @@ interface FileViewerModalProps {
 }
 
 // ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
-function MarkdownViewer({ content }: { content: string }) {
+export function MarkdownViewer({ content }: { content: string }) {
     const renderMarkdown = (text: string) => {
         const lines = text.split('\n');
         let inCodeBlock = false;
@@ -105,22 +105,6 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
         parsedData = content.split('\n')
             .map(row => row.split(',').map(cell => cell.trim().replace(/^["']|["']$/g, '')))
             .filter(row => row.length > 1 || row[0] !== '');
-    }
-
-    if (parsedData.length === 0) {
-        parsedData = [
-            ['ID', 'Category', 'Description', 'Q1 Budget', 'Q1 Actual', 'Variance', 'Status', 'Risk Level', 'Owner'],
-            ['EXP-101', 'Cloud Infrastructure', 'AWS Compute & Storage', '$12,500.00', '$11,850.00', '$650.00', 'Under Budget', 'Low', 'DevOps Team'],
-            ['EXP-102', 'Software Licensing', 'SaaS subscriptions & tools', '$8,200.00', '$8,940.00', '-$740.00', 'Over Budget', 'Medium', 'IT Admin'],
-            ['EXP-103', 'Marketing & Ads', 'Search engine marketing ads', '$15,000.00', '$14,200.00', '$800.00', 'Under Budget', 'Low', 'Growth Marketing'],
-            ['EXP-104', 'External Consulting', 'UI/UX Design Contractors', '$22,000.00', '$25,600.00', '-$3,600.00', 'Over Budget', 'High', 'Product Design'],
-            ['EXP-105', 'Office Operations', 'Supplies, rent & maintenance', '$4,500.00', '$4,120.00', '$380.00', 'Under Budget', 'Low', 'Operations Mgr'],
-            ['EXP-106', 'Recruiting & HR', 'Job board postings & ads', '$6,000.00', '$5,400.00', '$600.00', 'Under Budget', 'Low', 'Talent Team'],
-            ['EXP-107', 'Customer Support', 'Help desk software & tools', '$3,200.00', '$3,150.00', '$50.00', 'Under Budget', 'Low', 'Support Lead'],
-            ['EXP-108', 'Data Analytics', 'BI tool platform & pipeline', '$7,800.00', '$9,200.00', '-$1,400.00', 'Over Budget', 'Medium', 'Data Science'],
-            ['EXP-109', 'Security Audits', 'Compliance & pen testing', '$18,500.00', '$18,500.00', '$0.00', 'On Target', 'Low', 'InfoSec Lead'],
-            ['EXP-110', 'Hardware Upgrades', 'Developer laptop upgrades', '$10,000.00', '$11,250.00', '-$1,250.00', 'Over Budget', 'Medium', 'IT Helpdesk'],
-        ];
     }
 
     const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => String.fromCharCode(65 + i));
@@ -635,6 +619,17 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
         setTimeout(() => setCopyPathSuccess(false), 2000);
     };
 
+    const handleDownload = () => {
+        // Construct the file URI from absolute path to trigger a direct download locally
+        const fileUrl = 'file:///' + file.path.replace(/\\/g, '/');
+        const a = document.createElement('a');
+        a.href = fileUrl;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
     const handleOpenFolder = () => {
         // Open the parent folder of the file
         const parentPath = file.path.substring(0, file.path.lastIndexOf('\\'));
@@ -871,6 +866,54 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
 
                             {/* Actions List */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+                                <button
+                                    onClick={handleDownload}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        width: '100%',
+                                        padding: '10px 14px',
+                                        borderRadius: 8,
+                                        border: '0.5px solid rgba(0,0,0,0.12)',
+                                        backgroundColor: '#ececea',
+                                        color: '#333',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        boxShadow: [
+                                            "inset 0 1px 0 rgba(255,255,255,0.8)",
+                                            "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                                            "inset 1px 0 rgba(255,255,255,0.5)",
+                                            "inset -1px 0 rgba(0,0,0,0.04)",
+                                            "0 1px 3px rgba(0,0,0,0.06)",
+                                        ].join(", "),
+                                        transition: 'all 0.15s'
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.backgroundColor = '#f4f4f2';
+                                        e.currentTarget.style.boxShadow = [
+                                            "inset 0 1px 0 rgba(255,255,255,0.9)",
+                                            "inset 0 -1px 0 rgba(0,0,0,0.04)",
+                                            "inset 1px 0 rgba(255,255,255,0.6)",
+                                            "inset -1px 0 rgba(0,0,0,0.03)",
+                                            "0 2px 4px rgba(0,0,0,0.08)",
+                                        ].join(", ");
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.backgroundColor = '#ececea';
+                                        e.currentTarget.style.boxShadow = [
+                                            "inset 0 1px 0 rgba(255,255,255,0.8)",
+                                            "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                                            "inset 1px 0 rgba(255,255,255,0.5)",
+                                            "inset -1px 0 rgba(0,0,0,0.04)",
+                                            "0 1px 3px rgba(0,0,0,0.06)",
+                                        ].join(", ");
+                                    }}
+                                >
+                                    <ArrowDownTrayIcon width={16} height={16} />
+                                    Download File
+                                </button>
                                 <button
                                     onClick={handleCopyPath}
                                     style={{

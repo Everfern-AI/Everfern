@@ -125,7 +125,7 @@ export const GraphState = Annotation.Root({
   } | null>(),
   // Routing decision — brain sets this to route to specialized agents
   routingDecision: Annotation<{
-    decision: 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_computer_use' | 'route_web_explorer' | 'complete_task';
+    decision: 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
     explanation: string;
   } | null>(),
   // HITL Approval State

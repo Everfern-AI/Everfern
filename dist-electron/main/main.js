@@ -64,6 +64,7 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
 const manager_1 = require("./acp/manager");
+const computer_overlay_1 = require("./computer-overlay");
 const history_1 = require("./store/history");
 const showui_server_1 = require("./agent/runner/showui-server");
 const providers_1 = require("./lib/providers");
@@ -534,6 +535,8 @@ Your goal is to be the ultimate workplace companion.
     // Ensure system prompt exists (fallback for prompt sync)
     ensureSystemPromptExists();
     voiceOverlayManager = new voice_overlay_1.VoiceOverlayManager();
+    // Initialize and preload the computer-use cursor overlay at startup to trigger Next.js compilation early and avoid HMR refresh mid-chat
+    (0, computer_overlay_1.getComputerOverlayManager)();
     // ── Protocol Handlers ──────────────────────────────────────────────
     // Custom protocol for the main application (Next.js out folder)
     electron_1.protocol.handle('everfern-app', async (request) => {

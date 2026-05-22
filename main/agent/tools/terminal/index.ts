@@ -26,7 +26,7 @@ export const terminalTool: AgentTool = {
     const registry = CommandRegistry.getInstance();
     const command = args.command as string;
     const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
-    const id = (args.id as string) || `term_${Date.now()}`;
+    const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
 
     onUpdate?.(`Terminal [${id}]: Executing "${command}"...`);
 

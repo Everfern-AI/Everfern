@@ -56,7 +56,7 @@ const pi_tools_1 = require("../tools/pi-tools");
 const agent_events_1 = require("../infra/agent-events");
 const sessions_1 = require("../sessions");
 const DEFAULT_CONFIG = {
-    maxIterations: 100,
+    maxIterations: 100000,
     enableTerminal: true,
 };
 class AgentRunner {
@@ -162,12 +162,10 @@ class AgentRunner {
             'coding-specialist': 'coding-specialist.md',
             'web-explorer': 'web-explorer.md',
             'data-analyst': 'data-analyst.md',
-            'computer-use': 'computer-use.md',
         };
         const AGENT_TYPE_TIMEOUT = {
             'web-explorer': 300000,
             'coding-specialist': 180000,
-            'computer-use': 180000,
             'data-analyst': 180000,
             'generic': 120000,
         };
@@ -178,7 +176,7 @@ class AgentRunner {
                 type: 'object',
                 properties: {
                     task: { type: 'string', description: 'Self-contained task for the sub-agent to accomplish.' },
-                    agent_type: { type: 'string', description: 'Type of specialist agent. Options: generic, coding-specialist, web-explorer, data-analyst, computer-use.', enum: ['generic', 'coding-specialist', 'web-explorer', 'data-analyst', 'computer-use'] },
+                    agent_type: { type: 'string', description: 'Type of specialist agent. Options: generic, coding-specialist, web-explorer, data-analyst.', enum: ['generic', 'coding-specialist', 'web-explorer', 'data-analyst'] },
                     context: { type: 'string', description: 'Additional background information or constraints for the task.' },
                     max_depth: { type: 'number', description: 'Maximum spawn depth (default: 2, max: 3)' }
                 },
@@ -339,7 +337,7 @@ class AgentRunner {
         }
         return { response: lastResponse, toolCalls };
     }
-    async *runStream(userInput, history, model, conversationId, systemPromptOverride, projectId, isSubagent) {
+    async *runStream(userInput, history, model, conversationId, systemPromptOverride, projectId, isSubagent, assistantMessageId) {
         // Reset abort state for new execution
         abort_manager_1.globalAbortManager.reset();
         const convId = conversationId || crypto.randomUUID();
@@ -427,7 +425,8 @@ class AgentRunner {
                 }
             }
             // Initialize mission tracker for timeline tracking
-            const { getMissionTracker } = await Promise.resolve().then(() => __importStar(require('./mission-tracker')));
+            const { getMissionTracker, clearMissionTracker } = await Promise.resolve().then(() => __importStar(require('./mission-tracker')));
+            clearMissionTracker(convId);
             const missionTracker = getMissionTracker(convId);
             // Initialize duration tracker for thinking time tracking
             const { DurationTracker } = await Promise.resolve().then(() => __importStar(require('./duration-tracker')));
@@ -508,7 +507,7 @@ class AgentRunner {
                 }
                 const graph = await Promise.resolve().then(() => (0, graph_1.buildGraph)(this, toolDefs, this.tools));
                 let graphDone = false;
-                let currentAssistantMsgId = `msg-ast-${Date.now()}`;
+                let currentAssistantMsgId = assistantMessageId || `msg-ast-${Date.now()}`;
                 let currentContent = '';
                 let currentThought = '';
                 let currentToolCalls = [];
@@ -536,6 +535,7 @@ class AgentRunner {
                                     content: currentContent,
                                     thought: currentThought,
                                     toolCalls: currentToolCalls,
+                                    missionTimeline: missionTracker.getTimeline(),
                                 }
                             ],
                             updatedAt: new Date().toISOString()
@@ -669,9 +669,11 @@ class AgentRunner {
                             }
                             else if (event.type === 'tool_call') {
                                 currentToolCalls.push({
-                                    name: event.toolCall.toolName,
+                                    id: event.toolCall.toolCallId || crypto.randomUUID(),
+                                    toolName: event.toolCall.toolName,
                                     args: event.toolCall.args,
-                                    result: event.toolCall.result
+                                    result: event.toolCall.result,
+                                    status: 'done'
                                 });
                                 await syncToDb(true); // Force sync on tool completion
                             }

@@ -8,6 +8,7 @@ import {
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
   BookOpen
 } from 'lucide-react';
+import { MarkdownViewer } from './FileViewerModal';
 
 /* ============================================================
    TYPES
@@ -17,6 +18,7 @@ export const ToolType = {
   NAVIS: 'navis',
   TERMINAL: 'terminal',
   SKILL: 'skill',
+  FILE_SYSTEM: 'file_system',
   GENERIC: 'generic',
 };
 
@@ -62,11 +64,13 @@ const T = {
    UTILITIES
    ============================================================ */
 export function detectToolType(toolName: string | undefined | null): string {
-  const n = (toolName || "").toLowerCase();
+  if (!toolName) return ToolType.GENERIC;
+  const n = toolName.toLowerCase();
   if (n === 'skill') return ToolType.SKILL;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.NAVIS;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
+  if (n.includes('read_file') || n.includes('write_to_file') || n.includes('replace_file_content') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   return ToolType.GENERIC;
 }
 
@@ -1183,18 +1187,17 @@ function SkillView({ skillName, name, path, content }: { skillName: string; name
       <div style={{ flex: 1, overflowY: 'auto', background: T.bg, padding: '20px 24px 28px' }}>
         {content && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingBottom: 10 }}>
               <CopyBtn text={content} />
             </div>
-            <pre style={{
-              margin: 0, fontFamily: T.mono, fontSize: 12, lineHeight: 1.85,
-              background: T.inkBg, color: T.inkText,
-              padding: '18px 20px', borderRadius: T.r10,
-              border: `1px solid ${T.inkBorder}`, maxHeight: 600, overflowY: 'auto',
-              whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+            <div style={{
+              background: T.surface, 
+              border: `1px solid ${T.border}`, 
+              borderRadius: T.r10,
+              overflow: 'hidden'
             }}>
-              <code>{content}</code>
-            </pre>
+              <MarkdownViewer content={content} />
+            </div>
           </div>
         )}
       </div>
@@ -1223,7 +1226,7 @@ function extractSkillData(tc: any) {
 export function extractWebSearchData(tc: any) {
   try {
     const query = tc.args?.query || '';
-    const raw = tc.data?.results;
+    const raw = tc.data?.results || tc.result?.data?.results || tc.result?.results;
     const results = Array.isArray(raw) ? raw : [];
 
     // Process results to include domain and ensure favicon fallback
@@ -1247,15 +1250,25 @@ export function extractWebSearchData(tc: any) {
 
 export function extractNavisData(tc: any, progressEvents: any[] = []) {
   try {
-    console.log('[extractNavisData] tc:', tc, 'progressEvents:', progressEvents);
     const screenshots: any[] = [];
+    const screenshotPaths: string[] = [];
     const seen = new Set();
-    const add = (b64: string, ts: any, seq: number, actionInfo?: any) => {
-      if (!b64) return;
-      const clean = b64.startsWith('data:image') ? b64.substring(b64.indexOf(',') + 1) : b64;
-      if (!seen.has(clean)) {
-        seen.add(clean);
-        screenshots.push({ base64: clean, timestamp: ts, sequenceNumber: seq, action: actionInfo });
+    const seenPaths = new Set<string>();
+
+    const add = (b64: string, ts: any, seq: number, actionInfo?: any, filePath?: string) => {
+      if (!b64 && !filePath) return;
+      const clean = b64 ? (b64.startsWith('data:image') ? b64.substring(b64.indexOf(',') + 1) : b64) : '';
+      // Deduplicate by base64 content if present, else by file path
+      const key = clean || filePath || '';
+      if (key && seen.has(key)) return;
+      if (key) seen.add(key);
+      screenshots.push({ base64: clean, screenshotPath: filePath, timestamp: ts, sequenceNumber: seq, action: actionInfo });
+    };
+
+    const addPath = (filePath: string) => {
+      if (filePath && !seenPaths.has(filePath)) {
+        seenPaths.add(filePath);
+        screenshotPaths.push(filePath);
       }
     };
 
@@ -1268,7 +1281,9 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
           lastAction = e.action;
         } else if (e.type === 'screenshot') {
           const b64 = e.screenshot?.base64 || e.content || e.base64;
-          if (b64) add(b64, e.timestamp || Date.now(), i, lastAction);
+          const filePath = e.screenshotPath || e.screenshot?.screenshotPath;
+          if (b64 || filePath) add(b64 || '', e.timestamp || Date.now(), i, lastAction, filePath);
+          if (filePath) addPath(filePath);
         }
       });
     }
@@ -1277,8 +1292,8 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     const sData = tc.data?.screenshot;
     if (Array.isArray(sData)) {
       sData.forEach((s: any, i: number) => {
-        if (typeof s === 'string') add(s, Date.now(), i, lastAction || (s as any).action);
-        else if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction);
+        if (typeof s === 'string') add(s, Date.now(), i, lastAction);
+        else if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction, s.screenshotPath);
       });
     } else if (typeof sData === 'string') {
       add(sData, Date.now(), 0, lastAction);
@@ -1287,14 +1302,28 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     // 3. Process historical screenshots
     if (Array.isArray(tc.data?.screenshots)) {
       tc.data.screenshots.forEach((s: any, i: number) => {
-        if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction);
+        if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction, s.screenshotPath);
         else if (typeof s === 'string') add(s, Date.now(), i, lastAction);
       });
     }
 
     if (typeof tc.data?.base64Image === 'string') add(tc.data.base64Image, Date.now(), screenshots.length, lastAction);
 
-    // 4. Attach tool call action if no event action was found
+    // 4. Process persisted screenshotPaths (for reloading after page refresh)
+    if (Array.isArray(tc.data?.screenshotPaths)) {
+      tc.data.screenshotPaths.forEach((p: string, i: number) => {
+        if (!p) return;
+        // Only add a placeholder if no existing screenshot entry covers this path
+        const alreadyHave = screenshots.some(s => s.screenshotPath === p);
+        if (!alreadyHave) {
+          // Placeholder: no base64 yet — the async loader effect will fill it in
+          add('', Date.now(), screenshots.length + i, lastAction, p);
+        }
+        addPath(p);
+      });
+    }
+
+    // 5. Attach tool call action if no event action was found
     if (screenshots.length > 0) {
       const toolCallAction = tc.args?.coordinate || tc.args?.action ? {
         type: tc.args.action || tc.args.type || 'click',
@@ -1313,16 +1342,55 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
 
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
-    return { screenshots, url: tc.args?.url, action: tc.args?.action };
+    return { screenshots, screenshotPaths, url: tc.args?.url, action: tc.args?.action };
   } catch { return null; }
 }
 
 function extractTerminalData(tc: any) {
-  return { command: tc.args?.command || tc.args?.CommandLine || '', output: tc.output || '', exitCode: tc.data?.exitCode, duration: tc.duration };
+  return { command: tc.args?.command || tc.args?.CommandLine || '', output: tc.output || tc.result?.output || tc.result?.error || tc.error || '', exitCode: tc.data?.exitCode || tc.result?.data?.exitCode, duration: tc.duration || tc.result?.duration };
+}
+
+function extractFileSystemData(tc: any) {
+  return { toolName: tc.toolName, path: tc.args?.path || tc.args?.TargetFile || tc.args?.SearchPath || tc.args?.DirectoryPath || '', args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
 }
 
 function extractGenericData(tc: any) {
-  return { toolName: tc.toolName, args: tc.args || {}, output: tc.output || '' };
+  return { toolName: tc.toolName, args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+}
+
+function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
+  const argEntries = Object.entries(args || {});
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+        <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
+          {toolName}
+        </h3>
+        {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', background: T.bg }}>
+        {argEntries.length > 0 && (
+          <CollapsibleSection icon={Braces} label="Arguments" badge={`${argEntries.length}`}>
+            <pre style={{ margin: 0, fontFamily: T.mono, fontSize: 12, lineHeight: 1.8, background: T.inkBg, color: T.inkText, padding: '18px 20px', borderRadius: T.r10, border: `1px solid ${T.inkBorder}`, maxHeight: 280, overflowY: 'auto' }}>
+              <code>{JSON.stringify(args, null, 2)}</code>
+            </pre>
+          </CollapsibleSection>
+        )}
+
+        {output && (
+          <div style={{ padding: '20px 24px 28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingBottom: 10 }}>
+              <CopyBtn text={output} />
+            </div>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, overflow: 'hidden' }}>
+              <MarkdownViewer content={output} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* ============================================================
@@ -1336,9 +1404,10 @@ interface ToolDetailSidePanelProps {
   onClose: () => void;
   conversationId: string;
   subAgentProgress?: Map<string, any[]>;
+  subAgentProgressVersion?: number;
 }
 
-export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, conversationId, subAgentProgress }: ToolDetailSidePanelProps) {
+export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, conversationId, subAgentProgress, subAgentProgressVersion }: ToolDetailSidePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [toolType, setToolType] = useState(ToolType.GENERIC);
   const [toolData, setToolData] = useState<any>(null);
@@ -1353,15 +1422,13 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  // Primary effect: runs when the panel opens or the selected tool call changes.
+  // Uses stable primitives as deps (id + output) instead of the toolCall object reference,
+  // which changes on every parent re-render causing an infinite loop.
   useEffect(() => {
     if (!isOpen || !toolCall) { setToolData(null); setError(null); return; }
 
-    // For live Navis sessions, we don't want to show loading spinner every time a screenshot comes in
-    // if we already have some data.
-    if (!toolData || toolData.toolCallId !== toolCall.id) {
-        setIsLoading(true);
-    }
-
+    setIsLoading(true);
     setError(null);
     try {
       const type = detectToolType(toolCall.toolName);
@@ -1371,12 +1438,15 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
       if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
       } else if (type === ToolType.NAVIS) {
+        // Pass current progress snapshot for initial render
         const progress = subAgentProgress?.get(toolCall.id) || [];
         extracted = extractNavisData(toolCall, progress);
       } else if (type === ToolType.TERMINAL) {
         extracted = extractTerminalData(toolCall);
       } else if (type === ToolType.SKILL) {
         extracted = extractSkillData(toolCall);
+      } else if (type === ToolType.FILE_SYSTEM) {
+        extracted = extractFileSystemData(toolCall);
       } else {
         extracted = extractGenericData(toolCall);
       }
@@ -1386,13 +1456,110 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractGenericData(toolCall);
       }
 
-      // Store ID to help with re-loading logic
       if (extracted) extracted.toolCallId = toolCall.id;
-
       setToolData(extracted);
     } catch { setError('Failed to load details'); }
     setIsLoading(false);
-  }, [isOpen, toolCall, subAgentProgress]);
+  // toolCall?.id changes when a different tool call is selected.
+  // toolCall?.output changes when an in-progress tool call finishes.
+  // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, toolCall?.id, toolCall?.output]);
+
+  // Lightweight secondary effect: ONLY updates screenshots for live NAVIS/computer_use sessions.
+  // Runs when new progress events arrive but skips the loading spinner and full re-parse.
+  useEffect(() => {
+    if (!isOpen || !toolCall || toolType !== ToolType.NAVIS) return;
+    const progress = subAgentProgress?.get(toolCall.id) || [];
+    if (progress.length === 0) return;
+    try {
+      const extracted = extractNavisData(toolCall, progress);
+      if (extracted) {
+        extracted.toolCallId = toolCall.id;
+        setToolData(extracted);
+      }
+    } catch { /* silently ignore mid-stream parse errors */ }
+  // subAgentProgressVersion is a cheap counter that increments on each new event batch
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subAgentProgressVersion, toolCall?.id, isOpen, toolType]);
+
+  // Async disk-path screenshot loader: fires when toolData contains screenshots that have a
+  // screenshotPath but no base64 (i.e., the session was restored from saved history after
+  // a page refresh). Loads each image via IPC and patches toolData in place.
+  useEffect(() => {
+    if (!isOpen || !toolData || toolType !== ToolType.NAVIS) return;
+    const screenshots: any[] = toolData.screenshots || [];
+    const needLoad = screenshots.filter((s: any) => s.screenshotPath && !s.base64);
+    if (needLoad.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const api = (window as any).electronAPI?.screenshot;
+      if (!api?.load) return;
+
+      const updated = [...screenshots];
+      let changed = false;
+
+      await Promise.all(
+        needLoad.map(async (s: any) => {
+          try {
+            const result = await api.load(s.screenshotPath);
+            if (cancelled) return;
+            if (result?.dataUrl) {
+              const idx = updated.findIndex((u: any) => u.screenshotPath === s.screenshotPath);
+              if (idx !== -1) {
+                const clean = result.dataUrl.indexOf(',') !== -1
+                  ? result.dataUrl.substring(result.dataUrl.indexOf(',') + 1)
+                  : result.base64;
+                updated[idx] = { ...updated[idx], base64: clean };
+                changed = true;
+              }
+            }
+          } catch { /* skip failed files */ }
+        })
+      );
+
+      if (!cancelled && changed) {
+        setToolData((prev: any) => prev ? { ...prev, screenshots: updated } : prev);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  // Only fire when the set of path-only screenshots changes (toolData ref change on restore)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolData?.toolCallId, isOpen, toolType]);
+
+  // Poll for live terminal output if the command is still running
+  useEffect(() => {
+    if (!isOpen || !toolCall || toolCall.status === 'done' || toolType !== ToolType.TERMINAL) return;
+
+    let mounted = true;
+    const pollId = toolCall.args?.id || toolCall.id;
+
+    const poll = async () => {
+      try {
+        if (!mounted || !window.electronAPI?.terminal?.getStatus) return;
+        const res = await window.electronAPI.terminal.getStatus(pollId);
+        if (mounted && res && res.success) {
+          setToolData((prev: any) => ({
+            ...prev,
+            output: res.output || prev?.output || '',
+            exitCode: res.exitCode
+          }));
+        }
+      } catch (err) {
+        // ignore polling errors
+      }
+    };
+
+    poll(); // Initial fetch
+    const interval = setInterval(poll, 1000); // Poll every second
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [isOpen, toolCall, toolType]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1435,6 +1602,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.NAVIS) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Navis'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
+    if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
     return <GenericView {...toolData} />;
   };
 

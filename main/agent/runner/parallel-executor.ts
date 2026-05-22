@@ -59,11 +59,23 @@ export function analyzeToolDependencies(
                 continue;
             }
 
+            // present_files conflicts with any write or command execution tools
+            const isPresentFiles = tool.name === 'present_files';
+            const otherIsPresentFiles = other.name === 'present_files';
+            const isWriteOrExec = isWrite || ['run_command', 'bash', 'executePwsh', 'apply_patch', 'edit', 'write', 'write_file'].includes(tool.name);
+            const otherIsWriteOrExec = fileWriteTools.has(other.name) || ['run_command', 'bash', 'executePwsh', 'apply_patch', 'edit', 'write', 'write_file'].includes(other.name);
+
+            if ((isPresentFiles && otherIsWriteOrExec) || (otherIsPresentFiles && isWriteOrExec)) {
+                conflicts.push(other.id);
+                continue;
+            }
+
             const otherPaths = extractFilePaths(other.args);
             const overlapping = filePaths.filter(p => otherPaths.includes(p));
+            const otherIsWrite = fileWriteTools.has(other.name);
 
             // Writes to same path conflict
-            if (isWrite && overlapping.length > 0) {
+            if ((isWrite || otherIsWrite) && overlapping.length > 0) {
                 conflicts.push(other.id);
             }
         }
@@ -85,12 +97,24 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
     const paths: string[] = [];
     const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest'];
 
-    for (const [key, value] of Object.entries(args)) {
-        if (pathKeys.includes(key.toLowerCase()) && typeof value === 'string') {
-            paths.push(value);
+    const recurse = (val: any) => {
+        if (!val) return;
+        if (typeof val === 'string') {
+            paths.push(val);
+        } else if (Array.isArray(val)) {
+            val.forEach(item => recurse(item));
+        } else if (typeof val === 'object') {
+            for (const [k, v] of Object.entries(val)) {
+                if (pathKeys.includes(k.toLowerCase()) || k === 'paths') {
+                    recurse(v);
+                } else if (Array.isArray(v) || typeof v === 'object') {
+                    recurse(v);
+                }
+            }
         }
-    }
+    };
 
+    recurse(args);
     return paths;
 }
 

@@ -65,7 +65,9 @@ async function runInWSL(command: string, cwd?: string): Promise<LinuxVMExecution
   // If a working directory is specified, prepend cd command
   let fullCommand = command;
   if (linuxCwd) {
-    fullCommand = `cd "${linuxCwd}" && ${command}`;
+    fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
+  } else {
+    fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
   }
 
   return executeCommand('wsl.exe', ['--exec', 'bash', '-c', fullCommand]);
@@ -163,7 +165,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
       shell: process.platform === 'win32', // Use shell on Windows to ensure WSL runs properly in Electron
-      env: { ...process.env, WSL_UTF8: '1' } // Force WSL to output UTF-8
+      env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } // Force WSL to output UTF-8
     });
 
     const environmentType = process.platform === 'win32'

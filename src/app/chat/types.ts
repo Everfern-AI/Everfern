@@ -55,7 +55,12 @@ export interface SubAgentProgressEvent {
     base64: string;         // Base64-encoded image
     width: number;
     height: number;
+    /** Absolute path to the saved screenshot file on disk (for persistence across page refresh) */
+    screenshotPath?: string;
   };
+
+  /** Absolute path to the saved screenshot file on disk (top-level alias, for persistence) */
+  screenshotPath?: string;
 
   /** Metadata */
   metadata?: {
