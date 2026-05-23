@@ -1288,8 +1288,11 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
       });
     }
 
-    // 2. Process tc.data.screenshot (mapped in chat/page.tsx)
-    const sData = tc.data?.screenshot;
+    // 2. Extract data source
+    const dataSource = tc.data || tc.result?.data || tc.result || {};
+
+    // 2. Process screenshot(s)
+    const sData = dataSource.screenshot || dataSource.base64_image;
     if (Array.isArray(sData)) {
       sData.forEach((s: any, i: number) => {
         if (typeof s === 'string') add(s, Date.now(), i, lastAction);
@@ -1300,18 +1303,19 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     }
 
     // 3. Process historical screenshots
-    if (Array.isArray(tc.data?.screenshots)) {
-      tc.data.screenshots.forEach((s: any, i: number) => {
+    if (Array.isArray(dataSource.screenshots)) {
+      dataSource.screenshots.forEach((s: any, i: number) => {
         if (s?.base64) add(s.base64, s.timestamp || Date.now(), s.sequenceNumber ?? i, s.action || lastAction, s.screenshotPath);
         else if (typeof s === 'string') add(s, Date.now(), i, lastAction);
       });
     }
 
-    if (typeof tc.data?.base64Image === 'string') add(tc.data.base64Image, Date.now(), screenshots.length, lastAction);
+    if (typeof dataSource.base64Image === 'string') add(dataSource.base64Image, Date.now(), screenshots.length, lastAction);
+    if (typeof dataSource.base64_image === 'string') add(dataSource.base64_image, Date.now(), screenshots.length, lastAction);
 
     // 4. Process persisted screenshotPaths (for reloading after page refresh)
-    if (Array.isArray(tc.data?.screenshotPaths)) {
-      tc.data.screenshotPaths.forEach((p: string, i: number) => {
+    if (Array.isArray(dataSource.screenshotPaths)) {
+      dataSource.screenshotPaths.forEach((p: string, i: number) => {
         if (!p) return;
         // Only add a placeholder if no existing screenshot entry covers this path
         const alreadyHave = screenshots.some(s => s.screenshotPath === p);
