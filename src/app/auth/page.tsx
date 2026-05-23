@@ -23,8 +23,10 @@ const itemVariants: Variants = {
     },
 };
 
-// Landing site base URL — no SDK, no credentials
+// Landing site base URL for the web app UI
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
+// API base URL for authentication endpoints
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://everfern-api.vercel.app";
 
 // Key used to persist the access token and user between reloads
 const STORAGE_KEY = "everfern_cloud_session";
@@ -79,7 +81,7 @@ export default function AuthPage() {
 
     async function pollForAuth(code: string) {
         try {
-            const res = await fetch(`${LANDING_URL}/api/auth/desktop-poll?code=${code}`);
+            const res = await fetch(`${API_URL}/api/auth/desktop-poll?code=${code}`);
             if (res.status === 202) return; // still pending
 
             if (res.ok) {
@@ -114,7 +116,7 @@ export default function AuthPage() {
             const desktopCode = crypto.randomUUID();
             desktopCodeRef.current = desktopCode;
 
-            const oauthUrl = `${LANDING_URL}/api/auth/desktop-init?desktop_code=${desktopCode}`;
+            const oauthUrl = `${LANDING_URL}/login?source=desktop&desktop_code=${desktopCode}`;
 
             if ((window as any).electronAPI?.shell?.openExternal) {
                 await (window as any).electronAPI.shell.openExternal(oauthUrl);
@@ -134,8 +136,31 @@ export default function AuthPage() {
         setSignedInUser(null);
     };
 
-    const handleContinueAsUser = () => {
+    const handleContinueAsUser = async () => {
         if (signedInUser?.onboardingDone) {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    const session = JSON.parse(stored);
+                    const token = session.accessToken;
+                    if (token && (window as any).electronAPI?.saveConfig) {
+                        const config = {
+                            provider: 'everfern',
+                            apiKey: token,
+                            model: 'minimax-m2.7',
+                            timestamp: new Date().toISOString(),
+                            vlm: {
+                                engine: "everfern",
+                                provider: "everfern",
+                                model: "minimax-m2.7"
+                            }
+                        };
+                        await (window as any).electronAPI.saveConfig(config);
+                    }
+                } catch (err) {
+                    console.error("Failed to auto-save config:", err);
+                }
+            }
             router.push("/chat");
         } else {
             router.push("/setup");
@@ -220,28 +245,28 @@ export default function AuthPage() {
                                 <img
                                     src={signedInUser.avatarUrl}
                                     alt={displayName}
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = `https://tapback.co/api/avatar/johndoe`;
+                                    }}
                                     style={{
                                         width: 64,
                                         height: 64,
                                         borderRadius: "50%",
                                         marginBottom: 16,
-                                        border: "2px solid rgba(0,104,95,0.25)",
                                     }}
                                 />
                             ) : (
-                                <div style={{
-                                    width: 64,
-                                    height: 64,
-                                    borderRadius: "50%",
-                                    background: "rgba(0,104,95,0.08)",
-                                    border: "1px solid rgba(0,104,95,0.2)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    marginBottom: 16,
-                                }}>
-                                    <CheckCircle size={26} color="#00685f" strokeWidth={1.5} />
-                                </div>
+                                <img
+                                    src="https://tapback.co/api/avatar/johndoe"
+                                    alt={displayName}
+                                    style={{
+                                        width: 64,
+                                        height: 64,
+                                        borderRadius: "50%",
+                                        marginBottom: 16,
+                                    }}
+                                />
                             )}
 
                             <h2 style={{
@@ -260,22 +285,22 @@ export default function AuthPage() {
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: 6,
-                                background: "rgba(0,104,95,0.06)",
-                                border: "1px solid rgba(0,104,95,0.15)",
+                                background: "rgba(0,0,0,0.04)",
+                                border: "1px solid rgba(0,0,0,0.1)",
                                 borderRadius: 999,
                                 padding: "5px 14px",
                                 marginBottom: 28,
                             }}>
-                                <span style={{ fontSize: 12, color: "#00685f", fontWeight: 500 }}>
+                                <span style={{ fontSize: 12, color: "#111111", fontWeight: 500 }}>
                                     {signedInUser.email}
                                 </span>
-                                <span style={{ fontSize: 10, color: "#bcc9c6" }}>·</span>
+                                <span style={{ fontSize: 10, color: "#8a8886" }}>·</span>
                                 <span style={{
                                     fontSize: 10,
                                     fontWeight: 700,
                                     textTransform: "uppercase",
                                     letterSpacing: "0.06em",
-                                    color: signedInUser.plan === "free" ? "#8a8886" : "#00685f",
+                                    color: signedInUser.plan === "free" ? "#8a8886" : "#111111",
                                 }}>
                                     {signedInUser.plan}
                                 </span>
@@ -434,7 +459,7 @@ export default function AuthPage() {
                                             {isGoogleLoading ? (
                                                 <Loader2 size={18} className="animate-spin" style={{ opacity: 0.6 }} />
                                             ) : (
-                                                <Image src="/images/logos/black-logo-withoutbg.png" alt="Everfern" width={18} height={18} style={{ opacity: 0.85 }} />
+                                                <Image src="/images/logos/black-logo-withoutbg.png" alt="Everfern" width={38} height={38} style={{ opacity: 0.85 }} />
                                             )}
                                             Continue with Everfern Cloud
                                         </motion.button>

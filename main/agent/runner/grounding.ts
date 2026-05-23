@@ -339,7 +339,8 @@ If not found: {"found":false,"confidence":0,"x_pct":0,"y_pct":0,"reasoning":"not
 function parseGroundingJSON(raw: string, imgW: number, imgH: number) {
   const EMPTY = { found: false, x: 0, y: 0, confidence: 0 };
   try {
-    const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+    const cleaned = cleanedRaw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const match = cleaned.match(/\{[\s\S]*?\}/);
     if (!match) return EMPTY;
     const parsed = JSON.parse(match[0]);
@@ -370,7 +371,8 @@ function parseGroundingJSON(raw: string, imgW: number, imgH: number) {
 
 function parseSoMJSON(raw: string, imgW: number, imgH: number): SoMElement[] {
   try {
-    const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+    const cleaned = cleanedRaw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     // Use a more literal match for the array to avoid greedy regex issues
     const startIdx = cleaned.indexOf('[');
     const endIdx = cleaned.lastIndexOf(']');
@@ -540,7 +542,7 @@ async function groundViaFallback(
         ] as any,
       }],
       temperature: 0,
-      maxTokens: 256,
+      maxTokens: 1500,
       responseFormat: 'json',
       guidedJson: {
         type: "object",

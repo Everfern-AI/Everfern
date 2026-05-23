@@ -83,11 +83,12 @@ const DEFAULT_URLS = {
     openai: 'https://api.openai.com/v1',
     anthropic: 'https://api.anthropic.com',
     deepseek: 'https://api.deepseek.com',
+    minimax: 'https://api.minimax.io/v1',
+    everfern: 'https://everfern-api.vercel.app/api',
     gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
     ollama: 'http://localhost:11434',
-    'ollama-cloud': 'https://ollama.com', // Ollama Cloud API endpoint
+    'ollama-cloud': 'https://ollama.com',
     lmstudio: 'http://localhost:1234/v1',
-    everfern: 'http://localhost:8000/v1',
     nvidia: 'https://integrate.api.nvidia.com/v1',
     openrouter: 'https://openrouter.ai/api/v1',
 };
@@ -95,11 +96,12 @@ const DEFAULT_MODELS = {
     openai: 'gpt-4o',
     anthropic: 'claude-3-5-sonnet-20241022',
     deepseek: 'deepseek-v4-pro',
+    minimax: 'minimax-m2.7',
+    everfern: 'mistralai/mistral-medium-3.5-128b',
     gemini: 'gemini-3.1-pro-preview',
     ollama: 'llama3',
-    'ollama-cloud': 'llama3.3', // Cloud model accessed via Ollama Cloud API
+    'ollama-cloud': 'llama3.3',
     lmstudio: 'local-model',
-    everfern: 'everfern-1',
     nvidia: 'meta/llama-3.1-8b-instruct',
     openrouter: 'openai/gpt-5.2',
 };
@@ -108,10 +110,10 @@ class AIClient {
     config;
     openaiClient; // For NVIDIA NIM and DeepSeek
     constructor(config) {
-        let finalApiKey = config.apiKey ?? '';
+        let finalApiKey = (config.apiKey ?? '').trim();
         // Only apply cleaning for legacy providers if they contain noise
         // Ollama Cloud / Custom keys must be preserved exactly as provided
-        if (['openai', 'anthropic', 'nvidia', 'deepseek'].includes(config.provider)) {
+        if (['openai', 'anthropic', 'nvidia', 'deepseek', 'minimax'].includes(config.provider)) {
             if (finalApiKey.includes(' ') || finalApiKey.includes('\n')) {
                 const match = finalApiKey.match(/(?:nvapi-[A-Za-z0-9_-]+|sk-[A-Za-z0-9T\-]+|[A-Za-z0-9]{32,})/);
                 if (match)
@@ -127,8 +129,8 @@ class AIClient {
             maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
             vlm: config.vlm,
         };
-        // Initialize OpenAI client for NVIDIA NIM, DeepSeek, and OpenRouter
-        if (config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter') {
+        // Initialize OpenAI client for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
+        if (config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter' || config.provider === 'minimax' || config.provider === 'everfern') {
             const headers = {
                 'User-Agent': 'EverFern/1.0'
             };
@@ -197,8 +199,8 @@ class AIClient {
         return false;
     }
     async chat(request) {
-        // Use OpenAI SDK for NVIDIA NIM, DeepSeek, and OpenRouter
-        if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter') {
+        // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
+        if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'everfern') {
             return this._openAISDKChat(request);
         }
         switch (this.config.provider) {
@@ -212,8 +214,8 @@ class AIClient {
         }
     }
     async *streamChat(request) {
-        // Use OpenAI SDK for NVIDIA NIM, DeepSeek, and OpenRouter
-        if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter') {
+        // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
+        if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'everfern') {
             yield* this._openAISDKStream(request);
             return;
         }

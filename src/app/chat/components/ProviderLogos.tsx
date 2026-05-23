@@ -42,6 +42,10 @@ const EverFernBglessLogo = ({ size = 16 }: { size?: number }) => (
     <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={size} height={size} />
 );
 
+const MiniMaxLogo = ({ size = 16 }: { size?: number }) => (
+    <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax Logo" width={size} height={size} className="grayscale opacity-90" />
+);
+
 export {
     OpenAILogo,
     AnthropicLogo,
@@ -52,5 +56,6 @@ export {
     OllamaLogo,
     LMStudioLogo,
     HuggingFaceLogo,
-    EverFernBglessLogo
+    EverFernBglessLogo,
+    MiniMaxLogo
 };

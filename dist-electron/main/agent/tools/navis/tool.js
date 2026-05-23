@@ -31,9 +31,9 @@ function buildActionPayload(event) {
         case 'page_navigate':
             return { type: 'navigate', params: { url: event.url }, description: `Navigating to ${event.url || '...'}` };
         case 'element_click':
-            return { type: 'left_click', params: { target: event.target, selector: event.selector, position: event.position }, description: `Clicked "${event.target || 'element'}"` };
+            return { type: 'left_click', params: { target: event.target, selector: event.selector, position: event.position, coordinate: event.position ? [event.position.x, event.position.y] : undefined }, description: `Clicked "${event.target || 'element'}"` };
         case 'element_input':
-            return { type: 'type', params: { target: event.target, text: event.action }, description: `Typing into "${event.target || 'input'}"` };
+            return { type: 'type', params: { target: event.target, text: event.action, coordinate: event.position ? [event.position.x, event.position.y] : undefined }, description: `Typing into "${event.target || 'input'}"` };
         case 'scroll':
             return { type: 'scroll', params: { direction: event.action }, description: `Scrolled ${event.action || 'down'}` };
         case 'tab_change':

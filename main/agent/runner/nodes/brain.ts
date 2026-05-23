@@ -69,7 +69,7 @@ Respond with JSON only:
         messages: [{ role: 'user', content: prompt }],
         responseFormat: 'json',
         temperature: 0.3,
-        maxTokens: 120,
+        maxTokens: 1500,
         abortSignal: globalAbortManager.abortController.signal,
       }),
       timeoutPromise,
@@ -81,6 +81,9 @@ Respond with JSON only:
       (typeof response.content === 'string' ? response.content : JSON.stringify(response.content)).slice(0, 100));
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+
+    // Strip out <think>...</think> blocks from reasoning models before extracting JSON
+    content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
 
     // Improved JSON extraction: handle extra whitespace and markdown code blocks (Sub-task 3.1)
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -209,7 +212,7 @@ Respond with JSON only:
       messages: [{ role: 'user', content: prompt }],
       responseFormat: 'json',
       temperature: 0.3,
-      maxTokens: 150,
+      maxTokens: 1500,
       abortSignal: globalAbortManager.abortController.signal,
     }) as any;
 
@@ -222,6 +225,7 @@ Respond with JSON only:
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     console.log('[Brain] Raw routing response (first 500 chars):', content.slice(0, 500));
 
+    content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
     // Robust JSON extraction: find first '{' and last '}'

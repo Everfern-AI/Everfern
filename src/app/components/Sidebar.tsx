@@ -31,21 +31,51 @@ interface ConversationSummary {
 export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick }: SidebarProps) {
     const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
     const [username, setUsername] = useState<string>("User");
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [showSearch, setShowSearch] = useState<boolean>(false);
+    const [userPlan, setUserPlan] = useState<string>("free");
+    const [dailyUsed, setDailyUsed] = useState<number | null>(null);
+    const [dailyLimit, setDailyLimit] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchUsername = async () => {
             try {
                 let name = "User";
+                let avatar = null;
                 if ((window as any).electronAPI?.loadConfig) {
                     const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success && res.config?.userName) {
-                        name = res.config.userName;
-                    } else if ((window as any).electronAPI?.system?.getUsername) {
-                        name = await (window as any).electronAPI.system.getUsername();
+                    if (res.success && res.config?.provider === 'everfern' && res.config?.apiKey) {
+                        try {
+                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://everfern-api.vercel.app";
+                            const userRes = await fetch(`${API_URL}/api/user/me`, {
+                                headers: { Authorization: `Bearer ${res.config.apiKey}` }
+                            });
+                            if (userRes.ok) {
+                                const userData = await userRes.json();
+                                // API returns { id, email, fullName, displayName, avatarUrl } or similar structure
+                                const userName = userData.displayName || userData.fullName || userData.name;
+                                if (userName) name = userName;
+                                else if (userData.email) name = userData.email.split('@')[0];
+                                
+                                if (userData.avatarUrl || userData.avatar_url) avatar = userData.avatarUrl || userData.avatar_url;
+                                if (userData.plan) setUserPlan(userData.plan);
+                                if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
+                                if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
+                            }
+                        } catch (e) {
+                            console.error("Failed to fetch user from API", e);
+                        }
+                    }
+                    if (name === "User") {
+                        if (res.success && res.config?.userName) {
+                            name = res.config.userName;
+                        } else if ((window as any).electronAPI?.system?.getUsername) {
+                            name = await (window as any).electronAPI.system.getUsername();
+                        }
                     }
                 }
                 setUsername(name.charAt(0).toUpperCase() + name.slice(1));
+                setAvatarUrl(avatar);
             } catch { }
         };
         fetchUsername();
@@ -352,8 +382,12 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
             {/* Footer */}
             <div style={{ padding: isOpen ? 12 : "12px 0", borderTop: "1px solid #e8e6d9", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: isOpen ? "10px 12px" : "10px 0", justifyContent: isOpen ? "flex-start" : "center", borderRadius: 14 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 999, background: "#f0eee1", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #dcdad0" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "#111111" }}>{username.charAt(0).toUpperCase()}</span>
+                    <div style={{ width: 28, height: 28, borderRadius: 999, background: "#f0eee1", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #dcdad0", overflow: "hidden" }}>
+                        {avatarUrl ? (
+                            <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#111111" }}>{username.charAt(0).toUpperCase()}</span>
+                        )}
                     </div>
                     {isOpen && (
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
@@ -366,7 +400,24 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                 maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                                 WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
                             }}>{username}</div>
-                            <div style={{ fontSize: 11, color: "#8a8886" }}>Free plan</div>
+                            <div style={{ fontSize: 11, color: "#8a8886", display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ textTransform: "capitalize" }}>{userPlan} plan</span>
+                            </div>
+                            {dailyLimit !== null && dailyUsed !== null && (
+                                <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 3, paddingRight: 4 }}>
+                                    <div style={{ width: "100%", height: 4, backgroundColor: "#e8e6d9", borderRadius: 2, overflow: "hidden" }}>
+                                        <div style={{ 
+                                            width: `${Math.min(100, (dailyUsed / dailyLimit) * 100)}%`, 
+                                            height: "100%", 
+                                            background: "linear-gradient(to right, #10b981, #3b82f6)", 
+                                            borderRadius: 2 
+                                        }}></div>
+                                    </div>
+                                    <div style={{ fontSize: 9, color: "#a09e9c", textAlign: "right", fontWeight: 500 }}>
+                                        {Math.round((dailyUsed / dailyLimit) * 100)}% used
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     {isOpen && onSettingsClick && (

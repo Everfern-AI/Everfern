@@ -28,7 +28,7 @@ export interface ToolSettingsConfig {
 export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   useVision: false,
   headless: false,
-  maxSteps: 40,
+  maxSteps: 200,
 };
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {

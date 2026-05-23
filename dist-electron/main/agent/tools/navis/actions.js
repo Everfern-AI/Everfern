@@ -183,9 +183,11 @@ async function executeClickElement(args, page, session, logger, step, maxSteps) 
             };
         }
         const box = await locator.boundingBox().catch(() => null);
+        let position = undefined;
         if (box) {
             const centerX = box.x + box.width / 2;
             const centerY = box.y + box.height / 2;
+            position = { x: centerX, y: centerY };
             // Move magical cursor first
             await session.moveCursor(centerX, centerY);
             await new Promise(r => setTimeout(r, 600)); // Wait for transition
@@ -212,7 +214,7 @@ async function executeClickElement(args, page, session, logger, step, maxSteps) 
         else {
             await locator.click({ timeout: 2000 });
         }
-        logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`);
+        logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`, position);
         await session.setOverlayStatus(`Clicked "${truncate(String(name), 20)}"`);
         return { success: true, message: `Clicked: ${name}`, stateChanged: true };
     }
@@ -236,9 +238,11 @@ async function executeInputText(args, page, session, logger, step, maxSteps) {
             };
         }
         const box = await locator.boundingBox().catch(() => null);
+        let position = undefined;
         if (box) {
             const centerX = box.x + box.width / 2;
             const centerY = box.y + box.height / 2;
+            position = { x: centerX, y: centerY };
             await session.moveCursor(centerX, centerY);
             await new Promise(r => setTimeout(r, 600));
             await session.highlightElement(box);
@@ -246,7 +250,7 @@ async function executeInputText(args, page, session, logger, step, maxSteps) {
         // Use fill() for speed (instant vs 2ms/char with pressSequentially)
         await locator.fill(''); // Clear first
         await locator.fill(args.text, { timeout: 3000 });
-        logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text);
+        logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text, position);
         await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
         return { success: true, message: `Entered text: ${name}`, stateChanged: false };
     }
@@ -485,7 +489,7 @@ async function executeHybridClick(args, page, session, logger, step, maxSteps) {
         });
         const result = await hybrid.hybridClick(page, screenshot, args.targetDescription);
         if (result.success) {
-            logger?.elementClick(step, maxSteps, truncate(args.targetDescription, 40), `method=${result.method}`);
+            logger?.elementClick(step, maxSteps, truncate(args.targetDescription, 40), `method=${result.method}`, result.coordinates);
             await session.setOverlayStatus(`Clicked "${truncate(args.targetDescription, 20)}" (${result.method})`);
             return {
                 success: true,

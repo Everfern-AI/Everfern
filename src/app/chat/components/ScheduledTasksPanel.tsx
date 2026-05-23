@@ -28,6 +28,10 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
 
   const fetchTasks = async () => {
     try {
+      if (!(window as any).electronAPI) {
+        setTasks([]);
+        return;
+      }
       const result = await (window as any).electronAPI.scheduledTasks.list(projectId);
       setTasks(result);
     } catch (err) {

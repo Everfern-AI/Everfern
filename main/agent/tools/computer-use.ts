@@ -1513,7 +1513,7 @@ class ComputerUseAgent {
     private model: string,
     private task: string,
     private temperature = 0,
-    private maxTurns = 40,
+    private maxTurns = 200,
     private historyWindow = 12,
     private toolCallId = ''
   ) {

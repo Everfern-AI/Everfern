@@ -66,6 +66,7 @@ export async function classifyIntent(
     }) as any;
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
     const data = JSON.parse(content);

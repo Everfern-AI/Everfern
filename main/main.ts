@@ -33,6 +33,7 @@ import { acpManager } from './acp/manager';
 import { getComputerOverlayManager } from './computer-overlay';
 import type { ProviderType } from './acp/types';
 import { ChatHistoryStore } from './store/history';
+import { scheduledTasksManager } from './scheduled-tasks';
 import { AgentRunner } from './agent/runner/runner';
 import { ensureShowUIServer, killShowUIServer } from './agent/runner/showui-server';
 import { AIClient } from './lib/ai-client';

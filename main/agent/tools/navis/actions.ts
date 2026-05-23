@@ -265,9 +265,11 @@ async function executeClickElement(
     }
 
     const box = await locator.boundingBox().catch(() => null);
+    let position: { x: number; y: number } | undefined = undefined;
     if (box) {
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
+      position = { x: centerX, y: centerY };
 
       // Move magical cursor first
       await session.moveCursor(centerX, centerY);
@@ -300,7 +302,7 @@ async function executeClickElement(
       await locator.click({ timeout: 2000 });
     }
 
-    logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`);
+    logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`, position);
     await session.setOverlayStatus(`Clicked "${truncate(String(name), 20)}"`);
     return { success: true, message: `Clicked: ${name}`, stateChanged: true };
   } catch (err: any) {
@@ -332,9 +334,11 @@ async function executeInputText(
     }
 
     const box = await locator.boundingBox().catch(() => null);
+    let position: { x: number; y: number } | undefined = undefined;
     if (box) {
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
+      position = { x: centerX, y: centerY };
       await session.moveCursor(centerX, centerY);
       await new Promise(r => setTimeout(r, 600));
       await session.highlightElement(box);
@@ -344,7 +348,7 @@ async function executeInputText(
     await locator.fill('');  // Clear first
     await locator.fill(args.text, { timeout: 3000 });
 
-    logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text);
+    logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text, position);
     await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
     return { success: true, message: `Entered text: ${name}`, stateChanged: false };
   } catch (err: any) {
@@ -624,7 +628,8 @@ async function executeHybridClick(
         step,
         maxSteps,
         truncate(args.targetDescription, 40),
-        `method=${result.method}`
+        `method=${result.method}`,
+        result.coordinates
       );
       await session.setOverlayStatus(`Clicked "${truncate(args.targetDescription, 20)}" (${result.method})`);
       return {

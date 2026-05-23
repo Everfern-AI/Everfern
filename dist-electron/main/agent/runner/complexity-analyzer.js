@@ -191,8 +191,10 @@ Respond with ONLY the JSON block. No explanation text.`;
 }
 function parseComplexityAnalysis(responseText) {
     try {
+        // Strip <think> tags from reasoning models
+        const cleanedText = responseText.replace(/<think>[\s\S]*?<\/think>/g, '');
         // Extract JSON
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             throw new Error('No JSON found in response');
         }

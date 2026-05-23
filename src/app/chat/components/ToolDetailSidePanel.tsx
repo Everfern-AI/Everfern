@@ -1360,7 +1360,8 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
 
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
-    return { screenshots, screenshotPaths, url: tc.args?.url, action: tc.args?.action };
+    const slicedScreenshots = screenshots.slice(-12);
+    return { screenshots: slicedScreenshots, screenshotPaths, url: tc.args?.url, action: tc.args?.action };
   } catch { return null; }
 }
 

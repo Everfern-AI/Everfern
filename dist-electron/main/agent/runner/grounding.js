@@ -264,7 +264,8 @@ If not found: {"found":false,"confidence":0,"x_pct":0,"y_pct":0,"reasoning":"not
 function parseGroundingJSON(raw, imgW, imgH) {
     const EMPTY = { found: false, x: 0, y: 0, confidence: 0 };
     try {
-        const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+        const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+        const cleaned = cleanedRaw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
         const match = cleaned.match(/\{[\s\S]*?\}/);
         if (!match)
             return EMPTY;
@@ -301,7 +302,8 @@ function parseGroundingJSON(raw, imgW, imgH) {
 }
 function parseSoMJSON(raw, imgW, imgH) {
     try {
-        const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+        const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+        const cleaned = cleanedRaw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
         // Use a more literal match for the array to avoid greedy regex issues
         const startIdx = cleaned.indexOf('[');
         const endIdx = cleaned.lastIndexOf(']');
@@ -442,7 +444,7 @@ async function groundViaFallback(b64, imgW, imgH, query, client, attempt) {
                 ],
             }],
         temperature: 0,
-        maxTokens: 256,
+        maxTokens: 1500,
         responseFormat: 'json',
         guidedJson: {
             type: "object",

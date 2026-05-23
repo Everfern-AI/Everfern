@@ -84,7 +84,8 @@ import {
     OllamaLogo,
     LMStudioLogo,
     HuggingFaceLogo,
-    EverFernBglessLogo
+    EverFernBglessLogo,
+    MiniMaxLogo
 } from './components/ProviderLogos';
 import { WaveformIcon, FernStarburst } from './components/UIIcons';
 import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
@@ -278,6 +279,8 @@ export default function ChatPage() {
             });
         }
 
+        const finalScreenshots = screenshotData.slice(-12);
+
         // Construct toolCall structure expected by ToolDetailSidePanel
         const mappedToolCall = {
             id: tc.id,
@@ -285,13 +288,14 @@ export default function ChatPage() {
             args: tc.args || {},
             output: tc.output || '',
             duration: tc.durationMs,
+            status: tc.status,
             data: {
                 ...tc.data,
-                screenshot: screenshotData.length > 0 ? (screenshotData.length === 1 ? screenshotData[0] : screenshotData) : undefined,
+                screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,
                 base64Image: tc.base64Image || tc.data?.base64Image,
                 results: tc.data?.results,
             },
-            agentName: tc.displayName || 'Fern',
+            agentName: tc.displayName || 'navis',
         };
         setSelectedToolCall(mappedToolCall);
         setIsToolDetailOpen(true);
@@ -418,19 +422,22 @@ export default function ChatPage() {
                             });
                         }
 
+                        const finalScreenshots = screenshotData.slice(-12);
+
                         const mappedToolCall = {
                             id: updatedTc.id,
                             toolName: updatedTc.toolName,
                             args: updatedTc.args || {},
                             output: updatedTc.output || '',
                             duration: updatedTc.durationMs,
+                            status: updatedTc.status,
                             data: {
                                 ...updatedTc.data,
-                                screenshot: screenshotData.length > 0 ? (screenshotData.length === 1 ? screenshotData[0] : screenshotData) : undefined,
+                                screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,
                                 base64Image: updatedTc.base64Image || updatedTc.data?.base64Image,
                                 results: updatedTc.data?.results,
                             },
-                            agentName: updatedTc.displayName || 'Fern',
+                            agentName: updatedTc.displayName || 'navis',
                         };
                         setSelectedToolCall(mappedToolCall);
                     }
@@ -806,10 +813,10 @@ export default function ChatPage() {
             if (res.success && res.models) {
                 const formatted = res.models.map((m: any) => ({
                     id: m.id, name: m.name, provider: m.provider, providerType: m.providerType,
-                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
+                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
                 }));
                 const finalModels = (formatted.length > 0 ? formatted : [
-                    { id: "everfern-1", name: "Fern-1", provider: "EverFern", providerType: "everfern", logo: EverFernBglessLogo },
+                    { id: "mistralai/mistral-medium-3.5-128b", name: "Mistral Medium 3.5 (EverFern Cloud)", provider: "EverFern", providerType: "everfern", logo: EverFernBglessLogo },
                     { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
                     { id: "openrouter/free", name: "OpenRouter Free", provider: "OpenRouter", providerType: "openrouter", logo: OpenRouterLogo },
                     { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
@@ -1700,6 +1707,9 @@ export default function ChatPage() {
         (async () => {
             isHandlingPlanRef.current = false;
             try {
+                if (!(window as any).electronAPI) {
+                    throw new Error('Electron API not found. Please run EverFern using the Desktop App instead of a web browser, or restart the app if it just updated.');
+                }
                 if (!api?.stream) throw new Error('No AI provider configured.');
                 api.onAgentPermissionRequest(() => {
                     const soundUrl = api?.getPermissionSoundUrl?.();
@@ -2668,7 +2678,7 @@ export default function ChatPage() {
     );
 
     const handleSaveSettings = async () => {
-        const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: settingsEngine === "online" ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
+        const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
         if (settingsVlmMode === "cloud" && settingsVlmCloudModel.trim()) { updated.vlm = { engine: "cloud", provider: settingsVlmCloudProvider, model: settingsVlmCloudModel.trim(), baseUrl: settingsVlmCloudUrl.trim() || undefined, apiKey: settingsVlmCloudKey.trim() || undefined }; }
         else if (config?.vlm) { updated.vlm = config.vlm; }

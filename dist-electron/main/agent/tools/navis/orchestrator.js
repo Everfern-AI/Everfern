@@ -276,6 +276,18 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
                         lastUrl = url;
                     }
                     elementsFormatted = (0, element_capture_1.formatElementsForPrompt)(snapshot.raw);
+                    // Capture lightweight screenshot for the UI in DOM-only mode
+                    try {
+                        const uiScreenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60, timeout: 5000 }).catch(() => null);
+                        if (uiScreenshotBuffer) {
+                            const uiScreenshotB64 = uiScreenshotBuffer.toString('base64');
+                            console.log('[Navis] DOM-only mode: screenshot captured successfully');
+                            this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
+                        }
+                    }
+                    catch (err) {
+                        console.warn('[Navis] UI screenshot failed in DOM-only mode:', err);
+                    }
                 }
                 const t3 = Date.now();
                 // Stuck loop detection

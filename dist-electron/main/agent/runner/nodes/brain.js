@@ -53,7 +53,7 @@ Respond with JSON only:
                 messages: [{ role: 'user', content: prompt }],
                 responseFormat: 'json',
                 temperature: 0.3,
-                maxTokens: 120,
+                maxTokens: 1500,
                 abortSignal: abort_manager_1.globalAbortManager.abortController.signal,
             }),
             timeoutPromise,
@@ -62,6 +62,8 @@ Respond with JSON only:
         console.log(`[Brain] Completion signal response received in ${duration}ms`);
         console.log(`[Brain] Response length: ${response.content?.length || 0} chars, first 100 chars:`, (typeof response.content === 'string' ? response.content : JSON.stringify(response.content)).slice(0, 100));
         let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        // Strip out <think>...</think> blocks from reasoning models before extracting JSON
+        content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
         // Improved JSON extraction: handle extra whitespace and markdown code blocks (Sub-task 3.1)
         content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         console.log('[Brain] After markdown cleanup:', content.slice(0, 100));
@@ -172,7 +174,7 @@ Respond with JSON only:
             messages: [{ role: 'user', content: prompt }],
             responseFormat: 'json',
             temperature: 0.3,
-            maxTokens: 150,
+            maxTokens: 1500,
             abortSignal: abort_manager_1.globalAbortManager.abortController.signal,
         });
         const duration = Date.now() - startTime;
@@ -180,6 +182,7 @@ Respond with JSON only:
         // Emit decision analysis
         let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
         console.log('[Brain] Raw routing response (first 500 chars):', content.slice(0, 500));
+        content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
         content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         // Robust JSON extraction: find first '{' and last '}'
         const firstBrace = content.indexOf('{');

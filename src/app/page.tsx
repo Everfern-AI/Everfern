@@ -21,6 +21,31 @@ export default function OnboardingPage() {
           return;
         }
       }
+
+      // Check if logged in via EverFern Cloud
+      const stored = localStorage.getItem("everfern_cloud_session");
+      if (stored) {
+        try {
+          const session = JSON.parse(stored);
+          if (session?.user?.onboardingDone) {
+            // Auto-save config and go to chat
+            const token = session.accessToken;
+            if (token && (window as any).electronAPI?.saveConfig) {
+              const config = {
+                  provider: 'everfern',
+                  apiKey: token,
+                  model: 'minimax-m2.7',
+                  timestamp: new Date().toISOString(),
+                  vlm: { engine: "everfern", provider: "everfern", model: "minimax-m2.7" }
+              };
+              await (window as any).electronAPI.saveConfig(config);
+            }
+            router.push("/chat");
+            return;
+          }
+        } catch { }
+      }
+
       setIsChecking(false);
     };
     checkConfig();

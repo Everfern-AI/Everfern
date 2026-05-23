@@ -68,7 +68,7 @@ class NavisLogger {
     browserLaunch(detail) { this.emit({ type: 'browser_launch', detail }); }
     pageNavigate(step, maxSteps, url) { this.emit({ type: 'page_navigate', step, maxSteps, url }); }
     elementClick(step, maxSteps, target, selector, position) { this.emit({ type: 'element_click', step, maxSteps, target, selector, position }); }
-    elementInput(step, maxSteps, target, text) { this.emit({ type: 'element_input', step, maxSteps, target, action: text }); }
+    elementInput(step, maxSteps, target, text, position) { this.emit({ type: 'element_input', step, maxSteps, target, action: text, position }); }
     scroll(step, maxSteps, direction) { this.emit({ type: 'scroll', step, maxSteps, action: direction }); }
     tabChange(step, maxSteps, detail) { this.emit({ type: 'tab_change', step, maxSteps, action: detail }); }
     extract(step, maxSteps, detail) { this.emit({ type: 'extract', step, maxSteps, detail }); }

@@ -35,6 +35,10 @@ exports.PROVIDER_MODELS = {
         'deepseek-v4-flash',
         'deepseek-v4-pro',
     ],
+    minimax: [
+        'minimax-m2.7',
+        'minimax-m2.5',
+    ],
     gemini: [
         'gemini-3.1-pro-preview',
         'gemini-3.1-flash-preview',
@@ -70,6 +74,7 @@ exports.PROVIDER_MODELS = {
     ],
     lmstudio: [], // populated dynamically at runtime
     everfern: [
+        'mistralai/mistral-medium-3.5-128b',
         'everfern-1',
         'everfern-fast',
     ],
@@ -115,6 +120,16 @@ exports.PROVIDER_REGISTRY = {
         defaultModel: 'deepseek-v4-pro',
         engine: 'online',
         baseUrl: 'https://api.deepseek.com',
+    },
+    minimax: {
+        type: 'minimax',
+        name: 'MiniMax',
+        description: 'MiniMax M2.5 and M2.7 via API',
+        requiresApiKey: true,
+        isLocal: false,
+        defaultModel: 'minimax-m2.7',
+        engine: 'online',
+        baseUrl: 'https://api.minimax.io/v1',
     },
     gemini: {
         type: 'gemini',
@@ -162,7 +177,7 @@ exports.PROVIDER_REGISTRY = {
         description: 'Managed frontier models optimized for EverFern',
         requiresApiKey: false,
         isLocal: false,
-        defaultModel: 'everfern-1',
+        defaultModel: 'mistralai/mistral-medium-3.5-128b',
         engine: 'everfern',
         baseUrl: 'http://localhost:8000',
     },
@@ -266,6 +281,8 @@ function formatModelName(id) {
         'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
         'deepseek-v4-flash': 'DeepSeek V4 Flash',
         'deepseek-v4-pro': 'DeepSeek V4 Pro',
+        'minimax-m2.7': 'MiniMax M2.7',
+        'minimax-m2.5': 'MiniMax M2.5',
         'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
         'gemini-3.1-flash-preview': 'Gemini 3.1 Flash',
         'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',
@@ -275,6 +292,7 @@ function formatModelName(id) {
         'gemini-2.5-pro': 'Gemini 2.5 Pro',
         'gemini-2.5-flash': 'Gemini 2.5 Flash',
         'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+        'mistralai/mistral-medium-3.5-128b': 'Mistral Medium 3.5 (EverFern Cloud)',
         'everfern-1': 'Fern-1',
         'everfern-fast': 'Fern Fast',
         'qwen/qwen3.5-122b-a10b': 'Qwen 3.5 122B (NIM)', // thinking model
