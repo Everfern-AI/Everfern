@@ -1292,7 +1292,21 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     const dataSource = tc.data || tc.result?.data || tc.result || {};
 
     // 2. Process screenshot(s)
-    const sData = dataSource.screenshot || dataSource.base64_image;
+    let sData = dataSource.screenshot || dataSource.base64_image;
+
+    // Handle Anthropic/OpenAI content block arrays
+    if (Array.isArray(dataSource)) {
+      for (const block of dataSource) {
+        if (block.type === 'image_url' && block.image_url?.url) {
+          sData = block.image_url.url;
+          break;
+        } else if (block.type === 'image' && block.source?.data) {
+          sData = block.source.data;
+          break;
+        }
+      }
+    }
+
     if (Array.isArray(sData)) {
       sData.forEach((s: any, i: number) => {
         if (typeof s === 'string') add(s, Date.now(), i, lastAction);
