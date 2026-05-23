@@ -17,6 +17,7 @@ import {
     Sparkles,
     X,
     Coffee,
+    Check,
 } from "lucide-react";
 
 import WindowControls from "../components/WindowControls";
@@ -48,6 +49,10 @@ const OpenRouterLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/ai-providers/openrouter.svg" alt="OpenRouter Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
+const MiniMaxLogo = ({ size = 20 }: { size?: number }) => (
+    <Image src="/images/ai-providers/minimax.svg" alt="MiniMax Logo" width={size} height={size} className="grayscale opacity-80" />
+);
+
 const OllamaLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} />
 );
@@ -60,16 +65,7 @@ const EverFernBglessLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/logos/black-logo-withoutbg.png" alt="EverFern Cloud" width={size} height={size} />
 );
 
-const MORE_PROVIDERS = [
-    { id: "groq", name: "Groq", logo: Cpu },
-    { id: "mistral", name: "Mistral AI", logo: Cloud },
-    { id: "together", name: "Together AI", logo: Server },
-    { id: "perplex", name: "Perplexity", logo: Globe },
-    { id: "fireworks", name: "Fireworks AI", logo: Cpu },
-    { id: "github", name: "GitHub Models", logo: Server },
-    { id: "azure", name: "Azure OpenAI", logo: Cloud },
-    { id: "aws", name: "AWS Bedrock", logo: Server },
-];
+
 
 // ── Types ────────────────
 type LogKind = "info" | "cmd" | "success" | "warn" | "err" | "done" | "fail" | "pip" | "dl" | "muted";
@@ -330,7 +326,7 @@ export default function SetupPage() {
     const [engine, setEngine] = useState<"local" | "online" | "everfern" | null>(null);
     const [provider, setProvider] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState("");
-    const [vlmMode, setVlmMode] = useState<"local" | "cloud">("local");
+    const [vlmMode, setVlmMode] = useState<"local" | "cloud" | "everfern">("local");
     const [vlmCloudProvider, setVlmCloudProvider] = useState("ollama");
     const [vlmCloudModel, setVlmCloudModel] = useState("qwen3-vl:235b-instruct-cloud");
     const [vlmCloudUrl, setVlmCloudUrl] = useState("https://ollama.com");
@@ -476,6 +472,12 @@ export default function SetupPage() {
             if (engine === "local") {
                 config.provider = "ollama";
             }
+        } else if (vlmMode === "everfern") {
+            config.vlm = {
+                engine: "everfern",
+                provider: "everfern",
+                model: "minimax-m2.7"
+            };
         }
         if ((window as any).electronAPI?.saveConfig) {
             await (window as any).electronAPI.saveConfig(config);
@@ -650,11 +652,12 @@ export default function SetupPage() {
                                     <button
                                         key={opt.id}
                                         onClick={() => { 
+                                            setEngine(opt.id as any);
                                             if (opt.id === "everfern") {
-                                                router.push("/auth");
+                                                setProvider("everfern");
+                                                setStep(4);
                                                 return;
                                             }
-                                            setEngine(opt.id as any); 
                                             setStep(2); 
                                         }}
                                         disabled={false}
@@ -744,6 +747,23 @@ export default function SetupPage() {
                                     </>
                                 ) : engine === "online" ? (
                                     <>
+                                        <style>{`
+                                            .provider-scroll::-webkit-scrollbar {
+                                                width: 6px;
+                                            }
+                                            .provider-scroll::-webkit-scrollbar-track {
+                                                background: rgba(32,30,36,0.02);
+                                                border-radius: 4px;
+                                            }
+                                            .provider-scroll::-webkit-scrollbar-thumb {
+                                                background: rgba(32,30,36,0.15);
+                                                border-radius: 4px;
+                                            }
+                                            .provider-scroll::-webkit-scrollbar-thumb:hover {
+                                                background: rgba(32,30,36,0.25);
+                                            }
+                                        `}</style>
+                                        <div className="provider-scroll" style={{ maxHeight: 460, overflowY: "auto", paddingRight: 8, display: "flex", flexDirection: "column", gap: 10 }}>
                                         {[
                                             { id: "openai", name: "OpenAI", logo: OpenAILogo },
                                             { id: "anthropic", name: "Anthropic", logo: AnthropicLogo },
@@ -751,40 +771,44 @@ export default function SetupPage() {
                                             { id: "gemini", name: "Google Gemini", logo: GeminiLogo },
                                             { id: "ollama-cloud", name: "Ollama Cloud", logo: OllamaLogo },
                                             { id: "nvidia", name: "Nvidia NIM", logo: NvidiaLogo },
-                                            { id: "openrouter", name: "OpenRouter", logo: OpenRouterLogo }
+                                            { id: "openrouter", name: "OpenRouter", logo: OpenRouterLogo },
+                                            { id: "minimax", name: "MiniMax", logo: MiniMaxLogo }
                                         ].map(p => (
                                             <ProviderRow key={p.id} p={p} onClick={() => { setProvider(p.id); setStep(3); }} />
                                         ))}
+                                        </div>
                                     </>
                                 ) : (
                                     <button
-                                        disabled={true}
+                                        onClick={() => { setProvider("everfern"); setStep(4); }}
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "space-between",
                                             padding: "16px 18px",
                                             borderRadius: 14,
-                                            background: "rgba(255,255,255,0.04)",
-                                            border: "1px solid rgba(255,255,255,0.09)",
-                                            cursor: "not-allowed",
+                                            background: "rgba(32,30,36,0.04)",
+                                            border: "1px solid rgba(32,30,36,0.1)",
+                                            cursor: "pointer",
                                             transition: "all 0.15s",
-                                            opacity: 0.6,
                                             width: "100%"
                                         }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = "rgba(32,30,36,0.06)")}
+                                        onMouseLeave={e => (e.currentTarget.style.background = "rgba(32,30,36,0.04)")}
                                     >
                                         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                                            <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                            <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(32,30,36,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                                 <EverFernBglessLogo size={18} />
                                             </div>
                                             <div style={{ textAlign: "left" }}>
                                                 <span style={{ fontWeight: 500, fontSize: 14, color: "#201e24", display: "block" }}>EverFern Cloud</span>
-                                                <span style={{ fontSize: 11, color: "#8a8886" }}>Coming Soon</span>
+                                                <span style={{ fontSize: 11, color: "#8a8886" }}>Uses front tier models</span>
                                             </div>
                                         </div>
-                                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#8a8886", background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: 4 }}>Disabled</span>
                                     </button>
                                 )}
+
+
                             </div>
                         </motion.div>
                     )}
@@ -883,7 +907,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(engine === "everfern" ? 2 : 3)} />
+                                <BackButton onClick={() => setStep(engine === "everfern" ? 1 : 3)} />
                             </div>
 
                             <div style={{ marginBottom: 36 }}>
@@ -904,20 +928,66 @@ export default function SetupPage() {
                                 </p>
                             </div>
 
-                            {/* Toggle Tabs */}
-                            <div style={{ display: "flex", gap: 8, padding: 4, background: "rgba(32, 30, 36, 0.04)", borderRadius: 14, border: "1px solid rgba(32, 30, 36, 0.1)", marginBottom: 24, width: "100%" }}>
-                                <button
-                                    onClick={() => setVlmMode("local")}
-                                    style={{ flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600, transition: "all 0.2s", border: "none", cursor: "pointer", background: vlmMode === "local" ? "rgba(32, 30, 36, 0.1)" : "transparent", color: vlmMode === "local" ? "#201e24" : "#8a8886" }}
-                                >
-                                    Local GPU
-                                </button>
-                                <button
-                                    onClick={() => setVlmMode("cloud")}
-                                    style={{ flex: 1, padding: "10px", borderRadius: 10, fontSize: 13, fontWeight: 600, transition: "all 0.2s", border: "none", cursor: "pointer", background: vlmMode === "cloud" ? "rgba(32, 30, 36, 0.1)" : "transparent", color: vlmMode === "cloud" ? "#201e24" : "#8a8886" }}
-                                >
-                                    Cloud Provider
-                                </button>
+                            {/* Toggle Cards */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, width: "100%", marginBottom: 32 }}>
+                                {[
+                                    { id: "local", name: "Local GPU", icon: Cpu, desc: "Run Qwen3 VL 2B via Ollama locally." },
+                                    { id: "cloud", name: "Cloud Provider", icon: Cloud, desc: "Use OpenAI, Anthropic, or others." },
+                                    { id: "everfern", name: "EverFern Cloud", icon: EverFernBglessLogo, desc: "Managed & optimized by EverFern." }
+                                ].map(opt => (
+                                    <button
+                                        key={opt.id}
+                                        onClick={() => setVlmMode(opt.id as any)}
+                                        style={{
+                                            background: vlmMode === opt.id ? "rgba(32,30,36,0.06)" : "rgba(255,255,255,0.02)",
+                                            border: `1px solid ${vlmMode === opt.id ? "#8a8886" : "#e2e2e2"}`,
+                                            borderRadius: 16,
+                                            padding: "24px 16px",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: 16,
+                                            cursor: "pointer",
+                                            transition: "all 0.18s ease",
+                                            opacity: 1,
+                                            position: "relative"
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (vlmMode === opt.id) return;
+                                            (e.currentTarget as HTMLElement).style.background = "rgba(32,30,36,0.02)";
+                                            (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (vlmMode === opt.id) return;
+                                            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
+                                            (e.currentTarget as HTMLElement).style.borderColor = "#e2e2e2";
+                                        }}
+                                    >
+                                        {vlmMode === opt.id && (
+                                            <div style={{ position: "absolute", top: 12, right: 12, color: "#111111" }}>
+                                                <Check width={16} height={16} strokeWidth={2.5} />
+                                            </div>
+                                        )}
+                                        <div style={{
+                                            width: 46, height: 46, borderRadius: 12,
+                                            background: "rgba(32,30,36,0.04)",
+                                            border: "1px solid rgba(32,30,36,0.07)",
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            color: "#71717a",
+                                        }}>
+                                            <opt.icon size={22} />
+                                        </div>
+                                        <div style={{ textAlign: "center" }}>
+                                            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: "#201e24" }}>
+                                                {opt.name}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: "#8a8886", lineHeight: 1.4 }}>
+                                                {opt.desc}
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
                             </div>
 
                             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1022,6 +1092,7 @@ export default function SetupPage() {
                                             <select value={vlmCloudProvider} onChange={(e) => setVlmCloudProvider(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                 <option value="ollama" style={{ background: "#f5f4f0" }}>Ollama Compatible Endpoint</option>
+                                                <option value="everfern" style={{ background: "#f5f4f0" }}>EverFern Cloud</option>
                                                 <option value="openai" style={{ background: "#f5f4f0" }}>OpenAI</option>
                                                 <option value="anthropic" style={{ background: "#f5f4f0" }}>Anthropic</option>
                                                 <option value="nvidia" style={{ background: "#f5f4f0" }}>Nvidia NIM</option>
@@ -1037,6 +1108,11 @@ export default function SetupPage() {
                                                         <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
                                                         <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
                                                     </select>
+                                                ) : vlmCloudProvider === 'everfern' ? (
+                                                    <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
+                                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
+                                                        <option value="everfern-vision-v1">EverFern Vision v1 (Default)</option>
+                                                    </select>
                                                 ) : (
                                                     <>
                                                         <input type="text" placeholder={vlmCloudProvider === 'openai' ? "gpt-4o" : "qwen3-vl:235b-instruct-cloud"} value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
@@ -1048,7 +1124,7 @@ export default function SetupPage() {
                                                 )}
                                             </div>
                                         </div>
-                                        {vlmCloudProvider !== 'ollama' && (
+                                        {vlmCloudProvider !== 'ollama' && vlmCloudProvider !== 'everfern' && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                                 <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
                                                 <div style={{ position: "relative" }}>
@@ -1060,20 +1136,38 @@ export default function SetupPage() {
                                                 </div>
                                             </div>
                                         )}
-                                        <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                            <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
-                                            <div style={{ position: "relative" }}>
-                                                <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
-                                                    style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
-                                                    onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
-                                                    onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
-                                                <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
+                                        {vlmCloudProvider !== 'everfern' && (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+                                                <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
+                                                <div style={{ position: "relative" }}>
+                                                    <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
+                                                        style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                        onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
+                                                        onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
+                                                    <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                         <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? "#201e24" : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? "#f5f4f0" : "#8a8886", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                             {isSaving ? "Saving..." : "Save & Continue"}
                                         </button>
                                     </div>
+                                )}
+
+                                {vlmMode === "everfern" && (
+                                    <button
+                                        onClick={() => setStep(5)}
+                                        style={{
+                                            width: "100%", height: 52,
+                                            background: "#201e24", color: "#f5f4f0",
+                                            borderRadius: 12, fontWeight: 600, fontSize: 14,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            gap: 8, cursor: "pointer", border: "none",
+                                            transition: "background 0.15s", letterSpacing: "0.01em"
+                                        }}
+                                    >
+                                        Continue <ArrowRight size={16} strokeWidth={2.5} />
+                                    </button>
                                 )}
                             </div>
 
@@ -1128,13 +1222,7 @@ export default function SetupPage() {
                                     <Plus size={18} style={{ transform: "rotate(45deg)" }} />
                                 </button>
                             </div>
-                            <div style={{ padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                                {MORE_PROVIDERS.map(p => (
-                                    <div key={p.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "14px 10px", borderRadius: 12, background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.04)", opacity: 0.4, pointerEvents: "none" }}>
-                                        <p.logo size={20} style={{ color: "#52525b" }} />
-                                        <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "#52525b", textAlign: "center" }}>{p.name.split(" ")[0]}</span>
-                                    </div>
-                                ))}
+                            <div style={{ maxHeight: 300, overflowY: "auto", padding: 20, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                             </div>
                             <div style={{ padding: "14px 22px", background: "rgba(255,255,255,0.01)", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
                                 <p style={{ fontSize: 11, color: "#3f3f46", textAlign: "center", margin: 0, lineHeight: 1.5 }}>We are working on bringing these integrations to EverFern Desktop very soon.</p>
