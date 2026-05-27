@@ -46,6 +46,13 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         setupDockerUbuntu: () => electron_1.ipcRenderer.invoke('system:setupDockerUbuntu'),
         toHostPath: (pathStr) => electron_1.ipcRenderer.invoke('system:to-host-path', pathStr),
         getVersion: () => electron_1.ipcRenderer.invoke('system:get-version'),
+        checkForUpdates: () => electron_1.ipcRenderer.invoke('system:check-for-updates'),
+        startDispatch: (config) => electron_1.ipcRenderer.invoke('system:start-dispatch', config),
+        restoreDispatch: (config) => electron_1.ipcRenderer.invoke('system:restore-dispatch', config),
+        stopDispatch: () => electron_1.ipcRenderer.invoke('system:stop-dispatch'),
+        onDispatchActive: (cb) => {
+            electron_1.ipcRenderer.on('system:dispatch-active', () => cb());
+        }
     },
     // ── System Tray ──────────────────────────────────────────────────
     tray: {

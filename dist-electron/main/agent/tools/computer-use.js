@@ -965,7 +965,7 @@ class ComputerUseAgent {
                 timestamp: new Date().toISOString(),
                 stepNumber: step,
                 screenshot: {
-                    base64: img.split(",")[1],
+                    base64: img?.split(",")?.[1] || "",
                     width: 1920,
                     height: 1080
                 }
@@ -1303,7 +1303,7 @@ function createToolWithClient(client, tool, model) {
                     const tempAgent = new ComputerUseAgent(client, tool, model, "Execute actions", 0, 200, 12, toolCallId ?? "");
                     await tempAgent.dispatchAll(actions, onUpdate, emitEvent);
                     const obs = await tool.captureObservation();
-                    const b64 = obs.screenshot.split(",")[1];
+                    const b64 = obs.screenshot?.split(",")?.[1] || "";
                     return { success: true, output: "Actions executed", base64Image: b64, data: { actions, screenshot: b64 } };
                 }
                 catch (err) {
@@ -1323,7 +1323,7 @@ function createToolWithClient(client, tool, model) {
             activeAgent = agent;
             try {
                 const { finalAnswer, lastScreenshot } = await agent.run(msg => onUpdate?.(msg), event => emitEvent?.({ type: "subagent-progress", toolCallId: toolCallId ?? "", timestamp: new Date().toISOString(), data: event }));
-                const b64 = lastScreenshot?.split(",")[1];
+                const b64 = lastScreenshot?.split(",")?.[1] || "";
                 return { success: true, output: finalAnswer, base64Image: b64, data: { task, finalAnswer, screenshot: b64 } };
             }
             finally {
@@ -1348,8 +1348,8 @@ async function captureScreen() {
     const home = process.env.USERPROFILE ?? process.env.HOME ?? "";
     const tool = new ComputerUseTool(path.join(home, ".everfern", "screenshots"));
     const obs = await tool.captureObservation();
-    const b64 = obs.screenshot.split(",")[1];
-    const w = obs.display.width;
-    const h = obs.display.height;
+    const b64 = obs.screenshot?.split(",")?.[1] || "";
+    const w = obs.display?.width || 1920;
+    const h = obs.display?.height || 1080;
     return { b64, w, h, physW: w, physH: h };
 }

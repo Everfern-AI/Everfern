@@ -683,7 +683,7 @@ const BrainIcon = () => (
 
 // ── Main AgentTimeline ─────────────────────────────────────────────────────────
 export const AgentTimeline = ({
-    toolCalls,
+    toolCalls = [],
     thought,
     isLive,
     missionTimeline,

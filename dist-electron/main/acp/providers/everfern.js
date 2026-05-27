@@ -8,7 +8,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EverFernCloudProvider = void 0;
 class EverFernCloudProvider {
-    baseUrl = 'http://localhost:8000';
+    baseUrl = 'https://api.everfern.app';
     model = 'everfern-1';
     info = {
         type: 'everfern',

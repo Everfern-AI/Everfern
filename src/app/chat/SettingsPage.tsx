@@ -39,6 +39,7 @@ const navSections = [
     { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
     { id: 'privacy', label: 'Privacy & Data', icon: ShieldCheckIcon },
+    { id: 'dispatch', label: 'EverFern Dispatch', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>📡</span> },
     { id: 'help', label: 'Help & Architecture', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>❓</span> },
 ];
 
@@ -250,6 +251,272 @@ const RegisteredToolsList = () => {
                 ))
             )}
         </div>
+    );
+};
+
+const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
+    const [status, setStatus] = useState<'idle' | 'pending' | 'connected' | 'error'>('idle');
+    const [sessionId, setSessionId] = useState('');
+    const [pinCode, setPinCode] = useState('');
+    const [isForever, setIsForever] = useState(false);
+    const [existingSessions, setExistingSessions] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (!isCloudUser) return;
+        
+        const fetchSessionsAndRestore = async () => {
+            const sessionStr = localStorage.getItem('everfern_cloud_session');
+            if (!sessionStr) return;
+            const session = JSON.parse(sessionStr);
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
+            
+            // 1. Fetch existing sessions
+            try {
+                const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/dispatch/sessions`, {
+                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setExistingSessions(data.sessions || []);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch sessions", e);
+            }
+
+            // 2. Try to restore active session for this device
+            try {
+                const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://api.everfern.app';
+                const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'default_key';
+                
+                (window as any).electronAPI?.system?.onDispatchActive?.(() => {
+                    setStatus('connected');
+                });
+
+                const restoreRes = await (window as any).electronAPI?.system?.restoreDispatch?.({ 
+                    url, apiUrl, key, token: session.accessToken, userId: session.user?.id || session.user?.sub || session.user?.user_id || 'unknown'
+                });
+
+                if (restoreRes?.success && restoreRes.session) {
+                    setSessionId(restoreRes.session.id);
+                    setPinCode(restoreRes.session.pin_code);
+                    setStatus(restoreRes.session.status === 'active' ? 'connected' : 'pending');
+                }
+            } catch (e) {
+                console.error("Failed to restore session", e);
+            }
+        };
+        fetchSessionsAndRestore();
+    }, [isCloudUser]);
+
+    const handleStartDispatch = async () => {
+        try {
+            const newPin = Math.floor(100000 + Math.random() * 900000).toString();
+            const newSessionId = crypto.randomUUID();
+            
+            setPinCode(newPin);
+            setSessionId(newSessionId);
+            setStatus('pending');
+
+            const sessionStr = localStorage.getItem('everfern_cloud_session');
+            if (!sessionStr) throw new Error("No cloud session found");
+            const session = JSON.parse(sessionStr);
+            
+            const res = await (window as any).electronAPI?.system?.startDispatch?.({ 
+                sessionId: newSessionId, 
+                pinCode: newPin,
+                url: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://api.everfern.app',
+                apiUrl: process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app',
+                key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'default_key',
+                token: session.accessToken,
+                userId: session.user?.id || session.user?.sub || session.user?.user_id || 'unknown',
+                isForever
+            });
+            
+            if (res?.success) {
+                // Keep status as pending, wait for IPC event
+                (window as any).electronAPI?.system?.onDispatchActive?.(() => {
+                    setStatus('connected');
+                });
+            } else {
+                setStatus('error');
+            }
+        } catch (e) {
+            console.error(e);
+            setStatus('error');
+        }
+    };
+
+    const handleDisconnect = async () => {
+        try {
+            await (window as any).electronAPI?.system?.stopDispatch?.();
+            setStatus('idle');
+            setSessionId('');
+            setPinCode('');
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleStopExisting = async (id: string) => {
+        try {
+            const sessionStr = localStorage.getItem('everfern_cloud_session');
+            if (!sessionStr) return;
+            const session = JSON.parse(sessionStr);
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
+
+            await fetch(`${apiUrl.replace(/\/$/, '')}/api/dispatch/session/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            });
+            
+            setExistingSessions(prev => prev.filter(s => s.id !== id));
+            
+            // If stopping current session
+            if (id === sessionId) {
+                handleDisconnect();
+            }
+        } catch (e) {
+            console.error("Failed to stop session", e);
+        }
+    };
+
+    if (!isCloudUser) {
+        return (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <SectionTitle>EverFern Dispatch</SectionTitle>
+                <SectionSubtitle>Control your desktop remotely from EverFern Cloud.</SectionSubtitle>
+                <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
+                    <ServerIcon width={48} height={48} style={{ color: '#8a8886', margin: '0 auto 16px' }} />
+                    <h3 style={{ fontSize: 18, color: '#111111', margin: '0 0 8px' }}>EverFern Cloud Required</h3>
+                    <p style={{ fontSize: 14, color: '#8a8886', margin: '0 auto', maxWidth: 400, lineHeight: 1.5 }}>
+                        To use EverFern Dispatch, please log into EverFern Cloud in the <strong>Profile</strong> tab first.
+                    </p>
+                </Card>
+            </motion.div>
+        );
+    }
+
+    return (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <SectionTitle>EverFern Dispatch</SectionTitle>
+            <SectionSubtitle>Connect your desktop to EverFern Cloud to control it remotely.</SectionSubtitle>
+
+            <Card>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {status === 'idle' && (
+                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                            <p style={{ fontSize: 14, color: '#4a4846', marginBottom: 20 }}>
+                                Start dispatch to generate a secure PIN. You can then enter this PIN on <strong>everfern.app/dispatch</strong> from your phone or another device.
+                            </p>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
+                                <input 
+                                    type="checkbox" 
+                                    id="foreverToggle" 
+                                    checked={isForever} 
+                                    onChange={(e) => setIsForever(e.target.checked)} 
+                                    style={{ cursor: 'pointer' }}
+                                />
+                                <label htmlFor="foreverToggle" style={{ fontSize: 13, color: '#4a4846', cursor: 'pointer' }}>
+                                    Keep session active forever (default: 10 minutes)
+                                </label>
+                            </div>
+
+                            <button
+                                onClick={handleStartDispatch}
+                                style={{ padding: '12px 24px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 12, fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer' }}
+                            >
+                                Start Dispatch Session
+                            </button>
+                        </div>
+                    )}
+
+                    {(status === 'pending' || status === 'connected') && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: '10px 0' }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ fontSize: 13, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 8 }}>
+                                    Your Dispatch PIN
+                                </p>
+                                <div style={{ fontSize: 42, letterSpacing: '0.2em', fontFamily: 'monospace', color: '#111111', fontWeight: 600, backgroundColor: '#f4f4f4', padding: '12px 32px', borderRadius: 16 }}>
+                                    {pinCode}
+                                </div>
+                            </div>
+                            
+                            <div style={{ textAlign: 'center' }}>
+                                <p style={{ fontSize: 14, color: '#4a4846' }}>
+                                    Go to <a href="https://everfern.app/dispatch" target="_blank" rel="noreferrer" style={{ color: '#111111', fontWeight: 600, textDecoration: 'underline' }}>everfern.app/dispatch</a> and enter this PIN.
+                                </p>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 12, marginTop: 8, alignItems: 'center' }}>
+                                <button
+                                    onClick={handleDisconnect}
+                                    style={{ padding: '10px 20px', backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer' }}
+                                >
+                                    Stop Dispatch
+                                </button>
+                                
+                                {status === 'pending' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f59e0b', fontSize: 13, fontWeight: 600 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b', animation: 'pulse 2s infinite' }} />
+                                        Waiting for someone to connect...
+                                    </div>
+                                )}
+                                
+                                {status === 'connected' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e', fontSize: 13, fontWeight: 600 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+                                        Connected & Active
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {status === 'error' && (
+                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                            <div style={{ color: '#dc2626', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+                                Failed to start dispatch session. Please try again.
+                            </div>
+                            <button
+                                onClick={() => setStatus('idle')}
+                                style={{ padding: '10px 20px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {existingSessions.length > 0 && (
+                    <div style={{ marginTop: 32, borderTop: '1px solid #e8e6d9', paddingTop: 20 }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 12 }}>Existing Sessions</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {existingSessions.map(session => (
+                                <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#fbfbe6', border: '1px solid #e8e6d9', borderRadius: 12 }}>
+                                    <div>
+                                        <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>{session.device_name}</div>
+                                        <div style={{ fontSize: 12, color: '#8a8886', marginTop: 4 }}>
+                                            Status: <span style={{ color: session.status === 'active' ? '#22c55e' : '#f59e0b' }}>{session.status}</span>
+                                            <span style={{ margin: '0 6px' }}>&bull;</span>
+                                            PIN: {session.pin_code}
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleStopExisting(session.id)}
+                                        style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}
+                                    >
+                                        Stop
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </Card>
+        </motion.div>
     );
 };
 
@@ -1220,6 +1487,7 @@ export default function SettingsPage({
             </div>
         ),
         privacy: PrivacySection(),
+        dispatch: <DispatchSection isCloudUser={isCloudUser} />,
         help: HelpSection(),
     };
 

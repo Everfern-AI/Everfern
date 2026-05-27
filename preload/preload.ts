@@ -91,6 +91,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
     getVersion:     () => ipcRenderer.invoke('system:get-version'),
+    checkForUpdates: () => ipcRenderer.invoke('system:check-for-updates'),
+    startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => ipcRenderer.invoke('system:start-dispatch', config),
+    restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => ipcRenderer.invoke('system:restore-dispatch', config),
+    stopDispatch:   () => ipcRenderer.invoke('system:stop-dispatch'),
+    onDispatchActive: (cb: () => void) => {
+      ipcRenderer.on('system:dispatch-active', () => cb());
+    }
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -508,6 +515,10 @@ export type ElectronAPI = {
     toHostPath:     (pathStr: string) => Promise<string>;
     getVersion:     () => Promise<string>;
     checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string; notes?: string; error?: string }>;
+    startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => Promise<{ success: boolean; error?: string }>;
+    restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => Promise<{ success: boolean; session?: any; error?: string }>;
+    stopDispatch:   () => Promise<{ success: boolean; error?: string }>;
+    onDispatchActive: (cb: () => void) => void;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;

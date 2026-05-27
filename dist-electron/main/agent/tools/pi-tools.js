@@ -154,25 +154,31 @@ function adaptTool(definition, executor, customName) {
                             // Continue to native execution below
                         }
                     }
-                    // For local=true (approved) or VM fallback, use the original executor
-                    const result = await executor(id, args);
-                    let outputText = '';
-                    if (result.content && Array.isArray(result.content)) {
-                        outputText = result.content
-                            .filter((c) => c.type === 'text')
-                            .map((c) => c.text)
-                            .join('\n');
+                    // For local=true (approved) or VM fallback, use native exec to ensure output is captured
+                    try {
+                        const { exec } = require('child_process');
+                        const { promisify } = require('util');
+                        const execAsync = promisify(exec);
+                        // Use powershell.exe on Windows, bash otherwise
+                        const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+                        const { stdout, stderr } = await execAsync(command, { shell, timeout: timeout || 300000 });
+                        const combined = [stdout, stderr].filter(Boolean).join('\n');
+                        const output = combined.trim() || '(Command succeeded with no output)';
+                        return {
+                            success: true,
+                            output: stripAnsi(output)
+                        };
                     }
-                    else if (typeof result.output === 'string') {
-                        outputText = result.output;
+                    catch (execError) {
+                        // Execution failed or returned non-zero exit code
+                        const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
+                        const output = combined.trim() || '(Command failed with no output)';
+                        return {
+                            success: false,
+                            output: stripAnsi(output),
+                            error: stripAnsi(output)
+                        };
                     }
-                    else {
-                        outputText = JSON.stringify(result);
-                    }
-                    if (result.isError) {
-                        return { success: false, output: stripAnsi(outputText), error: stripAnsi(outputText) };
-                    }
-                    return { success: true, output: stripAnsi(outputText) };
                 }
                 // For all other tools, use the original logic
                 const result = await executor(id, args);

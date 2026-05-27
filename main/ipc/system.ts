@@ -431,4 +431,43 @@ export function registerSystemHandlers() {
       return null;
     }
   });
+
+  ipcMain.handle('system:start-dispatch', async (event, config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => {
+    try {
+      const { DispatchService } = await import('../lib/dispatch');
+      await DispatchService.getInstance().initialize(config, () => {
+        // Send event to the window that initiated the dispatch
+        event.sender.send('system:dispatch-active');
+      });
+      return { success: true };
+    } catch (err: any) {
+      console.error('[IPC] system:start-dispatch error:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('system:restore-dispatch', async (event, config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => {
+    try {
+      const { DispatchService } = await import('../lib/dispatch');
+      // Pass a dummy sessionId and pinCode for initialization since restoreSession will overwrite them
+      await DispatchService.getInstance().initialize({ ...config, sessionId: '', pinCode: '' }, () => {
+        event.sender.send('system:dispatch-active');
+      });
+      return await DispatchService.getInstance().restoreSession();
+    } catch (err: any) {
+      console.error('[IPC] system:restore-dispatch error:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('system:stop-dispatch', async () => {
+    try {
+      const { DispatchService } = await import('../lib/dispatch');
+      await DispatchService.getInstance().disconnect();
+      return { success: true };
+    } catch (err: any) {
+      console.error('[IPC] system:stop-dispatch error:', err);
+      return { success: false, error: err.message };
+    }
+  });
 }

@@ -15,7 +15,7 @@ import type {
 } from '../types';
 
 export class EverFernCloudProvider implements ACPProvider {
-  private baseUrl = 'http://localhost:8000';
+  private baseUrl = 'https://api.everfern.app';
   private model = 'everfern-1';
 
   readonly info: ProviderInfo = {

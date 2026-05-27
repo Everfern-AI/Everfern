@@ -433,4 +433,43 @@ function registerSystemHandlers() {
             return null;
         }
     });
+    electron_1.ipcMain.handle('system:start-dispatch', async (event, config) => {
+        try {
+            const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
+            await DispatchService.getInstance().initialize(config, () => {
+                // Send event to the window that initiated the dispatch
+                event.sender.send('system:dispatch-active');
+            });
+            return { success: true };
+        }
+        catch (err) {
+            console.error('[IPC] system:start-dispatch error:', err);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('system:restore-dispatch', async (event, config) => {
+        try {
+            const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
+            // Pass a dummy sessionId and pinCode for initialization since restoreSession will overwrite them
+            await DispatchService.getInstance().initialize({ ...config, sessionId: '', pinCode: '' }, () => {
+                event.sender.send('system:dispatch-active');
+            });
+            return await DispatchService.getInstance().restoreSession();
+        }
+        catch (err) {
+            console.error('[IPC] system:restore-dispatch error:', err);
+            return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('system:stop-dispatch', async () => {
+        try {
+            const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
+            await DispatchService.getInstance().disconnect();
+            return { success: true };
+        }
+        catch (err) {
+            console.error('[IPC] system:stop-dispatch error:', err);
+            return { success: false, error: err.message };
+        }
+    });
 }
