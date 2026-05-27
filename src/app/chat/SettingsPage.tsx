@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     XMarkIcon,
@@ -310,6 +311,15 @@ const settingsPrimaryProviders = [
     { id: 'huggingface', name: 'Hugging Face', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="Hugging Face" width={size} height={size} /> },
 ];
 
+const visionProviders = [
+    { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} /> },
+    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} /> },
+    { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
+    { id: 'anthropic', name: 'Anthropic', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} /> },
+    { id: 'nvidia', name: 'NVIDIA NIM', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} /> },
+];
+
 export default function SettingsPage({
     onClose,
     config,
@@ -338,6 +348,49 @@ export default function SettingsPage({
     const [profileName, setProfileName] = useState(username || 'User');
     const [displayName, setDisplayName] = useState(username || 'User');
     const [preferences, setPreferences] = useState('');
+    const [isCloudUser, setIsCloudUser] = useState(false);
+    const [cloudEmail, setCloudEmail] = useState('');
+    const [appVersion, setAppVersion] = useState('0.0.0');
+    const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+    const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; url?: string } | null>(null);
+    const router = useRouter();
+
+    useEffect(() => {
+        const fetchVersion = async () => {
+            const version = await (window as any).electronAPI?.system?.getVersion?.();
+            if (version) setAppVersion(version);
+        };
+        fetchVersion();
+    }, []);
+
+    const handleCheckUpdate = async () => {
+        setIsCheckingUpdate(true);
+        try {
+            const result = await (window as any).electronAPI?.system?.checkForUpdates?.();
+            setUpdateInfo(result);
+        } catch (err) {
+            console.error('Failed to check for updates:', err);
+        } finally {
+            setIsCheckingUpdate(false);
+        }
+    };
+
+    useEffect(() => {
+        try {
+            const sessionStr = localStorage.getItem('everfern_cloud_session');
+            if (sessionStr) {
+                const session = JSON.parse(sessionStr);
+                setIsCloudUser(true);
+                setCloudEmail(session.user?.email || '');
+            }
+        } catch (e) {}
+    }, []);
+
+    const handleSignOut = () => {
+        localStorage.removeItem('everfern_cloud_session');
+        localStorage.removeItem('everfern_auth_token');
+        router.push('/auth');
+    };
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -446,6 +499,25 @@ export default function SettingsPage({
                         onBlur={e => e.target.style.borderColor = '#e8e6d9'}
                     />
                 </div>
+
+                {isCloudUser && (
+                    <div style={{ marginTop: 24, padding: 20, backgroundColor: '#fcfcfb', border: '1px solid #e8e6d9', borderRadius: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 4 }}>EverFern Cloud Session</h3>
+                                <p style={{ fontSize: 12, color: '#8a8886', margin: 0 }}>Logged in as {cloudEmail}</p>
+                            </div>
+                            <button
+                                onClick={handleSignOut}
+                                style={{ padding: '8px 16px', backgroundColor: '#ffffff', color: '#dc2626', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.04)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                            >
+                                Sign Out
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Card>
         </div>
     );
@@ -735,46 +807,80 @@ export default function SettingsPage({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div>
                             <Label>Provider</Label>
-                            <Select value={settingsVlmCloudProvider} onChange={e => setSettingsVlmCloudProvider(e.target.value)}>
-                                <option value="ollama">Ollama Compatible</option>
-                                <option value="openai">OpenAI</option>
-                                <option value="anthropic">Anthropic</option>
-                                <option value="nvidia">NVIDIA NIM</option>
-                            </Select>
-                        </div>
-                        <div>
-                            <Label>Model Name</Label>
-                            <div style={{ position: 'relative' }}>
-                                {settingsVlmCloudProvider === 'ollama' ? (
-                                    <Select value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)}>
-                                        <option value="qwen3-vl:235b-instruct-cloud">Qwen3 VL 235B (Default)</option>
-                                        <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
-                                        <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
-                                    </Select>
-                                ) : (
-                                    <>
-                                        <CpuChipIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
-                                        <Input type="text" placeholder={settingsVlmCloudProvider === 'openai' ? 'gpt-4o' : 'qwen3-vl:235b-instruct-cloud'} value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
-                                    </>
-                                )}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20, pointerEvents: 'auto' }}>
+                                {visionProviders.map(({ id, name, Logo }) => {
+                                    const isSel = settingsVlmCloudProvider === id;
+                                    return (
+                                        <div key={id}
+                                            onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                                                e.stopPropagation();
+                                                setSettingsVlmCloudProvider(id);
+                                                // Clear stale baseUrl and apiKey when switching to cloud-only providers
+                                                if (id === 'everfern' || id === 'openrouter') {
+                                                    setSettingsVlmCloudUrl('');
+                                                    setSettingsVlmCloudKey('');
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '14px 12px',
+                                                borderRadius: 12,
+                                                border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
+                                                backgroundColor: isSel ? '#f4f4f4' : '#ffffff',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                transition: 'all 0.15s ease-out',
+                                                position: 'relative',
+                                                userSelect: 'none',
+                                                outline: 'none'
+                                            }}>
+                                            <Logo size={20} />
+                                            <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center' }}>{name}</span>
+                                            {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
-                        {settingsVlmCloudProvider !== 'ollama' && (
-                            <div>
-                                <Label>Host URL (Optional)</Label>
-                                <div style={{ position: 'relative' }}>
-                                    <GlobeAltIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
-                                    <Input type="text" placeholder="Optional custom base URL" value={settingsVlmCloudUrl} onChange={e => setSettingsVlmCloudUrl(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                        {settingsVlmCloudProvider !== 'everfern' && (
+                            <>
+                                <div>
+                                    <Label>Model Name</Label>
+                                    <div style={{ position: 'relative' }}>
+                                        {settingsVlmCloudProvider === 'ollama' ? (
+                                            <Select value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)}>
+                                                <option value="qwen3-vl:235b-instruct-cloud">Qwen3 VL 235B (Default)</option>
+                                                <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
+                                                <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
+                                            </Select>
+                                        ) : (
+                                            <>
+                                                <CpuChipIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                                <Input type="text" placeholder={settingsVlmCloudProvider === 'openai' ? 'gpt-4o' : 'qwen3-vl:235b-instruct-cloud'} value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+                                {settingsVlmCloudProvider !== 'ollama' && (
+                                    <div>
+                                        <Label>Host URL (Optional)</Label>
+                                        <div style={{ position: 'relative' }}>
+                                            <GlobeAltIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                            <Input type="text" placeholder="Optional custom base URL" value={settingsVlmCloudUrl} onChange={e => setSettingsVlmCloudUrl(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                                        </div>
+                                    </div>
+                                )}
+                                <div>
+                                    <Label>API Key</Label>
+                                    <div style={{ position: 'relative' }}>
+                                        <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                        <Input type="password" placeholder="sk-..." value={settingsVlmCloudKey} onChange={e => setSettingsVlmCloudKey(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                                    </div>
+                                </div>
+                            </>
                         )}
-                        <div>
-                            <Label>API Key</Label>
-                            <div style={{ position: 'relative' }}>
-                                <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
-                                <Input type="password" placeholder="sk-..." value={settingsVlmCloudKey} onChange={e => setSettingsVlmCloudKey(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
-                            </div>
-                        </div>
                     </div>
                 )}
             </Card>
@@ -1033,7 +1139,7 @@ export default function SettingsPage({
                                     <polygon points="0 0, 10 3.5, 0 7" fill="#8a8886" />
                                 </marker>
                             </defs>
-                            
+
                             {/* START -> Triage */}
                             <path d="M 200 20 L 200 50" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
                             {/* Triage -> Decomposer */}
@@ -1082,9 +1188,9 @@ export default function SettingsPage({
             <Card>
                 <Label>What is a Swarm?</Label>
                 <div style={{ fontSize: 14, color: '#201e24', lineHeight: 1.6 }}>
-                    A <strong>Swarm</strong> is a collective of specialized agents working in parallel to solve a complex task. 
-                    Unlike traditional agents that work one-by-one, EverFern's Swarm Architecture allows multiple "bees" to 
-                    investigate different sources or perform different tasks simultaneously, while sharing a 
+                    A <strong>Swarm</strong> is a collective of specialized agents working in parallel to solve a complex task.
+                    Unlike traditional agents that work one-by-one, EverFern's Swarm Architecture allows multiple "bees" to
+                    investigate different sources or perform different tasks simultaneously, while sharing a
                     <strong> synchronized memory bus</strong> so they never repeat work.
                 </div>
             </Card>
@@ -1169,6 +1275,38 @@ export default function SettingsPage({
                             );
                         })}
                     </nav>
+
+                    {/* Version & Update Check */}
+                    <div style={{ marginTop: 'auto', padding: '12px 14px', borderTop: '1px solid #e8e6d9' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#a8a6a1', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                            App Version
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 13, color: '#4a4846', fontWeight: 500 }}>v{appVersion}</span>
+                            <button 
+                                onClick={handleCheckUpdate}
+                                disabled={isCheckingUpdate}
+                                style={{ 
+                                    fontSize: 11, color: '#667eea', background: 'none', border: 'none', 
+                                    cursor: isCheckingUpdate ? 'default' : 'pointer', fontWeight: 600, padding: 0,
+                                    opacity: isCheckingUpdate ? 0.6 : 1
+                                }}
+                            >
+                                {isCheckingUpdate ? 'Checking...' : 'Check for updates'}
+                            </button>
+                        </div>
+                        {updateInfo?.hasUpdate && (
+                            <div style={{ marginTop: 10, padding: 8, backgroundColor: '#f0ecff', borderRadius: 8, border: '1px solid #667eea' }}>
+                                <div style={{ fontSize: 11, color: '#111111', fontWeight: 600, marginBottom: 2 }}>Update Available: v{updateInfo.latestVersion}</div>
+                                <button 
+                                    onClick={() => (window as any).electronAPI?.system?.openExternal?.(updateInfo.url)}
+                                    style={{ fontSize: 11, color: '#ffffff', backgroundColor: '#667eea', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
+                                >
+                                    Download from GitHub
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Right content area - Rounded floating sheet */}

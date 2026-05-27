@@ -182,7 +182,9 @@ const createCallModelNode = (runner, toolDefs, eventQueue, maxIterations = 10, m
             if (needsVisionGrounding && vlm) {
                 runner.telemetry.info(` telescope Vision Grounding: Analyzing workspace footprint with ${vlm.model} (${vlm.provider})`);
                 client = new ai_client_1.AIClient({
-                    provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' : vlm.provider),
+                    provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' :
+                        vlm.engine === 'cloud' && vlm.provider === 'everfern' ? 'everfern' :
+                            vlm.provider),
                     apiKey: vlm.apiKey,
                     model: vlm.model,
                     baseUrl: vlm.baseUrl

@@ -70,8 +70,32 @@ class ACPManager {
                 let vlmConfig = stored.vlm;
                 if (vlmConfig?.provider) {
                     const vlmKeyPath = path.join(os.homedir(), '.everfern', 'keys', `vlm-${vlmConfig.provider}.key`);
+                    const providerKeyPath = path.join(os.homedir(), '.everfern', 'keys', `${vlmConfig.provider}.key`);
+                    let vlmKey = '';
                     if (fs.existsSync(vlmKeyPath)) {
-                        vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(vlmKeyPath, 'utf-8').trim() };
+                        vlmKey = fs.readFileSync(vlmKeyPath, 'utf-8').trim();
+                    }
+                    // Always prioritize/fallback to the main everfern.key (raw JWT) if VLM is everfern
+                    if (vlmConfig.provider === 'everfern') {
+                        const everfernKeyPath = path.join(os.homedir(), '.everfern', 'keys', 'everfern.key');
+                        if (fs.existsSync(everfernKeyPath)) {
+                            const efKey = fs.readFileSync(everfernKeyPath, 'utf-8').trim();
+                            // If main key is a JWT, use it as priority or fallback
+                            if (efKey.startsWith('eyJ')) {
+                                if (!vlmKey.startsWith('eyJ') || vlmKey === '') {
+                                    vlmKey = efKey;
+                                }
+                            }
+                        }
+                    }
+                    if (vlmKey) {
+                        vlmConfig = { ...vlmConfig, apiKey: vlmKey };
+                    }
+                    else if (fs.existsSync(providerKeyPath)) {
+                        vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(providerKeyPath, 'utf-8').trim() };
+                    }
+                    else if (vlmConfig.provider === stored.provider) {
+                        vlmConfig = { ...vlmConfig, apiKey: actualApiKey };
                     }
                 }
                 this.setProvider({
@@ -99,8 +123,35 @@ class ACPManager {
             if (config.provider === 'google') {
                 config.provider = 'gemini';
             }
-            this.client = new ai_client_1.AIClient(config);
-            this.activeConfig = config;
+            let vlmConfig = config.vlm;
+            if (vlmConfig && !vlmConfig.apiKey) {
+                if (vlmConfig.provider === config.provider) {
+                    vlmConfig = { ...vlmConfig, apiKey: config.apiKey };
+                }
+                else {
+                    // Attempt to load from disk if different from main provider
+                    const providerKeyPath = path.join(os.homedir(), '.everfern', 'keys', `${vlmConfig.provider}.key`);
+                    const vlmKeyPath = path.join(os.homedir(), '.everfern', 'keys', `vlm-${vlmConfig.provider}.key`);
+                    if (fs.existsSync(vlmKeyPath)) {
+                        vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(vlmKeyPath, 'utf-8').trim() };
+                    }
+                    else if (fs.existsSync(providerKeyPath)) {
+                        vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(providerKeyPath, 'utf-8').trim() };
+                    }
+                }
+            }
+            // Clean up stale baseUrl for cloud-only providers
+            // These should use their hardcoded defaults from AIClient, not user-set baseUrl values
+            if (vlmConfig && (vlmConfig.provider === 'everfern' || vlmConfig.provider === 'openrouter')) {
+                vlmConfig = { ...vlmConfig };
+                delete vlmConfig.baseUrl;
+            }
+            const configToSet = {
+                ...config,
+                vlm: vlmConfig
+            };
+            this.client = new ai_client_1.AIClient(configToSet);
+            this.activeConfig = configToSet;
             return { ok: true };
         }
         catch (err) {

@@ -37,10 +37,15 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     const mainConfig = runner.client.getFullConfig();
     if (mainConfig.vlm) {
       try {
+        const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
+                               mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'everfern' ? 'everfern' :
+                               mainConfig.vlm.provider) as any;
         visionClient = new AIClient({
-          provider: mainConfig.vlm.provider as any,
+          provider: mappedProvider,
           model: mainConfig.vlm.model,
-          baseUrl: mainConfig.vlm.baseUrl,
+          // For cloud-only providers (everfern, openrouter), don't pass baseUrl
+          // Let AIClient use its defaults to avoid stale URLs from previous provider selections
+          baseUrl: (mappedProvider === 'everfern' || mappedProvider === 'openrouter') ? undefined : mainConfig.vlm.baseUrl,
           apiKey: mainConfig.vlm.apiKey,
         });
         console.log(`[ToolsManager] 🖼️ Navis vision fallback client: ${mainConfig.vlm.provider}/${mainConfig.vlm.model}`);

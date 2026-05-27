@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, Notification } from 'electron';
+import { ipcMain, dialog, shell, Notification, app, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -65,6 +65,45 @@ export function registerSystemHandlers() {
 
   ipcMain.handle('system:get-username', () => {
     return os.userInfo().username;
+  });
+
+  ipcMain.handle('system:get-version', () => {
+    return app.getVersion();
+  });
+
+  ipcMain.handle('system:check-for-updates', async () => {
+    try {
+      const currentVersion = app.getVersion();
+      const response = await net.fetch('https://api.github.com/repos/CodenRust/Everfern/releases/latest');
+      if (!response.ok) return { hasUpdate: false };
+
+      const data = await response.json();
+      const latestVersion = data.tag_name.replace(/^v/, '');
+
+      // Simple version comparison (semver-lite)
+      const currentParts = currentVersion.split('.').map(Number);
+      const latestParts = latestVersion.split('.').map(Number);
+
+      let hasUpdate = false;
+      for (let i = 0; i < 3; i++) {
+        if ((latestParts[i] || 0) > (currentParts[i] || 0)) {
+          hasUpdate = true;
+          break;
+        } else if ((latestParts[i] || 0) < (currentParts[i] || 0)) {
+          break;
+        }
+      }
+
+      return {
+        hasUpdate,
+        latestVersion,
+        url: data.html_url,
+        notes: data.body
+      };
+    } catch (err) {
+      console.error('[UpdateCheck] Failed to check for updates:', err);
+      return { hasUpdate: false, error: String(err) };
+    }
   });
 
   ipcMain.handle('system:open-file-picker', async (_event, options?: { filters?: { name: string, extensions: string[] }[] }) => {

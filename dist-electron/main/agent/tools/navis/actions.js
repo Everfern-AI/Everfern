@@ -136,6 +136,10 @@ async function executeAction(actionName, args, page, session, logger, step, maxS
                 return await (0, form_interactions_1.executeRightClick)(args, page, session, logger, step, maxSteps);
             case 'hybrid_click':
                 return await executeHybridClick(args, page, session, logger, step, maxSteps);
+            case 'browser_click':
+                return await executeBrowserClick(args, page, session, logger, step, maxSteps);
+            case 'browser_type':
+                return await executeBrowserType(args, page, session, logger, step, maxSteps);
             default:
                 return { success: false, message: `Unknown action: ${actionName}`, stateChanged: false };
         }
@@ -510,6 +514,70 @@ async function executeHybridClick(args, page, session, logger, step, maxSteps) {
             success: false,
             message: `Hybrid click failed: ${err.message}`,
             stateChanged: false,
+        };
+    }
+}
+async function executeBrowserClick(args, page, session, logger, step, maxSteps) {
+    if (args.x === undefined || args.y === undefined) {
+        return { success: false, message: 'Missing x or y coordinates', stateChanged: false };
+    }
+    try {
+        let { x, y } = args;
+        // Apply tars-test.py scaling logic for browser coordinates
+        const viewport = page.viewportSize();
+        if (viewport) {
+            const SCREEN_WIDTH = viewport.width;
+            const SCREEN_HEIGHT = viewport.height;
+            // Scale coordinates if they're > viewport dimensions (normalized 0-1000)
+            const rx = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
+            const ry = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+            console.log(`[Navis] Browser Click: input=(${x},${y}) viewport=(${SCREEN_WIDTH}x${SCREEN_HEIGHT}) final=(${rx},${ry})`);
+            x = rx;
+            y = ry;
+        }
+        // Move cursor and highlight the click area
+        await session.moveCursor(x, y);
+        await new Promise(r => setTimeout(r, 600)); // Wait for transition
+        // Highlight the click area
+        await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
+        // Perform the click using Playwright's mouse
+        await page.mouse.click(x, y);
+        logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_click', { x, y });
+        await session.setOverlayStatus(`Clicked at (${x}, ${y})`);
+        return {
+            success: true,
+            message: `Clicked at coordinates (${x}, ${y})`,
+            stateChanged: true
+        };
+    }
+    catch (err) {
+        return {
+            success: false,
+            message: `Browser click failed: ${err.message}`,
+            stateChanged: false
+        };
+    }
+}
+async function executeBrowserType(args, page, session, logger, step, maxSteps) {
+    if (!args.text) {
+        return { success: false, message: 'Missing text parameter', stateChanged: false };
+    }
+    try {
+        // Type the text using Playwright's keyboard
+        await page.keyboard.type(args.text);
+        logger?.elementInput(step, maxSteps, 'keyboard', args.text);
+        await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
+        return {
+            success: true,
+            message: `Typed: ${args.text}`,
+            stateChanged: false
+        };
+    }
+    catch (err) {
+        return {
+            success: false,
+            message: `Browser type failed: ${err.message}`,
+            stateChanged: false
         };
     }
 }

@@ -135,11 +135,13 @@ class AgentRunner {
         if (!config) {
             return this.client;
         }
+        const targetProvider = (config.provider || this.client.provider);
+        const targetApiKey = config.apiKey || (targetProvider === this.client.provider ? this.client.apiKey : '');
         // Use pooled client for better performance
         return (0, ai_client_1.getPooledAIClient)({
-            provider: (config.provider || this.client.provider),
+            provider: targetProvider,
             model: config.model || this.client.model,
-            apiKey: config.apiKey || this.client.apiKey,
+            apiKey: targetApiKey,
             baseUrl: config.baseUrl
         });
     }
@@ -150,10 +152,12 @@ class AgentRunner {
         if (client === this.client) {
             return; // Don't release the main client
         }
+        const targetProvider = (config.provider || this.client.provider);
+        const targetApiKey = config.apiKey || (targetProvider === this.client.provider ? this.client.apiKey : '');
         (0, ai_client_1.releasePooledAIClient)(client, {
-            provider: (config.provider || this.client.provider),
+            provider: targetProvider,
             model: config.model || this.client.model,
-            apiKey: config.apiKey || this.client.apiKey,
+            apiKey: targetApiKey,
             baseUrl: config.baseUrl
         });
     }

@@ -74,8 +74,7 @@ exports.PROVIDER_MODELS = {
     ],
     lmstudio: [], // populated dynamically at runtime
     everfern: [
-        'mistralai/mistral-medium-3.5-128b',
-        'everfern-1',
+        'fern-1',
         'everfern-fast',
     ],
     openrouter: [
@@ -159,7 +158,7 @@ exports.PROVIDER_REGISTRY = {
         isLocal: false,
         defaultModel: 'llama3.3',
         engine: 'online',
-        baseUrl: 'https://ollama.com',
+        baseUrl: 'https://ollama.com/api',
     },
     lmstudio: {
         type: 'lmstudio',
@@ -177,9 +176,9 @@ exports.PROVIDER_REGISTRY = {
         description: 'Managed frontier models optimized for EverFern',
         requiresApiKey: false,
         isLocal: false,
-        defaultModel: 'mistralai/mistral-medium-3.5-128b',
+        defaultModel: 'fern-1',
         engine: 'everfern',
-        baseUrl: 'http://localhost:8000',
+        baseUrl: 'https://api.everfern.app/api',
     },
     openrouter: {
         type: 'openrouter',
@@ -292,8 +291,7 @@ function formatModelName(id) {
         'gemini-2.5-pro': 'Gemini 2.5 Pro',
         'gemini-2.5-flash': 'Gemini 2.5 Flash',
         'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-        'mistralai/mistral-medium-3.5-128b': 'Mistral Medium 3.5 (EverFern Cloud)',
-        'everfern-1': 'Fern-1',
+        'fern-1': 'Fern-1',
         'everfern-fast': 'Fern Fast',
         'qwen/qwen3.5-122b-a10b': 'Qwen 3.5 122B (NIM)', // thinking model
         'mistralai/mistral-small-4-119b-2603': 'Mistral Small (NIM)',

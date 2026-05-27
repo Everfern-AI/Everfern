@@ -134,6 +134,8 @@ export interface ChatRequest {
   temperature?: number;
   maxTokens?: number;
   tools?: ToolDefinition[];
+  /** Tool choice strategy: 'auto' (default), 'required' (force tool use), or specific tool name */
+  toolChoice?: 'auto' | 'required' | string;
   /** Force JSON output. OpenAI/DeepSeek: json_object mode. Ollama: format=json. Nvidia: guided_json. */
   responseFormat?: 'json';
   /** JSON Schema for structured output. OpenAI: json_schema response_format. Nvidia: guided_json. Ollama: appended to prompt (fallback). */
@@ -196,10 +198,10 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
   anthropic: 'https://api.anthropic.com',
   deepseek: 'https://api.deepseek.com',
   minimax: 'https://api.minimax.io/v1',
-  everfern: 'https://everfern-api.vercel.app/api',
+  everfern: 'https://api.everfern.app/api',  // Production EverFern API
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
   ollama: 'http://localhost:11434',
-  'ollama-cloud': 'https://ollama.com',
+  'ollama-cloud': 'https://ollama.com/v1',  // Fixed: was /api, should be /v1
   lmstudio: 'http://localhost:1234/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -210,7 +212,7 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   anthropic: 'claude-3-5-sonnet-20241022',
   deepseek: 'deepseek-v4-pro',
   minimax: 'minimax-m2.7',
-  everfern: 'mistralai/mistral-medium-3.5-128b',
+  everfern: 'qwen/qwen3-vl-235b-a22b-instruct',
   gemini: 'gemini-3.1-pro-preview',
   ollama: 'llama3',
   'ollama-cloud': 'llama3.3',
@@ -237,18 +239,26 @@ export class AIClient {
       }
     }
 
+    let finalBaseUrl = config.baseUrl ?? DEFAULT_URLS[config.provider];
+    // Ollama Cloud uses /v1 for OpenAI-compatible API, not /api
+    if (config.provider === 'ollama-cloud') {
+      if (finalBaseUrl === 'https://ollama.com' || finalBaseUrl === 'https://ollama.com/api') {
+        finalBaseUrl = 'https://ollama.com/v1';
+      }
+    }
+
     this.config = {
       provider: config.provider,
       apiKey: finalApiKey,
-      baseUrl: config.baseUrl ?? DEFAULT_URLS[config.provider],
+      baseUrl: finalBaseUrl,
       model: config.model ?? DEFAULT_MODELS[config.provider],
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
       vlm: config.vlm,
     };
 
-    // Initialize OpenAI client for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
-    if (config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter' || config.provider === 'minimax' || config.provider === 'everfern') {
+    // Initialize OpenAI client for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, EverFern and Ollama Cloud
+    if (config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter' || config.provider === 'minimax' || config.provider === 'everfern' || config.provider === 'ollama-cloud') {
       const headers: Record<string, string> = {
         'User-Agent': 'EverFern/1.0'
       };
@@ -312,6 +322,7 @@ export class AIClient {
 
   private _supportsVision(): boolean {
     if (this.config.vlm) return false;
+    if (this.config.provider === 'everfern') return true;
     const modelName = this.config.model?.toLowerCase() || '';
     const visionKeywords = ['vision', 'image', 'vl-', 'vl:'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
@@ -321,16 +332,115 @@ export class AIClient {
     return false;
   }
 
+  private _parseActionsFromContent(content: string): string[] {
+    // Parse action strings from the response content
+    // Format: "action1 | action2 | action3" or just "action1"
+    if (!content) return [];
+
+    const actions = content
+      .split('|')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.toLowerCase().includes('done'));
+
+    return actions;
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
-    if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'everfern') {
+    // For EverFern Cloud, route vision requests using direct HTTP (not OpenAI SDK)
+    if (this.config.provider === 'everfern') {
+      // Check if this is a vision request (has images)
+      const hasImages = request.messages.some(m =>
+        Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+      );
+
+      if (hasImages) {
+        // Extract screenshot and objective from messages
+        const lastMsg = request.messages[request.messages.length - 1];
+        if (Array.isArray(lastMsg.content)) {
+          const imageUrl = lastMsg.content.find(c => c.type === 'image_url')?.image_url?.url;
+          const textContent = lastMsg.content.find(c => c.type === 'text')?.text || '';
+
+          if (imageUrl) {
+            try {
+              // Use direct HTTP request to /api/chat/completions for computer use
+              const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(this.config.apiKey && { 'Authorization': `Bearer ${this.config.apiKey}` })
+                },
+                body: JSON.stringify({
+                  messages: request.messages,
+                  model: this.config.model,
+                  temperature: request.temperature ?? this.config.temperature,
+                  max_tokens: request.maxTokens ?? this.config.maxTokens
+                })
+              });
+
+              if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+              }
+
+              const data = await response.json();
+              if (!data.choices || !data.choices[0]) {
+                throw new Error('No response from API');
+              }
+
+              const content = data.choices[0].message.content;
+
+              // Parse actions from the response
+              const actions = this._parseActionsFromContent(content);
+
+              console.log('[EverFern Vision] Parsed actions:', actions);
+
+              // If we have actions, return them as a computer_use tool call
+              if (actions.length > 0) {
+                console.log('[EverFern Vision] Creating computer_use tool call with', actions.length, 'actions');
+                return {
+                  id: data.id || `everfern-${Date.now()}`,
+                  content: content,
+                  model: this.config.model,
+                  toolCalls: [{
+                    id: `call_${Date.now()}`,
+                    name: 'computer_use',
+                    arguments: {
+                      action: 'execute_actions',
+                      actions: actions
+                    }
+                  }],
+                  finishReason: 'tool_calls'
+                };
+              }
+
+              // No actions, just return the content
+              console.log('[EverFern Vision] No actions found, returning content only');
+              return {
+                id: data.id || `everfern-${Date.now()}`,
+                content: content,
+                model: this.config.model,
+                finishReason: 'stop'
+              };
+            } catch (err) {
+              console.error('[EverFern Cloud] Vision grounding failed:', err);
+              throw err;
+            }
+          }
+        }
+      }
+
+      // For non-vision requests, use OpenAI SDK
+      return this._openAISDKChat(request);
+    }
+
+    // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax and Ollama Cloud
+    if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'ollama-cloud') {
       return this._openAISDKChat(request);
     }
 
     switch (this.config.provider) {
       case 'anthropic': return this._anthropicChat(request);
       case 'ollama': return this._ollamaChat(request);
-      case 'ollama-cloud': return this._ollamaChat(request); // Cloud models use native Ollama API
       // All Gemini models (including gemini-2.5-computer-use-preview-10-2025) use
       // the OpenAI-compatible v1beta/openai endpoint. The crosshair grounding loop
       // does not require the proprietary Gemini native `computer_use` tool.
@@ -339,8 +449,70 @@ export class AIClient {
   }
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
-    // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, and EverFern
-    if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'everfern') {
+    // For EverFern Cloud, route vision requests to /api/tars/vision
+    if (this.config.provider === 'everfern') {
+      // Check if this is a vision request (has images)
+      const hasImages = request.messages.some(m =>
+        Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+      );
+
+      if (hasImages) {
+        // Extract screenshot and objective from messages
+        const lastMsg = request.messages[request.messages.length - 1];
+        if (Array.isArray(lastMsg.content)) {
+          const imageUrl = lastMsg.content.find(c => c.type === 'image_url')?.image_url?.url;
+          const textContent = lastMsg.content.find(c => c.type === 'text')?.text || '';
+
+          if (imageUrl) {
+            try {
+              const result = await this.everfernCloudVisionGrounding({
+                screenshot: imageUrl,
+                objective: textContent,
+                apiBaseUrl: 'http://localhost:5000',
+                token: this.config.apiKey
+              });
+
+              // Yield instruction as delta
+              yield {
+                id: `everfern-${Date.now()}`,
+                delta: result.instruction,
+                done: false,
+                model: this.config.model
+              };
+
+              // Yield actions as tool calls
+              for (const action of result.actions) {
+                yield {
+                  id: `everfern-${Date.now()}`,
+                  delta: action,
+                  done: false,
+                  model: this.config.model,
+                  toolCalls: [{ id: `call_${Math.random()}`, name: 'execute_action', arguments: { action } }]
+                };
+              }
+
+              yield {
+                id: `everfern-${Date.now()}`,
+                delta: '',
+                done: true,
+                model: this.config.model
+              };
+              return;
+            } catch (err) {
+              console.error('[EverFern Cloud] Vision grounding failed:', err);
+              throw err;
+            }
+          }
+        }
+      }
+
+      // For non-vision requests, use OpenAI SDK
+      yield* this._openAISDKStream(request);
+      return;
+    }
+
+    // Use OpenAI SDK for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax and Ollama Cloud
+    if (this.config.provider === 'nvidia' || this.config.provider === 'deepseek' || this.config.provider === 'openrouter' || this.config.provider === 'minimax' || this.config.provider === 'ollama-cloud') {
       yield* this._openAISDKStream(request);
       return;
     }
@@ -348,7 +520,6 @@ export class AIClient {
     switch (this.config.provider) {
       case 'anthropic': yield* this._anthropicStream(request); break;
       case 'ollama': yield* this._ollamaStream(request); break;
-      case 'ollama-cloud': yield* this._ollamaStream(request); break; // Cloud models use native Ollama API
       default: yield* this._openAICompatStream(request); break;
     }
   }
@@ -647,6 +818,32 @@ export class AIClient {
       stream: isStreaming
     };
 
+    // Helper function for retrying with exponential backoff
+    const retryWithBackoff = async <T>(
+      fn: () => Promise<T>,
+      maxRetries = 3,
+      baseDelayMs = 1000
+    ): Promise<T> => {
+      let lastError: any;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await fn();
+        } catch (err: any) {
+          lastError = err;
+          // Retry on 500, 502, 503, 504 errors or timeout
+          const status = err.status;
+          const isRetryable = status >= 500 || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET';
+          if (!isRetryable || attempt === maxRetries - 1) {
+            throw err;
+          }
+          const delayMs = baseDelayMs * Math.pow(2, attempt);
+          console.warn(`[AIClient] Request failed with status ${status}, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+      }
+      throw lastError;
+    };
+
     // Add NVIDIA-specific parameters
     if (this.config.provider === 'nvidia') {
       const modelName = req.model ?? this.config.model;
@@ -673,15 +870,21 @@ export class AIClient {
 
     // Add tools if provided
     if (req.tools?.length) {
-      options.tools = req.tools.map(t => ({
-        type: 'function',
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters
+      options.tools = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
         }
-      }));
-      options.tool_choice = 'auto';
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        };
+      });
+      // Use provided toolChoice or default to 'auto'
+      options.tool_choice = req.toolChoice || 'auto';
     }
 
     // Add JSON response format
@@ -702,10 +905,12 @@ export class AIClient {
 
       if (isStreaming) {
         // Streaming mode - cast through unknown to handle type mismatch
-        const stream = await this.openaiClient.chat.completions.create({
-          ...options,
-          stream: true
-        }) as unknown as AsyncIterable<any>;
+        const stream = await retryWithBackoff(() =>
+          this.openaiClient!.chat.completions.create({
+            ...options,
+            stream: true
+          }) as unknown as Promise<AsyncIterable<any>>
+        );
 
         let fullContent = '';
         let fullReasoning = '';
@@ -761,7 +966,9 @@ export class AIClient {
         };
       } else {
         // Non-streaming mode
-        const response = await this.openaiClient.chat.completions.create(options) as any;
+        const response = await retryWithBackoff(() =>
+          this.openaiClient!.chat.completions.create(options) as Promise<any>
+        );
         const choice = response.choices?.[0];
         const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
           id: tc.id,
@@ -784,8 +991,20 @@ export class AIClient {
             (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop'
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(`[${this.config.provider}] OpenAI SDK Error:`, err);
+
+      // Log detailed error info for debugging
+      if (err.status === 500) {
+        console.error(`[${this.config.provider}] 500 Error Details:`, {
+          requestID: err.requestID,
+          error: err.error,
+          provider: this.config.provider,
+          model: this.config.model,
+          baseUrl: this.config.baseUrl,
+          messageCount: messages.length
+        });
+      }
       throw err;
     }
   }
@@ -806,14 +1025,19 @@ export class AIClient {
     };
 
     if (req.tools?.length) {
-      options.tools = req.tools.map(t => ({
-        type: 'function',
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters
+      options.tools = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
         }
-      }));
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        };
+      });
       options.tool_choice = 'auto';
     }
 
@@ -826,7 +1050,35 @@ export class AIClient {
     }
 
     try {
-      const stream = await this.openaiClient.chat.completions.create(options) as unknown as AsyncIterable<any>;
+      // Helper function for retrying with exponential backoff
+      const retryWithBackoff = async <T>(
+        fn: () => Promise<T>,
+        maxRetries = 3,
+        baseDelayMs = 1000
+      ): Promise<T> => {
+        let lastError: any;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            return await fn();
+          } catch (err: any) {
+            lastError = err;
+            // Retry on 500, 502, 503, 504 errors or timeout
+            const status = err.status;
+            const isRetryable = status >= 500 || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET';
+            if (!isRetryable || attempt === maxRetries - 1) {
+              throw err;
+            }
+            const delayMs = baseDelayMs * Math.pow(2, attempt);
+            console.warn(`[AIClient] Stream request failed with status ${status}, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(r => setTimeout(r, delayMs));
+          }
+        }
+        throw lastError;
+      };
+
+      const stream = await retryWithBackoff(() =>
+        this.openaiClient!.chat.completions.create(options) as unknown as Promise<AsyncIterable<any>>
+      );
       let id = `${this.config.provider}-${Date.now()}`;
 
       for await (const chunk of stream) {
@@ -1019,10 +1271,15 @@ export class AIClient {
       }
     }
     if (req.tools?.length) {
-      body['tools'] = req.tools.map(t => ({
-        type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.parameters },
-      }));
+      body['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
+        }
+        return {
+          type: 'function',
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        };
+      });
       body['tool_choice'] = 'auto';
     }
     if (req.responseFormat === 'json' && (this.config.provider === 'openai' || this.config.provider === 'deepseek')) {
@@ -1249,10 +1506,15 @@ export class AIClient {
     }
     // Include tools in the streaming request so models can trigger tool calls
     if (req.tools?.length) {
-      streamBody['tools'] = req.tools.map(t => ({
-        type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.parameters },
-      }));
+      streamBody['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
+        }
+        return {
+          type: 'function',
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        };
+      });
       streamBody['tool_choice'] = 'auto';
     }
 
@@ -1572,9 +1834,21 @@ export class AIClient {
     };
     if (system) body['system'] = system;
     if (req.tools?.length) {
-      body['tools'] = req.tools.map(t => ({
-        name: t.name, description: t.description, input_schema: t.parameters,
-      }));
+      body['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          const fn = (t as any).function;
+          return {
+            name: fn.name,
+            description: fn.description,
+            input_schema: fn.parameters
+          };
+        }
+        return {
+          name: t.name,
+          description: t.description,
+          input_schema: t.parameters,
+        };
+      });
     }
 
     const headers = this._anthropicHeaders;
@@ -1821,14 +2095,19 @@ export class AIClient {
 
     // Pass tools to Ollama if provided
     if (req.tools && req.tools.length > 0) {
-      body['tools'] = req.tools.map(t => ({
-        type: 'function',
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters
+      body['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
         }
-      }));
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        };
+      });
     }
 
     const headers = this._ollamaHeaders;
@@ -2041,6 +2320,71 @@ export class AIClient {
       const data = await res.json();
       return (data.models || []).map((m: any) => m.name as string);
     } catch { return []; }
+  }
+
+  /**
+   * EverFern Cloud Vision Grounding
+   *
+   * When using EverFern Cloud as the provider, send a screenshot to the API
+   * for vision grounding and get back a plain-English instruction.
+   *
+   * Usage:
+   *   const instruction = await client.everfernCloudVisionGrounding({
+   *     screenshot: 'data:image/png;base64,...',
+   *     objective: 'click the search button',
+   *     history: ['previous instruction -> actions', ...]
+   *   });
+   */
+  async everfernCloudVisionGrounding(params: {
+    screenshot: string;
+    objective: string;
+    history?: string[];
+    apiBaseUrl?: string;
+    token?: string;
+  }): Promise<{ instruction: string; actions: string[]; screenshot: string }> {
+    if (this.config.provider !== 'everfern') {
+      throw new Error(`everfernCloudVisionGrounding() only works with provider='everfern', got '${this.config.provider}'`);
+    }
+
+    const { screenshot, objective, history = [], apiBaseUrl = 'http://localhost:5000', token } = params;
+
+    if (!screenshot) {
+      throw new Error('screenshot is required');
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/tars/vision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        },
+        body: JSON.stringify({
+          screenshot,
+          objective,
+          history
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.instruction) {
+        throw new Error('No instruction in response');
+      }
+
+      return {
+        instruction: data.instruction,
+        actions: data.actions || [],
+        screenshot: data.screenshot || screenshot
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`[EverFern Cloud Vision Grounding] ${message}`);
+    }
   }
 }
 

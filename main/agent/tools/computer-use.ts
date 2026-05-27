@@ -1,462 +1,53 @@
+/**
+ * computer-use.ts
+ * Clean TypeScript port of qwen-computer.py.
+ * Keeps AgentTool / AIClient / progress-event integration points;
+ * strips worker threads, PowerShell probing, overlay calls, and batching bloat.
+ */
+
 import * as fs from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
-import { execSync } from "child_process";
-import { screen as electronScreen } from 'electron';
-import type { AgentTool, ToolResult as AgentToolResult } from '../runner/types';
-import { AIClient, ChatMessage, ToolCall } from '../../lib/ai-client';
-import { globalAbortManager } from '../runner/abort-manager';
 
-// sharp is an optional native module — load lazily so a missing binary doesn't crash startup
-let sharp: typeof import('sharp') | null = null;
-try { sharp = require('sharp'); } catch { console.warn('[ComputerUse] sharp unavailable — image processing disabled'); }
+import type { AgentTool, ToolResult as AgentToolResult } from "../runner/types";
+import { AIClient, ChatMessage } from "../../lib/ai-client";
+import { globalAbortManager } from "../runner/abort-manager";
+import DesktopOverlay from "./desktop-overlay";
 
-// ── Native Automation ────────────────────────────────────────────────────────
+// ── Optional native deps ─────────────────────────────────────────────────────
+
 let robot: any = null;
-try { robot = require('@jitsi/robotjs'); }
-catch { console.warn('[ComputerUse] robotjs unavailable — falls back to shell'); }
+try { robot = require("@jitsi/robotjs"); }
+catch { console.warn("[ComputerUse] robotjs unavailable"); }
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+let sharp: typeof import("sharp") | null = null;
+try { sharp = require("sharp"); }
+catch { console.warn("[ComputerUse] sharp unavailable — cursor circle disabled"); }
 
-interface ComputerUseParams {
-  action:
-  | "key"
-  | "press"
-  | "type"
-  | "mouse_move"
-  | "left_click"
-  | "left_click_drag"
-  | "right_click"
-  | "middle_click"
-  | "double_click"
-  | "triple_click"
-  | "scroll"
-  | "hscroll"
-  | "wait"
-  | "terminate"
-  | "answer"
-  | "zoom";
-  keys?: string[];
-  text?: string;
-  coordinate?: [number, number];
-  pixels?: number;
-  time?: number;
-  status?: "success" | "failure";
-  clear_first?: boolean;
-}
+let screenshotDesktop: any = null;
+try { screenshotDesktop = require("screenshot-desktop"); }
+catch { console.warn("[ComputerUse] screenshot-desktop unavailable"); }
 
-interface ToolPayload {
-  _action?: string;
-  screenshot?: string;
-  screenshot_path?: string;
-  cursor?: { x: number; y: number };
-  display?: { width: number; height: number };
-  downscaled_size?: { width: number; height: number };
-  status?: string;
-  detail?: string;
-  text?: string;
-  result?: string;
-  appName?: string;
-  appLogo?: string;
-  [key: string]: unknown;
-}
+// ── Sub-agent progress types (kept for app integration) ──────────────────────
 
-interface Viewport {
-  monitor_left: number;
-  monitor_top: number;
-  display_width: number;
-  display_height: number;
-  image_width: number;
-  image_height: number;
-  raw_width: number;
-  raw_height: number;
-}
-
-// ── Sub-Agent Progress Streaming Types ──────────────────────────────────────
-
-/**
- * Sub-agent progress event types
- */
 export type SubAgentProgressEventType =
-  | 'step'       // New step started
-  | 'reasoning'  // Agent reasoning/thinking
-  | 'action'     // Action execution
-  | 'screenshot' // Screenshot captured
-  | 'complete'   // Sub-agent completed
-  | 'abort'      // Sub-agent aborted
-  | 'branch_start'    // Timeline branch started
-  | 'branch_update'   // Timeline branch progress update
-  | 'branch_complete' // Timeline branch completed
-  | 'branch_abort';   // Timeline branch aborted
+  | "step" | "reasoning" | "action" | "screenshot"
+  | "complete" | "abort"
+  | "branch_start" | "branch_update" | "branch_complete" | "branch_abort";
 
-/**
- * Sub-agent progress event
- */
 export interface SubAgentProgressEvent {
-  /** Event type */
   type: SubAgentProgressEventType;
-
-  /** Tool call ID (unique identifier for this sub-agent execution) */
   toolCallId: string;
-
-  /** Timestamp (ISO 8601) */
   timestamp: string;
-
-  /** Current step number (1-indexed) */
   stepNumber?: number;
-
-  /** Total steps (max turns) */
   totalSteps?: number;
-
-  /** Event content/payload */
   content?: string;
-
-  /** Action details (for action events) */
-  action?: {
-    type: string;           // e.g., "left_click", "type", "scroll"
-    params: Record<string, unknown>;
-    description: string;    // Human-readable description
-  };
-
-  /** Screenshot data (for screenshot events) */
-  screenshot?: {
-    base64: string;         // Base64-encoded image
-    width: number;
-    height: number;
-  };
-
-  /** Metadata */
-  metadata?: {
-    model?: string;
-    provider?: string;
-    [key: string]: unknown;
-  };
-
-  /** Timeline branch metadata for visualization */
-  timelineBranch?: {
-    /** Parent agent/tool call ID that spawned this subagent */
-    parentId?: string;
-    /** Agent type for visual styling */
-    agentType?: 'web-explorer' | 'navis' | 'computer-use' | 'research' | 'coding-specialist' | 'data-analyst';
-    /** Branch level in hierarchy (0 = root, 1 = first level subagent, etc.) */
-    branchLevel?: number;
-    /** Visual position hint for UI rendering */
-    visualPosition?: { x: number; y: number };
-    /** Branch status for timeline visualization */
-    branchStatus?: 'pending' | 'running' | 'completed' | 'failed' | 'aborted';
-    /** Task description for branch labeling */
-    taskDescription?: string;
-    /** Subagent session ID for grouping related events */
-    sessionId?: string;
-  };
+  action?: { type: string; params: Record<string, unknown>; description: string };
+  screenshot?: { base64: string; width: number; height: number };
+  metadata?: Record<string, unknown>;
+  timelineBranch?: Record<string, unknown>;
 }
 
-/**
- * Buffered progress event batch
- */
-export interface SubAgentProgressBatch {
-  toolCallId: string;
-  events: SubAgentProgressEvent[];
-  timestamp: string;
-}
-
-// ── Progress Event Emitter ──────────────────────────────────────────────────
-
-/**
- * Manages buffering and flushing of sub-agent progress events with timeline branch support.
- *
- * Implements efficient event transmission with:
- * - Time-based flushing (16ms intervals for ~60fps)
- * - Size-based flushing (immediate flush at 10 events)
- * - Timeline branch event prioritization (branch events flush immediately)
- * - Graceful error handling (serialization failures don't crash agent)
- * - Enhanced metadata for timeline visualization
- *
- * Requirements: 1.1, 1.2, 6.1, 6.2, 7.1, 7.2, 7.3, 7.4, 7.5
- */
-class ProgressEventEmitter {
-  private buffer: SubAgentProgressEvent[] = [];
-  private flushTimer: NodeJS.Timeout | null = null;
-  private readonly FLUSH_INTERVAL_MS = 16; // ~60fps
-  private readonly MAX_BUFFER_SIZE = 10;
-  private readonly PRIORITY_EVENT_TYPES = new Set<SubAgentProgressEventType>([
-    'branch_start', 'branch_complete', 'branch_abort', 'complete', 'abort'
-  ]);
-
-  constructor(
-    private toolCallId: string,
-    private sender: Electron.WebContents | null,
-    private timelineBranchMetadata?: {
-      parentId?: string;
-      agentType?: string;
-      branchLevel?: number;
-      sessionId?: string;
-      taskDescription?: string;
-    }
-  ) {}
-
-  /**
-   * Emit a progress event with timeline branch support.
-   *
-   * Adds the event to the buffer and schedules a flush if not already scheduled.
-   * Timeline branch events (branch_start, branch_complete, branch_abort) are flushed immediately.
-   * If the buffer size reaches MAX_BUFFER_SIZE, flushes immediately.
-   * Automatically injects timeline branch metadata if configured.
-   *
-   * Requirements: 1.1, 1.2, 6.1, 6.2, 7.2, 7.4
-   */
-  emit(event: SubAgentProgressEvent): void {
-    // Inject timeline branch metadata if configured and not already present
-    if (this.timelineBranchMetadata && !event.timelineBranch) {
-      event.timelineBranch = {
-        parentId: this.timelineBranchMetadata.parentId,
-        agentType: this.timelineBranchMetadata.agentType as any,
-        branchLevel: this.timelineBranchMetadata.branchLevel,
-        sessionId: this.timelineBranchMetadata.sessionId,
-        taskDescription: this.timelineBranchMetadata.taskDescription,
-        branchStatus: this.mapEventTypeToBranchStatus(event.type),
-      };
-    }
-
-    // Add event to buffer
-    this.buffer.push(event);
-
-    // Flush immediately for priority events (timeline branch events)
-    if (this.PRIORITY_EVENT_TYPES.has(event.type)) {
-      this.flush();
-    } else if (this.buffer.length >= this.MAX_BUFFER_SIZE) {
-      // Flush immediately if buffer size >= MAX_BUFFER_SIZE
-      this.flush();
-    } else {
-      // Schedule flush if not already scheduled
-      this.scheduleFlush();
-    }
-  }
-
-  /**
-   * Map event type to branch status for timeline visualization.
-   */
-  private mapEventTypeToBranchStatus(eventType: SubAgentProgressEventType): 'pending' | 'running' | 'completed' | 'failed' | 'aborted' {
-    switch (eventType) {
-      case 'branch_start':
-      case 'step':
-      case 'reasoning':
-      case 'action':
-      case 'screenshot':
-      case 'branch_update':
-        return 'running';
-      case 'branch_complete':
-      case 'complete':
-        return 'completed';
-      case 'branch_abort':
-      case 'abort':
-        return 'aborted';
-      default:
-        return 'running';
-    }
-  }
-
-  /**
-   * Emit a timeline branch start event.
-   *
-   * Requirements: 1.1, 1.2
-   */
-  emitBranchStart(taskDescription?: string): void {
-    this.emit({
-      type: 'branch_start',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      content: taskDescription || 'Subagent branch started',
-      timelineBranch: {
-        ...this.timelineBranchMetadata,
-        branchStatus: 'running',
-        taskDescription: taskDescription || this.timelineBranchMetadata?.taskDescription,
-      } as any,
-    });
-  }
-
-  /**
-   * Emit a timeline branch update event.
-   *
-   * Requirements: 6.1, 6.2
-   */
-  emitBranchUpdate(content: string, stepNumber?: number, totalSteps?: number): void {
-    this.emit({
-      type: 'branch_update',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      content,
-      stepNumber,
-      totalSteps,
-      timelineBranch: {
-        ...this.timelineBranchMetadata,
-        branchStatus: 'running',
-      } as any,
-    });
-  }
-
-  /**
-   * Emit a timeline branch complete event.
-   *
-   * Requirements: 1.1, 1.2
-   */
-  emitBranchComplete(result?: string): void {
-    this.emit({
-      type: 'branch_complete',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      content: result || 'Subagent branch completed successfully',
-      timelineBranch: {
-        ...this.timelineBranchMetadata,
-        branchStatus: 'completed',
-      } as any,
-    });
-  }
-
-  /**
-   * Emit a timeline branch abort event.
-   *
-   * Requirements: 1.1, 1.2
-   */
-  emitBranchAbort(reason?: string): void {
-    this.emit({
-      type: 'branch_abort',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      content: reason || 'Subagent branch aborted',
-      timelineBranch: {
-        ...this.timelineBranchMetadata,
-        branchStatus: 'aborted',
-      } as any,
-    });
-  }
-
-  /**
-   * Flush all buffered events to the frontend via IPC with timeline branch support.
-   *
-   * Serializes buffered events to JSON and sends them via the 'acp:sub-agent-progress' channel.
-   * Clears the buffer after successful send. Handles serialization errors gracefully by logging
-   * and continuing execution (errors don't crash agent). Timeline branch events are prioritized
-   * and include enhanced metadata for visualization.
-   *
-   * Requirements: 1.1, 1.2, 4.2, 4.3, 4.4, 6.1, 6.2, 10.1, 10.2
-   */
-  private flush(): void {
-    // Nothing to flush if buffer is empty
-    if (this.buffer.length === 0) {
-      return;
-    }
-
-    // Check if sender is available
-    if (!this.sender || this.sender.isDestroyed()) {
-      console.warn('[SubAgentProgress] IPC sender unavailable, skipping flush');
-      this.buffer = []; // Clear buffer to prevent memory buildup
-      return;
-    }
-
-    // Cancel any pending flush timer
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-
-    // Attempt to serialize and send events
-    try {
-      // Sort events by priority (timeline branch events first) and timestamp
-      const sortedEvents = [...this.buffer].sort((a, b) => {
-        // Priority events first
-        const aPriority = this.PRIORITY_EVENT_TYPES.has(a.type) ? 0 : 1;
-        const bPriority = this.PRIORITY_EVENT_TYPES.has(b.type) ? 0 : 1;
-
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority;
-        }
-
-        // Then by timestamp
-        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-      });
-
-      // Create batch with timeline metadata
-      const batch: SubAgentProgressBatch = {
-        toolCallId: this.toolCallId,
-        events: sortedEvents,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Serialize batch to JSON
-      const serialized = JSON.stringify(batch);
-
-      // Send via IPC channel
-      this.sender.send('acp:sub-agent-progress', serialized);
-
-      // Log timeline branch events for debugging
-      const branchEvents = sortedEvents.filter(e => this.PRIORITY_EVENT_TYPES.has(e.type));
-      if (branchEvents.length > 0) {
-        console.debug(`[SubAgentProgress] Flushed ${branchEvents.length} timeline branch events for ${this.toolCallId}`);
-      }
-
-      // Clear buffer after successful send
-      this.buffer = [];
-    } catch (error) {
-      // Handle serialization errors gracefully - log and continue
-      console.error('[SubAgentProgress] Serialization failed:', error);
-      console.error('[SubAgentProgress] Failed events:', this.buffer);
-
-      // Clear buffer to prevent repeated failures and memory buildup
-      this.buffer = [];
-    }
-  }
-
-  /**
-   * Schedule a flush to occur after FLUSH_INTERVAL_MS.
-   *
-   * Only schedules a flush if one is not already scheduled (flushTimer is null).
-   * This implements time-based flushing at ~60fps (16ms intervals).
-   *
-   * Requirements: 7.3
-   */
-  private scheduleFlush(): void {
-    // Only schedule if no flush is already scheduled
-    if (this.flushTimer !== null) {
-      return;
-    }
-
-    // Set timer for FLUSH_INTERVAL_MS
-    this.flushTimer = setTimeout(() => {
-      // Call flush when timer expires
-      this.flush();
-      // Timer reference is cleared in flush()
-    }, this.FLUSH_INTERVAL_MS);
-  }
-
-  /**
-   * Destroy the emitter and clean up resources.
-   *
-   * Flushes any remaining buffered events, cancels the flush timer,
-   * and clears the buffer. This method should be called when the
-   * sub-agent execution completes or is aborted.
-   *
-   * Requirements: 9.2
-   */
-  destroy(): void {
-    // Flush remaining events before cleanup
-    this.flush();
-
-    // Cancel flush timer if scheduled
-    if (this.flushTimer !== null) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-
-    // Clear buffer to free memory
-    this.buffer = [];
-  }
-}
-
-// ── Constants & Configuration ───────────────────────────────────────────────
-
-const DEFAULT_MODEL = "qwen3-vl:235b-instruct-cloud";
-const DEFAULT_BASE_URL = "https://ollama.com/v1";
+// ── Tool spec (matches Python exactly) ───────────────────────────────────────
 
 const COMPUTER_USE_TOOL_SPEC = {
   type: "function",
@@ -465,11 +56,10 @@ const COMPUTER_USE_TOOL_SPEC = {
     description: [
       "Use a mouse and keyboard to interact with a computer, and take screenshots.",
       "* This is an interface to a desktop GUI. You do not have access to a terminal or applications menu. You must click on desktop icons to start applications.",
-      "* Some applications may take time to start or process actions, so you may need to wait and take successive screenshots to see the results of your actions. E.g. if you click on Firefox and a window doesn't open, try wait and taking another screenshot.",
+      "* Some applications may take time to start or process actions, so you may need to wait and take successive screenshots to see the results of your actions.",
       "* The screen's resolution is dynamically detected from the host system.",
       "* Whenever you intend to move the cursor to click on an element like an icon, you should consult a screenshot to determine the coordinates of the element before moving the cursor.",
       "* Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element.",
-      "* IMPORTANT: After every action, you will receive a new screenshot. You MUST verify that the action had the intended effect (e.g., if you typed into a search bar, verify the text appears there).",
     ].join("\n"),
     parameters: {
       type: "object",
@@ -479,7 +69,6 @@ const COMPUTER_USE_TOOL_SPEC = {
           type: "string",
           enum: [
             "key",
-            "press",
             "type",
             "mouse_move",
             "left_click",
@@ -493,22 +82,17 @@ const COMPUTER_USE_TOOL_SPEC = {
             "wait",
             "terminate",
             "answer",
-            "zoom",
           ],
           description: "The action to perform.",
         },
         keys: {
           type: "array",
           items: { type: "string" },
-          description: "Keys used with action=key or action=press.",
+          description: "Keys used with action=key.",
         },
         text: {
           type: "string",
           description: "Text for action=type or action=answer.",
-        },
-        clear_first: {
-          type: "boolean",
-          description: "🧼 CRITICAL: Set true to clear input field BEFORE typing. Use this when: (1) field has existing text, (2) URL bar has text, (3) search field has placeholder or previous query. Removes all text with Ctrl+A + Backspace, then types new text.",
         },
         coordinate: {
           type: "array",
@@ -523,10 +107,6 @@ const COMPUTER_USE_TOOL_SPEC = {
           type: "number",
           description: "Seconds to wait for action=wait.",
         },
-        zoom_factor: {
-          type: "number",
-          description: "Optional zoom level (e.g. 2, 4) for action=zoom.",
-        },
         status: {
           type: "string",
           enum: ["success", "failure"],
@@ -537,102 +117,22 @@ const COMPUTER_USE_TOOL_SPEC = {
   },
 };
 
-const SYSTEM_PROMPT = `You are Fern, an autonomous automation agent with full GUI control.
-- Be precise. Inspect screenshots carefully before acting.
-- **ADAPTABILITY & OBSTACLES**: If you encounter an ad, popup, overlay, or notification that blocks your path, you MUST close it or wait for it to disappear before proceeding. Do not ignore visual obstructions.
-- **VERIFICATION**: After every action, inspect the resulting screenshot to verify success.
-  - If a click didn't land or a field didn't focus, REPEAT the action.
-  - If typing failed because of an overlay, clear the obstacle and type again.
-  - **MEDIA VERIFICATION**: For music or video (e.g., Spotify, YouTube):
-    - A **Play icon** (triangle) usually means the media is **PAUSED** (click it to play).
-    - A **Pause icon** (two bars) usually means the media is **PLAYING**.
-    - DO NOT claim success just by seeing an icon. You MUST verify the **progress bar is moving** or the **time counter is increasing** by taking a second screenshot after a short wait (action=wait).
-  - NEVER claim a task is "searched" or "complete" if the visual state does not confirm it.
-- **LEVERAGE GENERAL KNOWLEDGE**: Use your extensive knowledge of how modern GUIs and popular applications (Spotify, Discord, Chrome, VS Code, etc.) are structured.
-  - If a button isn't immediately visible, it's likely hidden in a "Settings" gear icon, a "..." meatball menu, a "hamburger" menu, or a profile dropdown.
-  - Search bars are almost always at the top-center, top-right, or top-left of an app.
-  - Navigation is typically in a left-side rail or a top header.
-  - If an app is unresponsive, try clicking the title bar to focus it or use Alt+Tab.
-- **ADVANCED GUI REASONING (Multi-App)**:
-  - **Context Clues**: Look for visual breadcrumbs. A small arrow next to a label indicates a dropdown. A blue outline indicates focus. A "ghost" icon indicates a hidden action.
-  - **Exploration**: If you are unsure how an app works, DO NOT guess. Use action=mouse_move to "probe" different areas and see how the UI reacts (e.g., does a tooltip appear? does a button highlight?).
-  - **Universal Patterns**: Apply "Human Logic" to any app. Close buttons are usually top-right (Windows) or top-left (macOS). "Confirm" buttons are usually on the right; "Cancel" on the left.
-  - **Error Handling**: If an app shows an error message, READ IT. Do not just try the same action again. Adjust your strategy based on the error text.
-- **KEYBOARD & SHORTCUTS**: Use your full knowledge of Windows and application-specific shortcuts to be as fast and "human-like" as possible.
-  - **OS Shortcuts**:
-    - action=press(keys=["win"]) -> Open Start Menu (use this to search for and launch any app)
-    - action=press(keys=["win", "r"]) -> Open Run dialog (ONLY for built-in tools: cmd, powershell, notepad, calc, explorer, taskmgr, regedit, control, msconfig — NOT for third-party apps)
-    - action=press(keys=["alt", "tab"]) -> Switch between open windows
-    - action=press(keys=["win", "d"]) -> Show/Hide desktop
-    - action=press(keys=["win", "e"]) -> Open File Explorer
-    - action=press(keys=["control", "shift", "escape"]) -> Open Task Manager
-  - **App-Specific**:
-    - Browsers: action=press(keys=["control", "t"]) (New Tab), action=press(keys=["control", "l"]) (Focus Address Bar), action=press(keys=["control", "f"]) (Search Page).
-    - Chat/Social: action=press(keys=["control", "k"]) (Quick Switcher/Search in Discord/Slack), action=press(keys=["control", "enter"]) (Send message).
-    - General: Use any other shortcuts you know (Ctrl+C, Ctrl+V, Ctrl+S, Ctrl+Z, etc.) whenever they are more efficient than mouse clicks.
-- **HUMAN-LIKE PRECISION**:
-  - **Click Targets**: Always click the **CENTER** of an icon, button, or text label. Avoid clicking edges where it might miss.
-  - **Loading States**: If you see a spinner, progress bar, or "Loading..." text, use action=wait(time=2) and check again. Do not click on empty areas that haven't loaded yet.
-  - **HOVER-TO-REVEAL (Critical)**: Many modern apps (Spotify, YouTube, Netflix) hide controls until you hover.
-    - E.g., for Spotify albums, the Play button often only appears when the mouse is over the album art.
-    - If you need to click something that isn't visible, use action=mouse_move(coordinate=[x, y]) to hover over the parent container first.
-    - After hovering, inspect the next screenshot to see if the target (Play button, Close icon, etc.) appeared.
-  - **COMPLEX MANEUVERS**: Do not be afraid to perform multi-step physical actions:
-    1. action=mouse_move to reveal a hidden button.
-    2. action=left_click once revealed.
-    3. action=left_click_drag for sliders or reordering.
-  - **Hover Effects**: If a menu only appears when hovering (like tooltips or fly-outs), use action=mouse_move(coordinate=[x, y]) first, then inspect the next screenshot.
-- **AVAILABLE APPS**: Review the "CURRENT SYSTEM STATE:" section to see which applications are CURRENTLY OPEN.
-- **FINDING & OPENING APPS**: Follow this priority order strictly:
-  1. **Check the taskbar first**: Look at the bottom of the screen. If the app icon is already in the taskbar (pinned or running), click it to open/focus it. This is the fastest path.
-  2. **Check if already open**: If the app appears in the "CURRENTLY OPEN APPLICATIONS" list, use Alt+Tab or click its taskbar button to bring it to focus.
-  3. **Start Menu / Windows Search (for regular apps like Discord, Spotify, Chrome, etc.)**:
-     - Press the Windows key or click the Windows icon in the taskbar to open the Start Menu.
-     - Type the app name immediately — the search results will appear.
-     - Click the app in the results or press Enter to launch it.
-  4. **Win+R Run dialog (ONLY for built-in Windows tools and commands)**: Use action=press(keys=["win", "r"]) ONLY for things like: 'cmd', 'powershell', 'notepad', 'calc', 'mspaint', 'explorer', 'taskmgr', 'regedit', 'control', 'msconfig'. Do NOT use Win+R for third-party apps like Discord, Spotify, Chrome — they won't be found this way.
-- **DO NOT ASSUME**: Don't assume an app is open or visible. Always check the taskbar and open apps list first, then use Start Menu search if needed.
-- **LAYOUT AWARENESS**: Identify logical sections (Sidebar, Search Bar, Header, Main Context).
-- **SEARCH FIRST**: If an application has a search function (e.g. Discord's "Find Conversations" or a search icon), USE IT mostly. It is faster and more reliable than scrolling. Use action=type(text="Search Query") and action=press(keys=["enter"]).
-- **ZOOM / INSPECTION**: If an icon, sidebar logo, or text (e.g. in a dense sidebar) is too small to recognize, YOU MUST use action=zoom(coordinate=[x, y]) to get a high-resolution close-up of that area. This is critical for differentiating between small icons.
-- **SCROLLING**: To scroll a specific list (like the Discord sidebar), YOU MUST specify the coordinate of that list so the mouse hovers over it first. Example: action=scroll(coordinate=[50, 500], pixels=-600).
-- **SCROLL DIRECTION**: Use negative pixels (e.g., pixels=-600) to scroll DOWN (towards the bottom). Use positive pixels (e.g., pixels=600) to scroll UP (towards the top).
-- **SERVERS vs DMS**: In chat apps, find the Direct Messages icon (usually at the top or a specific icon) to find individual contacts.
-- **PREVENT DUPLICATION**: If typing into a field that already has text, set clear_first: true.
-- **INPUT FIELD STRATEGY**:
-  1. ALWAYS check if an input field has existing text BEFORE typing
-  2. If field not focused: First action=left_click(coordinate=[x, y]) to focus the field
-  3. If field has existing text: THEN use EITHER:
-     a. action=type(text="newtext", clear_first=true) — Recommended for most cases
-     b. action=triple_click(coordinate=[x, y]) to select all text, then action=type(text="newtext")
-     c. action=key(keys=["control", "a"]) to select all, then action=key(keys=["delete"]), then action=type(text="newtext")
-  4. If field is empty: Use action=type(text="newtext") without clear_first
-  5. NEVER assume an input field is empty — always inspect the screenshot first
-  6. Common fields with existing text: Search bars, URL fields, username/password fields, form inputs
-- **KEYS**: Use action=press(keys=["enter"]) to submit forms or send messages.
-- **COMPLETION**: When the task is done, you MUST:
-  1. Use action=answer(text="Detailed summary of what you did and the final result") to report back to the manager agent. This summary is what the user will see in the chat.
-  2. Then use action=terminate(status="success") to end the session.
-- NEVER just use terminate without providing an answer first. The manager agent depends on your answer to conclude the task for the user.
-- Always finish with action=answer and action=terminate(status="success").
+// ── System prompt ────────────────────────────────────────────────────────────
 
-**COORDINATE GUIDELINES**:
-- Taskbar: Y > 900.
-- Search Bars: Often top-center or top-left.
-- Contacts/Servers: Left sidebar (X < 250).
+const SYSTEM_PROMPT = `You are an automation agent with direct access to a GUI computer.
+- Be precise and avoid unnecessary movements.
+- Always inspect the most recent screenshot before clicking.
+- If an application needs time to load, wait before taking more actions.
+- You must finish by calling action=answer with the final response and action=terminate with success/failure.`;
 
-**WORKFLOW**:
-Observation (Screenshot) -> Check Task Requirements -> Find/Open Needed Apps -> Reasoning -> Action -> Verification (New Screenshot).`;
-
-// ── Utilities ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function nowTs(): string {
   const d = new Date();
   return (
-    d.getFullYear().toString() +
+    d.getFullYear() +
     String(d.getMonth() + 1).padStart(2, "0") +
-    String(d.getDate()).padStart(2, "0") +
-    "-" +
+    String(d.getDate()).padStart(2, "0") + "-" +
     String(d.getHours()).padStart(2, "0") +
     String(d.getMinutes()).padStart(2, "0") +
     String(d.getSeconds()).padStart(2, "0")
@@ -640,273 +140,123 @@ function nowTs(): string {
 }
 
 function sleep(seconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  return new Promise(r => setTimeout(r, seconds * 1000));
 }
 
 function ensureXy(coordinate?: [number, number] | null): [number, number] {
-  if (!coordinate || coordinate.length !== 2) {
-    throw new Error("coordinate=[x, y] is required for this action.");
-  }
+  if (!coordinate || coordinate.length !== 2) throw new Error("coordinate=[x, y] is required.");
   return [Math.floor(coordinate[0]), Math.floor(coordinate[1])];
 }
 
-function maybeInt(value: number | undefined | null, defaultVal = 0): number {
-  return value !== undefined && value !== null ? Math.floor(value) : defaultVal;
+function maybeInt(v: number | undefined | null, def = 0): number {
+  return v != null ? Math.floor(v) : def;
 }
 
-/**
- * Get list of currently open windows and processes (Windows only).
- * Returns a formatted string describing open applications.
- */
-function getOpenWindowsInfo(): string {
-  try {
-    if (process.platform !== 'win32') {
-      return "Running on non-Windows platform. Cannot enumerate windows.";
-    }
-
-    // Use PowerShell to get the list of currently open windows
-    const output = execSync(
-      `powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -ExpandProperty Name | Get-Unique"`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
-    );
-
-    const processes = output
-      .split('\n')
-      .map(p => p.trim())
-      .filter(p => p.length > 0)
-      .sort();
-
-    if (processes.length === 0) {
-      return "No open windows detected.";
-    }
-
-    return `Open applications: ${processes.join(', ')}`;
-  } catch (error) {
-    // Fallback if PowerShell fails
-    try {
-      const output = execSync('tasklist', { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-      const lines = output.split('\n').slice(3); // Skip header
-      const apps = lines
-        .map(line => line.split(/\s+/)[0])
-        .filter((app, idx, arr) => app && arr.indexOf(app) === idx) // Unique
-        .slice(0, 20); // Limit to 20 to avoid clutter
-
-      if (apps.length === 0) return "Could not enumerate open applications.";
-      return `Open applications: ${apps.join(', ')}`;
-    } catch {
-      return "Could not enumerate open applications.";
-    }
-  }
-}
-
-/**
- * Get common Windows taskbar items (common pinned apps).
- * This helps the agent know which apps are readily available.
- */
-function getCommonTaskbarApps(): string {
-  try {
-    if (process.platform !== 'win32') {
-      return "";
-    }
-
-    // Check for commonly pinned Start Menu apps
-    const commonApps = [
-      'chrome', 'firefox', 'edge',
-      'discord', 'slack', 'telegram',
-      'vscode', 'notepad', 'explorer',
-      'teams', 'outlook', 'word',
-      'excel', 'powershell', 'cmd'
-    ];
-
-    // Get the taskbar pinned apps from registry (Windows only)
-    try {
-      const taskbarPath = 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Taskband';
-      execSync(`reg query "${taskbarPath}"`, { encoding: 'utf-8', stdio: 'ignore' });
-      // If we get here, taskbar was found - common apps are likely available
-      return "Common taskbar applications:\n- File Explorer\n- Search / Windows Search\n- Start Menu";
-    } catch {
-      return "";
-    }
-  } catch {
-    return "";
-  }
-}
-
-// ── ToolResult ─────────────────────────────────────────────────────────────────
+// ── ToolResult ────────────────────────────────────────────────────────────────
+// Mirrors Python's ToolResult.as_content()
 
 class ToolResult {
-  constructor(public payload: ToolPayload) { }
+  constructor(public payload: Record<string, any>) {}
 
   asContent(): any[] {
-    const payload = { ...this.payload };
-    const screenshot = payload.screenshot as string | undefined;
-    delete payload.screenshot;
-    const action = payload._action as string | undefined;
-    delete payload._action;
-    const detail = payload.detail as string | undefined;
-    delete payload.detail;
-    const textValue = payload.text as string | undefined;
-    delete payload.text;
+    const p = { ...this.payload };
+    const screenshot = p.screenshot as string | undefined; delete p.screenshot;
+    const action     = p._action   as string | undefined; delete p._action;
+    const detail     = p.detail    as string | undefined; delete p.detail;
+    const textValue  = p.text      as string | undefined; delete p.text;
 
-    const meta: Record<string, unknown> = {};
-    for (const key of [
-      "cursor",
-      "display",
-      "downscaled_size",
-      "screenshot_path",
-      "result",
-    ]) {
-      if (key in payload) {
-        meta[key] = payload[key];
-        delete payload[key];
-      }
+    const meta: Record<string, any> = {};
+    for (const k of ["cursor", "display", "downscaled_size", "screenshot_path", "result"]) {
+      if (k in p) { meta[k] = p[k]; delete p[k]; }
     }
 
     const lines: string[] = [];
-    if (action) lines.push(`action=${action}`);
-    const status = payload.status as string | undefined;
-    delete payload.status;
-    if (status) lines.push(`status=${status}`);
-    if (detail) lines.push(detail);
+    if (action)    lines.push(`action=${action}`);
+    const status = p.status as string | undefined; delete p.status;
+    if (status)    lines.push(`status=${status}`);
+    if (detail)    lines.push(detail);
     if (textValue) lines.push(`text: ${textValue}`);
-
-    if (Object.keys(meta).length > 0) lines.push(JSON.stringify(meta));
-    if (Object.keys(payload).length > 0) lines.push(JSON.stringify(payload));
+    if (Object.keys(meta).length)  lines.push(JSON.stringify(meta));
+    if (Object.keys(p).length)     lines.push(JSON.stringify(p));
 
     const content: any[] = [];
-    if (lines.length > 0) {
-      content.push({ type: "text", text: lines.join("\n") });
-    }
-    if (screenshot) {
-      content.push({
-        type: "image_url",
-        image_url: { url: screenshot, detail: "low" },
-      });
-    }
-    if (content.length === 0) {
-      content.push({ type: "text", text: "tool call completed." });
-    }
+    if (lines.length) content.push({ type: "text", text: lines.join("\n") });
+    if (screenshot)   content.push({ type: "image_url", image_url: { url: screenshot, detail: "low" } });
+    if (!content.length) content.push({ type: "text", text: "tool call completed." });
     return content;
-  }
-
-  /** Stringified output for standard ToolResult.output */
-  toString(): string {
-    const payload = { ...this.payload };
-    delete payload.screenshot;
-    return JSON.stringify(payload, null, 2);
   }
 }
 
-// ── ComputerUseTool ────────────────────────────────────────────────────────────
+// ── ComputerUseTool ───────────────────────────────────────────────────────────
 
-/**
- * NOTE: This class uses native OS automation via shell commands.
- * On macOS: uses `screencapture`, `cliclick` (install via `brew install cliclick`).
- * On Linux: uses `scrot`, `xdotool` (install via `apt install xdotool scrot`).
- * Windows support is not implemented.
- *
- * For production use, consider integrating `robotjs` or `nut.js` npm packages.
- */
 class ComputerUseTool {
-  private lastViewport: Partial<Viewport> = {};
-  private progressEmitter: ProgressEventEmitter | null = null;
-  private toolCallId: string = '';
+  public lastViewport: Record<string, any> = {};
+  public overlay: DesktopOverlay | null = null;
 
   constructor(
     private screenshotDir: string,
-    private monitorIndex = 1,
-    private mouseMoveDuration = 0.0,
-    private dragDuration = 0.15,
-    private imageMinPixels = 4096,
-    private imageMaxPixels = 2_000_000,
-    private imageScaleFactor = 32,
-    private imageQuality = 60
+    private monitorIndex   = 1,
+    private mouseMoveDuration = 0.0,   // unused in robotjs; kept for parity
+    private dragDuration   = 0.15,     // unused in robotjs; kept for parity
+    private imageQuality   = 95,
   ) {
-    this.imageMinPixels = Math.max(1024, imageMinPixels);
-    this.imageMaxPixels = Math.max(this.imageMinPixels, imageMaxPixels);
-    this.imageScaleFactor = Math.max(1, imageScaleFactor);
-    this.imageQuality = Math.max(1, Math.min(95, imageQuality));
     fs.mkdirSync(this.screenshotDir, { recursive: true });
-    if (robot) {
-      robot.setMouseDelay(20);
+
+    // Initialize overlay
+    try {
+      this.overlay = new DesktopOverlay();
+      this.overlay.show();
+      console.log("[ComputerUse] Desktop overlay initialized");
+    } catch (err) {
+      console.warn("[ComputerUse] Failed to initialize overlay:", err);
+    }
+
+    // Configure mouse delay after robotjs availability check
+    if (!robot) {
+      console.warn("[ComputerUse] robotjs unavailable - OS automation will fail");
+    } else {
+      try {
+        robot.setMouseDelay(20);
+        console.log("[ComputerUse] robotjs initialized with 20ms mouse delay");
+      } catch (err) {
+        console.error("[ComputerUse] Failed to set mouse delay:", err);
+      }
     }
   }
 
-  /**
-   * Set the progress emitter for emitting cursor position and status events.
-   * Requirements: 5.1, 5.2
-   */
-  setProgressEmitter(emitter: ProgressEventEmitter, toolCallId: string): void {
-    this.progressEmitter = emitter;
-    this.toolCallId = toolCallId;
-  }
+  // ── Public entry point ──────────────────────────────────────────────────────
 
-  /**
-   * Emit a cursor position event for real-time visual feedback.
-   * Requirements: 5.1, 2.1, 2.3, 2.4, 2.5
-   */
-  private emitCursorPositionEvent(
-    actionType: 'move' | 'click' | 'drag' | 'scroll',
-    coordinate: [number, number],
-    description: string
-  ): void {
-    if (!this.progressEmitter) return;
-
-    this.progressEmitter.emit({
-      type: 'action',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      action: {
-        type: actionType,
-        params: { coordinate },
-        description,
-      },
-    });
-  }
-
-  /**
-   * Emit a status event for task lifecycle tracking.
-   * Requirements: 5.2, 2.1, 2.2, 2.6, 2.7, 2.8
-   */
-  private emitStatusEvent(
-    status: 'executing' | 'success' | 'error',
-    description: string,
-    details?: Record<string, unknown>
-  ): void {
-    if (!this.progressEmitter) return;
-
-    this.progressEmitter.emit({
-      type: 'action',
-      toolCallId: this.toolCallId,
-      timestamp: new Date().toISOString(),
-      action: {
-        type: status,
-        params: details || {},
-        description,
-      },
-    });
-  }
-
-  async call(params: ComputerUseParams): Promise<ToolResult> {
+  async call(params: Record<string, any>): Promise<ToolResult> {
     const { action } = params;
 
-    const handlers: Record<string, (p: ComputerUseParams) => Promise<ToolPayload>> = {
-      mouse_move: async (p) => this.mouseMove(p),
-      left_click: async (p) => this.leftClick(p),
-      right_click: async (p) => this.rightClick(p),
-      middle_click: async (p) => this.middleClick(p),
-      double_click: async (p) => this.doubleClick(p),
-      triple_click: async (p) => this.tripleClick(p),
-      left_click_drag: async (p) => this.leftClickDrag(p),
-      scroll: async (p) => this.scroll(p),
-      hscroll: async (p) => this.hscroll(p),
-      type: async (p) => this.type(p),
-      key: async (p) => this.key(p),
-      press: async (p) => this.key(p), // Map 'press' to 'key' for model convenience
-      wait: async (p) => this.waitAction(p),
-      answer: async (p) => this.answer(p),
-      terminate: async (p) => this.terminate(p),
-      zoom: async (p) => this.zoom(p),
+    // Handle execute_actions specially - dispatch multiple actions
+    if (action === 'execute_actions' && Array.isArray(params.actions)) {
+      console.log(`[ComputerUse] Executing ${params.actions.length} actions`);
+      for (const actionStr of params.actions) {
+        console.log(`[ComputerUse] Dispatching: ${actionStr}`);
+        // Parse and execute each action using dispatchAction logic
+        await this.executeActionString(actionStr);
+      }
+      return new ToolResult(await this.attachScreenshot({ status: "ok", detail: `Executed ${params.actions.length} actions` }));
+    }
+
+    const handlers: Record<string, (p: any) => Promise<Record<string, any>>> = {
+      mouse_move:      p => this.mouseMove(p),
+      left_click:      p => this.leftClick(p),
+      right_click:     p => this.rightClick(p),
+      middle_click:    p => this.middleClick(p),
+      double_click:    p => this.doubleClick(p),
+      triple_click:    p => this.tripleClick(p),
+      left_click_drag: p => this.leftClickDrag(p),
+      scroll:          p => this.scroll(p),
+      hscroll:         p => this.hscroll(p),
+      type:            p => this.typeAction(p),
+      key:             p => this.keyAction(p),
+      hold:            p => this.holdAction(p),
+      release:         p => this.releaseAction(p),
+      wait:            p => this.waitAction(p),
+      answer:          p => this.answer(p),
+      terminate:       p => this.terminate(p),
     };
 
     const handler = handlers[action];
@@ -915,584 +265,628 @@ class ComputerUseTool {
     const result = await handler(params);
     result._action = action;
 
-    return new ToolResult(result);
-  }
-
-  async captureObservation(): Promise<ToolPayload> {
-    return await this.attachScreenshot({ status: "observe" });
-  }
-
-  // ── Action Handlers ──────────────────────────────────────────────────────────
-
-  private async mouseMove(params: ComputerUseParams): Promise<ToolPayload> {
-    const [absX, absY] = this.absoluteXy(params.coordinate);
-    this.emitCursorPositionEvent('move', [absX, absY], `Move (${absX}, ${absY})`);
-    this.moveMouse(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Moved to (${absX}, ${absY})` });
-  }
-
-  private async leftClick(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.coordinate) {
-      const [absX, absY] = this.absoluteXy(params.coordinate);
-      this.emitCursorPositionEvent('click', [absX, absY], `Left click (${absX}, ${absY})`);
-      this.moveMouse(absX, absY);
-      this.click(absX, absY, "left");
-      return await this.attachScreenshot({ status: "ok", detail: `Left click at (${absX}, ${absY})` });
+    // answer / terminate don't get a screenshot (matches Python)
+    if (action === "answer" || action === "terminate") {
+      return new ToolResult(result);
     }
-    this.click(undefined, undefined, "left");
-    return await this.attachScreenshot({ status: "ok", detail: "Left click" });
+    return new ToolResult(await this.attachScreenshot(result));
   }
 
-  private async rightClick(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.coordinate) {
-      const [absX, absY] = this.absoluteXy(params.coordinate);
-      this.emitCursorPositionEvent('click', [absX, absY], `Right click (${absX}, ${absY})`);
-      this.click(absX, absY, "right");
-      return await this.attachScreenshot({ status: "ok", detail: `Right click at (${absX}, ${absY})` });
+  private async executeActionString(text: string): Promise<void> {
+    text = text.trim();
+    if (!text || text.startsWith("#")) return;
+
+    // Normalize start_box format
+    const startBoxMatch = text.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
+    if (startBoxMatch) {
+      text = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
     }
-    this.click(undefined, undefined, "right");
-    return await this.attachScreenshot({ status: "ok", detail: "Right click" });
-  }
 
-  private async middleClick(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.coordinate) {
-      const [absX, absY] = this.absoluteXy(params.coordinate);
-      this.emitCursorPositionEvent('click', [absX, absY], `Middle click (${absX}, ${absY})`);
-      this.click(absX, absY, "middle");
-      return await this.attachScreenshot({ status: "ok", detail: `Middle click at (${absX}, ${absY})` });
+    // Parse coordinates
+    const parseXy = (s: string): [number, number] | null => {
+      const parts = s.split(",");
+      if (parts.length >= 2) {
+        const m1 = parts[0].match(/-?\d+/);
+        const m2 = parts[1].match(/-?\d+/);
+        if (m1 && m2) return [parseInt(m1[0]), parseInt(m2[0])];
+      }
+      return null;
+    };
+
+    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
+    const coords = parseXy(text);
+
+    if (coords && has(/click/i, text)) {
+      let [x, y] = coords;
+
+      // Apply tars-test.py scaling logic
+      if (!robot) {
+        throw new Error(`robotjs unavailable - cannot execute click`);
+      }
+
+      const screenSize = robot.getScreenSize();
+      const SCREEN_WIDTH = screenSize.width;
+      const SCREEN_HEIGHT = screenSize.height;
+
+      // Scale coordinates if they're > screen dimensions (normalized 0-1000)
+      const rx = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
+      const ry = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+
+      console.log(`[ComputerUse] Click: input=(${x},${y}) screen=(${SCREEN_WIDTH}x${SCREEN_HEIGHT}) final=(${rx},${ry})`);
+
+      robot.moveMouse(rx, ry);
+      robot.mouseClick("left");
+      return;
     }
-    this.click(undefined, undefined, "middle");
-    return await this.attachScreenshot({ status: "ok", detail: "Middle click" });
-  }
 
-  private async doubleClick(params: ComputerUseParams): Promise<ToolPayload> {
-    const [absX, absY] = this.absoluteXy(params.coordinate);
-    this.emitCursorPositionEvent('click', [absX, absY], `Double click (${absX}, ${absY})`);
-    this.doubleClickAt(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Double click at (${absX}, ${absY})` });
-  }
-
-  private async tripleClick(params: ComputerUseParams): Promise<ToolPayload> {
-    const [absX, absY] = this.absoluteXy(params.coordinate);
-    this.emitCursorPositionEvent('click', [absX, absY], `Triple click (${absX}, ${absY})`);
-    this.tripleClickAt(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Triple click at (${absX}, ${absY})` });
-  }
-
-  private async leftClickDrag(params: ComputerUseParams): Promise<ToolPayload> {
-    const [absX, absY] = this.absoluteXy(params.coordinate);
-    this.emitCursorPositionEvent('drag', [absX, absY], `Drag (${absX}, ${absY})`);
-    this.drag(absX, absY);
-    return await this.attachScreenshot({ status: "ok", detail: `Drag to (${absX}, ${absY})` });
-  }
-
-  private async scroll(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.coordinate) {
-      const [absX, absY] = this.absoluteXy(params.coordinate);
-      this.emitCursorPositionEvent('scroll', [absX, absY], `Scroll at (${absX}, ${absY})`);
-      this.moveMouse(absX, absY);
+    if (has(/^type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i, text)) {
+      const typeMatch = text.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
+      if (typeMatch) {
+        await this.call({ action: "type", text: typeMatch[1] });
+        return;
+      }
     }
-    const pixels = maybeInt(params.pixels);
-    this.scrollVertical(pixels);
-    return await this.attachScreenshot({ status: "ok", detail: `Scroll ${pixels} px` });
-  }
 
-  private async hscroll(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.coordinate) {
-      const [absX, absY] = this.absoluteXy(params.coordinate);
-      this.emitCursorPositionEvent('scroll', [absX, absY], `H-scroll at (${absX}, ${absY})`);
-      this.moveMouse(absX, absY);
+    if (has(/^press\s*\(\s*([^)]+)\s*\)\s*$/i, text)) {
+      const key = text.match(/press\s*\(\s*([^)]+)\s*\)/i)![1].trim().toLowerCase();
+      await this.call({ action: "key", keys: key.includes("+") ? key.split("+") : [key] });
+      return;
     }
-    const pixels = maybeInt(params.pixels);
-    this.scrollHorizontal(pixels);
-    return await this.attachScreenshot({ status: "ok", detail: `H-scroll ${pixels} px` });
+
+    console.warn(`[ComputerUse] Unhandled action: ${text}`);
   }
 
-  private async type(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.text === undefined || params.text === null) {
-      throw new Error("text is required for action=type.");
+  async captureObservation(): Promise<Record<string, any>> {
+    return this.attachScreenshot({ status: "observe" });
+  }
+
+  cleanup(): void {
+    if (this.overlay) {
+      this.overlay.hide();
+      this.overlay.destroy();
+      this.overlay = null;
+      console.log("[ComputerUse] Overlay cleaned up");
     }
-    if (params.clear_first) {
-      this.pressKeys(['control', 'a']);
-      this.pressKeys(['backspace']);
+  }
+
+  // ── Action handlers ─────────────────────────────────────────────────────────
+
+  private async mouseMove(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute mouse_move`);
     }
-    this.typeText(params.text);
-    return await this.attachScreenshot({
-      status: "ok",
-      detail: `Typed "${params.text.substring(0, 30)}${params.text.length > 30 ? '...' : ''}"`,
-    });
-  }
-
-  private async key(params: ComputerUseParams): Promise<ToolPayload> {
-    const keys = params.keys || [];
-    if (keys.length === 0) throw new Error("keys is required for action=key.");
-    this.pressKeys(keys);
-    return await this.attachScreenshot({ status: "ok", detail: `Pressed ${keys.join('+')}` });
-  }
-
-  private async waitAction(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.time === undefined || params.time === null) {
-      throw new Error("time is required for action=wait.");
+    const [x, y] = this.absoluteXy(p.coordinate);
+    console.log(`[Move] Target=(${x}, ${y})`);
+    try {
+      this.moveMouse(x, y);
+      console.log(`[Move] Executed successfully`);
+      return { status: "ok", detail: `Moved to (${x}, ${y}).` };
+    } catch (err) {
+      console.error(`[Move] Error:`, err);
+      throw err;
     }
-    await sleep(params.time);
-    return { status: "ok", detail: `Waited ${params.time}s` };
   }
 
-  private async answer(params: ComputerUseParams): Promise<ToolPayload> {
-    return { status: "answer", text: params.text || "" };
+  private async leftClick(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute left_click`);
+    }
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      console.log(`[Left Click] Target=(${x}, ${y})`);
+      try {
+        this.moveMouse(x, y);
+        this.click(x, y, "left");
+
+        // Update overlay status
+        if (this.overlay) {
+          this.overlay.setStatus(`Clicked at (${x}, ${y})`);
+        }
+
+        console.log(`[Left Click] Executed successfully`);
+        return { status: "ok", detail: `Left click at (${x}, ${y}).` };
+      } catch (err) {
+        console.error(`[Left Click] Error:`, err);
+        throw err;
+      }
+    }
+    console.log(`[Left Click] At current cursor`);
+    try {
+      this.click(undefined, undefined, "left");
+
+      // Update overlay status
+      if (this.overlay) {
+        this.overlay.setStatus(`Clicked at current cursor`);
+      }
+
+      console.log(`[Left Click] Executed successfully`);
+      return { status: "ok", detail: "Left click at current cursor." };
+    } catch (err) {
+      console.error(`[Left Click] Error:`, err);
+      throw err;
+    }
   }
 
-  private async terminate(params: ComputerUseParams): Promise<ToolPayload> {
-    if (params.status !== "success" && params.status !== "failure") {
+  private async rightClick(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute right_click`);
+    }
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      console.log(`[Right Click] Target=(${x}, ${y})`);
+      try {
+        this.click(x, y, "right");
+        console.log(`[Right Click] Executed successfully`);
+        return { status: "ok", detail: `Right click at (${x}, ${y}).` };
+      } catch (err) {
+        console.error(`[Right Click] Error:`, err);
+        throw err;
+      }
+    }
+    console.log(`[Right Click] At current cursor`);
+    try {
+      this.click(undefined, undefined, "right");
+      console.log(`[Right Click] Executed successfully`);
+      return { status: "ok", detail: "Right click at current cursor." };
+    } catch (err) {
+      console.error(`[Right Click] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async middleClick(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute middle_click`);
+    }
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      console.log(`[Middle Click] Target=(${x}, ${y})`);
+      try {
+        this.click(x, y, "middle");
+        console.log(`[Middle Click] Executed successfully`);
+        return { status: "ok", detail: `Middle click at (${x}, ${y}).` };
+      } catch (err) {
+        console.error(`[Middle Click] Error:`, err);
+        throw err;
+      }
+    }
+    console.log(`[Middle Click] At current cursor`);
+    try {
+      this.click(undefined, undefined, "middle");
+      console.log(`[Middle Click] Executed successfully`);
+      return { status: "ok", detail: "Middle click at current cursor." };
+    } catch (err) {
+      console.error(`[Middle Click] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async doubleClick(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute double_click`);
+    }
+    const [x, y] = this.absoluteXy(p.coordinate);
+    console.log(`[Double Click] Target=(${x}, ${y})`);
+    try {
+      this.doubleClickAt(x, y);
+      console.log(`[Double Click] Executed successfully`);
+      return { status: "ok", detail: `Double click at (${x}, ${y}).` };
+    } catch (err) {
+      console.error(`[Double Click] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async tripleClick(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute triple_click`);
+    }
+    const [x, y] = this.absoluteXy(p.coordinate);
+    console.log(`[Triple Click] Target=(${x}, ${y})`);
+    try {
+      robot.moveMouse(x, y);
+      robot.mouseClick("left");
+      robot.mouseClick("left");
+      robot.mouseClick("left");
+      console.log(`[Triple Click] Executed successfully`);
+      return { status: "ok", detail: `Triple click at (${x}, ${y}).` };
+    } catch (err) {
+      console.error(`[Triple Click] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async leftClickDrag(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute left_click_drag`);
+    }
+    const [x, y] = this.absoluteXy(p.coordinate);
+    console.log(`[Drag] Target=(${x}, ${y})`);
+    try {
+      robot.dragMouse(x, y);
+      console.log(`[Drag] Executed successfully`);
+      return { status: "ok", detail: `Drag to (${x}, ${y}).` };
+    } catch (err) {
+      console.error(`[Drag] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async scroll(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute scroll`);
+    }
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      console.log(`[Scroll] Moving to (${x}, ${y})`);
+      this.moveMouse(x, y);
+    }
+    const pixels = maybeInt(p.pixels);
+    console.log(`[Scroll] Scrolling ${pixels} pixels vertically`);
+    try {
+      const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
+      robot.scrollMouse(0, amount);
+      console.log(`[Scroll] Executed successfully`);
+      return { status: "ok", detail: `Scroll ${pixels} vertically.` };
+    } catch (err) {
+      console.error(`[Scroll] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async hscroll(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute hscroll`);
+    }
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      console.log(`[HScroll] Moving to (${x}, ${y})`);
+      this.moveMouse(x, y);
+    }
+    const pixels = maybeInt(p.pixels);
+    console.log(`[HScroll] Scrolling ${pixels} pixels horizontally`);
+    try {
+      const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
+      robot.scrollMouse(amount, 0);
+      console.log(`[HScroll] Executed successfully`);
+      return { status: "ok", detail: `Scroll ${pixels} horizontally.` };
+    } catch (err) {
+      console.error(`[HScroll] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async typeAction(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute type`);
+    }
+    if (p.text == null) throw new Error("text is required for action=type.");
+    console.log(`[Type] Typing "${String(p.text).substring(0, 50)}"`);
+    try {
+      robot.typeString(p.text);
+
+      // Update overlay status
+      if (this.overlay) {
+        this.overlay.setStatus(`Typed: "${String(p.text).substring(0, 30)}"`);
+      }
+
+      console.log(`[Type] Executed successfully`);
+      return { status: "ok", detail: `Typed "${String(p.text).substring(0, 50)}".` };
+    } catch (err) {
+      console.error(`[Type] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async keyAction(p: any) {
+    if (!robot) {
+      throw new Error(`robotjs unavailable - cannot execute key`);
+    }
+    const keys: string[] = p.keys || [];
+    if (!keys.length) throw new Error("keys is required for action=key.");
+    console.log(`[Key] Pressing keys ${keys}`);
+    try {
+      this.pressKeys(keys);
+      console.log(`[Key] Executed successfully`);
+      return { status: "ok", detail: `Pressed keys ${keys}.` };
+    } catch (err) {
+      console.error(`[Key] Error:`, err);
+      throw err;
+    }
+  }
+
+  private async waitAction(p: any) {
+    if (p.time == null) throw new Error("time is required for action=wait.");
+    await sleep(p.time);
+    return { status: "ok", detail: `Waited ${p.time} seconds.` };
+  }
+
+  private async holdAction(p: any) {
+    if (!robot) throw new Error("robotjs unavailable");
+    const keys: string[] = p.keys || [];
+    if (!keys.length) throw new Error("keys required for hold");
+    const KEY_MAP: Record<string, string> = {
+      control: "control", ctrl: "control", alt: "alt", shift: "shift",
+      win: "command", command: "command"
+    };
+    for (const k of keys) {
+      const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
+      robot.keyToggle(key, "down");
+    }
+    return { status: "ok", detail: `Held keys ${keys}` };
+  }
+
+  private async releaseAction(p: any) {
+    if (!robot) throw new Error("robotjs unavailable");
+    const keys: string[] = p.keys || [];
+    if (!keys.length) throw new Error("keys required for release");
+    const KEY_MAP: Record<string, string> = {
+      control: "control", ctrl: "control", alt: "alt", shift: "shift",
+      win: "command", command: "command"
+    };
+    for (const k of keys) {
+      const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
+      robot.keyToggle(key, "up");
+    }
+    return { status: "ok", detail: `Released keys ${keys}` };
+  }
+
+  private async answer(p: any) {
+    return { status: "answer", text: p.text || "" };
+  }
+
+  private async terminate(p: any) {
+    if (p.status !== "success" && p.status !== "failure") {
       throw new Error("status must be success or failure for action=terminate.");
     }
-    return { status: "terminate", result: params.status };
+    return { status: "terminate", result: p.status };
   }
 
-  private async zoom(params: ComputerUseParams): Promise<ToolPayload> {
-    if (!params.coordinate) {
-      throw new Error("coordinate is required for action=zoom.");
-    }
-    const [absX, absY] = this.absoluteXy(params.coordinate);
-    const ts = nowTs();
-    const imgPath = path.join(this.screenshotDir, `${ts}-zoom.png`);
-    await this.captureScreen(imgPath);
-
-    // Read raw dimensions
-    const rawBuffer = fs.readFileSync(imgPath);
-    const { width: rawW, height: rawH } = this.getPngDimensions(rawBuffer);
-
-    // Define a 400x400 physical crop box centered at the target
-    const boxSize = 250;
-    const left = Math.max(0, absX - boxSize);
-    const top = Math.max(0, absY - boxSize);
-    const width = Math.min(boxSize * 2, rawW - left);
-    const height = Math.min(boxSize * 2, rawH - top);
-
-    // Crop and convert to base64
-    let encoded = "";
-    try {
-      const croppedBuffer = await sharp!(rawBuffer)
-        .extract({ left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      encoded = croppedBuffer.toString("base64");
-    } catch (err) {
-      console.warn('[ComputerUse] zoom crop failed', err);
-      encoded = rawBuffer.toString("base64");
-    }
-
-    return {
-      status: "ok",
-      detail: `Zoom at (${absX}, ${absY})`,
-      screenshot: `data:image/jpeg;base64,${encoded}`,
-      screenshot_path: imgPath,
-      cursor: { x: absX, y: absY },
-      display: { width: rawW, height: rawH },
-      downscaled_size: { width: Math.round(width), height: Math.round(height) },
-    };
-  }
-
-  // ── OS Automation (shell-based) ──────────────────────────────────────────────
+  // ── OS automation ────────────────────────────────────────────────────────────
 
   private moveMouse(x: number, y: number): void {
-    if (robot) {
+    if (!robot) {
+      console.warn("[Move] robotjs unavailable");
+      return;
+    }
+    try {
+      console.log(`[Move] Moving to (${x}, ${y})`);
       robot.moveMouse(x, y);
-    } else if (process.platform === "darwin") {
-      execSync(`cliclick m:${x},${y}`);
-    } else {
-      execSync(`xdotool mousemove ${x} ${y}`);
+
+      // Update overlay cursor position
+      if (this.overlay) {
+        this.overlay.moveCursor(x, y);
+      }
+
+      console.log(`[Move] Successfully moved to (${x}, ${y})`);
+    } catch (err) {
+      console.error(`[Move] Error moving to (${x}, ${y}):`, err);
+      throw err;
     }
   }
 
-  private click(
-    x?: number,
-    y?: number,
-    button: "left" | "right" | "middle" = "left"
-  ): void {
-    if (robot) {
+  private click(x?: number, y?: number, button: "left" | "right" | "middle" = "left"): void {
+    if (!robot) {
+      console.warn("[Click] robotjs unavailable");
+      return;
+    }
+    try {
+      console.log(`[Click] Clicking ${button} at (${x ?? "current"}, ${y ?? "current"})`);
       if (x !== undefined && y !== undefined) {
         robot.moveMouse(x, y);
+
+        // Update overlay cursor with click animation
+        if (this.overlay) {
+          this.overlay.moveCursor(x, y, true);
+        }
       }
-      // Use mouseDown/Up for better reliability on Windows, matching qwen-computer.py
       robot.mouseToggle("down", button);
-      // Small blocking delay (50ms) to ensure the OS registers the click
-      const start = Date.now();
-      while (Date.now() - start < 50) { /* sync wait */ }
-      robot.mouseToggle("up", button);
-    } else {
-      const buttonMap = { left: 1, middle: 2, right: 3 };
-      const btn = buttonMap[button];
-      if (process.platform === "darwin") {
-        const coord = x !== undefined ? `${x},${y}` : "";
-        const flag = button === "right" ? "rc" : button === "middle" ? "mc" : "c";
-        execSync(`cliclick ${flag}:${coord}`);
-      } else {
-        if (x !== undefined) execSync(`xdotool mousemove ${x} ${y}`);
-        execSync(`xdotool click ${btn}`);
-      }
+      robot.mouseToggle("up",   button);
+      console.log(`[Click] Successfully clicked ${button}`);
+    } catch (err) {
+      console.error(`[Click] Error clicking ${button}:`, err);
+      throw err;
     }
   }
 
   private doubleClickAt(x: number, y: number): void {
-    if (robot) {
+    if (!robot) {
+      console.warn("[DoubleClick] robotjs unavailable");
+      return;
+    }
+    try {
+      console.log(`[DoubleClick] Double-clicking at (${x}, ${y})`);
       robot.moveMouse(x, y);
       robot.mouseClick("left", true);
-    } else {
-      if (process.platform === "darwin") {
-        execSync(`cliclick dc:${x},${y}`);
-      } else {
-        execSync(`xdotool mousemove ${x} ${y} click --repeat 2 1`);
-      }
-    }
-  }
-
-  private tripleClickAt(x: number, y: number): void {
-    if (robot) {
-      robot.moveMouse(x, y);
-      robot.mouseClick("left");
-      robot.mouseClick("left");
-      robot.mouseClick("left");
-    } else {
-      if (process.platform === "darwin") {
-        execSync(`cliclick tc:${x},${y}`);
-      } else {
-        execSync(`xdotool mousemove ${x} ${y} click --repeat 3 1`);
-      }
-    }
-  }
-
-  private drag(toX: number, toY: number): void {
-    if (robot) {
-      robot.dragMouse(toX, toY);
-    } else if (process.platform === "darwin") {
-      execSync(`cliclick dd:. du:${toX},${toY}`);
-    } else {
-      execSync(`xdotool mousedown 1 mousemove --sync ${toX} ${toY} mouseup 1`);
-    }
-  }
-
-  private scrollVertical(pixels: number): void {
-    if (robot) {
-      // pixels > 0 is scroll up, but robotjs might take different units
-      const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
-      robot.scrollMouse(0, amount);
-    } else {
-      const direction = pixels > 0 ? "up" : "down";
-      if (process.platform === "darwin") {
-        execSync(`cliclick ${direction === "up" ? "ku" : "kd"}:. ${Math.abs(pixels)}`);
-      } else {
-        execSync(`xdotool click ${direction === "up" ? 4 : 5}`);
-      }
-    }
-  }
-
-  private scrollHorizontal(pixels: number): void {
-    if (robot) {
-      const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
-      robot.scrollMouse(amount, 0);
-    } else if (process.platform === "darwin") {
-      const dir = pixels > 0 ? "right" : "left";
-      execSync(`osascript -e 'tell application "System Events" to key code ${dir === "right" ? 124 : 123}'`);
-    } else {
-      execSync(`xdotool click ${pixels > 0 ? 6 : 7}`);
-    }
-  }
-
-  private typeText(text: string): void {
-    if (robot) {
-      robot.typeString(text);
-    } else if (process.platform === "darwin") {
-      // Escape single quotes for shell safety
-      const escaped = text.replace(/'/g, "'\\''");
-      execSync(`osascript -e 'tell application "System Events" to keystroke "${escaped}"'`);
-    } else {
-      execSync(`xdotool type --clearmodifiers -- ${JSON.stringify(text)}`);
+      console.log(`[DoubleClick] Successfully double-clicked`);
+    } catch (err) {
+      console.error(`[DoubleClick] Error double-clicking:`, err);
+      throw err;
     }
   }
 
   private pressKeys(keys: string[]): void {
-    if (robot) {
-      // Convert standard key names to robotjs format
+    if (!robot) {
+      console.warn("[PressKeys] robotjs unavailable");
+      return;
+    }
+    try {
       const KEY_MAP: Record<string, string> = {
-        Control_L: 'control', Control_R: 'control', control: 'control',
-        Alt_L: 'alt', Alt_R: 'alt', alt: 'alt',
-        Shift_L: 'shift', Shift_R: 'shift', shift: 'shift',
-        Super_L: 'command', Super_R: 'command', command: 'command', win: 'command',
-        Return: 'enter', enter: 'enter',
-        Escape: 'escape', esc: 'escape',
-        Tab: 'tab',
-        Delete: 'delete', delete: 'delete', del: 'delete',
-        BackSpace: 'backspace', backspace: 'backspace',
-        space: 'space',
-        Up: 'up', up: 'up',
-        Down: 'down', down: 'down',
-        Left: 'left', left: 'left',
-        Right: 'right', right: 'right',
-        Home: 'home', End: 'end',
-        PageUp: 'pageup', PageDown: 'pagedown'
+        control: "control", ctrl: "control",
+        alt: "alt", shift: "shift",
+        win: "command", command: "command",
+        enter: "enter", return: "enter",
+        escape: "escape", esc: "escape",
+        tab: "tab", delete: "delete", del: "delete",
+        backspace: "backspace", space: "space",
+        up: "up", down: "down", left: "left", right: "right",
+        home: "home", end: "end", pageup: "pageup", pagedown: "pagedown",
       };
-
-      const parts = keys.map(k => {
-        const mapped = KEY_MAP[k] || KEY_MAP[k.toLowerCase()] || k.toLowerCase();
-        return mapped;
-      });
-
+      const parts = keys.map(k => KEY_MAP[k.toLowerCase()] ?? k.toLowerCase());
+      console.log(`[PressKeys] Pressing keys: ${parts}`);
       if (parts.length === 1) {
         robot.keyTap(parts[0]);
       } else {
-        const key = parts[parts.length - 1];
-        const mods = parts.slice(0, -1);
-        robot.keyTap(key, mods);
+        robot.keyTap(parts[parts.length - 1], parts.slice(0, -1));
       }
-    } else if (process.platform === "darwin") {
-      const combo = keys.join("+");
-      execSync(`cliclick kp:${combo}`);
-    } else {
-      const combo = keys.join("+");
-      execSync(`xdotool key ${combo}`);
+      console.log(`[PressKeys] Successfully pressed keys`);
+    } catch (err) {
+      console.error(`[PressKeys] Error pressing keys:`, err);
+      throw err;
     }
   }
 
-  // ── Screenshot & Image ───────────────────────────────────────────────────────
+  // ── Screenshot (inline, no worker thread) ────────────────────────────────────
+  // Mirrors Python's _attach_screenshot: capture → draw cursor circle → resize → JPEG
 
-  private async attachScreenshot(payload: ToolPayload): Promise<ToolPayload> {
-    const ts = nowTs();
-    const imgPath = path.join(this.screenshotDir, `${ts}.png`);
+  private async attachScreenshot(payload: Record<string, any>): Promise<Record<string, any>> {
+    const imgPath = path.join(this.screenshotDir, `${nowTs()}.png`);
 
-    // Offload capture and processing to a worker thread to keep main thread responsive
-    const workerResult = await this.captureScreenAsync(imgPath);
+    // 1. Capture
+    let rawBuffer: Buffer;
 
-    const { encoded, width: rawW, height: rawH, newW, newH } = workerResult;
-
-    const cursorPos = this.getCursorPosition();
-    const displays = electronScreen.getAllDisplays();
-    const display = displays[this.monitorIndex - 1] || electronScreen.getPrimaryDisplay();
-    const scaleFactor = display.scaleFactor || 1.0;
-    const logicalSize = { width: display.bounds.width, height: display.bounds.height };
-    const physicalSize = {
-      width: Math.round(logicalSize.width * scaleFactor),
-      height: Math.round(logicalSize.height * scaleFactor)
-    };
-
-    // Sometimes robot/OS can disagree on logical vs physical. We explicitly prefer the raw captured image's dimensions.
-    const effectiveDisplaySize = {
-      width: rawW || physicalSize.width || 1920,
-      height: rawH || physicalSize.height || 1080
-    };
-
-    let appName = "None";
-    let appLogo = "";
-
-    // Determine active app (using Spotify as a placeholder default if running)
     try {
-       const openWindows = execSync(`powershell -NoProfile -Command "Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object -ExpandProperty ProcessName"`, { encoding: 'utf-8' });
-       if (openWindows.toLowerCase().includes('spotify')) {
-          appName = "Spotify";
-          appLogo = "";
-       }
-    } catch(e) {}
+      if (screenshotDesktop) {
+        // Try to get displays, but fall back to default if listDisplays fails
+        let display: any = null;
+        try {
+          const displays = await screenshotDesktop.listDisplays?.();
+          if (displays && displays.length > 0) {
+            display = displays[this.monitorIndex - 1] ?? displays[0];
+          }
+        } catch (displayErr) {
+          console.warn("[ComputerUse] listDisplays failed, using default display:", displayErr);
+          // Fall through to use default display
+        }
 
-    const updated: ToolPayload = {
-      ...payload,
-      screenshot: `data:image/jpeg;base64,${encoded}`,
-      screenshot_path: imgPath,
-      cursor: cursorPos,
-      display: effectiveDisplaySize,
-      downscaled_size: { width: newW, height: newH },
-      appName,
-      appLogo,
-    };
+        rawBuffer = await screenshotDesktop({ filename: imgPath, screen: display?.id });
+        if (!rawBuffer) rawBuffer = fs.readFileSync(imgPath);
+      } else {
+        throw new Error("screenshot-desktop unavailable");
+      }
+    } catch (err) {
+      console.error("[ComputerUse] Screenshot failed:", err);
+      return { ...payload, status: "error", detail: "Screenshot failed." };
+    }
+
+    // 2. Get dimensions from PNG header
+    const { width: rawW, height: rawH } = this.pngDimensions(rawBuffer);
+
+    // 3. Cursor position
+    const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
+
+    // Monitor offset (best-effort via Electron screen, fallback to 0)
+    let monLeft = 0, monTop = 0;
+    try {
+      const { screen } = require("electron");
+      const displays = screen.getAllDisplays();
+      const d = displays[this.monitorIndex - 1] ?? screen.getPrimaryDisplay();
+      monLeft = d.bounds.x;
+      monTop  = d.bounds.y;
+    } catch { /* non-Electron env */ }
+
+    // 4. Draw cursor circle (matches Python: red outer ring + yellow inner dot)
+    const relX = cursor.x - monLeft;
+    const relY = cursor.y - monTop;
+    const radius = 18;
+
+    let encoded: string;
+    if (sharp) {
+      try {
+        const svgCircle = `
+          <svg width="${rawW}" height="${rawH}" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="${relX}" cy="${relY}" r="${radius}"
+                    fill="none" stroke="red" stroke-width="4"/>
+            <circle cx="${relX}" cy="${relY}" r="4" fill="yellow"/>
+          </svg>`;
+        const jpeg = await sharp(rawBuffer)
+          .composite([{ input: Buffer.from(svgCircle), top: 0, left: 0 }])
+          .jpeg({ quality: this.imageQuality })
+          .toBuffer();
+        encoded = jpeg.toString("base64");
+      } catch (e) {
+        console.warn("[ComputerUse] sharp composite failed, skipping cursor circle:", e);
+        encoded = rawBuffer.toString("base64");
+      }
+    } else {
+      encoded = rawBuffer.toString("base64");
+    }
+
+    // 5. Compute display-scale dims for viewport
+    const newW = rawW;
+    const newH = rawH;
+
+    console.log(`[Screenshot] ${imgPath} cursor=(${cursor.x}, ${cursor.y})`);
 
     this.lastViewport = {
-      monitor_left: display.bounds.x,
-      monitor_top: display.bounds.y,
-      display_width: effectiveDisplaySize.width,
-      display_height: effectiveDisplaySize.height,
-      image_width: newW,
-      image_height: newH,
-      raw_width: rawW,
-      raw_height: rawH,
+      monitor_left:   monLeft,
+      monitor_top:    monTop,
+      display_width:  rawW,
+      display_height: rawH,
+      image_width:    newW,
+      image_height:   newH,
+      raw_width:      rawW,
+      raw_height:     rawH,
     };
 
-    return updated;
-  }
-
-  private async captureScreenAsync(outPath: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const { Worker } = require('worker_threads');
-      const worker = new Worker(path.join(__dirname, 'screenshot-worker.js'), {
-        workerData: {
-          outPath,
-          monitorIndex: this.monitorIndex,
-          imageQuality: this.imageQuality,
-          imageMaxPixels: this.imageMaxPixels,
-          imageMinPixels: this.imageMinPixels,
-          imageScaleFactor: this.imageScaleFactor
-        }
-      });
-      worker.on('message', (msg: any) => {
-        if (msg.success) resolve(msg.data);
-        else reject(new Error(msg.error));
-      });
-      worker.on('error', reject);
-      worker.on('exit', (code: number) => {
-        if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
-      });
-    });
-  }
-
-  private async captureScreen(outPath: string): Promise<void> {
-    const screenshot = require('screenshot-desktop');
-    try {
-      const displays = await screenshot.listDisplays();
-      const display = displays[this.monitorIndex - 1] || displays[0];
-      await screenshot({ filename: outPath, screen: display.id });
-    } catch (err) {
-      console.error('[ComputerUse] Native screenshot failed, trying fallback', err);
-      if (process.platform === 'darwin') {
-        execSync(`screencapture -x "${outPath}"`);
-      } else if (process.platform === 'win32') {
-        throw new Error('Native Windows screenshot failed and no fallback available.');
-      } else {
-        execSync(`scrot "${outPath}"`);
-      }
-    }
-  }
-
-  private getCursorPosition(): { x: number; y: number } {
-    if (robot) return robot.getMousePos();
-    return { x: 0, y: 0 };
-  }
-
-  private getDisplaySize(): { width: number; height: number } {
-    try {
-      const display = electronScreen.getPrimaryDisplay();
-      return { width: display.bounds.width, height: display.bounds.height };
-    } catch {
-      return { width: 1920, height: 1080 };
-    }
-  }
-
-  /** Read PNG width/height from file header (bytes 16-23). */
-  private getPngDimensions(buf: Buffer): { width: number; height: number } {
-    if (buf.length < 24 || buf.toString("ascii", 1, 4) !== "PNG") {
-      return { width: 1920, height: 1080 };
-    }
     return {
-      width: buf.readUInt32BE(16),
-      height: buf.readUInt32BE(20),
+      ...payload,
+      screenshot:      `data:image/jpeg;base64,${encoded}`,
+      screenshot_path: imgPath,
+      cursor,
+      display:         { width: rawW, height: rawH },
+      downscaled_size: { width: newW, height: newH },
     };
   }
 
-  private computeResizeDims(
-    width: number,
-    height: number
-  ): { newW: number; newH: number } {
-    const area = width * height;
-    if (area === 0) return { newW: width, newH: height };
+  // ── Coordinate transform (identical logic to Python) ─────────────────────────
 
-    const clampedArea = Math.min(
-      Math.max(area, this.imageMinPixels),
-      this.imageMaxPixels
-    );
-    const scale = Math.sqrt(clampedArea / area);
+  private absoluteXy(coordinate?: [number, number] | null): [number, number] {
+    const [x, y] = ensureXy(coordinate);
+    const vp     = this.lastViewport;
+    const left   = vp.monitor_left  ?? 0;
+    const top    = vp.monitor_top   ?? 0;
+    const dw     = vp.display_width  ?? 0;
+    const dh     = vp.display_height ?? 0;
+    const iw     = vp.image_width;
+    const ih     = vp.image_height;
 
-    const roundSize = (v: number): number =>
-      Math.max(
-        this.imageScaleFactor,
-        Math.floor(Math.max(1, v) / this.imageScaleFactor) *
-        this.imageScaleFactor
-      );
-
-    let newW = roundSize(width * scale);
-    let newH = roundSize(height * scale);
-
-    const newArea = Math.max(1, newW * newH);
-    if (newArea > this.imageMaxPixels) {
-      const shrink = Math.sqrt(this.imageMaxPixels / newArea);
-      newW = roundSize(newW * shrink);
-      newH = roundSize(newH * shrink);
+    if (!dw || !dh) {
+      console.warn("[Coord] Viewport not initialized - using offset-only fallback");
     }
 
-    return { newW, newH };
-  }
-
-  // ── Coordinate Transform ─────────────────────────────────────────────────────
-
-  private absoluteXy(
-    coordinate?: [number, number] | null
-  ): [number, number] {
-    const [x, y] = ensureXy(coordinate as [number, number]);
-    const vp = this.lastViewport;
-    const left = vp.monitor_left ?? 0;
-    const top = vp.monitor_top ?? 0;
-    const displayW = vp.display_width ?? 0;
-    const displayH = vp.display_height ?? 0;
-    const imageW = vp.image_width;
-    const imageH = vp.image_height;
-
-    if (displayW && displayH) {
-      // Normalized coordinates (0-1000 range) — map to physical display
+    if (dw && dh) {
       if (x <= 1000 && y <= 1000) {
-        const normX = Math.max(0, Math.min(1, x / 1000));
-        const normY = Math.max(0, Math.min(1, y / 1000));
-        let absX = left + Math.floor(normX * displayW);
-        let absY = top + Math.floor(normY * displayH);
+        // Normalised 0–1000 coords
+        const absX = left + Math.floor((x / 1000) * dw);
+        const absY = top  + Math.floor((y / 1000) * dh);
+        console.log(`[Coord] rel=(${x},${y}) display=(${dw}x${dh}) offset=(${left},${top}) → abs=(${absX},${absY})`);
         return [absX, absY];
       }
-
-      // Pixel coordinates — since we send full-resolution screenshots,
-      // imageW === displayW and imageH === displayH, so scale is 1:1
-      if (imageW && imageH) {
-        const scaleX = displayW / imageW;
-        const scaleY = displayH / imageH;
-        const absX = left + Math.round(x * scaleX);
-        const absY = top + Math.round(y * scaleY);
+      if (iw && ih) {
+        // Pixel coords scaled from image to display
+        const absX = left + Math.round(x * dw / iw);
+        const absY = top  + Math.round(y * dh / ih);
+        console.log(`[Coord] px=(${x},${y}) scale=(${(dw/iw).toFixed(2)},${(dh/ih).toFixed(2)}) → abs=(${absX},${absY})`);
         return [absX, absY];
       }
-
-      // Fallback: assume 1:1 mapping
-      return [left + x, top + y];
     }
-
+    console.log(`[Coord] No viewport/scale, using offset only: (${left + x}, ${top + y})`);
     return [left + x, top + y];
   }
+
+  // ── PNG header reader ─────────────────────────────────────────────────────────
+
+  private pngDimensions(buf: Buffer): { width: number; height: number } {
+    if (buf.length >= 24 && buf.toString("ascii", 1, 4) === "PNG") {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+    return { width: 1920, height: 1080 };
+  }
 }
 
-// ── Connection / Auth Error Detection ────────────────────────────────────────
-
-/**
- * Returns true if the error indicates the VLM provider is unreachable
- * (network-level failure: refused, timeout, DNS failure, etc.) or experiencing
- * server errors (5xx) that should trigger retry-with-limit behavior.
- */
-function isConnectionError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return (
-    msg.includes('econnrefused') ||
-    msg.includes('fetch failed') ||
-    msg.includes('etimedout') ||
-    msg.includes('enotfound') ||
-    /http 5\d\d:/.test(msg) // Match HTTP 500-599 server errors
-  );
-}
-
-/**
- * Returns true if the error is an authentication failure (HTTP 401/403).
- * These should trigger immediate exit — retrying won't help.
- * We match on the status code in the error message, not on words like
- * "unauthorized" which can appear in 500 error bodies from some providers.
- */
-function isAuthError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message;
-  // Match "[provider] HTTP 401:" or "[provider] HTTP 403:" patterns
-  return /HTTP 40[13]:/.test(msg);
-}
-
-// ── ComputerUseAgent (Sub-Agent Loop) ─────────────────────────────────────────
+// ── ComputerUseAgent ──────────────────────────────────────────────────────────
+// Mirrors Python's ComputerUseAgent.run() very closely.
 
 class ComputerUseAgent {
   private messages: ChatMessage[] = [];
@@ -1502,526 +896,417 @@ class ComputerUseAgent {
   private lastScreenshot?: string;
   private aborted = false;
 
-  // Action timing tracking
-  private actionTimings: Map<string, number> = new Map();
-  private currentActionStartTime: number = 0;
-  private totalExecutionTime: number = 0;
+  // Game state for tars-test parity
+  private heldKeys = new Set<string>();
+  private lastX: number | null = null;
+  private lastY: number | null = null;
+  private history: string[] = [];
+
+  private REASONER_MODEL = "qwen/qwen3-vl-235b-a22b-instruct";
+  private ACTION_MODEL = "bytedance/ui-tars-1.5-7b";
 
   constructor(
     private client: AIClient,
     private tool: ComputerUseTool,
     private model: string,
     private task: string,
-    private temperature = 0,
-    private maxTurns = 200,
+    private temperature  = 0,
+    private maxTurns     = 200,
     private historyWindow = 12,
-    private toolCallId = ''
+    private toolCallId   = "",
   ) {
     this.historyWindow = Math.max(1, historyWindow);
-    this.messages = [{ role: "system", content: SYSTEM_PROMPT }];
+    this.messages  = [{ role: "system", content: SYSTEM_PROMPT }];
     this.baseCount = this.messages.length;
-  }
-
-  /**
-   * Log action timing with performance metrics
-   */
-  private logActionTiming(action: string, durationMs: number): void {
-    this.actionTimings.set(action, (this.actionTimings.get(action) || 0) + durationMs);
-    const totalForAction = this.actionTimings.get(action)!;
-    const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
-    console.log(`[Timing] ${action}: ${durationMs}ms (total: ${totalForAction}ms for ${count} calls)`);
-  }
-
-  private startActionTiming(): void {
-    this.currentActionStartTime = Date.now();
-  }
-
-  private endActionTiming(): number {
-    if (this.currentActionStartTime === 0) return 0;
-    const duration = Date.now() - this.currentActionStartTime;
-    this.totalExecutionTime += duration;
-    this.currentActionStartTime = 0;
-    return duration;
   }
 
   public abort(): void {
     this.aborted = true;
     this.terminated = "aborted";
-    console.log(`[Sub-Agent] 🛑 Received external abort signal.`);
+    this.tool.overlay?.hide();
+  }
+
+  private async getScreenshotBase64(): Promise<string> {
+    const obs = await this.tool.captureObservation();
+    this.lastScreenshot = obs.screenshot;
+    return obs.screenshot;
+  }
+
+  private async ask(model: string, messages: any[], maxTokens = 8192): Promise<string> {
+    const response = await this.client.chat({
+      model,
+      messages,
+      temperature: 0.1,
+      maxTokens: maxTokens,
+    });
+    return (response.content as string) || "";
+  }
+
+  private releaseAll() {
+    for (const key of Array.from(this.heldKeys)) {
+      try {
+        // Map keys if needed (ComputerUseTool.pressKeys has a map)
+        this.tool.call({ action: "key", keys: [key], _type: "release" }); // We might need a direct tool call for release
+      } catch {}
+    }
+    this.heldKeys.clear();
+    this.lastX = null;
+    this.lastY = null;
   }
 
   async run(
-    onUpdate?: (msg: string) => void,
-    onProgress?: (event: SubAgentProgressEvent) => void
-  ): Promise<{ finalAnswer: string, lastScreenshot?: string }> {
-    const runStartTime = Date.now();
-    if (this.messages.length === 1) {
-      await this.appendInitialObservation();
-      this.baseCount = this.messages.length;
-    }
+    onUpdate?:   (msg: string) => void,
+    onProgress?: (event: SubAgentProgressEvent) => void,
+  ): Promise<{ finalAnswer: string; lastScreenshot?: string }> {
 
-    console.log(`\n[Sub-Agent] 🚀 VLM: Model="${this.model}" Provider="${this.client.provider}"`);
-    console.log(`[Sub-Agent] 📡 Base URL: ${JSON.stringify((this.client as any).config?.baseUrl || "builtin")}`);
+    let step = 0;
+    const history: any[] = [];
 
-    let errorCount = 0;
-    const MAX_ERRORS = 3;
+    while (step < this.maxTurns) {
+      if (this.aborted || globalAbortManager.streamAborted) break;
+      step++;
 
-    for (let step = 1; step <= this.maxTurns; step++) {
-      try {
-        if (this.aborted || globalAbortManager.streamAborted) {
-          console.log(`[Sub-Agent] 🛑 Run loop aborted at step ${step}.`);
-          this.terminated = "aborted";
-          break;
+      console.log(`\n[Dumb-Agent] Step ${step}/${this.maxTurns}`);
+      onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
+
+      const img = await this.getScreenshotBase64();
+      onProgress?.({
+        type: "screenshot",
+        toolCallId: this.toolCallId,
+        timestamp: new Date().toISOString(),
+        stepNumber: step,
+        screenshot: {
+          base64: img.split(",")[1],
+          width: 1920,
+          height: 1080
         }
-        const stepStartTime = Date.now();
-        console.log(`\n[Sub-Agent] 👁️  Step ${step}/${this.maxTurns} (elapsed: ${Date.now() - runStartTime}ms)`);
-        onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
+      } as any);
 
-        // Emit step progress event
-        onProgress?.({
-          type: 'step',
-          toolCallId: this.toolCallId,
-          timestamp: new Date().toISOString(),
-          stepNumber: step,
-          totalSteps: this.maxTurns,
+      let response: any;
+      try {
+        // [Independent TARS] No tools, no models, no system prompt.
+        // Just task + screenshot + history.
+        response = await this.client.chat({
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `Task: ${this.task}\nStep: ${step}` },
+                { type: "image_url", image_url: { url: img } }
+              ]
+            }
+          ],
+          // Special model identifier to trigger Direct TARS mode in API
+          model: "everfern-tars-v1",
+          temperature: 0.1
         });
+      } catch (err: any) {
+        console.error("[Dumb-Agent] API error:", err);
+        if (step === this.maxTurns) break;
+        continue;
+      }
 
-        // Ollama Cloud vision models don't support tool calling
-        const shouldSendTools = this.client.provider !== 'ollama-cloud';
+      // The API now returns a list of actions directly in content or tool_calls
+      // but the user wants "just pixels back". We'll handle the synthesized response.
+      const content: string = typeof response.content === "string" ? response.content : "";
+      if (content) {
+        console.log(`[Dumb-Agent] Brain: ${content}`);
+        onProgress?.({ type: "reasoning", toolCallId: this.toolCallId, timestamp: new Date().toISOString(), stepNumber: step, content });
+      }
 
-        const response = await this.client.chat({
-          messages: this.messages,
-          model: this.model,
-          temperature: this.temperature,
-          tools: shouldSendTools ? [COMPUTER_USE_TOOL_SPEC as any] : undefined,
-        });
+      const toolCalls: any[] = response.toolCalls || [];
+      if (!toolCalls.length) {
+        if (content.toLowerCase().includes("done") || content.toLowerCase().includes("complete")) {
+           this.finalAnswer = content;
+           break;
+        }
+        // If no actions and not done, something is wrong
+        console.warn("[Dumb-Agent] No actions received from API");
+        break;
+      }
 
-        // Reset error count on successful communication
-        errorCount = 0;
+      for (const toolCall of toolCalls) {
+        let args: any;
+        try {
+          args = typeof toolCall.arguments === "string" ? JSON.parse(toolCall.arguments) : toolCall.arguments;
+        } catch { continue; }
 
-        if (this.aborted) break;
+        console.log(`[Dumb-Agent] ▶ ${args.action}`);
+        onUpdate?.(`Executing ${args.action}...`);
 
-        const content = typeof response.content === "string" ? response.content : "";
-        if (content) {
-          console.log(`[Sub-Agent] 🧠 Reasoning: ${content.substring(0, 200)}...`);
+        try {
+          const result = await this.tool.call(args);
+          const pl     = result.payload;
+
+          if (pl.status === "answer") {
+            this.finalAnswer = (pl.text as string) || "Task finished.";
+          }
+          if (pl.status === "terminate") {
+            this.terminated = (pl.result as string) || "success";
+          }
+
           onProgress?.({
-            type: 'reasoning',
+            type: "action",
             toolCallId: this.toolCallId,
             timestamp: new Date().toISOString(),
             stepNumber: step,
-            content: content,
+            action: { type: args.action, params: args, description: args.action },
           });
+
+          // We don't send tool results back in a chat-like way,
+          // we just loop and send a fresh screenshot.
+        } catch (toolErr) {
+          console.error("[Dumb-Agent] Tool error:", toolErr);
         }
-
-        this.messages.push({
-          role: "assistant",
-          content: response.content || "",
-          tool_calls: response.toolCalls as any,
-        });
-
-        let toolCalls = response.toolCalls || [];
-
-        // FALLBACK: If no formal tool calls, try parsing the text content
-        if (toolCalls.length === 0 && content) {
-          const parsed = this.parseTextActions(content);
-          if (parsed.length > 0) {
-            console.log(`[Sub-Agent] 🧩 Parsed ${parsed.length} text-based actions from reasoning.`);
-            toolCalls = parsed;
-          }
-        }
-
-        if (toolCalls.length === 0) {
-          if (step < this.maxTurns) {
-            console.warn(`[Sub-Agent] ⚠️ No actions detected at step ${step}. Adding system reminder...`);
-            this.messages.push({
-              role: "system",
-              content: "You provided reasoning but no tool call. You MUST use the action=... format to perform an action (e.g. action=left_click(coordinate=[x, y])). Just thinking about it won't work."
-            });
-            continue;
-          } else {
-            console.error(`[Sub-Agent] ❌ Reached max turns (${this.maxTurns}) without completion.`);
-            break;
-          }
-        }
-
-        for (const toolCall of toolCalls) {
-          let args: any;
-          try {
-            args = typeof toolCall.arguments === "string" ? JSON.parse(toolCall.arguments) : toolCall.arguments;
-          } catch (e) {
-            console.warn("[Sub-Agent] Failed to parse tool arguments", toolCall.arguments);
-            this.messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: "Error: Failed to parse tool arguments. Ensure you use valid JSON."
-            });
-            continue;
-          }
-
-          onUpdate?.(`Executing ${args.action}...`);
-          console.log(`[Sub-Agent] ▶ ${args.action}`);
-
-          try {
-            this.startActionTiming();
-            const result = await this.tool.call(args);
-            const duration = this.endActionTiming();
-            this.logActionTiming(args.action, duration);
-
-            const payload = result.payload;
-
-            onProgress?.({
-              type: 'action',
-              toolCallId: this.toolCallId,
-              timestamp: new Date().toISOString(),
-              stepNumber: step,
-              action: {
-                type: args.action,
-                params: args,
-                description: this.formatActionDescription(args),
-              },
-            });
-
-            if (payload.status === "answer") {
-              this.finalAnswer = (payload.text as string) || "Task finished.";
-              console.log(`[Sub-Agent] ✅ Final Answer: ${this.finalAnswer}`);
-            }
-
-            if (payload.status === "terminate") {
-              this.terminated = (payload.result as string) || "success";
-              console.log(`[Sub-Agent] 🏁 Terminated: ${this.terminated}`);
-            }
-
-            if (payload.screenshot) {
-              this.lastScreenshot = payload.screenshot;
-              onProgress?.({
-                type: 'screenshot',
-                toolCallId: this.toolCallId,
-                timestamp: new Date().toISOString(),
-                stepNumber: step,
-                screenshot: {
-                  base64: payload.screenshot,
-                  width: payload.downscaled_size?.width || payload.display?.width || 1920,
-                  height: payload.downscaled_size?.height || payload.display?.height || 1080,
-                  // screenshotPath is persisted so the frontend can reload images from disk after page refresh
-                  screenshotPath: (payload as any).screenshot_path,
-                },
-                // Also at top-level for easier access in extractNavisData
-                screenshotPath: (payload as any).screenshot_path,
-              } as any);
-            }
-
-            this.messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: result.asContent() as any,
-            });
-          } catch (toolErr) {
-            console.error(`[Sub-Agent] ❌ Tool execution error:`, toolErr);
-            this.messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: `Error executing tool: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`
-            });
-          }
-        }
-
-        this.trimMessages();
-        if (this.terminated || this.finalAnswer) {
-          console.log(`[Sub-Agent] 🏁 Exiting loop: terminated=${!!this.terminated}, finalAnswer=${!!this.finalAnswer}`);
-          break;
-        }
-
-        const stepElapsed = Date.now() - stepStartTime;
-        console.log(`[Sub-Agent] ⏱️  Step ${step} completed in ${stepElapsed}ms`);
-      } catch (chatErr) {
-        console.error(`[Sub-Agent] ❌ Chat error at step ${step}:`, chatErr);
-
-        if (isAuthError(chatErr)) {
-          const clientConfig = (this.client as any).config;
-          const baseUrl = clientConfig?.baseUrl || 'unknown';
-          const provider = clientConfig?.provider || 'unknown';
-          const errorMsg = chatErr instanceof Error ? chatErr.message : String(chatErr);
-
-          const isOllamaCloud = provider === 'ollama-cloud' ||
-            (typeof baseUrl === 'string' && baseUrl.includes('ollama.com'));
-
-          const verifySteps = isOllamaCloud
-            ? `1. Your Ollama Cloud API key is correct and has not expired\n2. The key has access to model "${this.model}"\n3. Check your Vision Provider settings and re-enter the API key`
-            : `1. Your API key for "${provider}" is correct\n2. The key has not expired or been revoked\n3. Check your Vision Provider settings`;
-
-          this.finalAnswer = `VLM provider rejected the request (authentication failed). Please verify:\n${verifySteps}\n\nError: ${errorMsg}`;
-          console.error('[Sub-Agent] 🛑 Authentication error — terminating immediately.');
-          break;
-        }
-
-        if (isConnectionError(chatErr)) {
-          errorCount++;
-          console.warn(`[Sub-Agent] ⚠️ Connection error (${errorCount}/${MAX_ERRORS})`);
-
-          if (errorCount >= MAX_ERRORS) {
-            const clientConfig = (this.client as any).config;
-            const baseUrl = clientConfig?.baseUrl || 'unknown';
-            const provider = clientConfig?.provider || 'unknown';
-            const errorMsg = chatErr instanceof Error ? chatErr.message : String(chatErr);
-
-            const isOllamaCloud = provider === 'ollama-cloud' ||
-              (typeof baseUrl === 'string' && baseUrl.includes('ollama.com'));
-
-            const is5xx = /HTTP 5\d\d:/.test(errorMsg);
-
-            let verifySteps: string;
-            if (isOllamaCloud && is5xx) {
-              verifySteps = `1. The model "${this.model}" is available on Ollama Cloud (cloud models typically require a "-cloud" suffix, e.g. "qwen3-vl:235b-instruct-cloud", "kimi-k2.6:cloud", or "glm-5.1:cloud")\n2. Your Ollama Cloud API key is valid\n3. Check https://ollama.com for available cloud models`;
-            } else if (isOllamaCloud) {
-              verifySteps = `1. Your Ollama Cloud API key is valid and not expired\n2. The baseUrl is correct: ${baseUrl}\n3. The model "${this.model}" is available on Ollama Cloud`;
-            } else {
-              verifySteps = `1. Ollama (or your configured VLM provider) is running\n2. The baseUrl is correct: ${baseUrl}\n3. The model "${this.model}" is available`;
-            }
-
-            this.finalAnswer = `Unable to reach VLM provider after ${MAX_ERRORS} consecutive attempts. Please verify:\n${verifySteps}\n\nConnection error: ${errorMsg}`;
-            console.error('[Sub-Agent] 🛑 Max connection errors reached. Terminating early.');
-            break;
-          }
-        }
-
-        if (step === this.maxTurns) break;
-        this.messages.push({
-          role: "system",
-          content: `Error from AI provider: ${chatErr instanceof Error ? chatErr.message : String(chatErr)}. Please try again.`
-        });
       }
-    }
 
-    const totalRunTime = Date.now() - runStartTime;
-    console.log(`\n[Sub-Agent] 📊 Total execution time: ${totalRunTime}ms`);
-    console.log(`[Sub-Agent] 📊 Action timing summary:`);
-    for (const [action, totalTime] of this.actionTimings.entries()) {
-      const count = Array.from(this.actionTimings.entries()).filter(([k]) => k === action).length;
-      console.log(`  - ${action}: ${totalTime}ms (${count} calls)`);
+      if (this.terminated || this.finalAnswer) break;
+      await sleep(1); // Wait for screen state to stabilize
     }
 
     return {
-      finalAnswer: this.finalAnswer || (this.terminated === 'success' ? `Task completed successfully: ${this.task}` : `Task ended: ${this.terminated || 'unknown'}`),
+      finalAnswer:    this.finalAnswer ?? `Task ended: ${this.terminated ?? "unknown"}`,
       lastScreenshot: this.lastScreenshot,
     };
   }
 
-  /**
-   * Parses text-based actions like action=left_click(coordinate=[398, 965])
-   * which some Vision models prefer over formal JSON function calling.
-   */
-  private parseTextActions(text: string): any[] {
-    const actions: any[] = [];
-    // Looking for patterns like action=left_click(coordinate=[398, 965]) or action=click(x=1, y=2)
-    const actionRegex = /action=([a-z_]+)\((.*?)\)/g;
-    let match;
+  private parseModelOutput(raw: string): string[] {
+    if (!raw || !raw.trim()) return [];
+    raw = raw.trim();
 
-    while ((match = actionRegex.exec(text)) !== null) {
-      const actionType = match[1];
-      const argsText = match[2];
-      const args: any = { action: actionType };
-
-      // Map 'click' to 'left_click' for compatibility
-      if (actionType === 'click') args.action = 'left_click';
-
-      // Parse coordinates: x=N, y=N or coordinate=[N, N]
-      const coordMatch = argsText.match(/coordinate\s*=\s*\[(\d+),\s*(\d+)\]/);
-      if (coordMatch) {
-         args.coordinate = [parseInt(coordMatch[1]), parseInt(coordMatch[2])];
-      } else {
-        const xMatch = argsText.match(/x\s*=\s*(\d+)/);
-        const yMatch = argsText.match(/y\s*=\s*(\d+)/);
-        if (xMatch && yMatch) {
-          args.coordinate = [parseInt(xMatch[1]), parseInt(yMatch[2])];
-        }
+    // Try JSON parse
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(x => String(x).trim());
       }
+    } catch {}
 
-      // Parse text: text="XYZ"
-      const textMatch = argsText.match(/text\s*=\s*"([^"]*)"/);
-      if (textMatch) args.text = textMatch[1];
-
-      // Parse keys: keys=["enter"] or key="enter"
-      const keysMatch = argsText.match(/keys\s*=\s*\[([^\]]*)\]/);
-      const keyMatch = argsText.match(/key\s*=\s*"([^"]*)"/);
-      if (keysMatch) {
-         args.keys = keysMatch[1].split(',').map(k => k.trim().replace(/"/g, ''));
-      } else if (keyMatch) {
-         args.keys = [keyMatch[1]];
+    // Regex fallback for array-like structures
+    const actions: string[] = [];
+    const arrayMatch = raw.match(/\[\s*(.*?)\s*\]/s);
+    if (arrayMatch) {
+      const content = arrayMatch[1];
+      const items = content.split(/",\s*"/);
+      for (let item of items) {
+        item = item.replace(/^"/, "").replace(/"$/, "").trim();
+        if (item) actions.push(item);
       }
-
-      // Parse time: time=N
-      const timeMatch = argsText.match(/time\s*=\s*(\d+)/);
-      if (timeMatch) args.time = parseInt(timeMatch[1]);
-
-      // Parse pixels: pixels=N or pixels=-N
-      const pixelsMatch = argsText.match(/pixels\s*=\s*(-?\d+)/);
-      if (pixelsMatch) args.pixels = parseInt(pixelsMatch[1]);
-
-      // Parse zoom: zoom_factor=N
-      const zoomMatch = argsText.match(/zoom_factor\s*=\s*(\d+)/);
-      if (zoomMatch) args.zoom_factor = parseInt(zoomMatch[1]);
-
-      // Parse status: status="success" or status="failure"
-      const statusMatch = argsText.match(/status\s*=\s*"(success|failure)"/);
-      if (statusMatch) args.status = statusMatch[1];
-
-      actions.push({
-        id: `parsed-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        name: "computer_use",
-        arguments: args
-      });
+      if (actions.length > 0) return actions;
     }
-    return actions;
+
+    // Line by line fallback
+    const lines = raw.split("\n");
+    const validated: string[] = [];
+    const validPatterns = [
+      /^click\s*\(\s*[^)]+\s*\)$/i,
+      /^move\s*\(\s*[^)]+\s*\)$/i,
+      /^smooth\s*\(\s*[^)]+\s*\)$/i,
+      /^look\s*\(\s*[^)]+\s*\)$/i,
+      /^drag\s*\(\s*[^)]+\s*\)$/i,
+      /^press\s*\(\s*[^)]+\s*\)$/i,
+      /^type\s*\(\s*[^)]+\s*\)$/i,
+      /^scroll\s*\(\s*[^)]+\s*\)$/i,
+      /^hold_[acdemsw]$/i,
+      /^release_[acdemsw]$/i,
+      /^left_click\s*\(\s*\)$/i,
+      /^right_click\s*\(\s*\)$/i,
+      /^double_click\s*\(\s*[^)]+\s*\)$/i,
+      /^ctrl_[acv]\s*\(\s*\)$/i,
+      /^(alt|ctrl|shift|meta)\s*\+/i,
+      /^(alt_tab|alt tab|alt\+tab)$/i,
+      /^(win|drop|use|inv|inventory|esc|tab|map|sprint|sneak|interact|center|done)\s*\(\s*\)$/i,
+      /^(left|right)_click$/i,
+      /^\w+\+\w+$/i,
+    ];
+
+    for (let line of lines) {
+      line = line.trim().replace(/^[\-\*\.\d]+\s*/, "").replace(/^(Action|Act|Execute)\s*[:=>]\s*/i, "");
+      if (!line || line.length > 200) continue;
+
+      // Ported normalization from tars-test.py
+      // Handle click(start_box='(896,1034)') -> click(1034,896)
+      const startBoxMatch = line.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
+      if (startBoxMatch) {
+        line = `click(${startBoxMatch[2]},${startBoxMatch[1]})`;
+      }
+
+      // Handle click((896,1034)) -> click(1034,896)
+      const nestedMatch = line.match(/click\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)/i);
+      if (nestedMatch) {
+        line = `click(${nestedMatch[2]},${nestedMatch[1]})`;
+      }
+
+      if (validPatterns.some(p => p.test(line))) {
+        validated.push(line);
+      }
+    }
+    return validated;
   }
+
+  async dispatchAll(actions: string[], onUpdate?: any, onProgress?: any, step?: number) {
+    this.releaseAll();
+    for (const action of actions) {
+      console.log(`  [EXEC] ${action}`);
+      onUpdate?.(`Executing ${action}...`);
+
+      onProgress?.({
+        type: "action",
+        toolCallId: this.toolCallId,
+        timestamp: new Date().toISOString(),
+        stepNumber: step,
+        action: { type: action, params: {}, description: action },
+      });
+
+      const handled = await this.dispatchAction(action);
+      if (handled === "__done__") {
+        this.terminated = "success";
+        break;
+      }
+    }
+  }
+
+  private async dispatchAction(text: string): Promise<any> {
+    text = text.trim();
+    if (!text || text.startsWith("#")) return true;
+
+    // Normalize start_box format: click(start_box='(1215,1034)') -> click(1215,1034)
+    const startBoxMatch = text.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
+    if (startBoxMatch) {
+      text = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
+    }
+
+    // Ported from tars-test.py dispatch()
+    const parseXy = (s: string): [number, number] | null => {
+      const parts = s.split(",");
+      if (parts.length >= 2) {
+        const m1 = parts[0].match(/-?\d+/);
+        const m2 = parts[1].match(/-?\d+/);
+        if (m1 && m2) return [parseInt(m1[0]), parseInt(m2[0])];
+      }
+      return null;
+    };
+
+    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
+
+    const coords = (has(/\((?:click|move|drag|double[_\s]?click)\s*\(/, text)) ? parseXy(text) : null;
+
+    // Shortcut detection
+    const shortcutMatch = text.match(/^(alt|ctrl|shift|meta)\s+(tab|enter|esc|f\d+|space|right|left|up|down|\w)$/i) ||
+                         text.match(/^(alt|ctrl|shift|meta)[_\s]+(\w+)$/i) ||
+                         text.match(/^(alt\+tab|alt_tab|alt tab|ctrl\+c|ctrl\+v|ctrl\+a|ctrl\+z|ctrl\+s|alt\+f4|alt\+enter|shift\+tab|shift\+enter|ctrl\+w|ctrl\+shift\+tab|shift\+f\d+)$/i);
+
+    if (shortcutMatch) {
+      const raw = shortcutMatch[0].toLowerCase().replace(/\s+/g, "+").replace(/_/g, "+");
+      const parts = raw.split("+");
+      await this.tool.call({ action: "key", keys: parts });
+      return true;
+    }
+
+    if (coords) {
+      const [x, y] = coords;
+      if (has(/double/i, text)) {
+        await this.tool.call({ action: "double_click", coordinate: [x, y] });
+      } else if (has(/drag/i, text)) {
+        await this.tool.call({ action: "left_click_drag", coordinate: [x, y] });
+      } else if (has(/click/i, text)) {
+        const button = has(/right/i, text) ? "right_click" : (has(/left/i, text) ? "left_click" : "left_click");
+        await this.tool.call({ action: button, coordinate: [x, y] });
+      } else if (has(/move/i, text)) {
+        await this.tool.call({ action: "mouse_move", coordinate: [x, y] });
+      } else {
+        await this.tool.call({ action: "left_click", coordinate: [x, y] });
+      }
+      return true;
+    }
+
+    if (has(/^press\s*\(\s*([^)]+)\s*\)\s*$/i, text)) {
+      const key = text.match(/press\s*\(\s*([^)]+)\s*\)/i)![1].trim().toLowerCase();
+      await this.tool.call({ action: "key", keys: key.includes("+") ? key.split("+") : [key] });
+      return true;
+    }
+
+    if (has(/^(hold|release)_([a-zA-Z0-9]+)$/i, text)) {
+      const m = text.match(/^(hold|release)_([a-zA-Z0-9]+)$/i)!;
+      const act = m[1].toLowerCase();
+      const key = m[2].toLowerCase();
+      if (act === "hold") {
+        this.heldKeys.add(key);
+        await this.tool.call({ action: "hold", keys: [key] });
+      } else {
+        this.heldKeys.delete(key);
+        await this.tool.call({ action: "release", keys: [key] });
+      }
+      return true;
+    }
+
+    if (has(/type\s*\(\s*(?:content\s*=\s*)?['"]?(.+?)['"]?\s*\)/i, text)) {
+      const content = text.match(/type\s*\(\s*(?:content\s*=\s*)?['"]?(.+?)['"]?\s*\)/i)![1];
+      await this.tool.call({ action: "type", text: content });
+      return true;
+    }
+
+    if (has(/scroll\s*\(\s*(\w+)\s*\)/i, text)) {
+      const dir = text.match(/scroll\s*\(\s*(\w+)\s*\)/i)![1].toLowerCase();
+      await this.tool.call({ action: "scroll", pixels: dir.includes("up") ? -500 : 500 });
+      return true;
+    }
+
+    if (has(/^done\s*\(\s*\)$/i, text)) return "__done__";
+
+    // Simple mappings for others
+    const simpleMap: Record<string, any> = {
+      "right_click()": { action: "right_click" },
+      "left_click()": { action: "left_click" },
+      "win()": { action: "key", keys: ["win"] },
+      "esc()": { action: "key", keys: ["escape"] },
+      "tab()": { action: "key", keys: ["tab"] },
+      "center()": { action: "mouse_move", coordinate: [500, 500] }
+    };
+
+    const lower = text.toLowerCase();
+    if (simpleMap[lower]) {
+      await this.tool.call(simpleMap[lower]);
+      return true;
+    }
+
+    return false;
+  }
+
+  // ── Message helpers ───────────────────────────────────────────────────────────
 
   private async appendInitialObservation(): Promise<void> {
-    const observation = await this.tool.captureObservation();
-    const screenshot = observation.screenshot as string | undefined;
+    const obs        = await this.tool.captureObservation();
+    const screenshot = obs.screenshot as string | undefined;
     const content: any[] = [];
-    if (screenshot) {
-      content.push({
-        type: "image_url",
-        image_url: { url: screenshot, detail: "low" },
-      });
-    }
-
-    // Build context with task, open windows, and available apps
-    const openAppsInfo = getOpenWindowsInfo();
-    const taskbarInfo = getCommonTaskbarApps();
-
-    const contextText = [
-      `TASK: ${this.task}`,
-      "",
-      "CURRENTLY OPEN APPLICATIONS:",
-      openAppsInfo,
-      taskbarInfo || "(Standard Windows taskbar apps available)",
-      "",
-      "NOTE: If the app you need is not listed above, you can search for it in the Windows Start Menu:",
-      "1. Click the Windows Start button (bottom-left corner)",
-      "2. Type the app name (e.g., 'Discord', 'Firefox', 'Slack')",
-      "3. Press Enter to launch it"
-    ].filter(line => line || line === "").join("\n");
-
-    content.push({ type: "text", text: contextText });
+    if (screenshot) content.push({ type: "image_url", image_url: { url: screenshot } });
+    content.push({ type: "text", text: this.task });
     this.messages.push({ role: "user", content });
+    this.trimMessages(true);
   }
 
-  /**
-   * Formats action parameters into a human-readable description
-   * Requirements: 3.3, 3.4
-   */
-  private formatActionDescription(args: any): string {
-    const action = args.action;
-
-    switch (action) {
-      case 'left_click':
-        if (args.coordinate) {
-          return `Left click at (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Left click';
-
-      case 'right_click':
-        if (args.coordinate) {
-          return `Right click at (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Right click';
-
-      case 'middle_click':
-        if (args.coordinate) {
-          return `Middle click at (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Middle click';
-
-      case 'double_click':
-        if (args.coordinate) {
-          return `Double click at (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Double click';
-
-      case 'triple_click':
-        if (args.coordinate) {
-          return `Triple click at (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Triple click';
-
-      case 'mouse_move':
-        if (args.coordinate) {
-          return `Move mouse to (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Move mouse';
-
-      case 'left_click_drag':
-        if (args.coordinate) {
-          return `Drag to (${args.coordinate[0]}, ${args.coordinate[1]})`;
-        }
-        return 'Drag';
-
-      case 'scroll':
-        const pixels = args.pixels || 0;
-        const direction = pixels > 0 ? 'down' : 'up';
-        return `Scroll ${direction} ${Math.abs(pixels)} pixels`;
-
-      case 'hscroll':
-        const hpixels = args.pixels || 0;
-        const hdirection = hpixels > 0 ? 'right' : 'left';
-        return `Scroll ${hdirection} ${Math.abs(hpixels)} pixels`;
-
-      case 'type':
-        const text = args.text || '';
-        const truncated = text.length > 50 ? text.substring(0, 50) + '...' : text;
-        return `Type "${truncated}"`;
-
-      case 'key':
-      case 'press':
-        const keys = args.keys || [];
-        return `Press ${keys.join(' + ')}`;
-
-      case 'wait':
-        const time = args.time || 1;
-        return `Wait ${time} second${time !== 1 ? 's' : ''}`;
-
-      case 'zoom':
-        const factor = args.zoom_factor || 1;
-        return `Zoom ${factor}x`;
-
-      case 'answer':
-        return 'Provide answer';
-
-      case 'terminate':
-        const status = args.status || 'success';
-        return `Terminate (${status})`;
-
-      default:
-        return `Execute ${action}`;
-    }
-  }
-
-  private trimMessages(): void {
-    const base = this.messages.slice(0, this.baseCount);
+  /** Mirror Python: keep base + last (historyWindow * 2) dynamic messages. */
+  private trimMessages(force = false): void {
+    const base    = this.messages.slice(0, this.baseCount);
     const dynamic = this.messages.slice(this.baseCount);
     const maxItems = this.historyWindow * 2;
-    if (dynamic.length <= maxItems) return;
+    if (!force && dynamic.length <= maxItems) return;
     this.messages = [...base, ...dynamic.slice(-maxItems)];
   }
 }
 
-// ── EverFern Integration Factory (Sub-Agent Mode) ───────────────────────────
+// ── Exports ───────────────────────────────────────────────────────────────────
 
-let activeAgentInstance: ComputerUseAgent | null = null;
+let activeAgent: ComputerUseAgent | null = null;
 
-/**
- * Global abort function called from Electron main process.
- */
 export function abortComputerUse(): void {
-  if (activeAgentInstance) {
-    activeAgentInstance.abort();
-    activeAgentInstance = null;
-  }
+  activeAgent?.abort();
+  activeAgent = null;
 }
 
 export function createComputerUseTool(
   originalClient: AIClient,
-  _platform = process.platform,
+  _platform?: string,
   _visionModel?: string,
   _showuiUrl?: string,
   _ollamaBaseUrl?: string,
@@ -2030,173 +1315,105 @@ export function createComputerUseTool(
   vlm?: { engine?: string; provider: string; model: string; baseUrl?: string; apiKey?: string },
 ): AgentTool & { abort(): void } {
 
-  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const home          = process.env.USERPROFILE ?? process.env.HOME ?? "";
   const screenshotDir = path.join(home, ".everfern", "screenshots");
-  const tool = new ComputerUseTool(screenshotDir);
+  const tool          = new ComputerUseTool(screenshotDir);
 
-  // Use either the provided VLM config or fall back to original client
-  const subAgentClient = vlm ? new AIClient({
-    // When the UI saves engine="cloud" with provider="ollama", map to "ollama-cloud"
-    // so AIClient uses https://ollama.com as the default baseUrl instead of localhost:11434
-    provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' : vlm.provider) as any || 'openai',
-    apiKey: vlm.apiKey,
-    baseUrl: vlm.baseUrl,
-    model: vlm.model
-  }) : originalClient;
+  const client = vlm?.model
+    ? new AIClient({
+        provider: (vlm.engine === "cloud" && vlm.provider === "ollama" ? "ollama-cloud" : vlm.provider) as any,
+        apiKey:   vlm.apiKey,
+        baseUrl:  vlm.baseUrl,
+        model:    vlm.model,
+      })
+    : originalClient;
 
-  const subAgentModel = vlm?.model || "qwen3-vl:235b-instruct-cloud";
+  const model = vlm?.model ?? originalClient.model ?? "unknown";
 
+  return createToolWithClient(client, tool, model);
+}
+
+function createToolWithClient(
+  client: AIClient,
+  tool: ComputerUseTool,
+  model: string,
+): AgentTool & { abort(): void } {
   return {
-    name: "computer_use",
-    description: "Launch an autonomous sub-agent to perform GUI tasks natively. Powered by Ollama Cloud (Qwen, Kimi, or GLM).",
+    name:        "computer_use",
+    description: "Launch an autonomous sub-agent to perform GUI tasks natively.",
     parameters: {
       type: "object",
-      properties: {
-        task: {
-          type: "string",
-          description: "High-level goal for the sub-agent (e.g. 'Open Spotify and play Blinding Lights')"
-        }
-      },
-      required: ["task"]
+      properties: { task: { type: "string", description: "High-level goal for the sub-agent." } },
+      required: ["task"],
     },
 
-    async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<AgentToolResult> {
-      const { getComputerOverlayManager } = require('../../computer-overlay');
-      const overlay = getComputerOverlayManager();
-      
-      const task = (args.task as string) || "Perform a visual audit of the current desktop.";
-      onUpdate?.(`Initializing sub-agent for task: "${task}"...`);
-
-      const agent = new ComputerUseAgent(
-        subAgentClient,
-        tool,
-        subAgentModel,
-        task,
-        0, // temperature
-        40, // maxTurns
-        12, // historyWindow
-        toolCallId || ''
-      );
-
-      activeAgentInstance = agent;
-      
-      // Use computer use overlay when computer use is being used
-      overlay.show(`Executing: ${task}`);
-
-      // Set up the custom sender to redirect buffered/prioritized ProgressEventEmitter events to emitEvent
-      const customSender = {
-        isDestroyed: () => false,
-        send: (channel: string, serialized: string) => {
-          if (emitEvent) {
-            try {
-              const batch = JSON.parse(serialized);
-              if (batch && Array.isArray(batch.events)) {
-                for (const ev of batch.events) {
-                  emitEvent({
-                    type: 'subagent-progress',
-                    toolCallId: toolCallId || '',
-                    timestamp: ev.timestamp || new Date().toISOString(),
-                    data: ev
-                  });
-                }
-              }
-            } catch (err) {
-              console.error('[ComputerUse] Failed to parse and forward progress event:', err);
-            }
-          }
+    async execute(
+      args: Record<string, unknown>,
+      onUpdate?: (msg: string) => void,
+      emitEvent?: (event: any) => void,
+      toolCallId?: string,
+    ): Promise<AgentToolResult> {
+      // Handle execute_actions from vision grounding
+      if (args.action === 'execute_actions' && Array.isArray(args.actions)) {
+        const actions = args.actions as string[];
+        try {
+          // Create a temporary agent just to execute the actions
+          const tempAgent = new ComputerUseAgent(client, tool, model, "Execute actions", 0, 200, 12, toolCallId ?? "");
+          await tempAgent.dispatchAll(actions, onUpdate, emitEvent);
+          const obs = await tool.captureObservation();
+          const b64 = (obs.screenshot as string).split(",")[1];
+          return { success: true, output: "Actions executed", base64Image: b64, data: { actions, screenshot: b64 } };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { success: false, output: `Failed to execute actions: ${message}` };
         }
-      };
-
-      const progressEmitter = toolCallId && emitEvent
-        ? new ProgressEventEmitter(toolCallId, customSender as any)
-        : null;
-
-      if (progressEmitter) {
-        tool.setProgressEmitter(progressEmitter, toolCallId!);
       }
 
-      const screenshotPaths: string[] = [];
+      // Handle regular task-based execution
+      const task  = (args.task as string) || "Perform a visual audit of the current desktop.";
+      
+      // Ensure overlay is shown and status updated
+      if (tool.overlay) {
+        console.log("[ComputerUse] Showing overlay for task:", task);
+        tool.overlay.show();
+        tool.overlay.setStatus(`Task: ${task}`);
+      }
+
+      const agent = new ComputerUseAgent(client, tool, model, task, 0, 200, 12, toolCallId ?? "");
+      activeAgent = agent;
 
       try {
         const { finalAnswer, lastScreenshot } = await agent.run(
-          (update) => {
-            onUpdate?.(update);
-            overlay.show(update);
-          },
-          (event) => {
-            // Update the overlay with the current action/step
-            if (event.type === 'action' && event.action?.description) {
-              overlay.show(event.action.description);
-            } else if (event.type === 'step' && event.content) {
-              overlay.show(event.content);
-            }
-
-            // Collect screenshot paths for persistence (so they survive page refresh)
-            if (event.type === 'screenshot' && (event as any).screenshotPath) {
-              screenshotPaths.push((event as any).screenshotPath);
-            }
-
-            // Emit the progress event to the frontend
-            emitEvent?.({
-              type: 'subagent-progress',
-              toolCallId: toolCallId || '',
-              timestamp: new Date().toISOString(),
-              data: {
-                ...event,
-                toolCallId: toolCallId || ''
-              }
-            });
-          }
+          msg => onUpdate?.(msg),
+          event => emitEvent?.({ type: "subagent-progress", toolCallId: toolCallId ?? "", timestamp: new Date().toISOString(), data: event }),
         );
-        const b64 = lastScreenshot?.split(',')[1];
-
-        const finalOutput = finalAnswer || `Successfully completed GUI task: ${task}`;
-
-        return {
-          success: true,
-          output: finalOutput,
-          base64Image: b64,
-          data: { task, finalAnswer: finalOutput, screenshot: b64, screenshotPaths }
-        };
-      } catch (error) {
-        throw error;
+        const b64 = lastScreenshot?.split(",")[1];
+        return { success: true, output: finalAnswer, base64Image: b64, data: { task, finalAnswer, screenshot: b64 } };
       } finally {
-        if (activeAgentInstance === agent) {
-          activeAgentInstance = null;
-        }
-        overlay.hide();
-        if (progressEmitter) {
-          progressEmitter.destroy();
+        console.log("[ComputerUse] Task finished, cleaning up activeAgent and overlay");
+        if (activeAgent === agent) activeAgent = null;
+        if (tool.overlay) {
+          tool.overlay.hide();
         }
       }
     },
 
     abort() {
-      // Emit timeline branch abort event if there's an active agent
-      if (activeAgentInstance) {
-        // Try to get the progress emitter from the active agent context
-        // Note: This is a simplified approach - in a full implementation,
-        // we'd need to track the progress emitter instance
-        console.debug('[ComputerUse] Aborting active agent instance');
+      activeAgent?.abort();
+      activeAgent = null;
+      if (tool.overlay) {
+        tool.overlay.hide();
       }
-
-      activeAgentInstance?.abort();
-      activeAgentInstance = null;
-    }
+    },
   };
 }
 
-/**
- * Capture the current screen for the runner's initial observation.
- */
-export async function captureScreen(): Promise<{
-  b64: string; w: number; h: number; physW: number; physH: number;
-}> {
-  const home = process.env.USERPROFILE || process.env.HOME || "";
+export async function captureScreen(): Promise<{ b64: string; w: number; h: number; physW: number; physH: number }> {
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? "";
   const tool = new ComputerUseTool(path.join(home, ".everfern", "screenshots"));
-  const obs = await tool.captureObservation();
-  const b64 = (obs.screenshot as string).split(',')[1];
-  const w = (obs.display as any).width;
-  const h = (obs.display as any).height;
+  const obs  = await tool.captureObservation();
+  const b64  = (obs.screenshot as string).split(",")[1];
+  const w    = (obs.display as any).width;
+  const h    = (obs.display as any).height;
   return { b64, w, h, physW: w, physH: h };
 }

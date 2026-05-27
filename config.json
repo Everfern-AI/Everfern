@@ -1,0 +1,6 @@
+{
+  "everfernCloud": {
+    "baseUrl": "https://api.everfern.app/api",
+    "enabled": true
+  }
+}

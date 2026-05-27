@@ -340,6 +340,37 @@ function parseSoMJSON(raw, imgW, imgH) {
     }
 }
 // ── Backend implementations ────────────────────────────────────────────────────
+async function groundViaEverFernCloud(b64, imgW, imgH, query, apiBaseUrl, userToken) {
+    const url = apiBaseUrl.replace(/\/$/, '') + '/api/tars/vision';
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(userToken && { 'Authorization': `Bearer ${userToken}` })
+        },
+        body: JSON.stringify({
+            screenshot: `data:image/jpeg;base64,${b64}`,
+            objective: query,
+            history: []
+        }),
+        signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+    });
+    if (!resp.ok)
+        throw new Error(`EverFern Cloud ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    const instruction = data?.instruction ?? '';
+    // Parse instruction to extract coordinates if available
+    // For now, we'll use the instruction as-is and let the action model handle it
+    // The grounding result will be used to determine if we found something
+    const found = instruction && !instruction.toLowerCase().includes('done');
+    return {
+        found,
+        x: 0,
+        y: 0,
+        confidence: found ? 0.8 : 0,
+        source: 'vision-fallback'
+    };
+}
 async function groundViaShowUILocal(b64, imgW, imgH, query, baseUrl) {
     const ready = await (0, showui_server_1.ensureShowUIServer)((l) => console.log(l));
     if (!ready)
@@ -624,6 +655,12 @@ class GroundingEngine {
                 workH = prepped.rh;
             }
             const candidates = [];
+            // Check for EverFern Cloud first (highest priority)
+            if (this.config.everfernCloudApiUrl && this.config.everfernCloudToken && isBackendHealthy('everfern-cloud')) {
+                candidates.push(groundViaEverFernCloud(workB64, workW, workH, query, this.config.everfernCloudApiUrl, this.config.everfernCloudToken)
+                    .then(r => r.found ? r : null)
+                    .catch(err => { console.warn('[Grounding] EverFern Cloud error:', err); markBackendFailed('everfern-cloud'); return null; }));
+            }
             if (this.config.showuiUrl && isBackendHealthy('showui-local')) {
                 candidates.push(groundViaShowUILocal(workB64, workW, workH, query, this.config.showuiUrl)
                     .then(r => r.found ? r : null)

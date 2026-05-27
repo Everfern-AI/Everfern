@@ -45,6 +45,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         installWSL: () => electron_1.ipcRenderer.invoke('system:installWSL'),
         setupDockerUbuntu: () => electron_1.ipcRenderer.invoke('system:setupDockerUbuntu'),
         toHostPath: (pathStr) => electron_1.ipcRenderer.invoke('system:to-host-path', pathStr),
+        getVersion: () => electron_1.ipcRenderer.invoke('system:get-version'),
     },
     // ── System Tray ──────────────────────────────────────────────────
     tray: {

@@ -26,7 +26,7 @@ const itemVariants: Variants = {
 // Landing site base URL for the web app UI
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
 // API base URL for authentication endpoints
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://everfern-api.vercel.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
 
 // Key used to persist the access token and user between reloads
 const STORAGE_KEY = "everfern_cloud_session";
@@ -147,12 +147,13 @@ export default function AuthPage() {
                         const config = {
                             provider: 'everfern',
                             apiKey: token,
-                            model: 'minimax-m2.7',
+                            model: 'everfern-1',
                             timestamp: new Date().toISOString(),
                             vlm: {
                                 engine: "everfern",
                                 provider: "everfern",
-                                model: "minimax-m2.7"
+                                model: "everfern-1",
+                                apiKey: token
                             }
                         };
                         await (window as any).electronAPI.saveConfig(config);

@@ -193,7 +193,7 @@ export default function ChatPage() {
     const [tasksFilePath, setTasksFilePath] = useState<string | undefined>(undefined);
     const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-    const [selectedModel, setSelectedModel] = useState("everfern-1");
+    const [selectedModel, setSelectedModel] = useState("fern-1");
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const [showModelSelector, setShowModelSelector] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
@@ -405,12 +405,12 @@ export default function ChatPage() {
                         const progressScreenshots = progressEvents
                             .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
                             .map(e => (e.screenshot?.base64 || e.content) as string);
-                        
+
                         const screenshotData: string[] = [];
                         if (progressScreenshots.length > 0) {
                             screenshotData.push(...progressScreenshots);
                         }
-                        
+
                         const staticScreenshot = updatedTc.base64Image || updatedTc.data?.screenshot || updatedTc.data?.base64Image;
                         if (staticScreenshot && typeof staticScreenshot === 'string' && !screenshotData.includes(staticScreenshot)) {
                             screenshotData.push(staticScreenshot);
@@ -1420,15 +1420,15 @@ export default function ChatPage() {
                 const existingIdx = existingId ? liveToolCallsRef.current.findIndex(t => t.id === existingId) : -1;
                 if (existingIdx >= 0) {
                     const updated = [...liveToolCallsRef.current];
-                    updated[existingIdx] = { 
-                        ...updated[existingIdx], 
-                        status: 'done' as const, 
-                        output: typeof record.result === 'string' 
-                            ? record.result 
+                    updated[existingIdx] = {
+                        ...updated[existingIdx],
+                        status: 'done' as const,
+                        output: typeof record.result === 'string'
+                            ? record.result
                             : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)),
                         data: record.result?.data,
                         base64Image: record.result?.base64Image,
-                        durationMs: record.durationMs 
+                        durationMs: record.durationMs
                     };
                     liveToolCallsRef.current = updated;
                     setLiveToolCalls(updated);
@@ -1654,7 +1654,7 @@ export default function ChatPage() {
         const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
         const newMessages = [...messages, userMessage];
         setMessages(newMessages);
-        
+
         // Ensure conversation ID is established synchronously before any async operations
         let currentConvId = activeConversationIdRef.current;
         if (!currentConvId) {
@@ -1662,10 +1662,10 @@ export default function ChatPage() {
             activeConversationIdRef.current = currentConvId;
             setActiveConversationId(currentConvId);
         }
-        
+
         // Immediately save the user message to prevent data loss
         saveConversation(newMessages);
-        
+
         if (typeof overrideValue !== 'string') setInputValue("");
         setAttachments([]);
 
@@ -1730,7 +1730,7 @@ export default function ChatPage() {
                     if (toolName === 'ask_user_question' || toolName === 'approve_actions') {
                         console.log(`[Frontend] Received ${toolName} tool_start:`, JSON.stringify({ toolName, toolArgs }, null, 2));
                     }
-                    
+
                     const narrativeText = streamingContentRef.current.trim();
                     const display = resolveToolDisplay(toolName, toolArgs);
                     console.log('[Frontend] Resolved display for', toolName, ':', display);
@@ -1875,7 +1875,7 @@ export default function ChatPage() {
                     }
 
                     const recordTcId = record.id || record.toolCallId;
-                    
+
                     if (record.toolName === 'create_plan' || record.toolName === 'update_plan_step') { if (record.result?.success && record.result?.data) setCurrentPlan(record.result.data); }
                     if (record.toolName === 'todo_write') {
                         if (record.result?.success && record.result?.data) {
@@ -2152,7 +2152,7 @@ export default function ChatPage() {
                         const finalToolCalls = liveToolCallsRef.current.map(t => {
                             // Strip heavy base64 screenshots before saving to avoid IPC/SQLite crashes,
                             // but KEEP the screenshotPath so images can be reloaded from disk on refresh.
-                            const strippedProgress = t.subAgentProgress?.map(ev => 
+                            const strippedProgress = t.subAgentProgress?.map(ev =>
                                 ev.type === 'screenshot' && ev.screenshot
                                     ? { ...ev, screenshot: { ...ev.screenshot, base64: '' } }
                                     : ev
@@ -2680,7 +2680,32 @@ export default function ChatPage() {
     const handleSaveSettings = async () => {
         const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
-        if (settingsVlmMode === "cloud" && settingsVlmCloudModel.trim()) { updated.vlm = { engine: "cloud", provider: settingsVlmCloudProvider, model: settingsVlmCloudModel.trim(), baseUrl: settingsVlmCloudUrl.trim() || undefined, apiKey: settingsVlmCloudKey.trim() || undefined }; }
+        const defaultVlmModel = settingsVlmCloudProvider === 'everfern' ? 'fern-1' : settingsVlmCloudProvider === 'openrouter' ? 'bytedance/ui-tars-1.5-7b' : settingsVlmCloudProvider === 'openai' ? 'gpt-4o' : 'qwen3-vl:235b-instruct-cloud';
+        const finalVlmModel = settingsVlmCloudModel.trim() || defaultVlmModel;
+        if (settingsVlmMode === "cloud") {
+          // For cloud-only providers like 'everfern' and 'openrouter', don't pass baseUrl/apiKey
+          // to avoid using stale values from previous provider selections
+          const shouldOmitBaseUrl = settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter';
+          
+          let finalCloudKey = settingsVlmCloudKey.trim() || undefined;
+          if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
+            try {
+              const sessionStr = localStorage.getItem('everfern_cloud_session');
+              if (sessionStr) {
+                const session = JSON.parse(sessionStr);
+                finalCloudKey = session.accessToken;
+              }
+            } catch (e) {}
+          }
+
+          updated.vlm = {
+            engine: "cloud",
+            provider: settingsVlmCloudProvider,
+            model: finalVlmModel,
+            baseUrl: (shouldOmitBaseUrl ? undefined : settingsVlmCloudUrl.trim()) || undefined,
+            apiKey: finalCloudKey
+          };
+        }
         else if (config?.vlm) { updated.vlm = config.vlm; }
         if (voiceProvider && (voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
         setConfig(updated);

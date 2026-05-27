@@ -455,12 +455,22 @@ export default function SetupPage() {
         };
         // Add specialized VLM engine if Ollama is available OR cloud mode is selected
         if (vlmMode === "cloud" && vlmCloudModel.trim()) {
+            let finalCloudKey = vlmCloudKey.trim() || undefined;
+            if (vlmCloudProvider === 'everfern' && !finalCloudKey) {
+                try {
+                    const stored = localStorage.getItem("everfern_cloud_session");
+                    if (stored) {
+                        finalCloudKey = JSON.parse(stored).accessToken;
+                    }
+                } catch {}
+            }
+
             config.vlm = {
                 engine: "cloud",
                 provider: vlmCloudProvider,
                 model: vlmCloudModel.trim() || 'qwen3-vl:235b-instruct-cloud',
                 baseUrl: vlmCloudUrl.trim() || undefined,
-                apiKey: vlmCloudKey.trim() || undefined
+                apiKey: finalCloudKey
             };
         } else if (vlmMode === "local" && (ollamaInstalled && modelInstalled)) {
             config.vlm = {
@@ -473,10 +483,19 @@ export default function SetupPage() {
                 config.provider = "ollama";
             }
         } else if (vlmMode === "everfern") {
+            let cloudToken = undefined;
+            try {
+                const stored = localStorage.getItem("everfern_cloud_session");
+                if (stored) {
+                    cloudToken = JSON.parse(stored).accessToken;
+                }
+            } catch {}
+            
             config.vlm = {
                 engine: "everfern",
                 provider: "everfern",
-                model: "minimax-m2.7"
+                model: "everfern-1",
+                apiKey: cloudToken
             };
         }
         if ((window as any).electronAPI?.saveConfig) {

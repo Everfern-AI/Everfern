@@ -937,6 +937,11 @@ function loadConfigSync() {
             if (config.vlm?.model?.includes('hf.co/Qwen/Qwen3-VL-2B-Thinking-GGUF')) {
                 config.vlm.model = 'qwen3-vl:2b';
             }
+            // Clean up stale baseUrl for cloud-only providers (everfern, openrouter)
+            // These should use their hardcoded defaults, not user-set baseUrl values
+            if (config.vlm && (config.vlm.provider === 'everfern' || config.vlm.provider === 'openrouter')) {
+                delete config.vlm.baseUrl;
+            }
             config.keys = {};
             const keysDir = path.join(configDir, 'keys');
             if (fs.existsSync(keysDir)) {
@@ -958,6 +963,11 @@ function loadConfigSync() {
                             }
                         }
                     }
+                }
+            }
+            if (config.vlm && !config.vlm.apiKey) {
+                if (config.vlm.provider === 'everfern' || config.vlm.provider === config.provider) {
+                    config.vlm.apiKey = config.apiKey || config.keys?.[config.vlm.provider];
                 }
             }
             return config;

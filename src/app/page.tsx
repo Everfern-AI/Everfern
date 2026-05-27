@@ -34,9 +34,9 @@ export default function OnboardingPage() {
               const config = {
                   provider: 'everfern',
                   apiKey: token,
-                  model: 'minimax-m2.7',
+                  model: 'everfern-1',
                   timestamp: new Date().toISOString(),
-                  vlm: { engine: "everfern", provider: "everfern", model: "minimax-m2.7" }
+                  vlm: { engine: "everfern", provider: "everfern", model: "everfern-1", apiKey: token }
               };
               await (window as any).electronAPI.saveConfig(config);
             }

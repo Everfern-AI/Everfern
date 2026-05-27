@@ -532,11 +532,18 @@ Respond with the plain text report only.`;
      * Uses the main AI client if it supports vision, else falls back to the configured
      * vision grounding model (visionClient). Includes a specialized vision prompt that
      * teaches the AI spatial reasoning and visual page understanding.
+     *
+     * For EverFern Cloud provider, routes to BRAIN + HAND models for vision grounding.
      */
     async callAIVision(systemPrompt, inputContext, nextStepPrompt, screenshotB64) {
         // Pick the right client: vision fallback if available, else main
         const client = this.visionClient || this.aiClient;
         const modelToUse = client.model;
+        // Check if using EverFern Cloud provider
+        if (client.provider === 'everfern') {
+            console.log('[Navis] Using EverFern Cloud vision grounding (BRAIN + HAND)');
+            return this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client);
+        }
         // Calculate image size for detail level — smaller images use 'low' to save tokens
         const imgSizeKB = Math.round((screenshotB64.length * 3) / 4 / 1024);
         const detail = imgSizeKB > 200 ? 'high' : 'low';
@@ -633,6 +640,174 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
             }
             return this.callAI(systemPrompt, inputContext, nextStepPrompt);
         }
+    }
+    /**
+     * EverFern Cloud vision grounding: sends screenshot to BRAIN + HAND models
+     * Returns browser actions that can be executed by NAVIS
+     */
+    async callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client) {
+        try {
+            const aiStart = Date.now();
+            // Extract task objective from input context
+            const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
+            const objective = taskMatch ? taskMatch[1] : inputContext.substring(0, 200);
+            // Check if we need to navigate to a website first
+            const currentUrlMatch = inputContext.match(/Current Tab: (.+?) \(/);
+            const currentUrl = currentUrlMatch ? currentUrlMatch[1] : '';
+            // If we're on about:blank or no relevant website, we should navigate first
+            // Don't use vision grounding for initial navigation
+            if (currentUrl.includes('about:blank') || currentUrl === '' ||
+                (!currentUrl.includes('google.com') && !currentUrl.includes('expedia') &&
+                    !currentUrl.includes('kayak') && !currentUrl.includes('booking') &&
+                    !currentUrl.includes('skyscanner') && !currentUrl.includes('momondo'))) {
+                console.log('[Navis] Not on a relevant website, should navigate first. Falling back to text-only AI.');
+                return null; // Fall back to text-only AI for navigation
+            }
+            console.log('[Navis] Sending to EverFern Cloud vision grounding...');
+            console.log('[Navis] Current URL:', currentUrl);
+            console.log('[Navis] Objective:', objective.substring(0, 100));
+            // Call EverFern Cloud API directly
+            const baseUrl = client.getFullConfig().baseUrl || 'https://api.everfern.app/api';
+            const response = await fetch(`${baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(client.apiKey && { 'Authorization': `Bearer ${client.apiKey}` })
+                },
+                body: JSON.stringify({
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'image_url',
+                                    image_url: {
+                                        url: `data:image/jpeg;base64,${screenshotB64}`,
+                                        detail: 'low'
+                                    }
+                                },
+                                {
+                                    type: 'text',
+                                    text: `${objective}\n\n${nextStepPrompt}`
+                                }
+                            ]
+                        }
+                    ],
+                    model: client.model,
+                    temperature: 0.1,
+                    max_tokens: 4096
+                })
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            const data = await response.json();
+            if (!data.choices || !data.choices[0]) {
+                throw new Error('No response from EverFern Cloud API');
+            }
+            const content = data.choices[0].message.content;
+            const elapsed = Date.now() - aiStart;
+            console.log('[Navis] EverFern Cloud response received:', elapsed, 'ms');
+            console.log('[Navis] Instruction:', content.substring(0, 150));
+            // Parse actions from the response
+            const actions = this._parseActionsFromContent(content);
+            if (actions.length === 0) {
+                console.warn('[Navis] No actions found in EverFern Cloud response, falling back to text-only AI');
+                return null; // Fall back to text-only AI
+            }
+            console.log('[Navis] Parsed', actions.length, 'actions:', actions);
+            // Convert TARS actions to NAVIS decision format
+            return this._convertTarsActionsToNavisDecision(actions, objective, content);
+        }
+        catch (err) {
+            console.error('[Navis] EverFern Cloud vision grounding failed:', err);
+            this.logger.error(`EverFern Cloud vision failed: ${err.message}`);
+            return null; // Fall back to text-only AI
+        }
+    }
+    /**
+     * Parse action strings from TARS response content
+     * Format: "action1 | action2 | action3" or just "action1"
+     */
+    _parseActionsFromContent(content) {
+        if (!content)
+            return [];
+        const actions = content
+            .split('|')
+            .map(s => s.trim())
+            .filter(s => s.length > 0 && !s.toLowerCase().includes('done'));
+        return actions;
+    }
+    /**
+     * Convert TARS format actions to NAVIS decision schema
+     * TARS actions: click(x,y), type(text), press(key)
+     * NAVIS actions: click_element, input_text, press_key, etc.
+     */
+    _convertTarsActionsToNavisDecision(tarsActions, objective, instruction) {
+        const navisActions = [];
+        for (const actionStr of tarsActions) {
+            const action = this._parseTarsAction(actionStr);
+            if (action) {
+                navisActions.push(action);
+            }
+        }
+        // If no valid actions, return null
+        if (navisActions.length === 0) {
+            return null;
+        }
+        // Return NAVIS decision format
+        return {
+            current_state: {
+                evaluation_previous_goal: 'Unknown',
+                memory: instruction.substring(0, 200),
+                next_goal: objective.substring(0, 200)
+            },
+            action: navisActions
+        };
+    }
+    /**
+     * Parse a single TARS action string into NAVIS action format
+     * Supported: click(x,y), type(text), press(key), scroll(direction)
+     */
+    _parseTarsAction(actionStr) {
+        actionStr = actionStr.trim();
+        // Normalize start_box format
+        const startBoxMatch = actionStr.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
+        if (startBoxMatch) {
+            actionStr = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
+        }
+        // Parse click(x,y) - convert to browser coordinates
+        const clickMatch = actionStr.match(/click\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)/i);
+        if (clickMatch) {
+            const x = parseInt(clickMatch[1]);
+            const y = parseInt(clickMatch[2]);
+            // For browser automation, we need to use Playwright's page.mouse.click
+            // which will be handled by a special action
+            return { browser_click: { x, y } };
+        }
+        // Parse type(text)
+        const typeMatch = actionStr.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
+        if (typeMatch) {
+            // For browser, we need to type at the current focused element
+            // This will be handled by a special action
+            return { browser_type: { text: typeMatch[1] } };
+        }
+        // Parse press(key)
+        const pressMatch = actionStr.match(/press\s*\(\s*([^)]+)\s*\)/i);
+        if (pressMatch) {
+            const key = pressMatch[1].trim().toLowerCase();
+            return { press_key: { key } };
+        }
+        // Parse scroll(direction)
+        if (actionStr.match(/scroll.*down/i)) {
+            return { scroll_down: {} };
+        }
+        if (actionStr.match(/scroll.*up/i)) {
+            return { scroll_up: {} };
+        }
+        console.warn('[Navis] Unhandled TARS action:', actionStr);
+        return null;
     }
     extractJson(raw) {
         let cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();

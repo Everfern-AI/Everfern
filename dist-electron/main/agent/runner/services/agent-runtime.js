@@ -30,15 +30,22 @@ async function runAgentStep(state, options) {
         const lastMsgContent = state.messages[state.messages.length - 1]?.content || '';
         const vlm = runner.config.vlm;
         let updatedMessages = null;
-        // Only use separate VLM if main model isn't vision-native
+        // Only use separate VLM if main model isn't vision-native OR if a specific VLM provider is configured
         const mainProvider = runner.client.provider;
-        const isVisionNative = ['openai', 'anthropic', 'gemini', 'nvidia', 'google'].includes(mainProvider);
+        let isVisionNative = ['openai', 'anthropic', 'gemini', 'nvidia', 'google'].includes(mainProvider);
+        // If a separate VLM provider is configured that is DIFFERENT from the main provider, 
+        // we should prefer the VLM for grounding tasks.
+        if (vlm?.model && vlm.provider !== mainProvider) {
+            isVisionNative = false;
+        }
         if (iterations === 0 && vlm?.model && runner.shouldCaptureScreenshot(lastMsgContent)) {
             // If native vision exists, keep main client but capture screenshot
             // If not, switch to VLM client
             if (!isVisionNative) {
                 clientConfig = {
-                    provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' : vlm.provider),
+                    provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' :
+                        vlm.engine === 'cloud' && vlm.provider === 'everfern' ? 'everfern' :
+                            vlm.provider),
                     model: vlm.model,
                     apiKey: vlm.apiKey,
                     baseUrl: vlm.baseUrl

@@ -51,16 +51,24 @@ export async function runAgentStep(
     const vlm = (runner as any).config.vlm;
     let updatedMessages: ChatMessage[] | null = null;
 
-    // Only use separate VLM if main model isn't vision-native
+    // Only use separate VLM if main model isn't vision-native OR if a specific VLM provider is configured
     const mainProvider = runner.client.provider;
-    const isVisionNative = ['openai', 'anthropic', 'gemini', 'nvidia', 'google'].includes(mainProvider);
+    let isVisionNative = ['openai', 'anthropic', 'gemini', 'nvidia', 'google'].includes(mainProvider);
+    
+    // If a separate VLM provider is configured that is DIFFERENT from the main provider, 
+    // we should prefer the VLM for grounding tasks.
+    if (vlm?.model && vlm.provider !== mainProvider) {
+      isVisionNative = false;
+    }
 
     if (iterations === 0 && vlm?.model && runner.shouldCaptureScreenshot(lastMsgContent)) {
       // If native vision exists, keep main client but capture screenshot
       // If not, switch to VLM client
       if (!isVisionNative) {
         clientConfig = {
-          provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' : vlm.provider),
+          provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' :
+                     vlm.engine === 'cloud' && vlm.provider === 'everfern' ? 'everfern' :
+                     vlm.provider),
           model: vlm.model,
           apiKey: vlm.apiKey,
           baseUrl: vlm.baseUrl
@@ -154,10 +162,10 @@ export async function runAgentStep(
       const firstUserMsg = rest[0];
       const recentMsgs = rest.slice(-20);
       const hasFirstMessage = firstUserMsg && recentMsgs.includes(firstUserMsg);
-      
+
       limitedMessages = [
-        ...systemMsg, 
-        ...(firstUserMsg && !hasFirstMessage ? [firstUserMsg] : []), 
+        ...systemMsg,
+        ...(firstUserMsg && !hasFirstMessage ? [firstUserMsg] : []),
         ...recentMsgs
       ];
     } else {
@@ -173,7 +181,7 @@ export async function runAgentStep(
         try {
           if (!startedToolCallIndices.has(index)) {
             startedToolCallIndices.add(index);
-            
+
             // Link tool call to planned mission step
             const matchingStep = state.decomposedTask?.steps.find(s => s.tool === toolName);
             const tracker = (runner as any).missionTracker;

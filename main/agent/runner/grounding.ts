@@ -46,7 +46,7 @@ export interface GroundingResult {
   x: number;
   y: number;
   confidence: number;
-  source: 'showui-local' | 'ollama-maiui' | 'ollama-cloud' | 'vision-fallback' | 'ollama-slim' | 'som-direct' | 'text-match';
+  source: 'showui-local' | 'ollama-maiui' | 'ollama-cloud' | 'vision-fallback' | 'ollama-slim' | 'som-direct' | 'text-match' | 'everfern-cloud';
   attempts?: number;
   elementId?: number;
 }
@@ -57,6 +57,8 @@ export interface GroundingConfig {
   ollamaModel?: string;
   ollamaApiKey?: string;
   fallbackClient?: AIClient;
+  everfernCloudApiUrl?: string;
+  everfernCloudToken?: string;
 }
 
 // ── SoM Types ────────────────────────────────────────────────────────────────
@@ -408,6 +410,45 @@ function parseSoMJSON(raw: string, imgW: number, imgH: number): SoMElement[] {
 
 // ── Backend implementations ────────────────────────────────────────────────────
 
+async function groundViaEverFernCloud(
+  b64: string, imgW: number, imgH: number, query: string,
+  apiBaseUrl: string, userToken: string,
+): Promise<GroundingResult> {
+  const url = apiBaseUrl.replace(/\/$/, '') + '/api/tars/vision';
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(userToken && { 'Authorization': `Bearer ${userToken}` })
+    },
+    body: JSON.stringify({
+      screenshot: `data:image/jpeg;base64,${b64}`,
+      objective: query,
+      history: []
+    }),
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+  });
+
+  if (!resp.ok) throw new Error(`EverFern Cloud ${resp.status}: ${await resp.text()}`);
+
+  const data = await resp.json();
+  const instruction = data?.instruction ?? '';
+
+  // Parse instruction to extract coordinates if available
+  // For now, we'll use the instruction as-is and let the action model handle it
+  // The grounding result will be used to determine if we found something
+  const found = instruction && !instruction.toLowerCase().includes('done');
+
+  return {
+    found,
+    x: 0,
+    y: 0,
+    confidence: found ? 0.8 : 0,
+    source: 'vision-fallback'
+  };
+}
+
 async function groundViaShowUILocal(
   b64: string, imgW: number, imgH: number, query: string, baseUrl: string,
 ): Promise<GroundingResult> {
@@ -743,6 +784,15 @@ export class GroundingEngine {
       }
 
       const candidates: Promise<GroundingResult | null>[] = [];
+
+      // Check for EverFern Cloud first (highest priority)
+      if (this.config.everfernCloudApiUrl && this.config.everfernCloudToken && isBackendHealthy('everfern-cloud')) {
+        candidates.push(
+          groundViaEverFernCloud(workB64, workW, workH, query, this.config.everfernCloudApiUrl, this.config.everfernCloudToken)
+            .then(r => r.found ? r : null)
+            .catch(err => { console.warn('[Grounding] EverFern Cloud error:', err); markBackendFailed('everfern-cloud'); return null; })
+        );
+      }
 
       if (this.config.showuiUrl && isBackendHealthy('showui-local')) {
         candidates.push(

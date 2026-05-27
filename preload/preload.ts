@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installWSL:     () => ipcRenderer.invoke('system:installWSL'),
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
+    getVersion:     () => ipcRenderer.invoke('system:get-version'),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -505,6 +506,8 @@ export type ElectronAPI = {
     installWSL:     () => Promise<{ success: boolean; warning?: string; error?: string }>;
     setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;
     toHostPath:     (pathStr: string) => Promise<string>;
+    getVersion:     () => Promise<string>;
+    checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string; notes?: string; error?: string }>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;

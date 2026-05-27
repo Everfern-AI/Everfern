@@ -99,6 +99,42 @@ function registerSystemHandlers() {
     electron_1.ipcMain.handle('system:get-username', () => {
         return os.userInfo().username;
     });
+    electron_1.ipcMain.handle('system:get-version', () => {
+        return electron_1.app.getVersion();
+    });
+    electron_1.ipcMain.handle('system:check-for-updates', async () => {
+        try {
+            const currentVersion = electron_1.app.getVersion();
+            const response = await electron_1.net.fetch('https://api.github.com/repos/CodenRust/Everfern/releases/latest');
+            if (!response.ok)
+                return { hasUpdate: false };
+            const data = await response.json();
+            const latestVersion = data.tag_name.replace(/^v/, '');
+            // Simple version comparison (semver-lite)
+            const currentParts = currentVersion.split('.').map(Number);
+            const latestParts = latestVersion.split('.').map(Number);
+            let hasUpdate = false;
+            for (let i = 0; i < 3; i++) {
+                if ((latestParts[i] || 0) > (currentParts[i] || 0)) {
+                    hasUpdate = true;
+                    break;
+                }
+                else if ((latestParts[i] || 0) < (currentParts[i] || 0)) {
+                    break;
+                }
+            }
+            return {
+                hasUpdate,
+                latestVersion,
+                url: data.html_url,
+                notes: data.body
+            };
+        }
+        catch (err) {
+            console.error('[UpdateCheck] Failed to check for updates:', err);
+            return { hasUpdate: false, error: String(err) };
+        }
+    });
     electron_1.ipcMain.handle('system:open-file-picker', async (_event, options) => {
         console.log('[IPC] system:open-file-picker called with options:', options);
         const mainWindow = global.mainWindow;

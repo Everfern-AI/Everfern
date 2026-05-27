@@ -113,27 +113,25 @@ async function isLinuxVMAvailable() {
     try {
         if (platform === 'win32') {
             try {
-                const { execSync } = require('child_process');
-                execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 3000 });
+                await execAsync('wsl.exe -e echo ok', { timeout: 15000 });
                 return { available: true };
             }
             catch (err) {
                 return {
                     available: false,
-                    reason: 'WSL is not running or no Linux distribution (such as Ubuntu) is installed. Please set up WSL.'
+                    reason: `WSL is not running, no Linux distribution is installed, or the WSL startup timed out. Error: ${err.message || err}`
                 };
             }
         }
         else if (platform === 'darwin') {
             try {
-                const { execSync } = require('child_process');
-                execSync('docker info', { stdio: 'ignore', timeout: 3000 });
+                await execAsync('docker info', { timeout: 10000 });
                 return { available: true };
             }
             catch (err) {
                 return {
                     available: false,
-                    reason: 'Docker Desktop is not installed or not running. Please start Docker.'
+                    reason: `Docker Desktop is not installed, not running, or connection timed out. Error: ${err.message || err}`
                 };
             }
         }

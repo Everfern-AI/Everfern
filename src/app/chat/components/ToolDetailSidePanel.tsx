@@ -1475,7 +1475,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractGenericData(toolCall);
       }
 
-      if (extracted) extracted.toolCallId = toolCall.id;
+      if (extracted) (extracted as any).toolCallId = toolCall.id;
       setToolData(extracted);
     } catch { setError('Failed to load details'); }
     setIsLoading(false);
@@ -1494,7 +1494,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     try {
       const extracted = extractNavisData(toolCall, progress);
       if (extracted) {
-        extracted.toolCallId = toolCall.id;
+        (extracted as any).toolCallId = toolCall.id;
         setToolData(extracted);
       }
     } catch { /* silently ignore mid-stream parse errors */ }

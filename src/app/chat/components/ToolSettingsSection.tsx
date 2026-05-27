@@ -34,9 +34,9 @@ interface ToolSettingsConfig {
 }
 
 const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
-    useVision: false,
+    useVision: true,
     headless: false,
-    maxSteps: 25,
+    maxSteps: 12,
 };
 
 const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {

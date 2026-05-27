@@ -46,7 +46,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     const res = await (window as any).electronAPI.loadConfig();
                     if (res.success && res.config?.provider === 'everfern' && res.config?.apiKey) {
                         try {
-                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://everfern-api.vercel.app";
+                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
                             const userRes = await fetch(`${API_URL}/api/user/me`, {
                                 headers: { Authorization: `Bearer ${res.config.apiKey}` }
                             });
@@ -56,7 +56,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                 const userName = userData.displayName || userData.fullName || userData.name;
                                 if (userName) name = userName;
                                 else if (userData.email) name = userData.email.split('@')[0];
-                                
+
                                 if (userData.avatarUrl || userData.avatar_url) avatar = userData.avatarUrl || userData.avatar_url;
                                 if (userData.plan) setUserPlan(userData.plan);
                                 if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
@@ -406,11 +406,11 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             {dailyLimit !== null && dailyUsed !== null && (
                                 <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 3, paddingRight: 4 }}>
                                     <div style={{ width: "100%", height: 4, backgroundColor: "#e8e6d9", borderRadius: 2, overflow: "hidden" }}>
-                                        <div style={{ 
-                                            width: `${Math.min(100, (dailyUsed / dailyLimit) * 100)}%`, 
-                                            height: "100%", 
-                                            background: "linear-gradient(to right, #10b981, #3b82f6)", 
-                                            borderRadius: 2 
+                                        <div style={{
+                                            width: `${Math.min(100, (dailyUsed / dailyLimit) * 100)}%`,
+                                            height: "100%",
+                                            background: "linear-gradient(to right, #10b981, #3b82f6)",
+                                            borderRadius: 2
                                         }}></div>
                                     </div>
                                     <div style={{ fontSize: 9, color: "#a09e9c", textAlign: "right", fontWeight: 500 }}>
