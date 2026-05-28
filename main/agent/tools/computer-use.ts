@@ -205,7 +205,6 @@ class ComputerUseTool {
     // Initialize overlay
     try {
       this.overlay = new DesktopOverlay();
-      this.overlay.show();
       console.log("[ComputerUse] Desktop overlay initialized");
     } catch (err) {
       console.warn("[ComputerUse] Failed to initialize overlay:", err);

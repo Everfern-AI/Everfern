@@ -668,7 +668,7 @@ export default function SettingsPage({
                     if (res.success && res.config?.userName) {
                         name = res.config.userName;
                     } else if ((window as any).electronAPI?.system?.getUsername) {
-                        name = await (window as any).electronAPI.system.getUsername();
+                        name = await (window as any).electronAPI?.system.getUsername();
                     }
                 }
                 const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
@@ -1352,7 +1352,7 @@ export default function SettingsPage({
                     onClick={async () => {
                         if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, settings, and local data.')) return;
                         try {
-                            const result = await (window as any).electronAPI.system.wipeAccount();
+                            const result = await (window as any).electronAPI?.system.wipeAccount();
                             if (result?.success) {
                                 localStorage.clear();
                                 window.location.reload();

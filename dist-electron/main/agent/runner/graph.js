@@ -401,9 +401,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → END');
                     return langgraph_1.END;
                 case 'continue_brain':
-                    // Sub-task 3.3: Ensure continue_brain routes to END (not loop back to brain)
-                    console.log('[Graph] ➡️ Brain routing decision: continue_brain → END');
-                    return langgraph_1.END;
+                    // Fix: continue_brain should loop back to brain to continue execution
+                    console.log('[Graph] ➡️ Brain routing decision: continue_brain → brain');
+                    return 'brain';
                 default:
                     console.log('[Graph] ➡️ Unknown routing decision, defaulting to END');
                     return langgraph_1.END;
@@ -419,6 +419,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         data_analyst: 'data_analyst',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
+        brain: 'brain',
         [langgraph_1.END]: langgraph_1.END,
     })
         // All specialized agents route back to brain for coordination

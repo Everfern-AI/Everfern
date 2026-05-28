@@ -435,7 +435,22 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:start-dispatch', async (event, config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => {
     try {
       const { DispatchService } = await import('../lib/dispatch');
-      await DispatchService.getInstance().initialize(config, () => {
+      const service = DispatchService.getInstance();
+
+      // Wire the command handler BEFORE initializing so no commands are missed
+      service.onCommand = (command: string) => {
+        // Forward the command to all windows and bring the app to foreground
+        import('electron').then(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows().forEach(win => {
+            if (!win.isDestroyed()) {
+              win.show(); // Wake up from tray/background
+              win.webContents.send('system:dispatch-command', { command });
+            }
+          });
+        });
+      };
+
+      await service.initialize(config, () => {
         // Send event to the window that initiated the dispatch
         event.sender.send('system:dispatch-active');
       });
@@ -449,11 +464,25 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:restore-dispatch', async (event, config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => {
     try {
       const { DispatchService } = await import('../lib/dispatch');
+      const service = DispatchService.getInstance();
+
+      // Wire the command handler so restored sessions also forward commands
+      service.onCommand = (command: string) => {
+        import('electron').then(({ BrowserWindow }) => {
+          BrowserWindow.getAllWindows().forEach(win => {
+            if (!win.isDestroyed()) {
+              win.show();
+              win.webContents.send('system:dispatch-command', { command });
+            }
+          });
+        });
+      };
+
       // Pass a dummy sessionId and pinCode for initialization since restoreSession will overwrite them
-      await DispatchService.getInstance().initialize({ ...config, sessionId: '', pinCode: '' }, () => {
+      await service.initialize({ ...config, sessionId: '', pinCode: '' }, () => {
         event.sender.send('system:dispatch-active');
       });
-      return await DispatchService.getInstance().restoreSession();
+      return await service.restoreSession();
     } catch (err: any) {
       console.error('[IPC] system:restore-dispatch error:', err);
       return { success: false, error: err.message };
@@ -468,6 +497,15 @@ export function registerSystemHandlers() {
     } catch (err: any) {
       console.error('[IPC] system:stop-dispatch error:', err);
       return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('system:broadcast-dispatch', async (_event, { event, data }: { event: string; data: any }) => {
+    try {
+      const { DispatchService } = await import('../lib/dispatch');
+      DispatchService.getInstance().broadcastToWeb(event, data);
+    } catch (err) {
+      console.error('[IPC] system:broadcast-dispatch error:', err);
     }
   });
 }

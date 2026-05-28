@@ -25,6 +25,7 @@ class DesktopOverlay {
                 height,
                 x,
                 y,
+                show: false, // Ensure it doesn't flash when instantiated initially
                 transparent: true,
                 frame: false,
                 alwaysOnTop: true,

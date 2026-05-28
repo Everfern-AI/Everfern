@@ -18,9 +18,9 @@ import {
     WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 
-import type { SubAgentProgressEvent } from "@/app/chat/types";
+import type { SubAgentProgressEvent } from "./types";
 import type { MissionTimeline as MissionTimelineType, MissionStep } from "./MissionTimeline";
-import { ReasoningBlock } from "@/app/chat/components/ReasoningComponents";
+import { ReasoningBlock } from "./ReasoningComponents";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ToolCallDisplay {

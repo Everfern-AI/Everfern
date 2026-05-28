@@ -114,7 +114,7 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
 const InlineLink = ({ href, label }: { href: string, label: string }) => {
     const openInBrowser = () => {
         if ((window as any).electronAPI?.system?.openExternal) {
-            (window as any).electronAPI.system.openExternal(href);
+            (window as any).electronAPI?.system.openExternal(href);
         } else {
             window.open(href, '_blank', 'noopener,noreferrer');
         }

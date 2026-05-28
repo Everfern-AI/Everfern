@@ -237,7 +237,6 @@ class ComputerUseTool {
         // Initialize overlay
         try {
             this.overlay = new desktop_overlay_1.default();
-            this.overlay.show();
             console.log("[ComputerUse] Desktop overlay initialized");
         }
         catch (err) {
@@ -348,6 +347,60 @@ class ComputerUseTool {
         if (has(/^press\s*\(\s*([^)]+)\s*\)\s*$/i, text)) {
             const key = text.match(/press\s*\(\s*([^)]+)\s*\)/i)[1].trim().toLowerCase();
             await this.call({ action: "key", keys: key.includes("+") ? key.split("+") : [key] });
+            return;
+        }
+        // ── scroll(direction: down|up|left|right [, coordinate: [x, y]] [, amount: N]) ──
+        if (has(/^scroll\s*\(/i, text)) {
+            const dirMatch = text.match(/direction\s*[:=]\s*["']?(up|down|left|right)["']?/i);
+            const coordMatch = text.match(/coordinate\s*[:=]\s*\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/i);
+            const amtMatch = text.match(/(?:amount|pixels)\s*[:=]\s*(-?\d+)/i);
+            const direction = dirMatch ? dirMatch[1].toLowerCase() : "down";
+            const pixels = amtMatch ? parseInt(amtMatch[1]) : 300; // default 300px = ~3 ticks
+            const isHoriz = direction === "left" || direction === "right";
+            const sign = (direction === "down" || direction === "right") ? pixels : -pixels;
+            const scrollParams = { action: isHoriz ? "hscroll" : "scroll", pixels: sign };
+            if (coordMatch)
+                scrollParams.coordinate = [parseInt(coordMatch[1]), parseInt(coordMatch[2])];
+            await this.call(scrollParams);
+            return;
+        }
+        // ── drag(startCoordinate: [x1,y1], endCoordinate: [x2,y2]) ──────────────────
+        if (has(/^drag\s*\(/i, text)) {
+            const coords = [...text.matchAll(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/g)];
+            if (coords.length >= 2 && robot) {
+                const [sx, sy] = [parseInt(coords[0][1]), parseInt(coords[0][2])];
+                const [ex, ey] = [parseInt(coords[1][1]), parseInt(coords[1][2])];
+                robot.moveMouse(sx, sy);
+                robot.mouseToggle("down", "left");
+                robot.moveMouse(ex, ey);
+                robot.mouseToggle("up", "left");
+                console.log(`[ComputerUse] Drag from (${sx},${sy}) to (${ex},${ey})`);
+            }
+            else {
+                console.warn(`[ComputerUse] drag: could not parse coordinates from: ${text}`);
+            }
+            return;
+        }
+        // ── hover(coordinate: [x, y]) ────────────────────────────────────────────────
+        if (has(/^(?:hover|move_to|mouse_move)\s*\(/i, text)) {
+            const coordMatch = text.match(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/);
+            if (coordMatch && robot) {
+                robot.moveMouse(parseInt(coordMatch[1]), parseInt(coordMatch[2]));
+                console.log(`[ComputerUse] Hover to (${coordMatch[1]},${coordMatch[2]})`);
+            }
+            return;
+        }
+        // ── wait(time: N) ────────────────────────────────────────────────────────────
+        if (has(/^wait\s*\(/i, text)) {
+            const numMatch = text.match(/(\d+(?:\.\d+)?)/);
+            const secs = numMatch ? parseFloat(numMatch[1]) : 1;
+            await sleep(secs);
+            console.log(`[ComputerUse] Waited ${secs}s`);
+            return;
+        }
+        // ── screenshot() / observe() ─────────────────────────────────────────────────
+        if (has(/^(?:screenshot|observe|capture)\s*\(/i, text)) {
+            await this.captureObservation();
             return;
         }
         console.warn(`[ComputerUse] Unhandled action: ${text}`);

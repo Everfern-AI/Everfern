@@ -436,7 +436,20 @@ function registerSystemHandlers() {
     electron_1.ipcMain.handle('system:start-dispatch', async (event, config) => {
         try {
             const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
-            await DispatchService.getInstance().initialize(config, () => {
+            const service = DispatchService.getInstance();
+            // Wire the command handler BEFORE initializing so no commands are missed
+            service.onCommand = (command) => {
+                // Forward the command to all windows and bring the app to foreground
+                Promise.resolve().then(() => __importStar(require('electron'))).then(({ BrowserWindow }) => {
+                    BrowserWindow.getAllWindows().forEach(win => {
+                        if (!win.isDestroyed()) {
+                            win.show(); // Wake up from tray/background
+                            win.webContents.send('system:dispatch-command', { command });
+                        }
+                    });
+                });
+            };
+            await service.initialize(config, () => {
                 // Send event to the window that initiated the dispatch
                 event.sender.send('system:dispatch-active');
             });
@@ -450,11 +463,23 @@ function registerSystemHandlers() {
     electron_1.ipcMain.handle('system:restore-dispatch', async (event, config) => {
         try {
             const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
+            const service = DispatchService.getInstance();
+            // Wire the command handler so restored sessions also forward commands
+            service.onCommand = (command) => {
+                Promise.resolve().then(() => __importStar(require('electron'))).then(({ BrowserWindow }) => {
+                    BrowserWindow.getAllWindows().forEach(win => {
+                        if (!win.isDestroyed()) {
+                            win.show();
+                            win.webContents.send('system:dispatch-command', { command });
+                        }
+                    });
+                });
+            };
             // Pass a dummy sessionId and pinCode for initialization since restoreSession will overwrite them
-            await DispatchService.getInstance().initialize({ ...config, sessionId: '', pinCode: '' }, () => {
+            await service.initialize({ ...config, sessionId: '', pinCode: '' }, () => {
                 event.sender.send('system:dispatch-active');
             });
-            return await DispatchService.getInstance().restoreSession();
+            return await service.restoreSession();
         }
         catch (err) {
             console.error('[IPC] system:restore-dispatch error:', err);
@@ -470,6 +495,15 @@ function registerSystemHandlers() {
         catch (err) {
             console.error('[IPC] system:stop-dispatch error:', err);
             return { success: false, error: err.message };
+        }
+    });
+    electron_1.ipcMain.handle('system:broadcast-dispatch', async (_event, { event, data }) => {
+        try {
+            const { DispatchService } = await Promise.resolve().then(() => __importStar(require('../lib/dispatch')));
+            DispatchService.getInstance().broadcastToWeb(event, data);
+        }
+        catch (err) {
+            console.error('[IPC] system:broadcast-dispatch error:', err);
         }
     });
 }

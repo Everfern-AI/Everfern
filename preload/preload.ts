@@ -97,7 +97,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopDispatch:   () => ipcRenderer.invoke('system:stop-dispatch'),
     onDispatchActive: (cb: () => void) => {
       ipcRenderer.on('system:dispatch-active', () => cb());
-    }
+    },
+    onDispatchCommand: (cb: (command: string) => void) => {
+      ipcRenderer.on('system:dispatch-command', (_evt, data: { command: string }) => cb(data.command));
+    },
+    broadcastDispatch: (event: string, data: any) => ipcRenderer.invoke('system:broadcast-dispatch', { event, data }),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -519,6 +523,8 @@ export type ElectronAPI = {
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => Promise<{ success: boolean; session?: any; error?: string }>;
     stopDispatch:   () => Promise<{ success: boolean; error?: string }>;
     onDispatchActive: (cb: () => void) => void;
+    onDispatchCommand: (cb: (command: string) => void) => void;
+    broadcastDispatch: (event: string, data: any) => Promise<void>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;

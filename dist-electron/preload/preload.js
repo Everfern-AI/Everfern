@@ -52,7 +52,11 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
         stopDispatch: () => electron_1.ipcRenderer.invoke('system:stop-dispatch'),
         onDispatchActive: (cb) => {
             electron_1.ipcRenderer.on('system:dispatch-active', () => cb());
-        }
+        },
+        onDispatchCommand: (cb) => {
+            electron_1.ipcRenderer.on('system:dispatch-command', (_evt, data) => cb(data.command));
+        },
+        broadcastDispatch: (event, data) => electron_1.ipcRenderer.invoke('system:broadcast-dispatch', { event, data }),
     },
     // ── System Tray ──────────────────────────────────────────────────
     tray: {

@@ -18,7 +18,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
     const handleSelectPath = async () => {
         if ((window as any).electronAPI?.system?.openFolderPicker) {
-            const folder = await (window as any).electronAPI.system.openFolderPicker();
+            const folder = await (window as any).electronAPI?.system.openFolderPicker();
             if (folder && folder.success && folder.path) {
                 setPath(folder.path);
                 // If name is empty and they picked a folder, default name to folder name

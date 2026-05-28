@@ -226,6 +226,7 @@ export default function ChatPage() {
     const [notification, setNotification] = useState<{ id: string; title: string } | null>(null);
     const [projects, setProjects] = useState<any[]>([]);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Computer Pane State
     const [isComputerPaneOpen, setIsComputerPaneOpen] = useState(false);
@@ -346,6 +347,49 @@ export default function ChatPage() {
         return () => { document.head.removeChild(style); };
     }, []);
 
+    // ── EverFern Dispatch: receive commands from the web UI ───────────────────
+    // When a command arrives from the web via Dispatch, we inject it into the
+    // chat exactly as if the user had typed and submitted it themselves.
+    const handleSendRef = useRef<any>(null);
+    useEffect(() => {
+        handleSendRef.current = handleSend;
+    });
+
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (!api?.system?.onDispatchCommand) return;
+
+        api.system.onDispatchCommand((command: string) => {
+            console.log('[Dispatch] Received command from web:', command);
+            if (!command?.trim()) return;
+            
+            if (command.startsWith('[HITL_APPROVED]')) {
+                 handleHitlApproval(true, true);
+                 return;
+            }
+            if (command.startsWith('[HITL_REJECTED]')) {
+                 handleHitlApproval(false, true);
+                 return;
+            }
+            if (command.startsWith('[INTERNAL_SYSTEM_RESPONSE_QUESTION_ID_')) {
+                 const idMatch = command.match(/QUESTION_ID_([^_]+)_IDX_(\d+)/);
+                 if (idMatch) {
+                     handleQuestionSubmit(idMatch[1], parseInt(idMatch[2], 10));
+                 }
+                 return;
+            }
+
+            // Set the input value and immediately trigger a send
+            setInputValue(command);
+            // Use a microtask delay so React re-renders the updated inputValue before handleSend reads it
+            setTimeout(() => {
+                if (handleSendRef.current) handleSendRef.current(command);
+            }, 0);
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+
     const [config, setConfig] = useState<any>(null);
     const [settingsEngine, setSettingsEngine] = useState<"online" | "local" | "everfern" | null>("everfern");
     const [settingsProvider, setSettingsProvider] = useState<string | null>(null);
@@ -378,6 +422,224 @@ export default function ChatPage() {
     const [activePlanSteps, setActivePlanSteps] = useState<Array<{ id: string; description: string; tool?: string }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
 
+    // ── EverFern Dispatch: broadcast state back to the web UI ─────────────────
+    // This effect runs whenever chat state changes and sends a state_update
+    // event back to the web so it can render the AI's response in real-time.
+    const [isDispatchReady, setIsDispatchReady] = useState(false);
+    const dispatchBroadcastRef = useRef<((event: string, data: any) => void) | null>(null);
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (!api?.system?.onDispatchActive) return;
+        api.system.onDispatchActive(() => {
+            dispatchBroadcastRef.current = (event: string, data: any) => {
+                (window as any).electronAPI?.system?.broadcastDispatch?.(event, data);
+            };
+            setIsDispatchReady(true);
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Re-broadcast desktop_info whenever model selection changes or dispatch becomes ready
+    useEffect(() => {
+  if (!dispatchBroadcastRef.current || !isDispatchReady) return;
+  dispatchBroadcastRef.current('desktop_info', {
+    selectedModel,
+    availableModels: availableModels.map(m => ({ id: m.id })),
+  });
+}, [selectedModel, availableModels, isDispatchReady, config]);
+
+    // User question form state
+    const [activeUserQuestions, setActiveUserQuestions] = useState<Array<{
+        question: string;
+        options: Array<{ label: string; value: string; isRecommended?: boolean }>;
+        multiSelect: boolean;
+        previewMarkdown?: string;
+    }>>([]);
+    const activeUserQuestionRef = useRef(false);
+
+    // Memory preference banner state - shown when AI uses stored user preferences
+    const [memoryPreferenceBanner, setMemoryPreferenceBanner] = useState<{
+        preference: string;
+        rawMemory: string;
+        dismissed: boolean;
+    } | null>(null);
+
+    // Multiple questions panel state (unused - kept for legacy compat)
+    const [userQuestions, setUserQuestions] = useState<Array<{
+        question: string;
+        options: string[];
+        multiSelect?: boolean;
+    }>>([]);
+    const [isUserQuestionsOpen, setIsUserQuestionsOpen] = useState(false);
+
+    // Current node tracking for better status display
+    const [currentNode, setCurrentNode] = useState<string>("");
+    const [currentPhase, setCurrentPhase] = useState<"triage" | "planning" | "execution" | "validation" | "completion" | undefined>(undefined);
+    const [activeContextTab, setActiveContextTab] = useState<'Overview' | 'Resources' | 'Permissions' | 'History'>('Overview');
+    const [instructionsExpanded, setInstructionsExpanded] = useState(true);
+    const [contextExpanded, setContextExpanded] = useState(true);
+    const [instructions, setInstructions] = useState('');
+
+    // Sub-agent progress pane state
+    const [zoomedScreenshot, setZoomedScreenshot] = useState<string | null>(null);
+
+    // Get user-friendly node names with enhanced phase context
+    const getNodeDisplayName = (nodeName: string): string => {
+        const nodeNames: Record<string, string> = {
+            // Triage phase nodes
+            'intent_classifier': 'Understanding your request',
+            'triage': 'Analyzing request complexity',
+
+            // Planning phase nodes
+            'global_planner': 'Creating execution plan',
+            'planner': 'Compiling execution pipeline',
+            'planning': 'Designing approach',
+            'debate_chamber': 'AI agents are debating for you..',
+            'DEBATE_CHAMBER': 'AI agents are debating for you..',
+
+            // Execution phase nodes
+            'brain': 'Processing with AI',
+            'multi_tool_orchestrator': 'Coordinating tools',
+            'execute_tools': 'Running tools',
+            'execution': 'Executing plan',
+            'VALIDATION': 'Validating approach',
+            'EXECUTE_TOOLS': 'Running tools',
+            'BRAIN': 'Processing with AI',
+
+            // Validation phase nodes
+            'action_validation': 'Validating actions',
+            'judge': 'Evaluating completion',
+            'validation': 'Validating results',
+
+            // Completion phase nodes
+            'completion': 'Finalizing results',
+            'hitl_approval': 'Waiting for approval',
+
+            // Specialist nodes
+            'web_explorer': 'Researching on the web',
+            'deep_research': 'Conducting deep research',
+            'coding_specialist': 'Writing code',
+            'data_analyst': 'Analyzing data',
+            'computer_use_agent': 'Interacting with desktop'
+        };
+        return nodeNames[nodeName] || (nodeName ? `Working on ${nodeName.replace(/_/g, ' ')}` : 'Working');
+    };
+    const [modelCallInfo, setModelCallInfo] = useState<{ model: string; toolsCount: number } | null>(null);
+    const [missionTimeline, setMissionTimeline] = useState<MissionTimelineType | null>(null);
+    const [missionComplete, setMissionComplete] = useState(false);
+
+    // Settings
+    const [settingsShowuiUrl, setSettingsShowuiUrl] = useState("http://127.0.0.1:7860");
+    const [settingsVlmMode, setSettingsVlmMode] = useState<"local" | "cloud">("local");
+    const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
+    const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-instruct-cloud");
+    const [settingsVlmCloudUrl, setSettingsVlmCloudUrl] = useState("https://ollama.com");
+    const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
+
+    // Voice state
+    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | null>(null);
+    const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
+    const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
+    const [isRecording, setIsRecording] = useState(false);
+    const [voiceTranscript, setVoiceTranscript] = useState("");
+    const [voiceLoading, setVoiceLoading] = useState(false);
+    const [voicePlayback, setVoicePlayback] = useState(false);
+    const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
+    const [voiceVoiceId, setVoiceVoiceId] = useState("21m00Tcm4TlvDq8ikWAM");
+    const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
+
+    // Permission state
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [permissionsGranted, setPermissionsGranted] = useState(false);
+
+    // HITL Approval state
+    const [showHitlApproval, setShowHitlApproval] = useState(false);
+    const [hitlRequest, setHitlRequest] = useState<{
+        id: string;
+        question: string;
+        details: {
+            tools: any[];
+            summary: string;
+            reasoning: string;
+        };
+        options: string[];
+    } | null>(null);
+
+    // Plan card state
+    const [activePlan, setActivePlan] = useState<{ content: string; chatId: string } | null>(null);
+
+    // JSON Viewer state
+    const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
+    const [lastEventJson, setLastEventJson] = useState<string>("");
+    const [lastEventType, setLastEventType] = useState<string>("");
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number }>({ used: 0, max: 128000 });
+    const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
+
+    const missionTimelineRef = useRef<MissionTimelineType | null>(null);
+
+    const stateForBroadcastRef = useRef({ messages, streamingContent, liveToolCalls, streamingThought, activeUserQuestions, showHitlApproval, hitlRequest, missionTimeline, currentNode, isDebating, isLoading });
+    useEffect(() => {
+        stateForBroadcastRef.current = { messages, streamingContent, liveToolCalls, streamingThought, activeUserQuestions, showHitlApproval, hitlRequest, missionTimeline, currentNode, isDebating, isLoading };
+    }, [messages, streamingContent, liveToolCalls, streamingThought, activeUserQuestions, showHitlApproval, hitlRequest, missionTimeline, currentNode, isDebating, isLoading]);
+
+    const broadcastTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const lastBroadcastTimeRef = useRef(0);
+
+    // Broadcast state_update for messages and streaming with proper throttling
+    useEffect(() => {
+        if (!dispatchBroadcastRef.current || !isDispatchReady) return;
+        
+        const sanitizeToolCall = (tc: any) => {
+            if (!tc) return tc;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { icon, ...rest } = tc;
+            return rest;
+        };
+
+        const doBroadcast = () => {
+            const state = stateForBroadcastRef.current;
+            dispatchBroadcastRef.current!('state_update', {
+                messages: state.messages.map(m => ({
+                    id: m.id,
+                    role: m.role,
+                    content: m.content,
+                    toolCalls: m.toolCalls?.map(sanitizeToolCall),
+                    missionTimeline: (m as any).missionTimeline,
+                    timestamp: m.timestamp instanceof Date ? m.timestamp.getTime() : m.timestamp,
+                })),
+                streamingContent: state.streamingContent,
+                liveToolCalls: state.liveToolCalls?.map(sanitizeToolCall),
+                streamingThought: state.streamingThought,
+                activeUserQuestions: state.activeUserQuestions,
+                showHitlApproval: state.showHitlApproval,
+                hitlRequest: state.hitlRequest ? {
+                    ...state.hitlRequest,
+                    details: {
+                        ...state.hitlRequest.details,
+                        tools: state.hitlRequest.details.tools?.map(sanitizeToolCall)
+                    }
+                } : null,
+                missionTimeline: state.missionTimeline,
+                currentNode: state.currentNode,
+                isDebating: state.isDebating,
+                isLoading: state.isLoading,
+            });
+            lastBroadcastTimeRef.current = Date.now();
+            broadcastTimerRef.current = null;
+        };
+
+        const now = Date.now();
+        if (now - lastBroadcastTimeRef.current >= 200) {
+            if (broadcastTimerRef.current) {
+                clearTimeout(broadcastTimerRef.current);
+                broadcastTimerRef.current = null;
+            }
+            doBroadcast();
+        } else if (!broadcastTimerRef.current) {
+            broadcastTimerRef.current = setTimeout(doBroadcast, 200 - (now - lastBroadcastTimeRef.current));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, streamingContent, liveToolCalls, streamingThought, isDispatchReady, isLoading]);
     // Sub-agent progress — stored in a REF so updates never trigger page re-renders.
     // A lightweight version counter is bumped only when the tool detail panel is open,
     // so the side panel can reactively update without re-rendering the whole chat.
@@ -576,134 +838,6 @@ export default function ChatPage() {
 
     const assistantMessageIdRef = useRef<string | null>(null);
 
-    // User question form state
-    const [activeUserQuestions, setActiveUserQuestions] = useState<Array<{
-        question: string;
-        options: Array<{ label: string; value: string; isRecommended?: boolean }>;
-        multiSelect: boolean;
-        previewMarkdown?: string;
-    }>>([]);
-    const activeUserQuestionRef = useRef(false);
-
-    // Memory preference banner state - shown when AI uses stored user preferences
-    const [memoryPreferenceBanner, setMemoryPreferenceBanner] = useState<{
-        preference: string;
-        rawMemory: string;
-        dismissed: boolean;
-    } | null>(null);
-
-    // Multiple questions panel state (unused - kept for legacy compat)
-    const [userQuestions, setUserQuestions] = useState<Array<{
-        question: string;
-        options: string[];
-        multiSelect?: boolean;
-    }>>([]);
-    const [isUserQuestionsOpen, setIsUserQuestionsOpen] = useState(false);
-
-    // Current node tracking for better status display
-    const [currentNode, setCurrentNode] = useState<string>("");
-    const [currentPhase, setCurrentPhase] = useState<"triage" | "planning" | "execution" | "validation" | "completion" | undefined>(undefined);
-    const [activeContextTab, setActiveContextTab] = useState<'Overview' | 'Resources' | 'Permissions' | 'History'>('Overview');
-    const [instructionsExpanded, setInstructionsExpanded] = useState(true);
-    const [contextExpanded, setContextExpanded] = useState(true);
-    const [instructions, setInstructions] = useState('');
-
-    // Sub-agent progress pane state
-    const [zoomedScreenshot, setZoomedScreenshot] = useState<string | null>(null);
-
-    // Get user-friendly node names with enhanced phase context
-    const getNodeDisplayName = (nodeName: string): string => {
-        const nodeNames: Record<string, string> = {
-            // Triage phase nodes
-            'intent_classifier': 'Understanding your request',
-            'triage': 'Analyzing request complexity',
-
-            // Planning phase nodes
-            'global_planner': 'Creating execution plan',
-            'planner': 'Compiling execution pipeline',
-            'planning': 'Designing approach',
-            'debate_chamber': 'AI agents are debating for you..',
-            'DEBATE_CHAMBER': 'AI agents are debating for you..',
-
-            // Execution phase nodes
-            'brain': 'Processing with AI',
-            'multi_tool_orchestrator': 'Coordinating tools',
-            'execute_tools': 'Running tools',
-            'execution': 'Executing plan',
-            'VALIDATION': 'Validating approach',
-            'EXECUTE_TOOLS': 'Running tools',
-            'BRAIN': 'Processing with AI',
-
-            // Validation phase nodes
-            'action_validation': 'Validating actions',
-            'judge': 'Evaluating completion',
-            'validation': 'Validating results',
-
-            // Completion phase nodes
-            'completion': 'Finalizing results',
-            'hitl_approval': 'Waiting for approval',
-
-            // Specialist nodes
-            'web_explorer': 'Researching on the web',
-            'deep_research': 'Conducting deep research',
-            'coding_specialist': 'Writing code',
-            'data_analyst': 'Analyzing data',
-            'computer_use_agent': 'Interacting with desktop'
-        };
-        return nodeNames[nodeName] || (nodeName ? `Working on ${nodeName.replace(/_/g, ' ')}` : 'Working');
-    };
-    const [modelCallInfo, setModelCallInfo] = useState<{ model: string; toolsCount: number } | null>(null);
-    const [missionTimeline, setMissionTimeline] = useState<MissionTimelineType | null>(null);
-    const [missionComplete, setMissionComplete] = useState(false);
-
-    // Settings
-    const [settingsShowuiUrl, setSettingsShowuiUrl] = useState("http://127.0.0.1:7860");
-    const [settingsVlmMode, setSettingsVlmMode] = useState<"local" | "cloud">("local");
-    const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
-    const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-instruct-cloud");
-    const [settingsVlmCloudUrl, setSettingsVlmCloudUrl] = useState("https://ollama.com");
-    const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
-
-    // Voice state
-    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | null>(null);
-    const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
-    const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
-    const [isRecording, setIsRecording] = useState(false);
-    const [voiceTranscript, setVoiceTranscript] = useState("");
-    const [voiceLoading, setVoiceLoading] = useState(false);
-    const [voicePlayback, setVoicePlayback] = useState(false);
-    const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
-    const [voiceVoiceId, setVoiceVoiceId] = useState("21m00Tcm4TlvDq8ikWAM");
-    const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
-
-    // Permission state
-    const [showPermissionModal, setShowPermissionModal] = useState(false);
-    const [permissionsGranted, setPermissionsGranted] = useState(false);
-
-    // HITL Approval state
-    const [showHitlApproval, setShowHitlApproval] = useState(false);
-    const [hitlRequest, setHitlRequest] = useState<{
-        id: string;
-        question: string;
-        details: {
-            tools: any[];
-            summary: string;
-            reasoning: string;
-        };
-        options: string[];
-    } | null>(null);
-
-    // Plan card state
-    const [activePlan, setActivePlan] = useState<{ content: string; chatId: string } | null>(null);
-
-    // JSON Viewer state
-    const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
-    const [lastEventJson, setLastEventJson] = useState<string>("");
-    const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number }>({ used: 0, max: 128000 });
-    const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
-
-
     const liveToolCallsRef = useRef<ToolCallDisplay[]>([]);
     const activeConversationIdRef = useRef<string | null>(null);
     const streamingToolCallsRef = useRef<LiveToolCall[]>([]);
@@ -711,7 +845,6 @@ export default function ChatPage() {
     const pendingNarrativeRef = useRef<string>("");
     const streamingThoughtRef = useRef("");
     const toolCallMap = useRef<Map<string, string>>(new Map());
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatScrollRef = useRef<HTMLDivElement>(null);
     const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -723,7 +856,6 @@ export default function ChatPage() {
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
-    const missionTimelineRef = useRef<MissionTimelineType | null>(null);
 
     const isEmpty = messages.length === 0 && !isLoading && liveToolCalls.length === 0 && !streamingContent;
     const isProjectLocked = !isEmpty && folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
@@ -801,6 +933,26 @@ export default function ChatPage() {
                     if (!res.config.userName) setShowOnboarding(true);
                 } else {
                     setShowOnboarding(true);
+                }
+                
+                // Auto-restore dispatch session in the background
+                try {
+                    if ((window as any).electronAPI?.supabase?.getSession) {
+                        const { session } = await (window as any).electronAPI.supabase.getSession();
+                        if (session) {
+                            const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://api.everfern.app';
+                            const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'default_key';
+                            await (window as any).electronAPI?.system?.restoreDispatch?.({ 
+                                url, 
+                                apiUrl: 'https://api.everfern.app', 
+                                key, 
+                                token: session.accessToken, 
+                                userId: session.user?.id || session.user?.sub || session.user?.user_id || 'unknown'
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.error("Auto-restore dispatch failed", e);
                 }
             }
         };
@@ -1001,7 +1153,7 @@ export default function ChatPage() {
                         t.status === 'running' ? { ...t, status: 'done' as const } : t
                     );
                     const durationMs = thinkingDuration?.duration;
-                    if (finalContent || finalThought || finalToolCalls.length > 0) {
+                        if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
                         const assistantMsg: Message = {
                             id: assistantMessageIdRef.current || crypto.randomUUID(),
                             role: "assistant",
@@ -1088,7 +1240,7 @@ export default function ChatPage() {
                     return;
                 }
 
-                if (finalContent || finalThought || finalToolCalls.length > 0) {
+                    if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
                     const assistantMsg: Message = {
                         id: assistantMessageIdRef.current || crypto.randomUUID(),
                         role: "assistant",
@@ -1196,7 +1348,7 @@ export default function ChatPage() {
             }
 
             console.log('[handleAttachment] Opening file picker with options:', options);
-            const file = await (window as any).electronAPI.system.openFilePicker(options);
+            const file = await (window as any).electronAPI?.system.openFilePicker(options);
             console.log('[handleAttachment] File picker result:', file);
 
             if (!file) {
@@ -1683,6 +1835,10 @@ export default function ChatPage() {
         setMissionTimeline(null);
         setMissionComplete(false);
         setCurrentNode("");
+        setActiveUserQuestions([]);
+        setShowHitlApproval(false);
+        setHitlRequest(null);
+        (window as any).__activeHitl = false;
         liveToolCallsRef.current = [];
         streamingContentRef.current = "";
         streamingThoughtRef.current = "";
@@ -2178,8 +2334,8 @@ export default function ChatPage() {
                         const wasStopped = finalContent.includes('🛑 Stopped by user.');
                         const cleanContent = wasStopped ? finalContent.replace(/\n\n🛑 Stopped by user\./g, '').trim() : finalContent;
 
-                        // Only create assistant message if there's actual content or tool calls
-                        if (cleanContent || finalThought || finalToolCalls.length > 0 || wasStopped) {
+                        // Only create assistant message if there's actual content, tool calls, or a mission timeline
+                        if (cleanContent || finalThought || finalToolCalls.length > 0 || wasStopped || missionTimelineRef.current) {
                             const assistantMsg: Message = {
                                 id: assistantMessageIdRef.current || crypto.randomUUID(),
                                 role: "assistant",
@@ -2451,7 +2607,7 @@ export default function ChatPage() {
                         t.status === 'running' ? { ...t, status: 'done' as const } : t
                     );
 
-                    if (finalContent || finalThought || finalToolCalls.length > 0) {
+                        if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
                         const assistantMsg: Message = {
                             id: crypto.randomUUID(),
                             role: "assistant",
@@ -2714,7 +2870,7 @@ export default function ChatPage() {
     };
 
     const checkOllamaStatus = async () => {
-        if ((window as any).electronAPI?.system?.ollamaStatus) { const res = await (window as any).electronAPI.system.ollamaStatus(); setOllamaInstalled(res.installed); setModelInstalled(res.modelInstalled); }
+        if ((window as any).electronAPI?.system?.ollamaStatus) { const res = await (window as any).electronAPI?.system.ollamaStatus(); setOllamaInstalled(res.installed); setModelInstalled(res.modelInstalled); }
     };
 
     const handleNextFromName = async () => { if (!onboardingName.trim()) return; await checkOllamaStatus(); setOnboardingStep("vlm"); };
@@ -2732,14 +2888,14 @@ export default function ChatPage() {
     const handleInstallOllama = async () => {
         setIsInstallingOllama(true); setOllamaInstallDone(false); setOllamaInstallPct(0); setOllamaInstallPhase("downloading"); setOllamaLogs([]);
         if ((window as any).electronAPI?.system?.onOllamaInstallLine) {
-            (window as any).electronAPI.system.onOllamaInstallLine((data: { line: string }) => {
+            (window as any).electronAPI?.system.onOllamaInstallLine((data: { line: string }) => {
                 const pctMatch = data.line.match(/(\d+\.?\d*)%/);
                 if (pctMatch) { const pct = parseFloat(pctMatch[1]); setOllamaInstallPct(pct); setOllamaInstallPhase(pct >= 100 ? "finalizing" : "downloading"); }
                 setOllamaLogs(prev => [...prev.slice(-40), data.line]);
             });
         }
         if ((window as any).electronAPI?.system?.ollamaInstall) {
-            const res = await (window as any).electronAPI.system.ollamaInstall();
+            const res = await (window as any).electronAPI?.system.ollamaInstall();
             if (res.success) { setOllamaInstalled(true); setOllamaInstallPct(100); setOllamaInstallPhase("done"); setOllamaInstallDone(true); setOllamaLogs(["✔ Ollama installed successfully!"]); }
             else { setOllamaLogs(prev => [...prev, `✘ Installation failed with code ${res.code}`]); }
         }
@@ -2749,7 +2905,7 @@ export default function ChatPage() {
     const handlePullModel = async () => {
         setIsPullingModel(true); setPullPct(0); setOllamaLogs([]);
         if ((window as any).electronAPI?.system?.onOllamaInstallLine) {
-            (window as any).electronAPI.system.onOllamaInstallLine((data: { line: string }) => {
+            (window as any).electronAPI?.system.onOllamaInstallLine((data: { line: string }) => {
                 const cleanLine = stripAnsi(data.line);
                 const pctMatch = cleanLine.match(/(\d+\.?\d*)%/);
                 if (pctMatch && (cleanLine.includes("pulling") || cleanLine.includes("verifying"))) setPullPct(parseFloat(pctMatch[1]));
@@ -2757,7 +2913,7 @@ export default function ChatPage() {
             });
         }
         if ((window as any).electronAPI?.system?.ollamaPull) {
-            const res = await (window as any).electronAPI.system.ollamaPull("qwen3-vl:2b");
+            const res = await (window as any).electronAPI?.system.ollamaPull("qwen3-vl:2b");
             if (res.success) { setPullPct(100); await finalizeOnboarding(true); }
             else { setOllamaLogs(prev => [...prev, `✘ Model pull failed with code ${res.code}`]); }
         }
@@ -3719,13 +3875,14 @@ export default function ChatPage() {
                                                         artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim()
                                                     );
                                                     if (cleanContent === 'Working...' || cleanContent === 'Working') {
-                                                        cleanContent = '';
+                                                        cleanContent = '';        
                                                     }
 
                                                     return (
                                                         <>
-                                                            {cleanContent && <StreamingMarkdown content={cleanContent} isLive={true} />}
+                                                            {(cleanContent || streamingContent) && <StreamingMarkdown content={cleanContent} isLive={true} />}
                                                             {artifacts.map((art, i) => (
+
                                                                 <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
                                                                     <FileArtifact
                                                                         path={art.path}
