@@ -2,7 +2,7 @@
   <img src="public/images/banner.jpg" alt="EverFern" width="100%" />
 
   <h1>EverFern</h1>
-  <p>Free, open-source AI agent that uses your computer — clicks, types, navigates, and gets things done.</p>
+  <p>The open-source version of Claude Cowork. Free forever, runs on your machine, no subscription required.</p>
 
   <p>
     <a href="https://everfern.app">Website</a> •
@@ -18,7 +18,7 @@
 
 ---
 
-<video src="public/demo/spotify-demo.mp4" autoplay loop muted playsinline width="100%"></video>
+https://github.com/CodenRust/Everfern/assets/demo/spotify-demo.mp4
 
 > EverFern opening Spotify and playing a song — no scripts, no automation code, just plain English.
 
@@ -30,46 +30,49 @@ EverFern is a desktop AI agent that uses your computer the way you would — cli
 
 No subscription. No cloud. Nothing leaves your machine.
 
-It's the free, open-source alternative to **Claude Cowork** and **Manus Desktop**.
+It's the free, open-source alternative to **Claude Cowork**, **Manus Desktop**, and **OpenWork**.
 
-| | EverFern | Claude Cowork | Manus Desktop |
-|---|---|---|---|
-| **Price** | Free | $20+/month | $200+/month |
-| **Runs locally** | Yes | No | No |
-| **Open source** | Yes (MIT) | No | No |
-| **Your data** | Stays on your machine | Cloud processed | Cloud processed |
-| **AI provider** | Your choice | Anthropic only | Locked |
+| | EverFern | Claude Cowork | Manus Desktop | OpenWork |
+|---|---|---|---|---|
+| **Price** | Free | $20+/month | $200+/month | Free |
+| **Runs locally** | ✅ Yes | ❌ No | ❌ No | ⚠️ Partial |
+| **Open source** | ✅ Yes (MIT) | ❌ No | ❌ No | ✅ Yes |
+| **Your data** | Stays local | Cloud processed | Cloud processed | Mixed |
+| **AI providers** | 10+ | Anthropic only | Locked | 3–4 only |
+| **Performance** | ✅ Fast | ✅ Fast | ✅ Fast | ⚠️ Known issues |
+| **Computer use** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Browser agent** | ✅ Navis (built-in) | ⚠️ Limited | ✅ Yes | ❌ No |
 
 ---
 
 ## Features
 
-**Computer Use**
-Sees your screen, moves the mouse, clicks, types, and navigates any app exactly like a human would. Works with any desktop application — no integrations needed.
+&nbsp;&nbsp;&nbsp;&nbsp;🖥️ **Computer Use**
+&nbsp;&nbsp;&nbsp;&nbsp;Sees your screen, moves the mouse, clicks, types, and navigates any app exactly like a human would. Works with any desktop application — no integrations needed.
 
-**Browser Agent**
-Navigate websites, fill forms, scrape data, and interact with web apps in plain English. No Selenium, no Playwright, no code.
+&nbsp;&nbsp;&nbsp;&nbsp;🌐 **Navis — Built-in Browser Agent**
+&nbsp;&nbsp;&nbsp;&nbsp;Navigate websites, fill forms, scrape data, and interact with web apps in plain English. No Selenium, no Playwright, no code. Navis is EverFern's own browser agent, built from the ground up.
 
-**Document Processing**
-Read, analyze, and create PDFs, Word docs, Excel sheets, PowerPoints, and CSVs. Works with your existing files.
+&nbsp;&nbsp;&nbsp;&nbsp;📄 **Document Processing**
+&nbsp;&nbsp;&nbsp;&nbsp;Read, analyze, and create PDFs, Word docs, Excel sheets, PowerPoints, and CSVs. Works with your existing files.
 
-**Code Assistant**
-Write, review, debug, and refactor code with full project context. Works inside your actual editor.
+&nbsp;&nbsp;&nbsp;&nbsp;💻 **Code Assistant**
+&nbsp;&nbsp;&nbsp;&nbsp;Write, review, debug, and refactor code with full project context. Works inside your actual editor.
 
-**Skills System**
-Reusable task modules you can install from the community or build yourself. Each skill teaches EverFern how to handle a specific workflow — shareable, auditable, yours.
+&nbsp;&nbsp;&nbsp;&nbsp;🧩 **Skills System**
+&nbsp;&nbsp;&nbsp;&nbsp;Reusable task modules you can install from the community or build yourself. Each skill teaches EverFern how to handle a specific workflow — shareable, auditable, yours.
 
-**Workflow Builder**
-Chain actions together, save them, trigger on a schedule. Automate anything you do repeatedly.
+&nbsp;&nbsp;&nbsp;&nbsp;⚙️ **Workflow Builder**
+&nbsp;&nbsp;&nbsp;&nbsp;Chain actions together, save them, trigger on a schedule. Automate anything you do repeatedly.
 
-**Linux VM Execution**
-Shell commands run in an isolated sandbox so nothing can accidentally break your system.
+&nbsp;&nbsp;&nbsp;&nbsp;🔒 **Linux VM Execution**
+&nbsp;&nbsp;&nbsp;&nbsp;Shell commands run in an isolated sandbox so nothing can accidentally break your system.
 
-**Peer Agent Debate**
-For complex tasks, multiple specialized agents debate the best solution before anything gets executed. Each agent challenges the others' reasoning, catches blind spots, and votes on the final approach. The result is a plan that's been stress-tested before it touches your machine — not just the first thing one agent thought of.
+&nbsp;&nbsp;&nbsp;&nbsp;🤝 **Peer Agent Debate**
+&nbsp;&nbsp;&nbsp;&nbsp;For complex tasks, multiple specialized agents debate the best solution before anything gets executed. Each agent challenges the others' reasoning, catches blind spots, and votes on the final approach. The result is a plan that's been stress-tested before it touches your machine — not just the first thing one agent thought of.
 
-**20+ Built-in Tools**
-Everything EverFern needs to work on your machine is built in out of the box:
+&nbsp;&nbsp;&nbsp;&nbsp;🛠️ **20+ Built-in Tools**
+&nbsp;&nbsp;&nbsp;&nbsp;Everything EverFern needs to work on your machine is built in out of the box:
 
 | Category | Tools |
 |---|---|
@@ -80,10 +83,10 @@ Everything EverFern needs to work on your machine is built in out of the box:
 | **Data** | PDF Reader, CSV Parser, JSON Tools, Excel Reader |
 | **System** | Linux VM Shell, Process Manager, Clipboard, Notifications |
 
-Plus custom tools via MCP (Model Context Protocol) — connect anything.
+&nbsp;&nbsp;&nbsp;&nbsp;Plus custom tools via MCP (Model Context Protocol) — connect anything.
 
-**Multi-Provider Support**
-Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
+&nbsp;&nbsp;&nbsp;&nbsp;🔌 **Multi-Provider Support**
+&nbsp;&nbsp;&nbsp;&nbsp;Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
 
 ---
 
