@@ -10,6 +10,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
+import * as os from 'os';
 
 const SHOWUI_URL = 'http://127.0.0.1:7860';
 const HEALTH_ENDPOINT = `${SHOWUI_URL}/api/predict`;
@@ -35,9 +36,10 @@ export async function isShowUIAlive(): Promise<boolean> {
 }
 
 // ── Build the patched WSL launch command ─────────────────────────────
-function buildLaunchCmd(): string {
+function buildWslLaunchCmd(): string {
+  const username = os.userInfo().username;
   return [
-    'if [ -d /root/ShowUI ]; then cd /root/ShowUI; elif [ -d ~/ShowUI ]; then cd ~/ShowUI; elif [ -d /mnt/c/Users/srini/ShowUI ]; then cd /mnt/c/Users/srini/ShowUI; else echo "ShowUI directory not found"; exit 1; fi',
+    `if [ -d /root/ShowUI ]; then cd /root/ShowUI; elif [ -d ~/ShowUI ]; then cd ~/ShowUI; elif [ -d /mnt/c/Users/${username}/ShowUI ]; then cd /mnt/c/Users/${username}/ShowUI; else echo "ShowUI directory not found"; exit 1; fi`,
     // 0. Force CPU by hiding the GPU from PyTorch/CUDA entirely
     'export CUDA_VISIBLE_DEVICES="-1"',
     // 1. Strip HuggingFace Spaces decorators and fix device placement with elevated permissions (sudo)
@@ -102,17 +104,50 @@ export async function ensureShowUIServer(
 
   bootingPromise = (async () => {
     try {
-      // Check WSL is available
       const { execSync } = require('child_process') as typeof import('child_process');
-      try {
-        execSync('wsl -e echo ok', { timeout: 5000 });
-      } catch {
-        onLog('[ShowUI] ❌ WSL not available — cannot auto-start ShowUI');
-        return false;
-      }
+      const platform = process.platform;
 
-      const cmd = buildLaunchCmd();
-      showuiProc = spawn('wsl', ['bash', '-c', cmd], { shell: false, detached: false });
+      if (platform === 'win32') {
+        // Windows: use WSL
+        try {
+          execSync('wsl -e echo ok', { timeout: 5000 });
+        } catch {
+          onLog('[ShowUI] ❌ WSL not available — cannot auto-start ShowUI');
+          return false;
+        }
+
+        const cmd = buildWslLaunchCmd();
+        showuiProc = spawn('wsl', ['bash', '-c', cmd], { shell: false, detached: false });
+      } else if (platform === 'darwin') {
+        // macOS: use Docker
+        try {
+          execSync('docker info', { timeout: 5000 });
+        } catch {
+          onLog('[ShowUI] ❌ Docker not available — cannot auto-start ShowUI');
+          return false;
+        }
+
+        const cmd = [
+          'if [ -d /root/ShowUI ]; then cd /root/ShowUI; elif [ -d ~/ShowUI ]; then cd ~/ShowUI; else echo "ShowUI directory not found"; exit 1; fi',
+          'export CUDA_VISIBLE_DEVICES="-1"',
+          '[ -f ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | sh',
+          '[ -f venv_docker/bin/python3 ] || ~/.local/bin/uv venv venv_docker --python 3.12',
+          'venv_docker/bin/python3 -c "import gradio" 2>/dev/null || (~/.local/bin/uv pip install --python venv_docker/bin/python3 gradio torch torchvision torchaudio && [ -f requirements.txt ] && ~/.local/bin/uv pip install --python venv_docker/bin/python3 -r requirements.txt)',
+          'CUDA_VISIBLE_DEVICES="-1" venv_docker/bin/python3 app.py',
+        ].join(' && ');
+        showuiProc = spawn('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', cmd], { shell: false, detached: false });
+      } else {
+        // Linux: native execution
+        const cmd = [
+          'if [ -d /root/ShowUI ]; then cd /root/ShowUI; elif [ -d ~/ShowUI ]; then cd ~/ShowUI; else echo "ShowUI directory not found"; exit 1; fi',
+          'export CUDA_VISIBLE_DEVICES="-1"',
+          '[ -f ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | sh',
+          '[ -f venv_native/bin/python3 ] || ~/.local/bin/uv venv venv_native --python 3.12',
+          'venv_native/bin/python3 -c "import gradio" 2>/dev/null || (~/.local/bin/uv pip install --python venv_native/bin/python3 gradio torch torchvision torchaudio && [ -f requirements.txt ] && ~/.local/bin/uv pip install --python venv_native/bin/python3 -r requirements.txt)',
+          'CUDA_VISIBLE_DEVICES="-1" venv_native/bin/python3 app.py',
+        ].join(' && ');
+        showuiProc = spawn('bash', ['-c', cmd], { shell: false, detached: false });
+      }
 
       showuiProc.stdout?.on('data', (d: Buffer) =>
         d.toString().split('\n').filter(Boolean).forEach(l => onLog(`[ShowUI] ${l}`))

@@ -165,7 +165,8 @@ if _kiro_plot_paths:
 
     // Escape code for shell execution
     const escapedCode = this.escapeCodeForShell(codeToExecute);
-    const command = `python -c ${escapedCode}`;
+    const isWin = process.platform === 'win32';
+    const command = isWin ? `python ${escapedCode}` : `python -c ${escapedCode}`;
     const cwd = path.join(os.homedir(), '.everfern');
 
     // Start execution
@@ -349,9 +350,12 @@ if _kiro_plot_paths:
     const isWin = process.platform === 'win32';
 
     if (isWin) {
-      // PowerShell escaping: use single quotes and escape internal single quotes
-      const escaped = code.replace(/'/g, "''");
-      return `'${escaped}'`;
+      // On Windows, CommandRegistry routes through WSL (bash) or cmd.exe.
+      // Write code to a temp file to avoid shell escaping issues entirely.
+      const fs = require('fs') as typeof import('fs');
+      const tmpFile = path.join(os.tmpdir(), `kiro_py_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.py`);
+      fs.writeFileSync(tmpFile, code, 'utf8');
+      return `"${tmpFile.replace(/\\/g, '/')}"`;
     } else {
       // Bash escaping: use single quotes and handle internal single quotes
       const escaped = code.replace(/'/g, "'\\''");

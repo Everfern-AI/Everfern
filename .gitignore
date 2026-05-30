@@ -50,3 +50,5 @@ gha-creds-*.json
 .opencode/
 .vscode/
 .everfern/
+
+dist-electron/

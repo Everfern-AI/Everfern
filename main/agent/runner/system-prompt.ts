@@ -5,6 +5,26 @@ import { loadSkills, loadSkillsAsync, formatSkillsForPrompt } from './skills-loa
 import { projectsStore } from '../../store/projects/projects';
 import { integrationService } from '../../integrations/integration-service';
 
+/**
+ * Converts a host path to the corresponding Linux VM path.
+ * - Windows: C:/Users/... → /mnt/c/Users/...
+ * - macOS:   /Users/...   → /host/Users/... (mounted Docker volume)
+ * - Linux:   pass-through (already native)
+ */
+function hostPathToLinux(hostPath: string): string {
+  const p = hostPath.replace(/\\/g, '/');
+  const driveMatch = p.match(/^([A-Za-z]):(\/.*)?$/);
+  if (driveMatch) {
+    const drive = driveMatch[1].toLowerCase();
+    const rest = driveMatch[2] || '';
+    return `/mnt/${drive}${rest}`;
+  }
+  if (process.platform === 'darwin' && p.startsWith('/Users/')) {
+    return p.replace('/Users/', '/host/Users/');
+  }
+  return p;
+}
+
 // ─────────────────────────────────────────────
 // SYSTEM PROMPT CACHING
 // ─────────────────────────────────────────────
@@ -112,13 +132,15 @@ export async function getSlimSystemPromptAsync(
   
   const homedir = osHomedir();
   const homedirNorm = homedir.replace(/\\/g, '/');
+  const linuxHome = hostPathToLinux(homedirNorm);
   const user = osUserInfo();
 
-  const planPath = `${homedirNorm}/.everfern/chat/plan/${safeConvId}/`;
-  const artifactPath = `${homedirNorm}/.everfern/artifacts/${safeConvId}/`;
-  const execPath = `${homedirNorm}/.everfern/exec/${safeConvId}/`;
-  const sitePath = `${homedirNorm}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `${homedirNorm}/.everfern/attachments/`;
+  // All paths are Linux VM paths — the AI uses these in all tool calls
+  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
+  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
+  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
+  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
+  const uploadsPath = `${linuxHome}/.everfern/attachments/`;
 
   // Read the Markdown file asynchronously
   let promptMd = '';
@@ -150,10 +172,11 @@ export async function getSlimSystemPromptAsync(
   // OS Info
   const osInfo =
     platform === 'win32'
-      ? '**OS**: Windows. Internal VM sandbox. Use PowerShell/cmd idioms. Paths use forward slashes internally (C:/Users/...). Raw strings for Python: r"C:\\\\Users\\\\..." .'
+      ? '**OS**: Windows (host). Default: commands execute in Linux VM (WSL). Fallback: if WSL is unavailable, commands run in Windows cmd.exe. Check terminal output for "Host Fallback (CMD)" to know which environment is active. Use Linux paths (/mnt/c/Users/...) when WSL is available, Windows paths (C:\\Users\\...) when fallback is active.'
       : platform === 'darwin'
-        ? '**OS**: macOS. Internal VM sandbox. Use ls, ps, /Applications/, standard Unix paths.'
-        : '**OS**: Linux. Internal VM sandbox. Use ls, ps, standard Unix paths.';
+        ? '**OS**: macOS (host). All commands execute in the Docker Linux VM. Use Linux paths.'
+        : '**OS**: Linux. All commands execute natively.';
+  console.log(`[SystemPrompt] OS info string: platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
 
   // Session File Registry
   const sessionRegistry = sessionCreatedPaths.length > 0
@@ -175,14 +198,14 @@ export async function getSlimSystemPromptAsync(
   if (targetProjectId) {
     activeProject = await projectsStore.get(targetProjectId);
     if (activeProject) {
-      projectPath = activeProject.path;
+      projectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
     }
   }
 
-  // Replace placeholders
+  // Replace placeholders — all paths are Linux paths
   let finalPrompt = promptMd
     .replace(/{{OS_INFO}}/g, osInfo)
-    .replace(/{{HOME_DIR}}/g, homedirNorm)
+    .replace(/{{HOME_DIR}}/g, linuxHome)
     .replace(/{{SESSION_ID}}/g, safeConvId)
     .replace(/{{PLAN_PATH}}/g, planPath)
     .replace(/{{EXEC_PATH}}/g, execPath)
@@ -273,14 +296,15 @@ export function getSlimSystemPrompt(
 
   const homedir = osHomedir();
   const homedirNorm = homedir.replace(/\\/g, '/');
+  const linuxHome = hostPathToLinux(homedirNorm);
   const user = osUserInfo();
 
-  const planPath = `${homedirNorm}/.everfern/chat/plan/${safeConvId}/`;
-  const artifactPath = `${homedirNorm}/.everfern/artifacts/${safeConvId}/`;
-  const execPath = `${homedirNorm}/.everfern/exec/${safeConvId}/`;
-  const sitePath = `${homedirNorm}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `${homedirNorm}/.everfern/attachments/`;
-  const skillsPath = `${homedirNorm}/.everfern/skills/`;
+  // All paths are Linux VM paths
+  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
+  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
+  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
+  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
+  const uploadsPath = `${linuxHome}/.everfern/attachments/`;
 
   // Read the Markdown file (cache this separately if needed)
   let promptMd = '';
@@ -312,10 +336,11 @@ export function getSlimSystemPrompt(
   // OS Info
   const osInfo =
     platform === 'win32'
-      ? '**OS**: Windows. Internal VM sandbox. Use PowerShell/cmd idioms. Paths use forward slashes internally (C:/Users/...). Raw strings for Python: r"C:\\\\Users\\\\..." .'
+      ? '**OS**: Windows (host). Default: commands execute in Linux VM (WSL). Fallback: if WSL is unavailable, commands run in Windows cmd.exe. Check terminal output for "Host Fallback (CMD)" to know which environment is active. Use Linux paths (/mnt/c/Users/...) when WSL is available, Windows paths (C:\\Users\\...) when fallback is active.'
       : platform === 'darwin'
-        ? '**OS**: macOS. Internal VM sandbox. Use ls, ps, /Applications/, standard Unix paths.'
-        : '**OS**: Linux. Internal VM sandbox. Use ls, ps, standard Unix paths.';
+        ? '**OS**: macOS (host). All commands execute in the Docker Linux VM. Use Linux paths.'
+        : '**OS**: Linux. All commands execute natively.';
+  console.log(`[SystemPrompt] OS info string (sync): platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
 
   // Session File Registry
   const sessionRegistry = sessionCreatedPaths.length > 0
@@ -330,10 +355,10 @@ export function getSlimSystemPrompt(
   // State Context (can be improved by checking actual manager state)
   const workspaceMounted = 'false';
 
-  // Replace placeholders
+  // Replace placeholders — all paths are Linux paths
   let finalPrompt = promptMd
     .replace(/{{OS_INFO}}/g, osInfo)
-    .replace(/{{HOME_DIR}}/g, homedirNorm)
+    .replace(/{{HOME_DIR}}/g, linuxHome)
     .replace(/{{SESSION_ID}}/g, safeConvId)
     .replace(/{{PLAN_PATH}}/g, planPath)
     .replace(/{{EXEC_PATH}}/g, execPath)

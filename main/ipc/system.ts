@@ -63,6 +63,10 @@ export function registerSystemHandlers() {
     }
   });
 
+  ipcMain.handle('system:get-platform', () => {
+    return process.platform;
+  });
+
   ipcMain.handle('system:get-username', () => {
     return os.userInfo().username;
   });
@@ -138,8 +142,9 @@ export function registerSystemHandlers() {
 
       const stats = fs.statSync(originalFilePath);
       const ext = path.extname(originalFilePath).toLowerCase();
+      const ONE_GB = 1073741824;
 
-      // Copy to ~/.everfern/attachments
+      // Copy to ~/.everfern/attachments (host)
       const attachmentsDir = path.join(os.homedir(), '.everfern', 'attachments');
       if (!fs.existsSync(attachmentsDir)) {
         fs.mkdirSync(attachmentsDir, { recursive: true });
@@ -147,8 +152,23 @@ export function registerSystemHandlers() {
       const safeFileName = `${Date.now()}-${path.basename(originalFilePath)}`;
       const newFilePath = path.join(attachmentsDir, safeFileName);
       fs.copyFileSync(originalFilePath, newFilePath);
-
       console.log('[IPC] File copied to:', newFilePath);
+
+      // Clone to Linux VM (WSL) for fast VM-side access — skip files >1GB
+      if (stats.size <= ONE_GB) {
+        try {
+          const { execSync } = require('child_process');
+          const wslAttachmentsDir = `/home/${os.userInfo().username}/.everfern/attachments`;
+          const wslSourcePath = `/mnt/c/Users/${os.userInfo().username}/.everfern/attachments/${safeFileName}`.toLowerCase();
+          // Create dir and copy via WSL
+          execSync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+          console.log('[IPC] File cloned to WSL:', `${wslAttachmentsDir}/${safeFileName}`);
+        } catch (cloneErr) {
+          console.warn('[IPC] Failed to clone file to WSL (non-fatal):', cloneErr);
+        }
+      } else {
+        console.log('[IPC] File >1GB, skipping WSL clone. Accessible via /mnt/c/ path.');
+      }
 
       let mimeType = 'application/octet-stream';
       if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
@@ -216,7 +236,19 @@ export function registerSystemHandlers() {
       if (fs.existsSync(ollamaPath)) return `"${ollamaPath}"`;
       return 'ollama';
     }
-    return '/usr/local/bin/ollama';
+    const isMac = process.platform === 'darwin';
+    if (isMac) {
+      const siliconPath = '/opt/homebrew/bin/ollama';
+      const intelPath = '/usr/local/bin/ollama';
+      if (fs.existsSync(siliconPath)) return siliconPath;
+      if (fs.existsSync(intelPath)) return intelPath;
+      return 'ollama';
+    }
+    const linuxPaths = ['/usr/local/bin/ollama', '/usr/bin/ollama'];
+    for (const p of linuxPaths) {
+      if (fs.existsSync(p)) return p;
+    }
+    return 'ollama';
   }
 
   ipcMain.handle('system:ollama-status', () => {

@@ -32,22 +32,25 @@ export async function runInLinuxVM(
   cwd?: string
 ): Promise<LinuxVMExecutionResult> {
   const platform = process.platform;
+  console.log(`[runInLinuxVM] Platform=${platform}, command="${command.slice(0, 100)}...", cwd="${cwd || '(none)'}"`);
 
   try {
     switch (platform) {
       case 'win32':
+        console.log('[runInLinuxVM] Platform=win32 → running in WSL');
         return await runInWSL(command, cwd);
       case 'darwin':
+        console.log('[runInLinuxVM] Platform=darwin → running in Docker');
         return await runInDocker(command, cwd);
       case 'linux':
-        // Already on Linux, run natively
+        console.log('[runInLinuxVM] Platform=linux → running natively');
         return await runNatively(command, cwd);
       default:
-        console.warn(`Unsupported platform ${platform}, falling back to native execution`);
+        console.warn(`[runInLinuxVM] Unsupported platform ${platform}, falling back to native execution`);
         return await runNatively(command, cwd);
     }
   } catch (error) {
-    console.warn(`VM execution failed, falling back to native execution: ${error}`);
+    console.warn(`[runInLinuxVM] VM execution failed, falling back to native execution: ${error}`);
     return await runNatively(command, cwd);
   }
 }
@@ -99,12 +102,14 @@ async function runInDocker(command: string, cwd?: string): Promise<LinuxVMExecut
  * Runs command natively (Linux or fallback)
  */
 async function runNatively(command: string, cwd?: string): Promise<LinuxVMExecutionResult> {
-  // If a working directory is specified, prepend cd command
   let fullCommand = command;
   if (cwd) {
     fullCommand = `cd "${cwd}" && ${command}`;
   }
 
+  if (process.platform === 'win32') {
+    return executeCommand('cmd.exe', ['/c', fullCommand]);
+  }
   return executeCommand('bash', ['-c', fullCommand]);
 }
 
@@ -126,12 +131,16 @@ function decodeBuffer(buf: Buffer): string {
  */
 export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason?: string }> {
   const platform = process.platform;
+  console.log(`[isLinuxVMAvailable] Checking VM availability for platform=${platform}`);
   try {
     if (platform === 'win32') {
       try {
+        console.log('[isLinuxVMAvailable] Testing wsl.exe -e echo ok...');
         await execAsync('wsl.exe -e echo ok', { timeout: 15000 });
+        console.log('[isLinuxVMAvailable] wsl.exe OK → VM available');
         return { available: true };
       } catch (err: any) {
+        console.warn(`[isLinuxVMAvailable] wsl.exe failed: ${err.message || err}`);
         return { 
           available: false, 
           reason: `WSL is not running, no Linux distribution is installed, or the WSL startup timed out. Error: ${err.message || err}` 
@@ -139,19 +148,25 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
       }
     } else if (platform === 'darwin') {
       try {
+        console.log('[isLinuxVMAvailable] Testing docker info...');
         await execAsync('docker info', { timeout: 10000 });
+        console.log('[isLinuxVMAvailable] docker info OK → VM available');
         return { available: true };
       } catch (err: any) {
+        console.warn(`[isLinuxVMAvailable] docker info failed: ${err.message || err}`);
         return { 
           available: false, 
           reason: `Docker Desktop is not installed, not running, or connection timed out. Error: ${err.message || err}` 
         };
       }
     } else if (platform === 'linux') {
+      console.log('[isLinuxVMAvailable] Platform=linux → always available');
       return { available: true };
     }
+    console.warn(`[isLinuxVMAvailable] Unsupported platform: ${platform}`);
     return { available: false, reason: `Unsupported platform: ${platform}` };
   } catch (err: any) {
+    console.warn(`[isLinuxVMAvailable] Unexpected error: ${err.message}`);
     return { available: false, reason: err.message };
   }
 }
@@ -214,20 +229,27 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
 }
 
 /**
- * Ensures Docker container exists and is running for macOS
+ * Ensures Docker container exists and is running.
+ * Platform-specific volume mounts:
+ * - macOS: mounts /Users → /host/Users
+ * - Linux: mounts /home → /host/Home
  */
 export async function ensureDockerContainer(): Promise<void> {
   try {
     // Check if Docker is running
     await execAsync('docker info');
 
+    // Choose volume mount based on platform
+    const isMac = process.platform === 'darwin';
+    const volumeMount = isMac ? '-v /Users:/host/Users' : '-v /home:/host/Home';
+
     // Check if container exists
     const { stdout: containerList } = await execAsync('docker ps -a --filter name=everfern-ubuntu --format "{{.Names}}"');
 
     if (!containerList.includes('everfern-ubuntu')) {
-      // Create container with volume mount for /Users
+      // Create container with platform-appropriate volume mount
       console.log('Creating everfern-ubuntu Docker container...');
-      await execAsync('docker run -d --name everfern-ubuntu -v /Users:/host/Users ubuntu:latest tail -f /dev/null');
+      await execAsync(`docker run -d --name everfern-ubuntu ${volumeMount} ubuntu:latest tail -f /dev/null`);
 
       // Install basic tools in the container
       await execAsync('docker exec everfern-ubuntu apt-get update');

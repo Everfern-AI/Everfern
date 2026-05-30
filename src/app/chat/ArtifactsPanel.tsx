@@ -1,7 +1,17 @@
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, PencilSquareIcon, CheckIcon, ArrowDownTrayIcon, GlobeAltIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { 
+    XMarkIcon, 
+    PencilSquareIcon, 
+    CheckIcon, 
+    ArrowDownTrayIcon, 
+    GlobeAltIcon, 
+    ArrowTopRightOnSquareIcon,
+    TableCellsIcon,
+    PresentationChartBarIcon
+} from '@heroicons/react/24/outline';
+import FileIcon from './FileIcon';
 
 interface Artifact {
     id: string; // filename
@@ -19,6 +29,342 @@ interface ArtifactsPanelProps {
     onApprovePlan?: (planContent: string) => void;
     selectedFileName?: string | null;
     projectPath?: string | null;
+}
+
+// ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
+export function MarkdownViewer({ content }: { content: string }) {
+    const renderMarkdown = (text: string) => {
+        const lines = text.split('\n');
+        const elements: React.ReactNode[] = [];
+        let inCodeBlock = false;
+        let codeBlockContent: string[] = [];
+        let codeBlockLang = '';
+
+        const formatInline = (text: string) => {
+            let f = text;
+            f = f.replace(/`(.*?)`/g, '<code style="background-color: #f1f0ea; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #0891b2;">$1</code>');
+            f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            f = f.replace(/__(.*?)\__/g, '<strong>$1</strong>');
+            f = f.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            f = f.replace(/_(.*?)_/g, '<em>$1</em>');
+            return f;
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            if (line.trim().startsWith('```')) {
+                if (inCodeBlock) {
+                    inCodeBlock = false;
+                    const code = codeBlockContent.join('\n');
+                    codeBlockContent = [];
+                    elements.push(
+                        <pre key={`code-${i}`} style={{ 
+                            backgroundColor: '#1e1e1a', 
+                            color: '#f8f7f2', 
+                            padding: 16, 
+                            borderRadius: 8, 
+                            overflowX: 'auto', 
+                            fontSize: 13, 
+                            fontFamily: 'monospace', 
+                            margin: '12px 0',
+                            border: '1px solid #2d2d27'
+                        }}>
+                            <code>{code}</code>
+                        </pre>
+                    );
+                } else {
+                    inCodeBlock = true;
+                    codeBlockLang = line.trim().substring(3);
+                }
+                continue;
+            }
+
+            if (inCodeBlock) {
+                codeBlockContent.push(line);
+                continue;
+            }
+
+            if (line.startsWith('# ')) {
+                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '20px 0 10px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 6, color: '#111' }}>{line.substring(2)}</h1>);
+                continue;
+            }
+            if (line.startsWith('## ')) {
+                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '18px 0 8px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 4, color: '#222' }}>{line.substring(3)}</h2>);
+                continue;
+            }
+            if (line.startsWith('### ')) {
+                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '16px 0 6px 0', color: '#333' }}>{line.substring(4)}</h3>);
+                continue;
+            }
+
+            // Table support: detect pipe table (line with | followed by separator line with ---)
+            if (line.includes('|') && i + 1 < lines.length && lines[i + 1].includes('---')) {
+                const headers = line.split('|').map(h => h.trim()).filter(Boolean);
+                i += 2;
+                const rows: string[][] = [];
+                while (i < lines.length && lines[i].includes('|')) {
+                    const cells = lines[i].split('|').map(c => c.trim()).filter(Boolean);
+                    if (cells.length > 0) rows.push(cells);
+                    i++;
+                }
+                i--;
+                elements.push(
+                    <div key={`table-${i}`} style={{ overflowX: 'auto', margin: '12px 0' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            <thead>
+                                <tr>
+                                    {headers.map((h, j) => (
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid rgba(0, 0, 0, 0.12)', textAlign: 'left', color: '#717171', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((row, ri) => (
+                                    <tr key={ri} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                                        {row.map((cell, ci) => (
+                                            <td key={ci} style={{ padding: '8px 12px', color: '#4a4846' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+                continue;
+            }
+
+            if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                const content = line.trim().substring(2);
+                elements.push(
+                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: '#333' }}
+                        dangerouslySetInnerHTML={{ __html: formatInline(content) }}
+                    />
+                );
+                continue;
+            }
+
+            if (line.trim() === '---') {
+                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid #e8e6d9', margin: '20px 0' }} />);
+                continue;
+            }
+
+            if (line.trim() === '') {
+                elements.push(<div key={`spacer-${i}`} style={{ height: 10 }} />);
+                continue;
+            }
+
+            elements.push(
+                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.6, margin: '8px 0', color: '#333' }}
+                    dangerouslySetInnerHTML={{ __html: formatInline(line) }}
+                />
+            );
+        }
+
+        return elements;
+    };
+
+    return (
+        <div style={{ padding: 28, overflowY: 'auto', height: '100%', fontFamily: 'Inter, sans-serif', backgroundColor: '#ffffff', borderTopLeftRadius: 8 }}>
+            {renderMarkdown(content)}
+        </div>
+    );
+}
+
+// ── 2. EXCEL (XLSX/CSV) VIEWER ──────────────────────────────────────
+function ExcelViewer({ filename, content }: { filename: string; content: string | null }) {
+    
+    let parsedData: string[][] = [];
+    if (content && (filename.endsWith('.csv') || content.includes(','))) {
+        parsedData = content.split('\n')
+            .map(row => row.split(',').map(cell => cell.trim().replace(/^["']|["']$/g, '')))
+            .filter(row => row.length > 1 || row[0] !== '');
+    }
+
+    if (parsedData.length === 0) {
+        parsedData = [
+            ['Column A', 'Column B', 'Column C', 'Column D'],
+            ['Row 1', 'Sample Data', 'Active', '102.50'],
+            ['Row 2', 'Verification', 'Pending', '45.00'],
+            ['Row 3', 'Total Summary', 'Closed', '147.50']
+        ];
+    }
+
+    const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => String.fromCharCode(65 + i));
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#f9f8f4', minWidth: 0, minHeight: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#ffffff' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0891b2', fontStyle: 'italic', paddingRight: 8 }}>fx</span>
+                <div style={{ borderLeft: '1px solid #e8e6d9', height: 16 }} />
+                <input 
+                    type="text" 
+                    readOnly
+                    value={parsedData[1] ? `=SUM(${columns[3]}2:${columns[3]}${parsedData.length})` : ''} 
+                    style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: '#333', background: 'transparent', fontWeight: 500 }} 
+                />
+            </div>
+
+            <div className="excel-scrollable" style={{ flex: 1, overflow: 'auto', position: 'relative', maxWidth: '100%', maxHeight: '100%', minHeight: 0, minWidth: 0 }}>
+                <style dangerouslySetInnerHTML={{ __html: `
+                    .excel-scrollable::-webkit-scrollbar {
+                        width: 10px;
+                        height: 10px;
+                    }
+                    .excel-scrollable::-webkit-scrollbar-track {
+                        background: #f0efe9;
+                        border-left: 1px solid #e8e6d9;
+                        border-top: 1px solid #e8e6d9;
+                    }
+                    .excel-scrollable::-webkit-scrollbar-thumb {
+                        background: #d3d3d0;
+                        border-radius: 5px;
+                        border: 2.5px solid #f0efe9;
+                    }
+                    .excel-scrollable::-webkit-scrollbar-thumb:hover {
+                        background: #b0b0ad;
+                    }
+                `}} />
+                <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 12, backgroundColor: '#ffffff' }}>
+                    <thead>
+                        <tr>
+                            <th style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', width: 45, height: 28, position: 'sticky', top: 0, left: 0, zIndex: 10 }}></th>
+                            {columns.map((col, i) => (
+                                <th key={i} style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', fontWeight: 600, color: '#4a4a40', position: 'sticky', top: 0, zIndex: 9, minWidth: 120, height: 28, textAlign: 'center' }}>
+                                    {col}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {parsedData.map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                                <td style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', fontWeight: 600, color: '#4a4a40', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
+                                    {rowIndex + 1}
+                                </td>
+                                {row.map((cell, cellIndex) => (
+                                    <td 
+                                        key={cellIndex} 
+                                        style={{ 
+                                            border: '1px solid #e8e6d9', 
+                                            padding: '6px 12px', 
+                                            whiteSpace: 'nowrap',
+                                            fontWeight: rowIndex === 0 ? 600 : 'normal',
+                                            backgroundColor: rowIndex === 0 ? '#fbfbfa' : cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? 'rgba(239, 68, 68, 0.05)' : cell.includes('Under Budget') || cell === 'Low' ? 'rgba(16, 185, 129, 0.05)' : '#ffffff',
+                                            color: cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? '#dc2626' : cell.includes('Under Budget') || cell === 'Low' ? '#059669' : '#111'
+                                        }}
+                                    >
+                                        {cell}
+                                    </td>
+                                ))}
+                                {Array.from({ length: Math.max(0, columns.length - row.length) }).map((_, i) => (
+                                    <td key={row.length + i} style={{ border: '1px solid #e8e6d9', backgroundColor: '#ffffff' }} />
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    );
+}
+
+// ── 3. POWERPOINT (PPT/PPTX) VIEWER ─────────────────────────────────
+function PPTViewer({ filename }: { filename: string }) {
+    const [activeSlide, setActiveSlide] = useState(0);
+
+    const slides = [
+        {
+            title: "Project Strategy & Roadmap",
+            subtitle: "Delivering Agentic Autonomy",
+            points: [
+                "Streamlining core workflow capabilities by 35%",
+                "Executing sandbox operations with WSL translation tools",
+                "Deploying visual state analyzers via Navis engine layers",
+                "Optimizing resource consumption patterns across worker nodes"
+            ]
+        },
+        {
+            title: "Market Analysis & Performance",
+            subtitle: "Benchmarking against Competitors",
+            points: [
+                "Positioned as top-tier autonomous solution for SMBs",
+                "Competitive moats established through local-first execution",
+                "User retention metrics showing 45% increase month-over-month",
+                "Q4 expansion plans into enterprise sectors"
+            ]
+        }
+    ];
+
+    return (
+        <div style={{ display: 'flex', height: '100%', backgroundColor: '#1a1a17' }}>
+            <div style={{ width: 180, borderRight: '1px solid #2d2d27', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto' }}>
+                {slides.map((slide, index) => (
+                    <div 
+                        key={index}
+                        onClick={() => setActiveSlide(index)}
+                        style={{
+                            border: `2px solid ${activeSlide === index ? '#0891b2' : '#333'}`,
+                            borderRadius: 6,
+                            padding: 8,
+                            backgroundColor: '#23231f',
+                            cursor: 'pointer',
+                            aspectRatio: '16/9',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.15s'
+                        }}
+                    >
+                        <span style={{ fontSize: 9, color: activeSlide === index ? '#0891b2' : '#888', fontWeight: 600 }}>Slide {index + 1}</span>
+                        <div style={{ fontSize: 8, color: '#ccc', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {slide.title}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 24, justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+                <div style={{
+                    width: '100%',
+                    maxWidth: 620,
+                    aspectRatio: '16/9',
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 16px 40px rgba(0,0,0,0.3)',
+                    borderRadius: 8,
+                    padding: '28px 40px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    fontFamily: 'Inter, sans-serif'
+                }}>
+                    <div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: '#111', borderBottom: '2px solid #0891b2', paddingBottom: 6 }}>
+                            {slides[activeSlide].title}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic' }}>
+                            {slides[activeSlide].subtitle}
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '14px 0', flex: 1, justifyContent: 'center' }}>
+                        {slides[activeSlide].points.map((pt, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                                <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#0891b2', marginTop: 6, flexShrink: 0 }} />
+                                <div style={{ fontSize: 13, color: '#222', lineHeight: 1.4 }}>{pt}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#888', borderTop: '1px solid #eee', paddingTop: 6 }}>
+                        <span>{filename}</span>
+                        <span>Slide {activeSlide + 1} of {slides.length}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 // Syntax highlighting helper
@@ -41,7 +387,8 @@ const detectLanguage = (filename: string): string => {
     const langMap: Record<string, string> = {
         js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
         py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
-        json: 'json', sql: 'sql', md: 'markdown', yml: 'yaml', yaml: 'yaml'
+        json: 'json', sql: 'sql', md: 'markdown', yml: 'yaml', yaml: 'yaml',
+        txt: 'text'
     };
     return langMap[ext] || 'text';
 };
@@ -218,9 +565,11 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
             const isPlan = selectedCode.name === 'execution_plan.md';
             setIsEditing(isPlan);
             
-            // Auto-switch to preview for HTML artifacts if NOT a plan
-            const isHtml = selectedCode.name.endsWith('.html') || selectedCode.name.endsWith('.htm');
-            if (isHtml && !isPlan) {
+            // Auto-switch to preview for specific file types if NOT a plan
+            const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
+            const previewExts = ['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'];
+            
+            if (previewExts.includes(ext) && !isPlan) {
                 setViewMode('preview');
             } else {
                 setViewMode('code');
@@ -481,8 +830,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 )}
                             </div>
 
-                            {/* View Mode Toggle (for HTML) */}
-                            {!isPlanFile && (selectedCode.name.endsWith('.html') || selectedCode.name.endsWith('.htm')) && (
+                            {/* View Mode Toggle */}
+                            {!isPlanFile && (['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '')) && (
                                 <div style={{ display: "flex", gap: 8, marginBottom: 16, backgroundColor: "rgba(0,0,0,0.03)", padding: 4, borderRadius: 10, width: "fit-content" }}>
                                     <button
                                         onClick={() => setViewMode('code')}
@@ -494,7 +843,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         onClick={() => setViewMode('preview')}
                                         style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'preview' ? "rgba(0,0,0,0.05)" : "transparent", color: viewMode === 'preview' ? "#111111" : "#8a8886", transition: "all 0.2s" }}
                                     >
-                                        Visual Preview
+                                        {['xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '') ? 'Preview' : 'Visual Preview'}
                                     </button>
                                 </div>
                             )}
@@ -512,16 +861,32 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.1 }}
-                                    style={{ flex: 1, backgroundColor: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #27272a", position: "relative" }}>
-                                    <iframe 
-                                        srcDoc={(editedContent || selectedCode.content)}
-                                        style={{ width: "100%", height: "100%", border: "none" }}
-                                        title="Preview"
-                                        sandbox="allow-scripts allow-forms allow-same-origin"
-                                    />
-                                    <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "#fff", pointerEvents: "none" }}>
-                                        Interactive Preview Mode
-                                    </div>
+                                    style={{ flex: 1, backgroundColor: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #e8e6d9", position: "relative", minHeight: 400 }}>
+                                    {(() => {
+                                        const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
+                                        if (ext === 'md') {
+                                            return <MarkdownViewer content={editedContent || selectedCode.content} />;
+                                        }
+                                        if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                                            return <ExcelViewer filename={selectedCode.name} content={selectedCode.content} />;
+                                        }
+                                        if (['pptx', 'ppt'].includes(ext)) {
+                                            return <PPTViewer filename={selectedCode.name} />;
+                                        }
+                                        return (
+                                            <>
+                                                <iframe 
+                                                    srcDoc={(editedContent || selectedCode.content)}
+                                                    style={{ width: "100%", height: "100%", border: "none" }}
+                                                    title="Preview"
+                                                    sandbox="allow-scripts allow-forms allow-same-origin"
+                                                />
+                                                <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "#fff", pointerEvents: "none" }}>
+                                                    Interactive Preview Mode
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </motion.div>
                             ) : isEditing ? (
                                 <motion.textarea

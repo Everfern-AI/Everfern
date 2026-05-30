@@ -28,6 +28,59 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 }
 
+// File tool names that run on the host and need Linux→Windows path translation
+const HOST_FILE_TOOL_NAMES = new Set(['read', 'write', 'edit', 'grep', 'find', 'ls']);
+
+/**
+ * Translates Linux-style paths in tool args to host-native paths.
+ * Platform-specific:
+ * - Windows: /mnt/c/... → C:\, /home/... → \\wsl.localhost\Ubuntu\...
+ * - macOS: /host/Users/... → /Users/...
+ * - Linux: pass-through (already native paths)
+ */
+function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<string, unknown> {
+  const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'pattern', 'glob', 'include', 'exclude'];
+  const translated = { ...args };
+
+  for (const key of pathKeys) {
+    const val = translated[key];
+    if (typeof val !== 'string') continue;
+
+    let p = val.replace(/\\/g, '/');
+
+    if (process.platform === 'win32') {
+      // Translate /mnt/c/... → C:\...
+      const mntMatch = p.match(/^\/mnt\/([a-zA-Z])(\/.*)?$/);
+      if (mntMatch) {
+        const drive = mntMatch[1].toUpperCase();
+        const rest = mntMatch[2] ? mntMatch[2].replace(/\//g, '\\') : '\\';
+        translated[key] = `${drive}:${rest}`;
+        continue;
+      }
+
+      // Translate /home/... → \\wsl.localhost\Ubuntu\home\...
+      if (p.startsWith('/home/') || p.startsWith('/root/') || p.startsWith('/tmp/')) {
+        const relativePath = p.startsWith('/') ? p.substring(1) : p;
+        translated[key] = `\\\\wsl.localhost\\Ubuntu\\${relativePath.replace(/\//g, '\\')}`;
+        continue;
+      }
+
+      // Normalize remaining forward slashes to backslashes
+      if (p.includes('/')) {
+        translated[key] = p.replace(/\//g, '\\');
+      }
+    } else if (process.platform === 'darwin') {
+      // Translate /host/Users/... → /Users/...
+      if (p.startsWith('/host/Users/')) {
+        translated[key] = p.replace('/host/Users/', '/Users/');
+      }
+    }
+    // Linux: pass-through, paths are already native
+  }
+
+  return translated;
+}
+
 // Helper to convert pi-coding-agent tool into EverFern AgentTool
 function adaptTool(
   definition: { name: string; description: string; parameters: any },
@@ -133,8 +186,11 @@ function adaptTool(
 
           if (!local) {
             // First check if Linux VM is available
+            console.log(`[executePwsh] local=${local}, checking VM availability for command: "${command.slice(0, 100)}..."`);
             const vmCheck = await isLinuxVMAvailable();
+            console.log(`[executePwsh] isLinuxVMAvailable result: available=${vmCheck.available}, reason="${vmCheck.reason || '(none)'}"`);
             if (!vmCheck.available) {
+              console.log(`[executePwsh] VM not available, returning error`);
               return {
                 success: false,
                 output: `ERROR: Linux VM is not available. This action cannot be done.\nReason: ${vmCheck.reason || 'Unknown error'}\n\nPlease install/configure the VM before executing commands. Alternatively, you can explicitly request local execution by passing local: true (requires user permission).`,
@@ -144,7 +200,9 @@ function adaptTool(
 
             // Route through Linux VM by default
             try {
+              console.log(`[executePwsh] VM available, calling runInLinuxVM()`);
               const result = await runInLinuxVM(command);
+              console.log(`[executePwsh] runInLinuxVM result: exitCode=${result.exitCode}, stdout=${result.stdout.length} chars, stderr=${result.stderr.length} chars`);
 
               // Format output to match pi-tools format exactly
               // Success case: use stdout
@@ -164,7 +222,7 @@ function adaptTool(
               };
             } catch (vmError) {
               // If VM execution fails, fall back to native execution
-              console.warn('Linux VM execution failed, falling back to native:', vmError);
+              console.warn('[executePwsh] Linux VM execution failed, falling back to native:', vmError);
               // Continue to native execution below
             }
           }
@@ -198,6 +256,11 @@ function adaptTool(
               error: stripAnsi(output)
             };
           }
+        }
+
+        // For host-side file tools, translate Linux paths to Windows paths
+        if (HOST_FILE_TOOL_NAMES.has(name)) {
+          args = translateLinuxPathsToHostPaths(args);
         }
 
         // For all other tools, use the original logic

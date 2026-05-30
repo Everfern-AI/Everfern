@@ -1,75 +1,113 @@
 <div align="center">
   <img src="public/images/banner.jpg" alt="EverFern" width="100%" />
+
+  <h1>EverFern</h1>
+  <p>Free, open-source AI agent that uses your computer — clicks, types, navigates, and gets things done.</p>
+
+  <p>
+    <a href="https://everfern.app">Website</a> •
+    <a href="#quick-start">Quick Start</a> •
+    <a href="#features">Features</a> •
+    <a href="https://github.com/CodenRust/Everfern/blob/main/LICENSE">MIT License</a>
+  </p>
+
+  <img src="https://img.shields.io/github/stars/CodenRust/Everfern?style=flat-square" />
+  <img src="https://img.shields.io/github/license/CodenRust/Everfern?style=flat-square" />
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square" />
 </div>
 
-# EverFern
+---
 
-> Your autonomous AI desktop agent — free, open-source, and runs entirely on your machine.
+<video src="public/demo/spotify-demo.mp4" autoplay loop muted playsinline width="100%"></video>
 
-**EverFern** is a free, open-source AI desktop agent that automates complex tasks on your computer using natural language. Think of it as your personal AI coworker that can:
-- Research topics and synthesize findings
-- Write and edit code, documents, and presentations
-- Browse the web and interact with websites
-- Operate your desktop GUI (click, type, navigate)
-- Process files, analyze data, and generate reports
-
-EverFern is the open-source alternative to **Manus Desktop**, **Claude Cowork**, and similar commercial AI agents — available to everyone, completely free.
+> EverFern opening Spotify and playing a song — no scripts, no automation code, just plain English.
 
 ---
 
-## Why EverFern?
+## What is EverFern?
 
-| Feature | EverFern | Commercial Alternatives |
-|---------|----------|--------------------------|
-| **Price** | Free & open-source | $200+/month |
-| **Data Privacy** | Everything stays local | Cloud processing required |
-| **Self-Hosting** | Run on your own hardware | Not supported |
-| **Customization** | Full source access | Proprietary, locked |
-| **AI Providers** | Local or cloud of your choice | Provider-locked |
+EverFern is a desktop AI agent that uses your computer the way you would — clicks buttons, navigates apps, fills forms, runs workflows. You describe what you want in plain English. It figures out the steps and does it.
 
----
+No subscription. No cloud. Nothing leaves your machine.
 
-## ✨ Features
+It's the free, open-source alternative to **Claude Cowork** and **Manus Desktop**.
 
-- **🤖 Autonomous Task Execution** — Tell EverFern what you want in plain English. It plans, reasons, and executes multi-step tasks autonomously.
-
-- **🖥️ Desktop Automation** — EverFern can control your mouse and keyboard, take screenshots, and interact with any application just like a human would.
-
-- **🔍 Web Research** — Browse websites, extract information, compare products, and summarize findings automatically.
-
-- **📄 Document Processing** — Read, analyze, and create documents in formats like PDF, Word, Excel, PowerPoint, CSV, and more.
-
-- **💻 Code Assistant** — Write, review, debug, and refactor code across multiple languages with full project context.
-
-- **🔌 Extensible Tools** — Connect to 30+ built-in tools or add custom ones via MCP (Model Context Protocol).
-
-- **🛠️ Multi-Provider Support** — Use local AI (Ollama, LMStudio) for privacy or cloud providers (OpenAI, Anthropic, DeepSeek, etc.) for power.
-
-- **🔒 Privacy-First** — All data stays on your machine. No cloud dependency. Your conversations never leave your desktop.
+| | EverFern | Claude Cowork | Manus Desktop |
+|---|---|---|---|
+| **Price** | Free | $20+/month | $200+/month |
+| **Runs locally** | Yes | No | No |
+| **Open source** | Yes (MIT) | No | No |
+| **Your data** | Stays on your machine | Cloud processed | Cloud processed |
+| **AI provider** | Your choice | Anthropic only | Locked |
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### Prerequisites
-- Node.js v18+
-- Windows 10/11, macOS, or Linux
+**Computer Use**
+Sees your screen, moves the mouse, clicks, types, and navigates any app exactly like a human would. Works with any desktop application — no integrations needed.
 
-### Installation
+**Browser Agent**
+Navigate websites, fill forms, scrape data, and interact with web apps in plain English. No Selenium, no Playwright, no code.
+
+**Document Processing**
+Read, analyze, and create PDFs, Word docs, Excel sheets, PowerPoints, and CSVs. Works with your existing files.
+
+**Code Assistant**
+Write, review, debug, and refactor code with full project context. Works inside your actual editor.
+
+**Skills System**
+Reusable task modules you can install from the community or build yourself. Each skill teaches EverFern how to handle a specific workflow — shareable, auditable, yours.
+
+**Workflow Builder**
+Chain actions together, save them, trigger on a schedule. Automate anything you do repeatedly.
+
+**Linux VM Execution**
+Shell commands run in an isolated sandbox so nothing can accidentally break your system.
+
+**Peer Agent Debate**
+For complex tasks, multiple specialized agents debate the best solution before anything gets executed. Each agent challenges the others' reasoning, catches blind spots, and votes on the final approach. The result is a plan that's been stress-tested before it touches your machine — not just the first thing one agent thought of.
+
+**20+ Built-in Tools**
+Everything EverFern needs to work on your machine is built in out of the box:
+
+| Category | Tools |
+|---|---|
+| **Desktop** | Computer Use, Screenshot, Mouse Control, Keyboard Input, App Launcher |
+| **Browser** | Navis (built-in browser agent), Web Search, Page Scrape, Form Fill, Tab Manager |
+| **Files** | Read, Write, Edit, Move, Copy, Delete, Grep, Find, Watch |
+| **Code** | Run Script, Terminal, Diff, Patch, Lint |
+| **Data** | PDF Reader, CSV Parser, JSON Tools, Excel Reader |
+| **System** | Linux VM Shell, Process Manager, Clipboard, Notifications |
+
+Plus custom tools via MCP (Model Context Protocol) — connect anything.
+
+**Multi-Provider Support**
+Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
+
+---
+
+## Quick Start
+
+**Prerequisites:** Node.js v18+, Windows 10/11 or macOS
 
 ```bash
-# Clone the repository
-git clone https://github.com/everfern/desktop.git
-cd desktop
+# Clone the repo
+git clone https://github.com/CodenRust/Everfern.git
+cd Everfern
 
 # Install dependencies
 npm install
 
-# Start the application
+# Run in development
 npm run dev
 ```
 
-### Build for Production
+**Windows installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
+
+**macOS installer** coming soon. For now, build from source with the commands above.
+
+### Production Build
 
 ```bash
 npm run build
@@ -78,135 +116,100 @@ npm run make
 
 ---
 
-## 💬 How It Works
+## How It Works
 
 Just tell EverFern what you need:
 
 ```
-"Research the top 5 AI coding assistants and create a comparison table"
+"Open Spotify and play my liked songs"
 
-"Summarize all the PDF reports in my Downloads folder"
+"Summarize all the PDFs in my Downloads folder into one document"
 
 "Open VS Code and refactor the auth module to use JWT tokens"
 
-"Create a PowerPoint presentation about our Q1 sales data"
+"Research the top 5 AI coding tools and make a comparison spreadsheet"
 
-"Find and organize all my photos from last year into albums"
+"Find all my photos from last year and organize them by month"
 ```
 
-EverFern breaks down your request, plans the steps, and executes them — showing you its thinking process in real-time.
+EverFern breaks down the request, plans the steps, shows you its thinking in real time, and executes — pausing for confirmation before anything destructive.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Your Desktop                             │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              EverFern (Frontend + Backend)           │    │
-│  │  ┌──────────────────┐    ┌────────────────────────┐  │    │
-│  │  │   React UI       │    │   Agent Engine          │  │    │
-│  │  │   (Chat + Tools) │◄──►│   (LangGraph-based)    │  │    │
-│  │  └──────────────────┘    └────────────────────────┘  │    │
-│  └─────────────────────────┬────────────────────────────┘    │
-│                            │                                 │
-│         ┌──────────────────┼──────────────────┐              │
-│         │                  │                  │              │
-│    ┌────▼────┐       ┌─────▼─────┐      ┌─────▼─────┐       │
-│    │Local AI │       │Cloud AI   │      │  Tools    │       │
-│    │Ollama   │       │Anthropic  │      │  GUI Auto │       │
-│    │LMStudio │       │OpenAI     │      │  Web Scrape│       │
-│    └─────────┘       └───────────┘      └───────────┘       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Frontend**: Next.js with real-time streaming UI
-**Backend**: Electron with LangGraph-powered agent orchestration
-**AI**: Your choice of local or cloud providers
-
----
-
-## 🔧 Configuration
-
-### AI Provider Setup
-
-EverFern supports multiple AI providers. Configure yours in the app settings:
-
-**Local (Privacy-First)**
-- [Ollama](https://ollama.ai/) — Run models locally
-- [LMStudio](https://lmstudio.ai/) — Local model server
-
-**Cloud (More Power)**
-- OpenAI (GPT-4, GPT-4o)
-- Anthropic (Claude 3.5, Opus)
-- DeepSeek
-- Google Gemini
-- And more...
-
-### Environment Variables
-
-```bash
-NEXT_TELEMETRY_DISABLED=1    # Disable telemetry
-UV_THREADPOOL_SIZE=4         # Async operation threads
+┌─────────────────────────────────────────────────────┐
+│                    EverFern                         │
+│  ┌─────────────────┐    ┌─────────────────────────┐ │
+│  │   React UI      │◄──►│   Agent Engine          │ │
+│  │   (Next.js)     │    │   (LangGraph)           │ │
+│  └─────────────────┘    └──────────┬──────────────┘ │
+│                                    │                 │
+│                         ┌──────────▼──────────┐      │
+│                         │  Peer Agent Debate  │      │
+│                         │  (multi-agent plan) │      │
+│                         └──────────┬──────────┘      │
+└────────────────────────────────────┼────────────────┘
+                                     │
+          ┌──────────────────────────┼──────────────┐
+          │                          │              │
+     ┌────▼────┐     ┌───────────────▼────────┐   ┌─▼────────────────┐
+     │Local AI │     │ 10+ Cloud Providers    │   │ 20+ Tools        │
+     │Ollama   │     │ OpenAI • Anthropic     │   │ Computer Use     │
+     │LMStudio │     │ DeepSeek • Gemini      │   │ Navis Browser    │
+     └─────────┘     │ OpenRouter • Groq      │   │ Web Search       │
+                     │ Mistral • Nvidia NIM   │   │ Files • Grep     │
+                     │ and more...            │   │ Shell • VM       │
+                     └────────────────────────┘   └──────────────────┘
 ```
 
 ---
 
-## 📂 Project Structure
+## Privacy & Security
+
+- All data, keys, and history stored in `~/.everfern/store` — never synced anywhere
+- API keys encrypted locally
+- Shell commands run in an isolated Linux VM
+- Full source code available to audit yourself
+
+---
+
+## Project Structure
 
 ```
 everfern/
-├── src/                    # Next.js frontend
-│   ├── app/                # App router (chat, settings)
-│   └── components/         # React components
-├── main/                   # Electron backend
-│   ├── agent/              # Agent orchestration
-│   │   ├── runner/         # Graph execution nodes
-│   │   ├── tools/          # Built-in tools
-│   │   └── skills/         # Document processing
-│   └── acp/                # AI provider clients
-├── docs/                   # Architecture docs
-└── public/                 # Static assets
+├── src/              # Next.js frontend
+│   ├── app/          # Chat interface, settings
+│   └── components/   # React components
+├── main/             # Electron backend
+│   ├── agent/        # Agent orchestration (LangGraph)
+│   ├── tools/        # Built-in tools
+│   └── acp/          # AI provider clients
+├── docs/             # Architecture documentation
+└── public/           # Static assets
 ```
 
 ---
 
-## 🔐 Privacy & Security
+## Contributing
 
-- **Local Storage** — All data, keys, and history stored in `~/.everfern/store`
-- **No Cloud Sync** — Your conversations never leave your machine
-- **Your Keys** — API keys encrypted and stored locally
-- **Open Source** — Audit the code yourself for trust
+Bug reports, feature requests, and pull requests are all welcome.
 
----
-
-## 🤝 Contributing
-
-Contributions welcome! Whether it's bug reports, features, or code:
-
-- **Issues** — Report bugs on GitHub
-- **Discussions** — Join community conversations
-- **Code** — Submit pull requests
+- **Issues** — report bugs or suggest features
+- **Discussions** — join community conversations
+- **PRs** — see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ---
 
-## 📄 License
+## License
 
-MIT License — free for personal and commercial use.
+MIT — free for personal and commercial use.
 
 **Copyright © 2026 EverFern Community**
 
 ---
 
-## 🙏 Built With
-
-- [LangGraph](https://langchain-ai.github.io/langgraph/) — Agent orchestration
-- [Next.js](https://nextjs.org/) — Frontend framework
-- [Electron](https://www.electronjs.org/) — Desktop application framework
-- [TypeScript](https://www.typescriptlang.org/) — Type-safe development
-
----
+Built with [LangGraph](https://langchain-ai.github.io/langgraph/), [Next.js](https://nextjs.org/), [Electron](https://www.electronjs.org/), and [TypeScript](https://www.typescriptlang.org/).
 
 **Made with ❤️ by the EverFern Community**

@@ -14,6 +14,8 @@ export interface VisionGroundingParams {
   screenshot: string;
   /** Task objective (e.g., "click the search button") */
   objective: string;
+  /** Optional: String representation of DOM elements for enhanced context */
+  dom?: string;
   /** Previous instructions for context */
   history?: string[];
   /** API base URL (default: http://localhost:5000) */
@@ -55,7 +57,9 @@ export async function getEverFernCloudInstructionAndActions(
   }
 
   const apiBaseUrl = params.apiBaseUrl || 'http://localhost:5000';
-  const response = await fetch(`${apiBaseUrl}/api/tars/vision`, {
+  
+  // Call /api/navis/vision which supports DOM context
+  const response = await fetch(`${apiBaseUrl}/api/navis/vision`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -63,6 +67,7 @@ export async function getEverFernCloudInstructionAndActions(
     },
     body: JSON.stringify({
       screenshot: params.screenshot,
+      dom: params.dom || '',
       objective: params.objective,
       history: params.history || []
     })

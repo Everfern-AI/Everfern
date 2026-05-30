@@ -29,6 +29,8 @@ export type ActionName =
   | 'go_back'
   | 'click_element'
   | 'input_text'
+  | 'hold_element'
+  | 'drag_element'
   | 'press_key'
   | 'scroll_down'
   | 'scroll_up'
@@ -48,9 +50,12 @@ export type ActionName =
   | 'right_click'
   // Phase 3: Vision-Grounding Hybrid
   | 'hybrid_click'
-  // EverFern Cloud Vision Grounding
+  // EverFern Cloud / TARS specific actions
   | 'browser_click'
-  | 'browser_type';
+  | 'browser_type'
+  | 'browser_double_click'
+  | 'browser_right_click'
+  | 'browser_hover';
 
 export interface ActionResult {
   success: boolean;
@@ -158,6 +163,12 @@ export async function executeAction(
       case 'input_text':
         return await executeInputText(args as { ref: string; text: string }, page, session, logger, step, maxSteps);
 
+      case 'hold_element':
+        return await executeHoldElement(args as { ref?: string; x?: number; y?: number; holdTimeMs?: number }, page, session, logger, step, maxSteps);
+
+      case 'drag_element':
+        return await executeDragElement(args as { sourceRef: string; targetRef?: string; targetX?: number; targetY?: number }, page, session, logger, step, maxSteps);
+
       case 'press_key':
         return await executePressKey(args as { ref?: string; key: string }, page, session, logger, step, maxSteps);
 
@@ -215,6 +226,15 @@ export async function executeAction(
 
       case 'browser_type':
         return await executeBrowserType(args as { text: string }, page, session, logger, step, maxSteps);
+
+      case 'browser_double_click':
+        return await executeBrowserDoubleClick(args as { x: number; y: number }, page, session, logger, step, maxSteps);
+
+      case 'browser_right_click':
+        return await executeBrowserRightClick(args as { x: number; y: number }, page, session, logger, step, maxSteps);
+
+      case 'browser_hover':
+        return await executeBrowserHover(args as { x: number; y: number }, page, session, logger, step, maxSteps);
 
       default:
         return { success: false, message: `Unknown action: ${actionName}`, stateChanged: false };
@@ -750,5 +770,213 @@ async function executeBrowserType(
       message: `Browser type failed: ${err.message}`,
       stateChanged: false
     };
+  }
+}
+
+async function executeBrowserDoubleClick(
+  args: { x: number; y: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (args.x === undefined || args.y === undefined) {
+    return { success: false, message: 'Missing x or y coordinates', stateChanged: false };
+  }
+
+  try {
+    let { x, y } = args;
+    const viewport = page.viewportSize();
+    if (viewport) {
+      const SCREEN_WIDTH = viewport.width;
+      const SCREEN_HEIGHT = viewport.height;
+      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
+      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+    }
+
+    await session.moveCursor(x, y);
+    await new Promise(r => setTimeout(r, 600));
+    await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
+
+    await page.mouse.click(x, y, { clickCount: 2 });
+
+    logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_double_click', { x, y });
+    await session.setOverlayStatus(`Double-clicked at (${x}, ${y})`);
+
+    return { success: true, message: `Double-clicked at (${x}, ${y})`, stateChanged: true };
+  } catch (err: any) {
+    return { success: false, message: `Double-click failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeBrowserRightClick(
+  args: { x: number; y: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (args.x === undefined || args.y === undefined) {
+    return { success: false, message: 'Missing x or y coordinates', stateChanged: false };
+  }
+
+  try {
+    let { x, y } = args;
+    const viewport = page.viewportSize();
+    if (viewport) {
+      const SCREEN_WIDTH = viewport.width;
+      const SCREEN_HEIGHT = viewport.height;
+      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
+      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+    }
+
+    await session.moveCursor(x, y);
+    await new Promise(r => setTimeout(r, 600));
+    await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
+
+    await page.mouse.click(x, y, { button: 'right' });
+
+    logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_right_click', { x, y });
+    await session.setOverlayStatus(`Right-clicked at (${x}, ${y})`);
+
+    return { success: true, message: `Right-clicked at (${x}, ${y})`, stateChanged: true };
+  } catch (err: any) {
+    return { success: false, message: `Right-click failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeBrowserHover(
+  args: { x: number; y: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (args.x === undefined || args.y === undefined) {
+    return { success: false, message: 'Missing x or y coordinates', stateChanged: false };
+  }
+
+  try {
+    let { x, y } = args;
+    const viewport = page.viewportSize();
+    if (viewport) {
+      const SCREEN_WIDTH = viewport.width;
+      const SCREEN_HEIGHT = viewport.height;
+      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
+      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+    }
+
+    await session.moveCursor(x, y);
+    await new Promise(r => setTimeout(r, 600));
+
+    await page.mouse.move(x, y);
+
+    logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_hover', { x, y });
+    await session.setOverlayStatus(`Hovered at (${x}, ${y})`);
+
+    return { success: true, message: `Hovered at (${x}, ${y})`, stateChanged: false };
+  } catch (err: any) {
+    return { success: false, message: `Hover failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeHoldElement(
+  args: { ref?: string; x?: number; y?: number; holdTimeMs?: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  try {
+    let targetX: number | undefined = args.x;
+    let targetY: number | undefined = args.y;
+    let name = args.ref || `(${args.x}, ${args.y})`;
+
+    if (args.ref) {
+      const { locator, name: foundName } = await findElement(page, args.ref, logger);
+      name = foundName;
+      const box = await locator.boundingBox();
+      if (box) {
+        targetX = box.x + box.width / 2;
+        targetY = box.y + box.height / 2;
+      }
+    }
+
+    if (targetX !== undefined && targetY !== undefined) {
+      await session.moveCursor(targetX, targetY);
+      await new Promise(r => setTimeout(r, 600));
+      await page.mouse.move(targetX, targetY);
+      await page.mouse.down();
+      
+      const holdTime = args.holdTimeMs || 0;
+      if (holdTime > 0) {
+        await new Promise(r => setTimeout(r, holdTime));
+        await page.mouse.up();
+        logger?.elementClick(step, maxSteps, name, `hold_element (${holdTime}ms)`, { x: targetX, y: targetY });
+        return { success: true, message: `Held ${name} for ${holdTime}ms`, stateChanged: true };
+      }
+      
+      logger?.elementClick(step, maxSteps, name, 'hold_element (down)', { x: targetX, y: targetY });
+      return { success: true, message: `Holding ${name} down`, stateChanged: true };
+    }
+
+    return { success: false, message: 'Could not determine hold target', stateChanged: false };
+  } catch (err: any) {
+    return { success: false, message: `Hold failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeDragElement(
+  args: { sourceRef: string; targetRef?: string; targetX?: number; targetY?: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  try {
+    const { locator: sourceLocator, name: sourceName } = await findElement(page, args.sourceRef, logger);
+    const sourceBox = await sourceLocator.boundingBox();
+    if (!sourceBox) throw new Error('Could not find source element bounding box');
+
+    const sx = sourceBox.x + sourceBox.width / 2;
+    const sy = sourceBox.y + sourceBox.height / 2;
+
+    let tx: number | undefined = args.targetX;
+    let ty: number | undefined = args.targetY;
+    let targetName = `(${args.targetX}, ${args.targetY})`;
+
+    if (args.targetRef) {
+      const { locator: targetLocator, name: foundTargetName } = await findElement(page, args.targetRef, logger);
+      targetName = foundTargetName;
+      const targetBox = await targetLocator.boundingBox();
+      if (targetBox) {
+        tx = targetBox.x + targetBox.width / 2;
+        ty = targetBox.y + targetBox.height / 2;
+      }
+    }
+
+    if (tx !== undefined && ty !== undefined) {
+      await session.moveCursor(sx, sy);
+      await new Promise(r => setTimeout(r, 600));
+      await page.mouse.move(sx, sy);
+      await page.mouse.down();
+      await new Promise(r => setTimeout(r, 200));
+      
+      await session.moveCursor(tx, ty);
+      await page.mouse.move(tx, ty, { steps: 10 });
+      await page.mouse.up();
+
+      logger?.elementClick(step, maxSteps, sourceName, `drag to ${targetName}`, { x: tx, y: ty });
+      return { success: true, message: `Dragged ${sourceName} to ${targetName}`, stateChanged: true };
+    }
+
+    return { success: false, message: 'Could not determine drag target', stateChanged: false };
+  } catch (err: any) {
+    return { success: false, message: `Drag failed: ${err.message}`, stateChanged: false };
   }
 }

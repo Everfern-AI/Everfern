@@ -247,6 +247,8 @@ export class AIClient {
       }
     }
 
+    console.log(`[AIClient] Constructor: provider=${config.provider}, model=${config.model}, baseUrl=${finalBaseUrl}, apiKey=${finalApiKey ? '***' : '(empty)'}`);
+
     this.config = {
       provider: config.provider,
       apiKey: finalApiKey,
@@ -277,6 +279,7 @@ export class AIClient {
         // Disable keep-alive to avoid Node 22 undici "invalid keep-alive header" errors
         // from NVIDIA NIM and other providers that may send malformed keep-alive responses.
         fetch: (url: RequestInfo | URL, init?: RequestInit) => {
+          console.log(`[AIClient Fetch] URL: ${url}, method: ${init?.method || 'GET'}`);
           const safeInit = { ...init, keepalive: false };
           if (safeInit.headers) {
             const h = safeInit.headers as Record<string, string>;
@@ -285,7 +288,12 @@ export class AIClient {
             delete h['keep-alive'];
             delete h['Keep-Alive'];
           }
-          return fetch(url, safeInit);
+          const result = fetch(url, safeInit);
+          result.then(
+            (res) => console.log(`[AIClient Fetch] Response: ${res.status} ${res.statusText} from ${url}`),
+            (err) => console.error(`[AIClient Fetch] Error:`, err)
+          );
+          return result;
         }
       });
     }
@@ -346,6 +354,7 @@ export class AIClient {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    console.log(`[AIClient] chat() called: provider=${this.config.provider}, model=${request.model ?? this.config.model}, hasOnStreamChunk=${!!request.onStreamChunk}, messages=${request.messages.length}`);
     // For EverFern Cloud, route vision requests using direct HTTP (not OpenAI SDK)
     if (this.config.provider === 'everfern') {
       // Check if this is a vision request (has images)
@@ -807,6 +816,7 @@ export class AIClient {
     }
 
     const isStreaming = !!req.onStreamChunk;
+    console.log(`[AIClient] _openAISDKChat called: provider=${this.config.provider}, model=${req.model ?? this.config.model}, isStreaming=${isStreaming}, messages=${req.messages.length}`);
     const messages = this._mapMessagesForOpenAI(req.messages);
 
     // Build request options
@@ -2338,6 +2348,7 @@ export class AIClient {
   async everfernCloudVisionGrounding(params: {
     screenshot: string;
     objective: string;
+    dom?: string;
     history?: string[];
     apiBaseUrl?: string;
     token?: string;
@@ -2346,14 +2357,15 @@ export class AIClient {
       throw new Error(`everfernCloudVisionGrounding() only works with provider='everfern', got '${this.config.provider}'`);
     }
 
-    const { screenshot, objective, history = [], apiBaseUrl = 'http://localhost:5000', token } = params;
+    const { screenshot, objective, dom = '', history = [], apiBaseUrl = 'http://localhost:5000', token } = params;
 
     if (!screenshot) {
       throw new Error('screenshot is required');
     }
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/tars/vision`, {
+      // Route to /api/navis/vision which supports DOM context
+      const response = await fetch(`${apiBaseUrl}/api/navis/vision`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2361,6 +2373,7 @@ export class AIClient {
         },
         body: JSON.stringify({
           screenshot,
+          dom,
           objective,
           history
         })

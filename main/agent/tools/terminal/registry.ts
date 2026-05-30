@@ -17,6 +17,7 @@ export class CommandRegistry {
   private static instance: CommandRegistry;
   private commands: Map<string, CommandInfo> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
+  private wslAvailable: boolean | null = null;
 
   private constructor() {}
 
@@ -25,6 +26,24 @@ export class CommandRegistry {
       CommandRegistry.instance = new CommandRegistry();
     }
     return CommandRegistry.instance;
+  }
+
+  private async checkWslAvailable(): Promise<boolean> {
+    if (this.wslAvailable !== null) {
+      console.log(`[CommandRegistry] checkWslAvailable: cached=${this.wslAvailable}`);
+      return this.wslAvailable;
+    }
+    try {
+      const { execSync } = require('child_process');
+      console.log('[CommandRegistry] checkWslAvailable: testing wsl.exe...');
+      execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 3000 });
+      this.wslAvailable = true;
+      console.log('[CommandRegistry] checkWslAvailable: wsl.exe OK');
+    } catch (err: any) {
+      console.warn(`[CommandRegistry] wsl.exe not found or not working, falling back to cmd... Error: ${err.message || err}`);
+      this.wslAvailable = false;
+    }
+    return this.wslAvailable;
   }
 
   public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), onData?: (data: string) => void): Promise<CommandInfo> {
@@ -56,17 +75,10 @@ export class CommandRegistry {
     let args = ['-c', command];
     let spawnOptions: any = { cwd, shell: false, env: { ...process.env } };
 
-    // Robust shell detection for Windows
+    // Robust shell detection for Windows (cached result)
     if (isWin) {
-      let isWslAvailable = false;
-      try {
-        // Test if wsl is available by running echo
-        const { execSync } = require('child_process');
-        execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 3000 });
-        isWslAvailable = true;
-      } catch (e) {
-        console.warn('[CommandRegistry] wsl.exe not found or not working, falling back to cmd...');
-      }
+      const isWslAvailable = await this.checkWslAvailable();
+      console.log(`[CommandRegistry] execute: Windows detected, WSL available=${isWslAvailable}, command="${command.slice(0, 100)}..."`);
 
       if (isWslAvailable) {
         shell = 'wsl';
@@ -76,6 +88,7 @@ export class CommandRegistry {
         args = ['--exec', 'bash', '-c', wslCommand];
         spawnOptions = { shell: true, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } }; // DO NOT pass Windows path as cwd to wsl spawnOptions, use shell for WSL
       } else {
+        console.log('[CommandRegistry] execute: WSL not available, using Host Fallback (CMD)');
         shell = 'cmd.exe';
         args = ['/c', command];
         spawnOptions.shell = true;

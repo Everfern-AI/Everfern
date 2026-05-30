@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── System ───────────────────────────────────────────────────────
   system: {
     getUsername:    () => ipcRenderer.invoke('system:get-username'),
+    getPlatform:    () => ipcRenderer.invoke('system:get-platform'),
     openFilePicker: (options?: any) => ipcRenderer.invoke('system:open-file-picker', options),
     openFolderPicker: () => ipcRenderer.invoke('system:open-folder-picker'),
     wipeAccount:    () => ipcRenderer.invoke('system:wipe-account'),
@@ -499,6 +500,7 @@ export type ElectronAPI = {
   };
   system: {
     getUsername:    () => Promise<string>;
+    getPlatform:    () => Promise<string>;
     openFilePicker: (options?: { filters?: { name: string; extensions: string[] }[] }) => Promise<{ path: string; name: string; content?: string; base64?: string; mimeType?: string; size?: number; success: boolean, error?: string } | null>;
     openFolderPicker: () => Promise<{ path: string; name: string; success: boolean; error?: string } | null>;
     wipeAccount:    () => Promise<{ success: boolean; error?: string }>;

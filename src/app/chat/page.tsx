@@ -2385,6 +2385,7 @@ export default function ChatPage() {
                         }
                     }
                 });
+                console.log('[Frontend handleSend] Sending stream request:', { model: selectedModel, providerType: currentM?.providerType || 'everfern', messageCount: newMessages.length, conversationId: activeConversationIdRef.current });
                 await api.stream({
                     messages: newMessages.map(m => {
                         if (m.attachments && m.attachments.length > 0 && m.role === 'user') {

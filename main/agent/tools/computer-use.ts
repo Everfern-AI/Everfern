@@ -79,6 +79,9 @@ const COMPUTER_USE_TOOL_SPEC = {
             "triple_click",
             "scroll",
             "hscroll",
+            "hold",
+            "release",
+            "drag",
             "wait",
             "terminate",
             "answer",
@@ -88,7 +91,7 @@ const COMPUTER_USE_TOOL_SPEC = {
         keys: {
           type: "array",
           items: { type: "string" },
-          description: "Keys used with action=key.",
+          description: "Keys used with action=key, hold, or release.",
         },
         text: {
           type: "string",
@@ -99,9 +102,18 @@ const COMPUTER_USE_TOOL_SPEC = {
           items: { type: "number" },
           description: "Target coordinate [x, y] for mouse actions.",
         },
+        start_coordinate: {
+          type: "array",
+          items: { type: "number" },
+          description: "Start coordinate [x, y] for drag action.",
+        },
         pixels: {
           type: "number",
           description: "Scroll amount for action=scroll or action=hscroll.",
+        },
+        hold_time: {
+          type: "number",
+          description: "Time in milliseconds to hold before releasing (optional).",
         },
         time: {
           type: "number",
@@ -253,6 +265,7 @@ class ComputerUseTool {
       key:             p => this.keyAction(p),
       hold:            p => this.holdAction(p),
       release:         p => this.releaseAction(p),
+      drag:            p => this.dragAction(p),
       wait:            p => this.waitAction(p),
       answer:          p => this.answer(p),
       terminate:       p => this.terminate(p),
@@ -663,22 +676,54 @@ class ComputerUseTool {
   private async holdAction(p: any) {
     if (!robot) throw new Error("robotjs unavailable");
     const keys: string[] = p.keys || [];
-    if (!keys.length) throw new Error("keys required for hold");
+    const holdTime = p.hold_time;
+
     const KEY_MAP: Record<string, string> = {
       control: "control", ctrl: "control", alt: "alt", shift: "shift",
       win: "command", command: "command"
     };
+
+    if (p.coordinate) {
+      const [x, y] = this.absoluteXy(p.coordinate);
+      robot.moveMouse(x, y);
+      robot.mouseToggle("down", "left");
+      console.log(`[Hold] Holding left mouse button at (${x}, ${y})`);
+      if (holdTime) {
+        await new Promise(r => setTimeout(r, holdTime));
+        robot.mouseToggle("up", "left");
+        return { status: "ok", detail: `Held left mouse button for ${holdTime}ms at (${x}, ${y})` };
+      }
+      return { status: "ok", detail: `Holding left mouse button at (${x}, ${y})` };
+    }
+
+    if (!keys.length) throw new Error("keys or coordinate required for hold");
+
     for (const k of keys) {
       const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
       robot.keyToggle(key, "down");
     }
+
+    if (holdTime) {
+      await new Promise(r => setTimeout(r, holdTime));
+      for (const k of keys) {
+        const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
+        robot.keyToggle(key, "up");
+      }
+      return { status: "ok", detail: `Held keys ${keys} for ${holdTime}ms` };
+    }
+
     return { status: "ok", detail: `Held keys ${keys}` };
   }
 
   private async releaseAction(p: any) {
     if (!robot) throw new Error("robotjs unavailable");
     const keys: string[] = p.keys || [];
-    if (!keys.length) throw new Error("keys required for release");
+
+    if (p.coordinate || (!keys.length && !p.keys)) {
+      robot.mouseToggle("up", "left");
+      return { status: "ok", detail: "Released left mouse button" };
+    }
+
     const KEY_MAP: Record<string, string> = {
       control: "control", ctrl: "control", alt: "alt", shift: "shift",
       win: "command", command: "command"
@@ -688,6 +733,32 @@ class ComputerUseTool {
       robot.keyToggle(key, "up");
     }
     return { status: "ok", detail: `Released keys ${keys}` };
+  }
+
+  private async dragAction(p: any) {
+    if (!robot) throw new Error("robotjs unavailable");
+    if (!p.start_coordinate || !p.coordinate) {
+      throw new Error("start_coordinate and coordinate (target) are required for drag");
+    }
+
+    const [sx, sy] = this.absoluteXy(p.start_coordinate);
+    const [ex, ey] = this.absoluteXy(p.coordinate);
+
+    console.log(`[Drag] Dragging from (${sx}, ${sy}) to (${ex}, ${ey})`);
+    
+    try {
+      robot.moveMouse(sx, sy);
+      robot.mouseToggle("down", "left");
+      await new Promise(r => setTimeout(r, 200)); // Small pause to ensure drag is registered
+      robot.dragMouse(ex, ey);
+      robot.mouseToggle("up", "left");
+      
+      return { status: "ok", detail: `Dragged from (${sx}, ${sy}) to (${ex}, ${ey})` };
+    } catch (err) {
+      console.error(`[Drag] Error:`, err);
+      robot.mouseToggle("up", "left"); // Safety release
+      throw err;
+    }
   }
 
   private async answer(p: any) {
@@ -1021,7 +1092,8 @@ class ComputerUseAgent {
     let step = 0;
     const history: any[] = [];
 
-    while (step < this.maxTurns) {
+    // Allow one extra step for a "force finish" synthesis if limit reached
+    while (step <= this.maxTurns) {
       if (this.aborted || globalAbortManager.streamAborted) break;
       step++;
 
@@ -1041,6 +1113,14 @@ class ComputerUseAgent {
         }
       } as any);
 
+      // ── FORCE FINISH PROMPT ──
+      const isFinalTurn = step > this.maxTurns;
+      let finalTurnPrompt = "";
+      if (isFinalTurn) {
+        console.log(`[ComputerUse] 🚨 Max turns (${this.maxTurns}) reached. FORCING FINAL ANSWER STEP.`);
+        finalTurnPrompt = `\n\n[URGENT: FINAL TURN]: You have reached the maximum turn limit. DO NOT take any more actions (no click, type, etc.). Instead, provide the FINAL ANSWER to the user now. Use the 'answer' action or simply state your final summary.`;
+      }
+
       let response: any;
       try {
         // [Independent TARS] No tools, no models, no system prompt.
@@ -1050,7 +1130,7 @@ class ComputerUseAgent {
             {
               role: "user",
               content: [
-                { type: "text", text: `Task: ${this.task}\nStep: ${step}` },
+                { type: "text", text: `Task: ${this.task}\nStep: ${step}${finalTurnPrompt}` },
                 { type: "image_url", image_url: { url: img } }
               ]
             }

@@ -22,8 +22,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
   useEffect(() => {
     const checkVM = async () => {
       try {
-        // Detect platform
-        const detectedPlatform = (window as any).electronAPI?.system?.getPlatform?.();
+        // Detect platform via IPC
+        const detectedPlatform = await (window as any).electronAPI?.system?.getPlatform?.();
         if (detectedPlatform) {
           setPlatform(detectedPlatform);
         } else {

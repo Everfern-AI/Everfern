@@ -14,18 +14,37 @@ interface FileViewerModalProps {
 export function MarkdownViewer({ content }: { content: string }) {
     const renderMarkdown = (text: string) => {
         const lines = text.split('\n');
+        const elements: React.ReactNode[] = [];
         let inCodeBlock = false;
         let codeBlockContent: string[] = [];
         let codeBlockLang = '';
 
-        return lines.map((line, i) => {
+        const formatInline = (text: string) => {
+            const codeBlocks: string[] = [];
+            let f = text.replace(/`(.*?)`/g, (_, content) => {
+                codeBlocks.push(`<code style="background-color: #f1f0ea; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #0891b2;">${content}</code>`);
+                return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+            });
+            f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            f = f.replace(/__(.*?)\__/g, '<strong>$1</strong>');
+            f = f.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            f = f.replace(/_(.*?)_/g, '<em>$1</em>');
+            codeBlocks.forEach((block, idx) => {
+                f = f.replace(`__CODE_BLOCK_${idx}__`, () => block);
+            });
+            return f;
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
             if (line.trim().startsWith('```')) {
                 if (inCodeBlock) {
                     inCodeBlock = false;
                     const code = codeBlockContent.join('\n');
                     codeBlockContent = [];
-                    return (
-                        <pre key={i} style={{ 
+                    elements.push(
+                        <pre key={`code-${i}`} style={{ 
                             backgroundColor: '#1e1e1a', 
                             color: '#f8f7f2', 
                             padding: 16, 
@@ -42,50 +61,96 @@ export function MarkdownViewer({ content }: { content: string }) {
                 } else {
                     inCodeBlock = true;
                     codeBlockLang = line.trim().substring(3);
-                    return null;
                 }
+                continue;
             }
 
             if (inCodeBlock) {
                 codeBlockContent.push(line);
-                return null;
+                continue;
             }
 
             if (line.startsWith('# ')) {
-                return <h1 key={i} style={{ fontSize: 24, fontWeight: 700, margin: '20px 0 10px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 6, color: '#111' }}>{line.substring(2)}</h1>;
+                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '20px 0 10px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 6, color: '#111' }}>{line.substring(2)}</h1>);
+                continue;
             }
             if (line.startsWith('## ')) {
-                return <h2 key={i} style={{ fontSize: 20, fontWeight: 600, margin: '18px 0 8px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 4, color: '#222' }}>{line.substring(3)}</h2>;
+                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '18px 0 8px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 4, color: '#222' }}>{line.substring(3)}</h2>);
+                continue;
             }
             if (line.startsWith('### ')) {
-                return <h3 key={i} style={{ fontSize: 16, fontWeight: 600, margin: '16px 0 6px 0', color: '#333' }}>{line.substring(4)}</h3>;
+                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '16px 0 6px 0', color: '#333' }}>{line.substring(4)}</h3>);
+                continue;
+            }
+            if (line.startsWith('#### ')) {
+                elements.push(<h4 key={`h4-${i}`} style={{ fontSize: 14, fontWeight: 700, margin: '14px 0 4px 0', color: '#444', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{line.substring(5)}</h4>);
+                continue;
+            }
+
+            // Table support: detect pipe table (line with | followed by separator line with ---)
+            if (line.includes('|') && i + 1 < lines.length && lines[i + 1].includes('---')) {
+                const headers = line.split('|').map(h => h.trim()).filter(Boolean);
+                i += 2; // skip header and separator rows
+                const rows: string[][] = [];
+                while (i < lines.length && lines[i].includes('|')) {
+                    const cells = lines[i].split('|').map(c => c.trim()).filter(Boolean);
+                    if (cells.length > 0) rows.push(cells);
+                    i++;
+                }
+                i--; // for loop will increment
+                elements.push(
+                    <div key={`table-${i}`} style={{ overflowX: 'auto', margin: '12px 0' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            <thead>
+                                <tr>
+                                    {headers.map((h, j) => (
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid rgba(0, 0, 0, 0.12)', textAlign: 'left', color: '#717171', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((row, ri) => (
+                                    <tr key={ri} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                                        {row.map((cell, ci) => (
+                                            <td key={ci} style={{ padding: '8px 12px', color: '#4a4846' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+                continue;
             }
 
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-                return <li key={i} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: '#333' }}>{line.trim().substring(2)}</li>;
+                const content = line.trim().substring(2);
+                elements.push(
+                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: '#333' }}
+                        dangerouslySetInnerHTML={{ __html: formatInline(content) }}
+                    />
+                );
+                continue;
             }
 
-            let formattedLine = line;
-            formattedLine = formattedLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            formattedLine = formattedLine.replace(/\*(.*?)\*/g, '<em>$1</em>');
-            formattedLine = formattedLine.replace(/`(.*?)`/g, '<code style="background-color: #f1f0ea; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #0891b2;">$1</code>');
-
             if (line.trim() === '---') {
-                return <hr key={i} style={{ border: 'none', borderTop: '1px solid #e8e6d9', margin: '20px 0' }} />;
+                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid #e8e6d9', margin: '20px 0' }} />);
+                continue;
             }
 
             if (line.trim() === '') {
-                return <div key={i} style={{ height: 10 }} />;
+                elements.push(<div key={`spacer-${i}`} style={{ height: 10 }} />);
+                continue;
             }
 
-            return (
-                <p 
-                    key={i} 
-                    style={{ fontSize: 14, lineHeight: 1.6, margin: '8px 0', color: '#333' }}
-                    dangerouslySetInnerHTML={{ __html: formattedLine }}
+            elements.push(
+                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.6, margin: '8px 0', color: '#333' }}
+                    dangerouslySetInnerHTML={{ __html: formatInline(line) }}
                 />
             );
-        });
+        }
+
+        return elements;
     };
 
     return (
@@ -97,8 +162,6 @@ export function MarkdownViewer({ content }: { content: string }) {
 
 // ── 2. EXCEL (XLSX/CSV) VIEWER ──────────────────────────────────────
 function ExcelViewer({ filename, content }: { filename: string; content: string | null }) {
-    const [activeTab, setActiveTab] = useState(0);
-    const sheets = ['Overview', 'Q3 Performance Metrics', 'Detailed Ledger'];
     
     let parsedData: string[][] = [];
     if (content && (filename.endsWith('.csv') || content.includes(','))) {
@@ -183,43 +246,6 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                 </table>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderTop: '1px solid #e8e6d9', backgroundColor: '#f4f3ec', overflowX: 'auto' }}>
-                {sheets.map((sheet, index) => {
-                    const isActive = activeTab === index;
-                    return (
-                        <button
-                            key={index}
-                            onClick={() => setActiveTab(index)}
-                            style={{
-                                padding: '6px 14px',
-                                borderRadius: 14,
-                                border: isActive ? '0.5px solid rgba(0,0,0,0.10)' : '0.5px solid transparent',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s',
-                                backgroundColor: isActive ? '#ececea' : 'transparent',
-                                color: isActive ? '#111' : '#666',
-                                boxShadow: isActive ? [
-                                    "inset 0 1px 0 rgba(255,255,255,0.72)",
-                                    "inset 0 -1px 0 rgba(0,0,0,0.06)",
-                                    "inset 1px 0 rgba(255,255,255,0.50)",
-                                    "inset -1px 0 rgba(0,0,0,0.04)",
-                                    "0 1px 3px rgba(0,0,0,0.07)",
-                                ].join(", ") : 'none'
-                            }}
-                            onMouseEnter={e => {
-                                if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.03)';
-                            }}
-                            onMouseLeave={e => {
-                                if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
-                            }}
-                        >
-                            {sheet}
-                        </button>
-                    );
-                })}
-            </div>
         </div>
     );
 }

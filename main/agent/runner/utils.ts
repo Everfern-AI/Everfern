@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { IntentType, TaskPhase } from './state';
 import { analyzeTask } from './task-decomposer';
+import { translateLinuxPathToHost, translateWindowsPathToLinux } from '../tools/linux-vm-executor';
 
 /**
  * Generate contextual redirect message based on intent type and task phase.
@@ -118,8 +119,16 @@ export function getContextualSuggestions(intent: string, failedTool: string): st
 }
 
 /**
+ * Host-side file tools that need Windows paths (not Linux paths)
+ */
+const HOST_FILE_TOOLS = new Set(['read', 'write', 'edit', 'grep', 'find', 'ls', 'view_file', 'create_file', 'delete_file']);
+
+/**
  * Validates and corrects paths in tool arguments, particularly handling
  * username truncation issues where paths like C:/Users/sini should be C:/Users/srini
+ *
+ * Provides Linux paths (/mnt/c/Users/...) in template variables by default.
+ * For host-side file tools (read/write/edit/grep/find/ls), translates back to Windows paths.
  */
 export function validateAndCorrectToolArgs(
   toolName: string,
@@ -129,17 +138,20 @@ export function validateAndCorrectToolArgs(
 ): Record<string, unknown> {
   const correctedArgs = { ...args };
   const ACTUAL_USER_PATH = homeDir.replace(/\\/g, '/');
+  const LINUX_USER_PATH = translateWindowsPathToLinux(ACTUAL_USER_PATH);
   const safeConvId = conversationId || 'default';
 
-  // Late Variable Expansion Targets
+  // Late Variable Expansion Targets — provides Linux paths for the AI
   const vars = {
     '{{SESSION_ID}}': safeConvId,
-    '{{EXEC_PATH}}': `${ACTUAL_USER_PATH}/.everfern/exec/${safeConvId}`,
-    '{{SITE_PATH}}': `${ACTUAL_USER_PATH}/.everfern/sites/${safeConvId}`,
-    '{{ARTIFACT_PATH}}': `${ACTUAL_USER_PATH}/.everfern/artifacts/${safeConvId}`,
-    '{{UPLOADS_PATH}}': `${ACTUAL_USER_PATH}/.everfern/attachments`,
-    '{{PLAN_PATH}}': `${ACTUAL_USER_PATH}/.everfern/chat/plan/${safeConvId}`
+    '{{EXEC_PATH}}': `${LINUX_USER_PATH}/.everfern/exec/${safeConvId}`,
+    '{{SITE_PATH}}': `${LINUX_USER_PATH}/.everfern/sites/${safeConvId}`,
+    '{{ARTIFACT_PATH}}': `${LINUX_USER_PATH}/.everfern/artifacts/${safeConvId}`,
+    '{{UPLOADS_PATH}}': `${LINUX_USER_PATH}/.everfern/attachments`,
+    '{{PLAN_PATH}}': `${LINUX_USER_PATH}/.everfern/chat/plan/${safeConvId}`
   };
+
+  const isHostTool = HOST_FILE_TOOLS.has(toolName);
 
   const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'CommandLine', 'Cwd', 'cwd'];
 
@@ -181,6 +193,11 @@ export function validateAndCorrectToolArgs(
             pathValue = repairedPath;
           }
         }
+      }
+
+      // For host-side tools, translate /mnt/c/ paths back to Windows paths
+      if (isHostTool && pathValue.includes('/mnt/')) {
+        pathValue = translateLinuxPathToHost(pathValue);
       }
 
       correctedArgs[key] = pathValue;

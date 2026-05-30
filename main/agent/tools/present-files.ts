@@ -116,6 +116,20 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
             console.warn(`[PresentFiles] Failed to copy WSL file via VM:`, err);
           }
         }
+      } else if (process.platform === 'darwin') {
+        // Check if the path is Docker-container-internal (e.g. /home/... or non-/host/Users/)
+        const isDockerInternal = f.path.startsWith('/') && !f.path.startsWith('/host/Users/') && !f.path.startsWith('/mnt/');
+        if (isDockerInternal) {
+          try {
+            fs.mkdirSync(artifactsDir, { recursive: true });
+            const { execSync } = require('child_process');
+            execSync(`docker cp everfern-ubuntu:"${f.path}" "${targetPath}"`, { timeout: 30000 });
+            fileCopied = true;
+            console.log(`[PresentFiles] Copied Docker file ${f.path} to host artifacts at ${targetPath}`);
+          } catch (err) {
+            console.warn(`[PresentFiles] Failed to copy Docker file via docker cp:`, err);
+          }
+        }
       }
 
       if (!fileCopied) {

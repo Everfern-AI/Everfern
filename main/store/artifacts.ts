@@ -61,7 +61,7 @@ function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
   for (const file of files) {
     if (file.startsWith('.')) continue;
     const ext = path.extname(file).toLowerCase();
-    const ALLOWED_EXTS = ['.html', '.htm', '.txt', '.md', '.json', '.pdf', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    const ALLOWED_EXTS = ['.html', '.htm', '.txt', '.md', '.json', '.pdf', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg', '.pptx', '.ppt'];
     if (!ALLOWED_EXTS.includes(ext)) continue;
 
     const filePath = path.join(dirPath, file);

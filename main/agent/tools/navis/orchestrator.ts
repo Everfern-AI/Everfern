@@ -40,6 +40,8 @@ export const NAVIS_DECISION_SCHEMA = {
         evaluation_previous_goal: { type: 'string', enum: ['Success', 'Failed', 'Unknown'] },
         memory: { type: 'string' },
         next_goal: { type: 'string' },
+        request_vision: { type: 'boolean', description: 'Set to true if you need a visual screenshot to proceed' },
+        is_form_interaction: { type: 'boolean', description: 'Set to true if interacting with complex forms, datepickers, or sliders' }
       },
       required: ['evaluation_previous_goal', 'memory', 'next_goal'],
       additionalProperties: false,
@@ -53,6 +55,8 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { go_back: { type: 'object', additionalProperties: false } }, required: ['go_back'], additionalProperties: false },
           { properties: { click_element: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'], additionalProperties: false } }, required: ['click_element'], additionalProperties: false },
           { properties: { input_text: { type: 'object', properties: { ref: { type: 'string' }, text: { type: 'string' } }, required: ['ref', 'text'], additionalProperties: false } }, required: ['input_text'], additionalProperties: false },
+          { properties: { hold_element: { type: 'object', properties: { ref: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, holdTimeMs: { type: 'number' } }, additionalProperties: false } }, required: ['hold_element'], additionalProperties: false },
+          { properties: { drag_element: { type: 'object', properties: { sourceRef: { type: 'string' }, targetRef: { type: 'string' }, targetX: { type: 'number' }, targetY: { type: 'number' } }, required: ['sourceRef'], additionalProperties: false } }, required: ['drag_element'], additionalProperties: false },
           { properties: { press_key: { type: 'object', properties: { ref: { type: 'string' }, key: { type: 'string' } }, required: ['key'], additionalProperties: false } }, required: ['press_key'], additionalProperties: false },
           { properties: { scroll_down: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
           { properties: { scroll_up: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
@@ -100,7 +104,8 @@ function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
 
 const { systemPrompt: NAVIS_SYSTEM_PROMPT, nextStepPrompt: NEXT_STEP_PROMPT } = loadNavisPrompts();
 
-const FALLBACK_SYSTEM_PROMPT = `You are Navis, an AI agent designed to automate browser tasks.
+const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
+Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
 Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
 Actions: go_to_url, go_back, click_element, input_text, scroll_down, scroll_up, wait, extract_content, open_tab, switch_tab, close_tab, done.`;
 
@@ -158,7 +163,7 @@ export class NavisOrchestrator {
   getEventLogger(): NavisLogger { return this.logger; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
-    const { task, maxSteps = 25, maxActionsPerStep = 8, headless = false, startUrl, useVision = false } = options;
+    const { task, maxSteps = 40, maxActionsPerStep = 8, headless = false, startUrl, useVision = false } = options;
 
     const runStart = Date.now();
     await this.session.launch({ headless, startUrl, logger: this.logger });
@@ -183,8 +188,10 @@ export class NavisOrchestrator {
       const maxAiRetries = 3;
       let lastGoal = '';
       let goalRepeatCount = 0;
+      let forceNextVision = false;
 
-      while (steps < maxSteps) {
+      // Allow one extra step for a "force finish" synthesis if limit reached
+      while (steps <= maxSteps) {
         if (globalAbortManager.streamAborted) {
             console.log('[Navis] 🛑 Abort signal detected in Navis orchestrator loop');
             this.logger.error('Execution aborted by user');
@@ -202,164 +209,57 @@ export class NavisOrchestrator {
         const pages = this.session.allPages;
         const tabCount = pages.length;
         const tabsStr = tabCount > 1
-          ? pages.map((p, i) => `  Tab ${i}: ${p.url()}`).join('\n')
+          ? pages.map((p, i) => ` Tab ${i}: ${p.url()}`).join('\n')
           : `1 tab open: ${url}`;
 
-        // ── Vision mode: screenshot + multimodal AI ──
+        // ── HYBRID CAPTURE: Always capture DOM, capture vision on-demand ──
         let screenshotB64: string | null = null;
         let elementsFormatted = '';
+        let semanticDomJson = '';
 
         const t2 = Date.now();
-        if (useVision) {
-          // Vision mode is PRIMARY - capture screenshot + element snapshot in parallel
+        
+        // Capture elements (DOM) always
+        snapshot = await captureInteractiveElements(page);
+        elementsFormatted = formatElementsForPrompt(snapshot.raw);
+        
+        // Semantic DOM is a lighter JSON representation of the page structure
+        semanticDomJson = JSON.stringify(snapshot.raw); // Or a specialized formatter
+
+        // Vision is triggered by: 
+        // 1. Orchestrator-level 'useVision' flag (global)
+        // 2. AI request 'request_vision' (step-by-step)
+        // 3. Form interaction detection
+        const shouldCaptureVision = useVision || forceNextVision;
+
+        if (shouldCaptureVision) {
           try {
-            // Annotate page with visual refs before taking the screenshot
             await this.session.annotateElements();
-
-            // Hide overlay before screenshot
             await page.evaluate(() => {
               const controls = (window as any).__navis_controls;
-              if (controls?.hideOverlay) {
-                controls.hideOverlay();
-              }
+              if (controls?.hideOverlay) controls.hideOverlay();
             }).catch(() => {});
 
-            const [screenshotBuffer, elemSnapshot] = await Promise.all([
-              page.screenshot({ type: 'jpeg', quality: 75, fullPage: false }).catch((err: any) => {
-                // Handle screenshot timeout specifically
-                if (err.message?.includes('Timeout') || err.message?.includes('timed out')) {
-                  throw new Error(`Screenshot capture timed out after 30 seconds. The page may be unresponsive or the screenshot operation is taking too long. Try simplifying the task or increasing the timeout.`);
-                }
-                throw err;
-              }),
-              captureInteractiveElements(page),
-            ]);
+            const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 75, fullPage: false });
 
-            // Restore overlay after screenshot
             await page.evaluate(() => {
               const controls = (window as any).__navis_controls;
-              if (controls?.showOverlay) {
-                controls.showOverlay();
-              }
+              if (controls?.showOverlay) controls.showOverlay();
             }).catch(() => {});
-
-            // Clean up annotations immediately after screenshot
             await this.session.removeAnnotations();
 
             screenshotB64 = screenshotBuffer.toString('base64');
-            snapshot = elemSnapshot;
-            elementsFormatted = formatElementsForPrompt(snapshot.raw);
-            lastUrl = url;
-
-            // Capture screenshot for the frontend UI (with the Navis overlay visible)
-            const uiScreenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60, fullPage: false }).catch(() => null);
-            const uiScreenshotB64 = uiScreenshotBuffer ? uiScreenshotBuffer.toString('base64') : screenshotB64;
-
-            console.log('[Navis] Vision mode: screenshot captured successfully');
-            this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
+            console.log('[Navis] On-demand vision: screenshot captured');
+            this.logger.screenshot(steps, maxSteps, screenshotB64);
           } catch (err) {
-            // Vision mode screenshot timeout - ask AI what happened and return gracefully
-            const errMsg = err instanceof Error ? err.message : String(err);
-            const isTimeout = errMsg.includes('timed out') || errMsg.includes('Timeout');
-
-            console.error('[Navis] Vision mode FAILED - screenshot capture error:', err);
-
-            // Ensure overlay is restored even on error
-            await page.evaluate(() => {
-              const controls = (window as any).__navis_controls;
-              if (controls?.showOverlay) {
-                controls.showOverlay();
-              }
-            }).catch(() => {});
+            console.warn('[Navis] On-demand vision capture failed:', err);
             await this.session.removeAnnotations().catch(() => {});
-
-            // If it's a timeout, ask the AI what happened and return gracefully
-            if (isTimeout) {
-              console.log('[Navis] Screenshot timeout detected - asking AI to assess current state and return to main agent');
-
-              try {
-                // Get current page state without screenshot
-                snapshot = await captureInteractiveElements(page);
-                elementsFormatted = formatElementsForPrompt(snapshot.raw);
-
-                // Ask AI to assess what happened
-                const assessmentPrompt = `The screenshot capture timed out after 30 seconds. The page at ${url} appears to be unresponsive or taking too long to render.
-
-Current page elements:
-${elementsFormatted}
-
-Please assess:
-1. What is the current state of the page?
-2. What was the last action attempted?
-3. What should the user know about what happened?
-
-Respond with a brief assessment (2-3 sentences) of the current situation.`;
-
-                const assessment = await this.aiClient.chat({
-                  messages: [
-                    { role: 'system', content: 'You are a browser automation assistant. Assess the current page state and explain what happened.' },
-                    { role: 'user', content: assessmentPrompt }
-                  ],
-                  model: this.model,
-                  temperature: 0.3,
-                }).catch(() => null);
-
-                const assessmentText = assessment
-                  ? (typeof assessment.content === 'string' ? assessment.content : JSON.stringify(assessment.content))
-                  : 'Screenshot capture timed out - page may be unresponsive.';
-
-                // Return gracefully with assessment
-                this.logger.taskComplete(false, steps, assessmentText);
-                return {
-                  success: false,
-                  output: `Screenshot Timeout: ${assessmentText}\n\nThe page at ${url} did not respond to screenshot capture within 30 seconds. This may indicate:\n- The page is loading complex content\n- JavaScript is running indefinitely\n- The server is slow or unresponsive\n\nPlease try again or simplify the task.`,
-                  steps,
-                };
-              } catch (assessmentErr) {
-                console.error('[Navis] Assessment failed:', assessmentErr);
-                // Return with basic timeout message
-                this.logger.taskComplete(false, steps, 'Screenshot timeout - page unresponsive');
-                return {
-                  success: false,
-                  output: `Screenshot Timeout: The page at ${url} did not respond to screenshot capture within 30 seconds. The page may be unresponsive or loading complex content. Please try again or simplify the task.`,
-                  steps,
-                };
-              }
-            }
-
-            // For non-timeout errors, throw to stop execution
-            throw new Error(`Vision mode failed: ${errMsg}`);
           }
         } else {
-          // ── DOM-only mode: aria snapshot ──
-          if (pendingSnapshot) {
-            const bgSnapshot = await pendingSnapshot;
-            if (bgSnapshot) {
-              snapshot = bgSnapshot;
-              lastUrl = url;
-            }
-            pendingSnapshot = null;
-          } else if (!snapshot || url !== lastUrl) {
-            snapshot = await captureInteractiveElements(page);
-            lastUrl = url;
-          }
-
-          if (!snapshot) {
-            snapshot = await captureInteractiveElements(page);
-            lastUrl = url;
-          }
-          elementsFormatted = formatElementsForPrompt(snapshot.raw);
-
-          // Capture lightweight screenshot for the UI in DOM-only mode
-          try {
-            const uiScreenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 60, timeout: 5000 }).catch(() => null);
-            if (uiScreenshotBuffer) {
-              const uiScreenshotB64 = uiScreenshotBuffer.toString('base64');
-              console.log('[Navis] DOM-only mode: screenshot captured successfully');
-              this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
-            }
-          } catch (err) {
-            console.warn('[Navis] UI screenshot failed in DOM-only mode:', err);
+          // Lightweight UI screenshot for the frontend (fast)
+          const uiScreenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 40, timeout: 2000 }).catch(() => null);
+          if (uiScreenshotBuffer) {
+            this.logger.screenshot(steps, maxSteps, uiScreenshotBuffer.toString('base64'));
           }
         }
         const t3 = Date.now();
@@ -367,7 +267,20 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
         // Stuck loop detection
         let stuckWarning = '';
         if (goalRepeatCount >= 2) {
-          stuckWarning = `\n[SELF-CORRECTION]: You have tried "${lastGoal}" ${goalRepeatCount} times without success. TRY A DIFFERENT STRATEGY (different search term, scroll elsewhere, or try a different website).`;
+          stuckWarning = `\n[CRITICAL]: You have attempted the same goal "${lastGoal}" ${goalRepeatCount} times. DO NOT REPEAT. If the current approach is failing, try a different search query, use a different navigation link, or navigate to a new site entirely. MOVE FASTER.`;
+        }
+
+        // ── FORCE FINISH PROMPT (One extra turn if limit reached) ──
+        const isFinalTurn = steps === maxSteps;
+        let finalTurnPrompt = '';
+        if (isFinalTurn) {
+          console.log(`[Navis] 🚨 Max steps (${maxSteps}) reached. FORCING FINAL ANSWER STEP.`);
+          finalTurnPrompt = `\n\n[URGENT: MISSION CRITICAL]: You have reached the maximum allowed steps. This is your ABSOLUTE LAST turn.
+DO NOT navigate, click, or type anything.
+YOU MUST PROVIDE THE FINAL ANSWER TO THE USER NOW.
+Review all information found in your "History" and the current page content.
+Call the 'done' action and provide your complete, exhaustive final report in the 'text' parameter.
+If you failed to find the info, report that clearly.`;
         }
 
         // Compress history after 8 steps to keep context small (Req 2.3)
@@ -382,6 +295,7 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
           `Elements:`,
           elementsFormatted,
           lastResult ? `Last: ${lastResult}${stuckWarning}` : '',
+          finalTurnPrompt,
         ].filter(Boolean).join('\n');
 
         const systemPrompt = NAVIS_SYSTEM_PROMPT
@@ -396,8 +310,8 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
         const t4 = Date.now();
         // When vision mode is enabled, ALWAYS use vision AI (no fallback to text-only)
         // When vision mode is disabled, use text-only AI
-        const decision = useVision
-          ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64!)
+        const decision: any = useVision || forceNextVision
+          ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64, history, elementsFormatted, semanticDomJson)
           : await this.callAI(systemPrompt, inputContext, nextPrompt);
         const t5 = Date.now();
 
@@ -421,6 +335,12 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
         } else {
           lastGoal = currentGoal;
           goalRepeatCount = 0;
+        }
+
+        // Handle on-demand vision requests for the NEXT step
+        forceNextVision = decision.current_state?.request_vision || decision.current_state?.is_form_interaction || false;
+        if (forceNextVision) {
+          console.log(`[Navis] AI requested vision/form mode for next step: ${decision.current_state?.request_vision ? 'vision_requested' : 'form_mode'}`);
         }
 
         this.logger.aiDecision(steps, maxSteps, currentGoal);
@@ -554,30 +474,29 @@ Respond with a brief assessment (2-3 sentences) of the current situation.`;
     lastResult: string,
     screenshotB64?: string
   ): Promise<string> {
-    // Keep last 15 steps of history for context, as that's where most recent discoveries are
-    const historyContext = history.slice(-15).join('\n');
+    // Keep last 20 steps of history for context
+    const historyContext = history.slice(-20).join('\n');
 
     const prompt = `You are Navis, a high-performance browser automation agent.
-You have reached your maximum step limit (25 steps) while working on a complex research task.
+You have reached your absolute turn limit while working on this task: "${task}"
 
-ORIGINAL RESEARCH GOAL: "${task}"
+YOUR MISSION: Synthesize everything you have learned into a FINAL RESPONSE for the user.
+DO NOT suggest more steps. DO NOT apologize. 
+Simply report every relevant fact, price, date, or piece of data you found in your history.
 
-Your mission is to provide an EXHAUSTIVE summary of every piece of relevant information you have discovered so far.
-Do not apologize for stopping; instead, provide value by reporting all data points, prices, airline schedules, links, or facts found in your history.
-
-CONVERSATION HISTORY (Last 15 steps):
+CONVERSATION HISTORY:
 ${historyContext}
 
-CURRENT PAGE URL: ${lastUrl}
-LAST ACTION ATTEMPTED: ${lastResult}
+CURRENT URL: ${lastUrl}
+LAST OBSERVATION: ${lastResult}
 
 REPORT FORMAT:
-- Summary of Findings: [High-level overview]
-- Extracted Data: [Specific list of items, prices, names, etc.]
-- Current Status: [Where you stopped and what was left to do]
+- FINAL SUMMARY: [The definitive answer to the user's request]
+- DATA POINTS: [Bullet list of specific information discovered]
+- STATUS: [What was accomplished and why you stopped]
 
-If you found nothing useful, state "No relevant data points were extracted before the limit was reached."
-Respond with the plain text report only.`;
+If no data was found, state "I was unable to find the requested information after exhaustive searching."
+Provide the report now.`;
 
     try {
       const messages: any[] = [{ role: 'system', content: 'You are a research synthesis expert.' }];
@@ -669,23 +588,30 @@ Respond with the plain text report only.`;
     systemPrompt: string,
     inputContext: string,
     nextStepPrompt: string,
-    screenshotB64: string,
+    screenshotB64: string | null,
+    history: string[] = [],
+    domContext: string = '',
+    semanticDomJson: string = '',
   ): Promise<any | null> {
     // Pick the right client: vision fallback if available, else main
     const client = this.visionClient || this.aiClient;
     const modelToUse = client.model;
 
-    // Check if using EverFern Cloud provider
-    if (client.provider === 'everfern') {
-      console.log('[Navis] Using EverFern Cloud vision grounding (BRAIN + HAND)');
-      return this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client);
-    }
+    try {
+      // Check if using EverFern Cloud provider
+      if (client.provider === 'everfern') {
+        console.log('[Navis] Using EverFern Cloud vision grounding (BRAIN + HAND)');
+        return await this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client, history, semanticDomJson || domContext);
+      }
 
-    // Calculate image size for detail level — smaller images use 'low' to save tokens
-    const imgSizeKB = Math.round((screenshotB64.length * 3) / 4 / 1024);
-    const detail = imgSizeKB > 200 ? 'high' : 'low';
+      // If no screenshot, use a transparent 1x1 pixel to satisfy multimodal APIs that require an image
+      const finalScreenshot = screenshotB64 || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
-    const visionInstructions = `
+      // Calculate image size for detail level — smaller images use 'low' to save tokens
+      const imgSizeKB = Math.round((finalScreenshot.length * 3) / 4 / 1024);
+      const detail = imgSizeKB > 200 ? 'high' : 'low';
+
+      const visionInstructions = `
 VISION MODE ACTIVE — You are seeing a screenshot of the browser page.
 
 VISUAL ANALYSIS INSTRUCTIONS:
@@ -707,7 +633,6 @@ VISUAL ANALYSIS INSTRUCTIONS:
 Use the [ref=eN] identifiers from the Elements list to perform actions.
 The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
 
-    try {
       const aiStart = Date.now();
       const visionLabel = client === this.visionClient ? 'vision-fallback' : 'main';
       console.log(`[Navis] 🖼️ Vision AI call (${visionLabel}, model: ${modelToUse}, img: ${imgSizeKB}KB, detail: ${detail})`);
@@ -721,7 +646,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:image/jpeg;base64,${screenshotB64}`,
+                  url: finalScreenshot.startsWith('data:') ? finalScreenshot : `data:image/jpeg;base64,${finalScreenshot}`,
                   detail: detail as 'low' | 'high',
                 },
               },
@@ -772,6 +697,11 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
         console.warn(`[Navis] ${timeoutMsg}`);
       }
 
+      if (err.message === 'FALLBACK_TO_TEXT_ONLY') {
+        console.log('[Navis] Intentional fallback to text-only AI (e.g. initial navigation)');
+        return this.callAI(systemPrompt, inputContext, nextStepPrompt);
+      }
+
       // If it's an image-related error, fall back gracefully to text-only
       const isVisionError = errMsg.toLowerCase().includes('image') ||
                             errMsg.toLowerCase().includes('vision') ||
@@ -794,65 +724,53 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
   private async callEverFernCloudVision(
     inputContext: string,
     nextStepPrompt: string,
-    screenshotB64: string,
+    screenshotB64: string | null,
     client: AIClient,
+    history: string[] = [],
+    domContext: string = '',
   ): Promise<any | null> {
     try {
       const aiStart = Date.now();
+
+      // If no screenshot, use a transparent 1x1 pixel to satisfy multimodal APIs that require an image
+      const finalScreenshot = screenshotB64 || 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
       // Extract task objective from input context
       const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
       const objective = taskMatch ? taskMatch[1] : inputContext.substring(0, 200);
 
-      // Check if we need to navigate to a website first
       const currentUrlMatch = inputContext.match(/Current Tab: (.+?) \(/);
       const currentUrl = currentUrlMatch ? currentUrlMatch[1] : '';
 
-      // If we're on about:blank or no relevant website, we should navigate first
-      // Don't use vision grounding for initial navigation
-      if (currentUrl.includes('about:blank') || currentUrl === '' ||
-          (!currentUrl.includes('google.com') && !currentUrl.includes('expedia') &&
-           !currentUrl.includes('kayak') && !currentUrl.includes('booking') &&
-           !currentUrl.includes('skyscanner') && !currentUrl.includes('momondo'))) {
-
-        console.log('[Navis] Not on a relevant website, should navigate first. Falling back to text-only AI.');
-        return null; // Fall back to text-only AI for navigation
+      // If we're on about:blank or no URL, fall back to text-only AI for initial navigation.
+      // Vision grounding (BRAIN+HAND) needs a rendered page to analyze.
+      if (currentUrl.includes('about:blank') || currentUrl === '') {
+        console.log('[Navis] At about:blank, falling back to text-only AI for initial navigation.');
+        // We throw a special error here that will be caught by callAIVision
+        // and trigger the fallback to this.callAI
+        throw new Error('FALLBACK_TO_TEXT_ONLY');
       }
 
-      console.log('[Navis] Sending to EverFern Cloud vision grounding...');
+      console.log('[Navis] Sending to EverFern Cloud vision grounding (BRAIN + HAND)...');
       console.log('[Navis] Current URL:', currentUrl);
       console.log('[Navis] Objective:', objective.substring(0, 100));
 
-      // Call EverFern Cloud API directly
+      // Call EverFern Cloud API directly using the specialized NAVIS vision endpoint
+      // This routes to Reasoner (BRAIN) and then Action (HAND) models with DOM context
       const baseUrl = client.getFullConfig().baseUrl || 'https://api.everfern.app/api';
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      
+      // Call /api/navis/vision instead of /api/tars/vision to include DOM context
+      const response = await fetch(`${baseUrl}/navis/vision`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(client.apiKey && { 'Authorization': `Bearer ${client.apiKey}` })
         },
         body: JSON.stringify({
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${screenshotB64}`,
-                    detail: 'low'
-                  }
-                },
-                {
-                  type: 'text',
-                  text: `${objective}\n\n${nextStepPrompt}`
-                }
-              ]
-            }
-          ],
-          model: client.model,
-          temperature: 0.1,
-          max_tokens: 4096
+          screenshot: `data:image/jpeg;base64,${finalScreenshot}`,
+          dom: domContext,
+          objective: objective,
+          history: history.slice(-8) // Keep last 8 steps for context
         })
       });
 
@@ -862,29 +780,27 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
       }
 
       const data = await response.json();
-      if (!data.choices || !data.choices[0]) {
-        throw new Error('No response from EverFern Cloud API');
+      if (!data.instruction) {
+        throw new Error('No instruction in response from EverFern Cloud');
       }
 
-      const content = data.choices[0].message.content;
+      const content = data.instruction;
+      const actions = data.actions || [];
       const elapsed = Date.now() - aiStart;
 
       console.log('[Navis] EverFern Cloud response received:', elapsed, 'ms');
       console.log('[Navis] Instruction:', content.substring(0, 150));
-
-      // Parse actions from the response
-      const actions = this._parseActionsFromContent(content);
+      console.log('[Navis] Actions:', actions);
 
       if (actions.length === 0) {
         console.warn('[Navis] No actions found in EverFern Cloud response, falling back to text-only AI');
         return null; // Fall back to text-only AI
       }
 
-      console.log('[Navis] Parsed', actions.length, 'actions:', actions);
-
       // Convert TARS actions to NAVIS decision format
       return this._convertTarsActionsToNavisDecision(actions, objective, content);
     } catch (err: any) {
+      if (err.message === 'FALLBACK_TO_TEXT_ONLY') throw err;
       console.error('[Navis] EverFern Cloud vision grounding failed:', err);
       this.logger.error(`EverFern Cloud vision failed: ${err.message}`);
       return null; // Fall back to text-only AI
@@ -892,18 +808,33 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
   }
 
   /**
-   * Parse action strings from TARS response content
-   * Format: "action1 | action2 | action3" or just "action1"
+   * Parse action strings from TARS response content using regex
+   * Format: "click(500,500) | type(hello)" or "I will click(500,500) then type(hello)"
    */
   private _parseActionsFromContent(content: string): string[] {
     if (!content) return [];
 
-    const actions = content
+    // Find all occurrences of action(args) or action() using regex
+    // This is the "computer use" way of extracting actions from text
+    const actionRegex = /([a-z0-9_]+)\s*\(([^)]*)\)/gi;
+    const actions: string[] = [];
+    let match;
+    
+    while ((match = actionRegex.exec(content)) !== null) {
+      actions.push(match[0]);
+    }
+
+    // If regex found actions, return them
+    if (actions.length > 0) {
+      console.log(`[Navis] Regex extracted ${actions.length} actions from content`);
+      return actions;
+    }
+
+    // Fallback to legacy pipe-delimited splitting
+    return content
       .split('|')
       .map(s => s.trim())
       .filter(s => s.length > 0 && !s.toLowerCase().includes('done'));
-
-    return actions;
   }
 
   /**
@@ -943,49 +874,75 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
 
   /**
    * Parse a single TARS action string into NAVIS action format
-   * Supported: click(x,y), type(text), press(key), scroll(direction)
+   * Supported: click(x,y), type(text), press(key), scroll(direction), double_click(x,y), right_click(x,y), move(x,y)
    */
   private _parseTarsAction(actionStr: string): any | null {
     actionStr = actionStr.trim();
 
-    // Normalize start_box format
-    const startBoxMatch = actionStr.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
-    if (startBoxMatch) {
-      actionStr = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
+    // 1. Coordinate-based actions: click(x,y), double_click(x,y), right_click(x,y), move(x,y)
+    // Supports both click(x,y) and click(x=123, y=456)
+    const coordMatch = actionStr.match(/(click|double_click|right_click|move|smooth|hover)\s*\((?:[^0-9-]*?(-?\d+)[^0-9-]*?,[^0-9-]*?(-?\d+)[^0-9-]*?)\)/i);
+    if (coordMatch) {
+      const type = coordMatch[1].toLowerCase();
+      const x = parseInt(coordMatch[2]);
+      const y = parseInt(coordMatch[3]);
+
+      switch (type) {
+        case 'double_click':
+          return { browser_double_click: { x, y } };
+        case 'right_click':
+          return { browser_right_click: { x, y } };
+        case 'move':
+        case 'smooth':
+        case 'hover':
+          return { browser_hover: { x, y } };
+        default:
+          return { browser_click: { x, y } };
+      }
     }
 
-    // Parse click(x,y) - convert to browser coordinates
-    const clickMatch = actionStr.match(/click\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)/i);
-    if (clickMatch) {
-      const x = parseInt(clickMatch[1]);
-      const y = parseInt(clickMatch[2]);
-
-      // For browser automation, we need to use Playwright's page.mouse.click
-      // which will be handled by a special action
-      return { browser_click: { x, y } };
+    // 2. Simple coordinate-less clicks: right_click(), left_click()
+    if (actionStr.match(/right_click\s*\(\s*\)/i)) {
+      return { browser_right_click: { x: 0, y: 0 } }; // Will use current pos if implemented
+    }
+    if (actionStr.match(/left_click\s*\(\s*\)/i) || actionStr.match(/click\s*\(\s*\)/i)) {
+      return { browser_click: { x: 0, y: 0 } };
     }
 
-    // Parse type(text)
+    // 3. Text input: type(text)
     const typeMatch = actionStr.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
     if (typeMatch) {
-      // For browser, we need to type at the current focused element
-      // This will be handled by a special action
       return { browser_type: { text: typeMatch[1] } };
     }
 
-    // Parse press(key)
-    const pressMatch = actionStr.match(/press\s*\(\s*([^)]+)\s*\)/i);
+    // 4. Keyboard shortcuts: ctrl_c(), ctrl_v(), ctrl_a(), win(), alt_tab(), alt_f4()
+    if (actionStr.match(/ctrl_c/i)) return { press_key: { key: 'Control+C' } };
+    if (actionStr.match(/ctrl_v/i)) return { press_key: { key: 'Control+V' } };
+    if (actionStr.match(/ctrl_a/i)) return { press_key: { key: 'Control+A' } };
+    if (actionStr.match(/ctrl_x/i)) return { press_key: { key: 'Control+X' } };
+    if (actionStr.match(/win/i)) return { press_key: { key: 'Meta' } };
+    if (actionStr.match(/alt_tab/i)) return { press_key: { key: 'Alt+Tab' } };
+    if (actionStr.match(/alt_f4/i)) return { press_key: { key: 'Alt+F4' } };
+
+    // 5. Single key press: press(key)
+    const pressMatch = actionStr.match(/press\s*\(\s*['\"]?([^'\"]+)['\"]?\s*\)/i);
     if (pressMatch) {
-      const key = pressMatch[1].trim().toLowerCase();
+      const key = pressMatch[1].trim();
       return { press_key: { key } };
     }
 
-    // Parse scroll(direction)
-    if (actionStr.match(/scroll.*down/i)) {
-      return { scroll_down: {} };
+    // 6. Scrolling: scroll(up/down)
+    const scrollMatch = actionStr.match(/scroll\s*\(\s*['\"]?(up|down)['\"]?\s*\)/i);
+    if (scrollMatch) {
+      return scrollMatch[1].toLowerCase() === 'up' ? { scroll_up: {} } : { scroll_down: {} };
     }
-    if (actionStr.match(/scroll.*up/i)) {
-      return { scroll_up: {} };
+    if (actionStr.match(/scroll.*down/i)) return { scroll_down: {} };
+    if (actionStr.match(/scroll.*up/i)) return { scroll_up: {} };
+
+    // 7. Cleanup/Meta actions
+    if (actionStr.match(/wait/i)) {
+      const msMatch = actionStr.match(/\d+/);
+      return { wait: { ms: msMatch ? parseInt(msMatch[0]) : 1000 } };
     }
 
     console.warn('[Navis] Unhandled TARS action:', actionStr);

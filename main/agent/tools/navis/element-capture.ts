@@ -88,7 +88,7 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
     const snapshot = await page.evaluate(() => {
       const vWidth = window.innerWidth;
       const vHeight = window.innerHeight;
-      const VIEWPORT_BUFFER = 500; // pixels
+      const MAX_ELEMENTS = 1000; // Hard limit to prevent token explosion
 
       // Select interactive elements + semantic context
       const selector = 'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="combobox"], h1, h2, h3, h4, h5, h6, [role="heading"]';
@@ -115,7 +115,8 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
 
           if (isScrollable) {
             const rect = el.getBoundingClientRect();
-            if (rect.width > 10 && rect.height > 10 && rect.top < vHeight && rect.bottom > 0) {
+            // Still only show scrollable containers that are somewhat visible or relevant
+            if (rect.width > 10 && rect.height > 10) {
               scrollRef++;
               const sref = `s${scrollRef}`;
               (el as HTMLElement).setAttribute('data-scroll-ref', sref);
@@ -130,15 +131,19 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'combobox']);
 
       for (let i = 0; i < elements.length; i++) {
+        if (ref >= MAX_ELEMENTS) break;
+
         const el = elements[i];
         const rect = el.getBoundingClientRect();
 
-        // Viewport filtering: include elements in viewport + buffer for context
-        // Optimization: Early exit if element is completely outside viewport
-        if (rect.bottom < -VIEWPORT_BUFFER || rect.top > vHeight + VIEWPORT_BUFFER ||
-            rect.right < -200 || rect.left > vWidth + 200) {
+        // Check if element is visible (opacity, display, visibility)
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
           continue;
         }
+
+        // We no longer filter by viewport to allow "whole page" analysis.
+        // Elements will be included regardless of their position on the page.
 
         const tagName = el.tagName;
         const role = el.getAttribute('role') || tagName.toLowerCase();
@@ -158,17 +163,20 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         }
 
         // Clean up name (remove extra whitespace/newlines)
-        // Optimization: Use simpler regex for common case
         name = name.replace(/\s+/g, ' ').trim();
         if (!name && !isInteractive) continue; // Skip empty non-interactive elements
+
+        // Add visibility hint
+        const isVisible = rect.top >= 0 && rect.left >= 0 && rect.bottom <= vHeight && rect.right <= vWidth;
+        const visibilityHint = isVisible ? '' : ' (off-screen)';
 
         if (isInteractive) {
           ref++;
           (el as HTMLElement).setAttribute('data-ref', `e${ref}`);
-          lines.push(`- ${role} "${name}" [ref=e${ref}]`);
+          lines.push(`- ${role} "${name}" [ref=e${ref}]${visibilityHint}`);
         } else {
           // Contextual heading/text
-          lines.push(`- ${role} "${name}"`);
+          lines.push(`- ${role} "${name}"${visibilityHint}`);
         }
       }
 
