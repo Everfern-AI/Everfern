@@ -8,17 +8,19 @@
     <a href="https://everfern.app">Website</a> •
     <a href="#quick-start">Quick Start</a> •
     <a href="#features">Features</a> •
+    <a href="https://discord.gg/wU2DuYSP7s">Discord</a> •
     <a href="https://github.com/CodenRust/Everfern/blob/main/LICENSE">MIT License</a>
   </p>
 
   <img src="https://img.shields.io/github/stars/CodenRust/Everfern?style=flat-square" />
   <img src="https://img.shields.io/github/license/CodenRust/Everfern?style=flat-square" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square" />
+  <a href="https://discord.gg/wU2DuYSP7s"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
 </div>
 
 ---
 
-https://github.com/CodenRust/Everfern/assets/demo/spotify-demo.mp4
+![EverFern Demo](public/demo/spotify-demo.gif)
 
 > EverFern opening Spotify and playing a song — no scripts, no automation code, just plain English.
 
