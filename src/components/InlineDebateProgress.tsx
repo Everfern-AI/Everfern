@@ -6,7 +6,7 @@ import {
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import type { DebateDisplayData } from '../types/debate-types';
+import type { DebateDisplayData } from '../app/chat/types/debate-types';
 
 interface InlineDebateProgressProps {
   debate: DebateDisplayData | null;

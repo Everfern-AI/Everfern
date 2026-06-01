@@ -24,6 +24,15 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
       runner.telemetry.transition('triage');
       runner.telemetry.info('Analyzing user intent and decomposing task requirements...');
 
+      // Add analyzing intent message as a narrative message (not part of chat context)
+      state.messages.push({
+        role: 'system',
+        content: 'Analyzing user intent and decomposing task...',
+        metadata: {
+          isNarrative: true,  // Mark as narrative so it won't be sent to AI
+          type: 'analyzing_intent'
+        }
+      } as any);
 
       const lastUserMsg = state.messages.filter(m => {
         const msg = m as any;

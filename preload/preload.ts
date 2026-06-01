@@ -99,10 +99,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDispatchActive: (cb: () => void) => {
       ipcRenderer.on('system:dispatch-active', () => cb());
     },
-    onDispatchCommand: (cb: (command: string) => void) => {
-      ipcRenderer.on('system:dispatch-command', (_evt, data: { command: string }) => cb(data.command));
+    onDispatchCommand: (cb: (command: string, model?: string) => void) => {
+      ipcRenderer.on('system:dispatch-command', (_evt, data: { command: string; model?: string }) => cb(data.command, data.model));
     },
     broadcastDispatch: (event: string, data: any) => ipcRenderer.invoke('system:broadcast-dispatch', { event, data }),
+    ensureAttachmentInVm: (filePath: string) => ipcRenderer.invoke('system:ensure-attachment-in-vm', filePath),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -319,7 +320,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:tool-call-start');
       ipcRenderer.removeAllListeners('acp:tool-call-chunk');
       ipcRenderer.removeAllListeners('acp:tool-call-complete');
-      ipcRenderer.removeAllListeners('acp:local-execution-request');
+      // NOTE: acp:local-execution-request is intentionally NOT removed here.
+      // The local permission card listener is managed by its own lifecycle
+      // in page.tsx via a useEffect. Removing it here would kill the listener
+      // during mid-stream resets and prevent the permission card from appearing.
       // NOTE: debate:stream is NOT removed here — it's managed by useDebateStream's
       // own lifecycle (removeDebateStreamListener). Removing it here would kill the
       // debate listener during mid-stream resets and prevent the debate UI from showing.
@@ -336,10 +340,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Chat History ───────────────────────────────────────────────
   history: {
-    list:   ()                => ipcRenderer.invoke('history:list'),
-    load:   (id: string)     => ipcRenderer.invoke('history:load', id),
-    save:   (conv: any)      => ipcRenderer.invoke('history:save', conv),
-    delete: (id: string)     => ipcRenderer.invoke('history:delete', id),
+    list:       ()                => ipcRenderer.invoke('history:list'),
+    load:       (id: string)     => ipcRenderer.invoke('history:load', id),
+    save:       (conv: any)      => ipcRenderer.invoke('history:save', conv),
+    delete:     (id: string)     => ipcRenderer.invoke('history:delete', id),
+    search:     (query: string, limit?: number) => ipcRenderer.invoke('history:search', query, limit),
+    backfill:   ()                => ipcRenderer.invoke('history:backfill'),
+    getVectors: (limit?: number)  => ipcRenderer.invoke('history:get-vectors', limit),
     // HITL persistence — check for pending approval requests on load
     hitl: {
       getPending: (conversationId: string) => ipcRenderer.invoke('hitl:get-pending', conversationId),
@@ -416,6 +423,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     indexMessage: (id: string, chatId: string, role: string, content: string, createdAt: number) =>
       ipcRenderer.invoke('vectors:index-message', id, chatId, role, content, createdAt),
     refreshConfig: () => ipcRenderer.invoke('vectors:refresh-config'),
+  },
+
+  // ── Database ────────────────────────────────────────────────────────
+  db: {
+    checkConnection: () => ipcRenderer.invoke('db:checkConnection'),
+    checkVectors: () => ipcRenderer.invoke('db:checkVectors'),
   },
 
   // ── Debug ──────────────────────────────────────────────────────────
@@ -525,8 +538,9 @@ export type ElectronAPI = {
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => Promise<{ success: boolean; session?: any; error?: string }>;
     stopDispatch:   () => Promise<{ success: boolean; error?: string }>;
     onDispatchActive: (cb: () => void) => void;
-    onDispatchCommand: (cb: (command: string) => void) => void;
+    onDispatchCommand: (cb: (command: string, model?: string) => void) => void;
     broadcastDispatch: (event: string, data: any) => Promise<void>;
+    ensureAttachmentInVm: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
@@ -606,10 +620,13 @@ export type ElectronAPI = {
     delete: (id: string)        => Promise<{ success: boolean; error?: string }>;
   };
   history: {
-    list:   () => Promise<any[]>;
-    load:   (id: string) => Promise<any>;
-    save:   (conv: any)  => Promise<{ success: boolean; error?: string }>;
-    delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+    list:       () => Promise<any[]>;
+    load:       (id: string) => Promise<any>;
+    save:       (conv: any)  => Promise<{ success: boolean; error?: string }>;
+    delete:     (id: string) => Promise<{ success: boolean; error?: string }>;
+    search:     (query: string, limit?: number) => Promise<any[]>;
+    backfill:   () => Promise<{ success: boolean; count?: number; error?: string; message?: string }>;
+    getVectors: (limit?: number) => Promise<any[]>;
     hitl: {
       getPending: (conversationId: string) => Promise<any | null>;
       resolve:    (conversationId: string, requestId: string, approved: boolean) => Promise<{ success: boolean; error?: string }>;
@@ -665,6 +682,10 @@ export type ElectronAPI = {
     stats: () => Promise<{ messageCount: number; storageSize: number; dimensionCount: number | null }>;
     indexMessage: (id: string, chatId: string, role: string, content: string, createdAt: number) => Promise<{ success: boolean; error?: string }>;
     refreshConfig: () => Promise<{ success: boolean; error?: string }>;
+  };
+  db: {
+    checkConnection: () => Promise<{ success: boolean; details?: string; error?: string }>;
+    checkVectors: () => Promise<{ success: boolean; count?: number; details?: string; error?: string }>;
   };
   skills: {
     listCustom: () => Promise<{ name: string; description: string; path: string }[]>;

@@ -498,6 +498,17 @@ export default function SetupPage() {
                 apiKey: cloudToken
             };
         }
+        // Ensure main apiKey is set for everfern engine (token lives in VLM config)
+        if (engine === "everfern" && !config.apiKey) {
+            try {
+                const stored = localStorage.getItem("everfern_cloud_session");
+                if (stored) {
+                    const session = JSON.parse(stored);
+                    config.apiKey = session.accessToken;
+                }
+            } catch {}
+        }
+
         if ((window as any).electronAPI?.saveConfig) {
             await (window as any).electronAPI.saveConfig(config);
         }

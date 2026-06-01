@@ -33,6 +33,7 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
     'deepseek-v4-pro',
   ],
   minimax: [
+    'MiniMax-M3',
     'minimax-m2.7',
     'minimax-m2.5',
   ],
@@ -307,6 +308,7 @@ export function formatModelName(id: string): string {
     'deepseek-v4-pro': 'DeepSeek V4 Pro',
     'minimax-m2.7': 'MiniMax M2.7',
     'minimax-m2.5': 'MiniMax M2.5',
+    'MiniMax-M3': 'MiniMax 3',
     'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
     'gemini-3.1-flash-preview': 'Gemini 3.1 Flash',
     'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite',

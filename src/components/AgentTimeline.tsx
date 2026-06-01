@@ -113,6 +113,9 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
     if (n.includes("edit") || n.includes("update") || n.includes("modify") || n.includes("patch"))
         return { icon: <PencilSquareIcon style={s} />, shape: "square" };
 
+    if (n.includes("system_files") || n.includes("folder") || n.includes("directory"))
+        return { icon: <FolderOpenIcon style={s} />, shape: "square" };
+
     if (n.includes("code") || n.includes("python") || n.includes("js"))
         return { icon: <CodeBracketIcon style={s} />, shape: "square" };
 
@@ -377,7 +380,11 @@ const SubAgentProgressTimeline = ({
 const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }) => {
     const isRunning = tc.status === "running";
     const isDone = tc.status === "done";
-    const label = tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool");
+    const isSkill = tc.toolName === 'skill' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill';
+    const skillName = tc.args?.name as string | undefined;
+    const label = isSkill
+        ? `Skill - ${skillName || tc.label || tc.toolName?.replace(/_/g, " ") || "Tool"}`
+        : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool"));
     const { icon, shape } = getToolMeta(tc.toolName);
 
     const desc = (() => {
@@ -390,6 +397,9 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
         if (tc.description) {
             const trimmed = tc.description.trim();
             if (trimmed.startsWith("{") && (trimmed.includes('"messages"') || trimmed.includes('"tool_calls"'))) {
+                return label;
+            }
+            if (trimmed.startsWith("<tool_call>")) {
                 return label;
             }
             return tc.description;

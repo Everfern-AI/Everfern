@@ -5,7 +5,7 @@ import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { formatDuration } from '@/lib/formatDuration';
 import { useAutoCollapse } from '@/hooks/use-auto-collapse';
 import { MarkdownRenderer } from './MarkdownComponents';
-import type { ToolCallDisplay } from '../types/index';
+import type { ToolCallDisplay } from '../app/chat/types/index';
 
 // ── Reasoning Branch Component ─────────────────────────────────────────────────
 export const ReasoningBranch = ({

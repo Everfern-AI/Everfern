@@ -17,7 +17,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { TaskSection } from './TaskSection';
 import { TaskToolMapper } from './TaskToolMapper';
 import type { TimelineRendererProps } from './types';
-import type { DecomposedTask } from '@/main/agent/runner/state';
+import type { DecomposedTask } from '../../../main/agent/runner/state';
 
 /**
  * TimelineRenderer Component
@@ -55,14 +55,14 @@ export const TimelineRenderer: React.FC<TimelineRendererProps> = ({
 
       // Initialize all tasks as pending
       const statuses = new Map<string, 'pending' | 'in-progress' | 'completed' | 'failed'>();
-      decomposedTask.steps.forEach((step) => {
+      decomposedTask.steps.forEach((step: any) => {
         statuses.set(step.id, 'pending');
       });
       setTaskStatuses(statuses);
 
       // Initialize expanded tasks (all expanded by default)
       const expanded = new Set<string>();
-      decomposedTask.steps.forEach((step) => {
+      decomposedTask.steps.forEach((step: any) => {
         expanded.add(step.id);
       });
       setExpandedTasks(expanded);
@@ -158,7 +158,7 @@ export const TimelineRenderer: React.FC<TimelineRendererProps> = ({
         className="flex flex-col gap-3"
         data-testid="timeline-renderer-hierarchical"
       >
-        {decomposedTask!.steps.map((step, index) => {
+        {decomposedTask!.steps.map((step: any, index: number) => {
           const taskToolCalls = mapper
             .getToolCallsForStep(step.id)
             .map((toolCallId) => toolCalls.find((tc) => tc.id === toolCallId))

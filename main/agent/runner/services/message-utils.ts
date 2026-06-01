@@ -40,8 +40,20 @@ export function normalizeMessage(m: any): ChatMessage {
 }
 
 /**
- * Normalizes an array of messages.
+ * Normalizes an array of messages, filtering out narrative messages.
+ * Narrative messages are system messages marked with isNarrative=true
+ * and should not be sent to the AI model.
  */
 export function normalizeMessages(messages: any[]): ChatMessage[] {
-  return messages.map(normalizeMessage);
+  return messages
+    .filter(m => {
+      // Filter out narrative messages - they're for UI display only
+      const metadata = m.metadata || (m as any)._metadata;
+      if (metadata?.isNarrative === true) {
+        console.debug(`[MessageUtils] Filtering out narrative message: ${m.content?.substring(0, 50)}`);
+        return false;
+      }
+      return true;
+    })
+    .map(normalizeMessage);
 }

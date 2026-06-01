@@ -5,7 +5,7 @@
  * narrative UI feature, including task-to-tool mappings, component props, and state management.
  */
 
-import type { DecomposedTask, TaskStep } from '@/main/agent/runner/state';
+import type { DecomposedTask, TaskStep } from '../../../main/agent/runner/state';
 
 /**
  * Display representation of a tool call in the UI
@@ -24,7 +24,7 @@ export interface ToolCallDisplay {
   args?: Record<string, unknown>;
   displayName?: string;
   description?: string;
-  phase?: string;
+  phase?: 'triage' | 'planning' | 'execution' | 'validation' | 'completion';
   thought?: string;
 }
 

@@ -25,6 +25,8 @@ export default function SearchPopup({
     activeConversationId: string | null;
 }) {
     const [searchValue, setSearchValue] = useState('');
+    const [vectorResults, setVectorResults] = useState<ConversationSummary[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -52,13 +54,46 @@ export default function SearchPopup({
         return groups;
     };
 
+    useEffect(() => {
+        if (!searchValue || searchValue.trim().length < 2) {
+            setVectorResults([]);
+            setIsSearching(false);
+            return;
+        }
+
+        setIsSearching(true);
+        const timer = setTimeout(async () => {
+            try {
+                if (typeof (window as any).electronAPI?.history?.search === 'function') {
+                    const results = await (window as any).electronAPI.history.search(searchValue, 10);
+                    setVectorResults(results || []);
+                }
+            } catch (err) {
+                console.error('Vector search failed:', err);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [searchValue]);
+
     // Filter and group conversations
-    const filtered = history.filter(c => {
+    const localFiltered = history.filter(c => {
         const title = c.title || 'Untitled Chat';
         return title.toLowerCase().includes(searchValue.toLowerCase());
     });
 
-    const groupedChats = groupByDate(filtered);
+    const combinedResults = [...localFiltered];
+    if (searchValue.length > 0) {
+        vectorResults.forEach(vr => {
+            if (!combinedResults.some(cr => cr.id === vr.id)) {
+                combinedResults.push(vr);
+            }
+        });
+    }
+
+    const groupedChats = groupByDate(combinedResults);
 
     const handleSelectChat = (id: string) => {
         onSelectConversation(id);
@@ -181,6 +216,24 @@ export default function SearchPopup({
                                     <XMarkIcon width={18} height={18} />
                                 </button>
                             </div>
+                            
+                            {/* Search indicator */}
+                            {isSearching && (
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    marginTop: 8,
+                                    fontSize: 12,
+                                    color: '#8a8886'
+                                }}>
+                                    <svg className="animate-spin" style={{ marginRight: 6, height: 12, width: 12 }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Scanning vectors...
+                                </div>
+                            )}
                         </div>
 
                         {/* Chat List */}

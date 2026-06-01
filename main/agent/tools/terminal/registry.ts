@@ -18,6 +18,7 @@ export class CommandRegistry {
   private commands: Map<string, CommandInfo> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
   private wslAvailable: boolean | null = null;
+  private wslCmdName: string = 'wsl.exe';
 
   private constructor() {}
 
@@ -28,20 +29,51 @@ export class CommandRegistry {
     return CommandRegistry.instance;
   }
 
+  private lastWslCheck: number = 0;
+  private readonly WSL_RECHECK_MS: number = 30000; // Retry WSL after 30 seconds if previously unavailable
+
   private async checkWslAvailable(): Promise<boolean> {
-    if (this.wslAvailable !== null) {
-      console.log(`[CommandRegistry] checkWslAvailable: cached=${this.wslAvailable}`);
+    if (this.wslAvailable !== null && this.wslAvailable) {
       return this.wslAvailable;
+    }
+    // If cached as unavailable, retry after cooldown period
+    if (this.wslAvailable === false && Date.now() - this.lastWslCheck < this.WSL_RECHECK_MS) {
+      console.log(`[CommandRegistry] checkWslAvailable: cached=false, skipping retry (cooldown ${this.WSL_RECHECK_MS}ms)`);
+      return false;
     }
     try {
       const { execSync } = require('child_process');
-      console.log('[CommandRegistry] checkWslAvailable: testing wsl.exe...');
-      execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 3000 });
+      this.wslCmdName = (() => {
+        try {
+          execSync('where wsl.exe', { stdio: 'ignore', timeout: 3000 });
+          return 'wsl.exe';
+        } catch {
+          return 'wsl';
+        }
+      })();
+      this.lastWslCheck = Date.now();
+      console.log(`[CommandRegistry] checkWslAvailable: testing ${this.wslCmdName} with 15s timeout...`);
+      execSync(`${this.wslCmdName} -e echo ok`, { stdio: 'ignore', timeout: 15000 });
       this.wslAvailable = true;
-      console.log('[CommandRegistry] checkWslAvailable: wsl.exe OK');
+      console.log(`[CommandRegistry] checkWslAvailable: ${this.wslCmdName} OK`);
     } catch (err: any) {
-      console.warn(`[CommandRegistry] wsl.exe not found or not working, falling back to cmd... Error: ${err.message || err}`);
-      this.wslAvailable = false;
+      // First attempt failed. Try ensureWSLSetup as second chance — it confirms WSL works
+      // by running `command -v python3` inside WSL, which is more lenient if WSL is slow.
+      // Wrap with 30s timeout to avoid blocking on apt install (180s) — if setup is slow,
+      // it continues in background and next command retries.
+      console.warn(`[CommandRegistry] First WSL check failed: ${err.message || err}. Trying ensureWSLSetup as second chance...`);
+      try {
+        const { ensureWSLSetup } = require('../linux-vm-executor');
+        await Promise.race([
+          ensureWSLSetup(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('ensureWSLSetup timed out after 30s')), 30000))
+        ]);
+        this.wslAvailable = true;
+        console.log(`[CommandRegistry] checkWslAvailable: ${this.wslCmdName} OK (via ensureWSLSetup)`);
+      } catch (err2: any) {
+        console.warn(`[CommandRegistry] wsl.exe not found or not working, falling back to cmd... Error: ${err2.message || err2}`);
+        this.wslAvailable = false;
+      }
     }
     return this.wslAvailable;
   }
@@ -81,12 +113,13 @@ export class CommandRegistry {
       console.log(`[CommandRegistry] execute: Windows detected, WSL available=${isWslAvailable}, command="${command.slice(0, 100)}..."`);
 
       if (isWslAvailable) {
-        shell = 'wsl';
+        shell = this.wslCmdName;
+        console.log(`[CommandRegistry] Using WSL command: ${shell}`);
         const { translateWindowsPathToLinux } = require('../linux-vm-executor');
         const linuxCwd = translateWindowsPathToLinux(cwd);
         const wslCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
         args = ['--exec', 'bash', '-c', wslCommand];
-        spawnOptions = { shell: true, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } }; // DO NOT pass Windows path as cwd to wsl spawnOptions, use shell for WSL
+        spawnOptions = { cwd, shell: false, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } };
       } else {
         console.log('[CommandRegistry] execute: WSL not available, using Host Fallback (CMD)');
         shell = 'cmd.exe';
@@ -97,7 +130,7 @@ export class CommandRegistry {
 
     // Create a detailed debug header to prepend to output
     const environmentType = process.platform === 'win32'
-      ? (shell === 'wsl' ? 'WSL (Ubuntu)' : 'Host Fallback (CMD)')
+      ? (shell === 'wsl' || shell === 'wsl.exe' ? 'WSL (Ubuntu)' : 'Host Fallback (CMD)')
       : process.platform === 'darwin'
       ? 'Host (macOS)'
       : 'Native Linux';

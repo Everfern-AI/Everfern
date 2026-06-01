@@ -84,7 +84,8 @@ export const buildGraph = (
 
       const toolSummary = state.pendingToolCalls?.map(formatToolCallSummary).join('\n') || 'No tools pending';
 
-      const reasoning = 'High-risk operation detected';
+      const hitlRationale = state.completionSignal?.hitlRationale || 'High-risk operation detected';
+      const reasoning = hitlRationale;
       const requestId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
 

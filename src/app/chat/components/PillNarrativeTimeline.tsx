@@ -12,7 +12,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { NarrativeTimeline, Task, ToolPill, ExecutionStatus } from '../../../main/agent/runner/pill-narrative/types';
+import type { NarrativeTimeline, Task, ToolPill, ExecutionStatus } from '../../../../main/agent/runner/pill-narrative/types';
 import ToolDetailSidePanel from './ToolDetailSidePanel';
 
 /**

@@ -122,6 +122,7 @@ export const GraphState = Annotation.Root({
   completionSignal: Annotation<{
     reason: 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
     explanation: string;
+    hitlRationale?: string;
   } | null>(),
   // Routing decision — brain sets this to route to specialized agents
   routingDecision: Annotation<{

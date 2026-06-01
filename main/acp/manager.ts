@@ -74,6 +74,11 @@ export class ACPManager {
           }
         }
 
+        // Fallback: if main provider key is empty but VLM has a key for the same provider, use VLM key
+        if (!actualApiKey && vlmConfig?.apiKey && vlmConfig.provider === stored.provider) {
+          actualApiKey = vlmConfig.apiKey;
+        }
+
         this.setProvider({
           provider: stored.provider as ProviderType,
           apiKey:   actualApiKey,

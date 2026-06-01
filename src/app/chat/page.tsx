@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     PlusIcon,
@@ -97,6 +98,7 @@ import { PlanReviewCard, AgentWorkspaceCards } from './components/PlanComponents
 import { HitlApprovalForm, UserQuestionForm } from './components/FormComponents';
 import { PlanApprovalBanner } from './components/PlanApprovalBanner';
 import { ReasoningBranch, ReasoningPane, ProgressStepsIcon, ContextGridIcon, PaneSection, ReasoningBlock } from './components/ReasoningComponents';
+import { HealthCheckScreen } from './components/HealthCheckScreen';
 
 // Utils and types
 import { resolveToolDisplay } from "./tool-labels";
@@ -174,11 +176,13 @@ function scrubOrchestratorNoise(text: string): string {
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
 export default function ChatPage() {
+    const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [folderContexts, setFolderContexts] = useState<FolderContext[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const bypassLoadingRef = useRef(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [folderHover, setFolderHover] = useState(false);
     const [tooltipState, setTooltipState] = useState<{ visible: boolean; x: number; y: number; content: string }>({ visible: false, x: 0, y: 0, content: "" });
@@ -195,6 +199,11 @@ export default function ChatPage() {
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+    const availableModelsRef = useRef<ModelOption[]>([]);
+    // Keep the ref updated so closures (dispatch command handler) always see the latest models
+    useEffect(() => { availableModelsRef.current = availableModels; }, [availableModels]);
+    const messagesRef = useRef<Message[]>([]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
     const [showModelSelector, setShowModelSelector] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
@@ -240,6 +249,22 @@ export default function ChatPage() {
         output?: string;
         args?: any;
     } | null>(null);
+
+    // Health Check State - only show on initial app load, not on refresh
+    const [showHealthCheck, setShowHealthCheck] = useState(false);
+    const [healthCheckComplete, setHealthCheckComplete] = useState(false);
+
+    useEffect(() => {
+        // Only run on client side
+        if (typeof window !== 'undefined') {
+            const healthCheckDone = sessionStorage.getItem('healthCheckCompleted');
+            if (!healthCheckDone) {
+                setShowHealthCheck(true);
+            } else {
+                setHealthCheckComplete(true);
+            }
+        }
+    }, []);
 
     // Tool Detail Side Panel State
     const [selectedToolCall, setSelectedToolCall] = useState<any | null>(null);
@@ -296,7 +321,7 @@ export default function ChatPage() {
                 base64Image: tc.base64Image || tc.data?.base64Image,
                 results: tc.data?.results,
             },
-            agentName: tc.displayName || 'navis',
+            agentName: tc.displayName || 'Fern',
         };
         setSelectedToolCall(mappedToolCall);
         setIsToolDetailOpen(true);
@@ -359,10 +384,10 @@ export default function ChatPage() {
         const api = (window as any).electronAPI;
         if (!api?.system?.onDispatchCommand) return;
 
-        api.system.onDispatchCommand((command: string) => {
-            console.log('[Dispatch] Received command from web:', command);
+        api.system.onDispatchCommand((command: string, model?: string) => {
+            console.log('[Dispatch] Received command from web:', command, model ? `(model: ${model})` : '');
             if (!command?.trim()) return;
-            
+
             if (command.startsWith('[HITL_APPROVED]')) {
                  handleHitlApproval(true, true);
                  return;
@@ -374,9 +399,27 @@ export default function ChatPage() {
             if (command.startsWith('[INTERNAL_SYSTEM_RESPONSE_QUESTION_ID_')) {
                  const idMatch = command.match(/QUESTION_ID_([^_]+)_IDX_(\d+)/);
                  if (idMatch) {
-                     handleQuestionSubmit(idMatch[1], parseInt(idMatch[2], 10));
+                     const questionId = idMatch[1];
+                     const optionIndex = parseInt(idMatch[2], 10);
+                     const qIdx = parseInt(questionId, 10);
+                     const questions = stateForBroadcastRef.current.activeUserQuestions;
+                     const questionObj = questions[qIdx] || questions[0];
+                     if (questionObj) {
+                         const optionObj = questionObj.options[optionIndex];
+                         if (optionObj) {
+                             const answers: Record<string, string[]> = {
+                                 [questionObj.question]: [optionObj.value]
+                             };
+                             handleQuestionSubmit(answers);
+                         }
+                     }
                  }
                  return;
+            }
+
+            // If a model override came from the web, apply it
+            if (model && availableModelsRef.current.some(m => m.id === model)) {
+                setSelectedModel(model);
             }
 
             // Set the input value and immediately trigger a send
@@ -444,9 +487,15 @@ export default function ChatPage() {
   if (!dispatchBroadcastRef.current || !isDispatchReady) return;
   dispatchBroadcastRef.current('desktop_info', {
     selectedModel,
-    availableModels: availableModels.map(m => ({ id: m.id })),
+    engine: settingsEngine,
+    availableModels: availableModels.map(m => ({
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      providerType: m.providerType,
+    })),
   });
-}, [selectedModel, availableModels, isDispatchReady, config]);
+}, [selectedModel, availableModels, isDispatchReady, settingsEngine]);
 
     // User question form state
     const [activeUserQuestions, setActiveUserQuestions] = useState<Array<{
@@ -540,6 +589,10 @@ export default function ChatPage() {
     const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | null>(null);
     const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
     const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
+
+    // Embedding state
+    const [embeddingProvider, setEmbeddingProvider] = useState("everfern");
+    const [embeddingModel, setEmbeddingModel] = useState("qwen/qwen3-embedding-8b");
     const [isRecording, setIsRecording] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState("");
     const [voiceLoading, setVoiceLoading] = useState(false);
@@ -588,7 +641,7 @@ export default function ChatPage() {
     // Broadcast state_update for messages and streaming with proper throttling
     useEffect(() => {
         if (!dispatchBroadcastRef.current || !isDispatchReady) return;
-        
+
         const sanitizeToolCall = (tc: any) => {
             if (!tc) return tc;
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -657,6 +710,18 @@ export default function ChatPage() {
         setLocalAlwaysAllowed(false);
     }, [activeConversationId]);
 
+    // Persistent local execution request listener (survives stream cleanup)
+    useEffect(() => {
+        const acpApi = (window as any).electronAPI?.acp;
+        if (!acpApi?.onLocalExecutionRequest) return;
+        acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
+            setLocalExecutionRequest(request);
+        });
+        return () => {
+            acpApi?.removeLocalExecutionListeners?.();
+        };
+    }, []);
+
     useEffect(() => {
         if (selectedToolCall && isToolDetailOpen) {
             for (const msg of messages) {
@@ -699,7 +764,7 @@ export default function ChatPage() {
                                 base64Image: updatedTc.base64Image || updatedTc.data?.base64Image,
                                 results: updatedTc.data?.results,
                             },
-                            agentName: updatedTc.displayName || 'navis',
+                            agentName: updatedTc.displayName || 'Fern',
                         };
                         setSelectedToolCall(mappedToolCall);
                     }
@@ -930,11 +995,15 @@ export default function ChatPage() {
                         setVoiceDeepgramKey(res.config.voice.deepgramKey || "");
                         setVoiceElevenlabsKey(res.config.voice.elevenlabsKey || "");
                     }
+                    if (res.config.embedding) {
+                        setEmbeddingProvider(res.config.embedding.provider || "everfern");
+                        setEmbeddingModel(res.config.embedding.model || "qwen/qwen3-embedding-8b");
+                    }
                     if (!res.config.userName) setShowOnboarding(true);
                 } else {
                     setShowOnboarding(true);
                 }
-                
+
                 // Auto-restore dispatch session in the background
                 try {
                     if ((window as any).electronAPI?.supabase?.getSession) {
@@ -942,11 +1011,11 @@ export default function ChatPage() {
                         if (session) {
                             const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://api.everfern.app';
                             const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'default_key';
-                            await (window as any).electronAPI?.system?.restoreDispatch?.({ 
-                                url, 
-                                apiUrl: 'https://api.everfern.app', 
-                                key, 
-                                token: session.accessToken, 
+                            await (window as any).electronAPI?.system?.restoreDispatch?.({
+                                url,
+                                apiUrl: 'https://api.everfern.app',
+                                key,
+                                token: session.accessToken,
                                 userId: session.user?.id || session.user?.sub || session.user?.user_id || 'unknown'
                             });
                         }
@@ -1505,7 +1574,8 @@ export default function ChatPage() {
                     args: toolArgs,
                     description: narrativeText || undefined,
                     orderIndex: inheritedOrderIndex,
-                    subAgentProgress: inheritedSubAgentProgress
+                    subAgentProgress: inheritedSubAgentProgress,
+                    displayName: 'Fern'
                 };
 
                 const filtered = liveToolCallsRef.current.filter(t =>
@@ -1648,17 +1718,6 @@ export default function ChatPage() {
                 }
             });
 
-            // Task 7.3: Local Execution Request Listener
-            acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
-                if (localAlwaysAllowed) {
-                    // Auto-approve without showing UI
-                    acpApi.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
-                } else {
-                    // Show permission card
-                    setLocalExecutionRequest(request);
-                }
-            });
-
             acpApi.onStreamChunk(({ delta, done }: { delta: string; done: boolean }) => {
                 if (isMessageCommittedRef.current) return;
                 if (!done) {
@@ -1724,7 +1783,7 @@ export default function ChatPage() {
             } catch (err) { console.error("Stream error:", err); }
             finally { setIsLoading(false); }
         })();
-    }, [activeConversationId, messages, selectedModel, availableModels]);
+    }, [activeConversationId, selectedModel, availableModels]);
 
     const saveConversation = useCallback(async (msgs: Message[]) => {
         if (msgs.length === 0) return;
@@ -1797,14 +1856,16 @@ export default function ChatPage() {
         } catch (error) { console.error('Voice playback error:', error); setVoicePlayback(false); }
     }, [voiceOutputEnabled, voiceProvider, voiceElevenlabsKey, voiceVoiceId]);
 
-    const handleSend = useCallback((overrideValue?: any) => {
+    const handleSend = useCallback((overrideValue?: any, currentMessages?: Message[]) => {
         console.log('[Frontend handleSend] CALLED - Starting new message send');
         const textToUse = typeof overrideValue === 'string' ? overrideValue : inputValue;
-        if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || isLoading) return;
+        if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || (isLoading && !bypassLoadingRef.current)) return;
+        bypassLoadingRef.current = false;
         const isProject = folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
         const folderContextText = (folderContexts.length > 0 && !isProject) ? `\n\n[Shared folder context]\n${folderContexts.map(f => `- ${f.path}`).join('\n')}\n\nNote: This folder structure is provided as passive context. You do not need to process, scan, or organize these files automatically. However, if the user explicitly asks you to take an action on these files in this message, you MUST fulfill their request using your tools immediately without asking for extra confirmation.` : '';
         const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
-        const newMessages = [...messages, userMessage];
+        const newMessages = [...(currentMessages ?? messagesRef.current), userMessage];
+        messagesRef.current = newMessages;
         setMessages(newMessages);
 
         // Ensure conversation ID is established synchronously before any async operations
@@ -1905,7 +1966,8 @@ export default function ChatPage() {
                         args: toolArgs,
                         description: narrativeText || undefined,
                         orderIndex: inheritedOrderIndex,
-                        subAgentProgress: inheritedSubAgentProgress
+                        subAgentProgress: inheritedSubAgentProgress,
+                        displayName: 'Fern'
                     };
                     const mapKey = toolCallId || (toolName + '_running');
 
@@ -2303,7 +2365,8 @@ export default function ChatPage() {
                         api.removeStreamListeners();
                         isMessageCommittedRef.current = true;
 
-                        const finalContent = accumulated || "";
+                        let finalContent = accumulated || "";
+                        finalContent = finalContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim();
                         const finalThought = streamingThoughtRef.current;
                         const finalToolCalls = liveToolCallsRef.current.map(t => {
                             // Strip heavy base64 screenshots before saving to avoid IPC/SQLite crashes,
@@ -2386,12 +2449,28 @@ export default function ChatPage() {
                     }
                 });
                 console.log('[Frontend handleSend] Sending stream request:', { model: selectedModel, providerType: currentM?.providerType || 'everfern', messageCount: newMessages.length, conversationId: activeConversationIdRef.current });
+
+                // Fire-and-forget: ensure non-image attachments are cloned to the Linux VM
+                const sys = (window as any).electronAPI?.system;
+                if (sys?.ensureAttachmentInVm) {
+                    for (const m of newMessages) {
+                        if (m.attachments) {
+                            for (const a of m.attachments) {
+                                if (a.path && !a.mimeType?.startsWith('image/')) {
+                                    sys.ensureAttachmentInVm(a.path);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 await api.stream({
                     messages: newMessages.map(m => {
                         if (m.attachments && m.attachments.length > 0 && m.role === 'user') {
                             const blocks: any[] = [];
                             if (m.content) blocks.push({ type: 'text', text: m.content });
-                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: ${a.path || 'unknown'}]\n\nThe file has been saved to the location above. Use your tools (e.g. Python) to read and process it directly from that path.` }); });
+                            const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
+                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: ${toLinuxPath(a.path || 'unknown')}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
                             return { role: m.role, content: blocks };
                         }
                         return { role: m.role, content: m.content };
@@ -2451,6 +2530,42 @@ export default function ChatPage() {
         });
         const responseText = `[Form Response]\n${answerLines.join('\n')}`;
 
+        // Capture pending streaming content BEFORE clearing — the assistant's form
+        // message lives in streamingContent, not yet committed to messages.
+        // If we clear it and abort the stream, the AI's message is lost.
+        const pendingContent = streamingContentRef.current;
+        const pendingThought = streamingThoughtRef.current;
+        const pendingToolCalls = liveToolCallsRef.current.map(t =>
+            t.status === 'running' ? { ...t, status: 'done' as const } : t
+        );
+
+        // Commit the assistant's pending message (form content) before sending the user's response.
+        // This ensures the AI's form questions survive in the conversation history.
+        let finalHistory = messagesRef.current;
+        if (pendingContent.trim() || pendingThought || pendingToolCalls.length > 0) {
+            const assistantMsg: Message = {
+                id: assistantMessageIdRef.current || crypto.randomUUID(),
+                role: "assistant",
+                content: pendingContent,
+                thought: pendingThought,
+                toolCalls: pendingToolCalls.length > 0 ? pendingToolCalls : undefined,
+                timestamp: new Date(),
+            };
+            
+            const existingIdx = finalHistory.findIndex(m => m.id === assistantMsg.id);
+            if (existingIdx >= 0) {
+                finalHistory = [...finalHistory];
+                finalHistory[existingIdx] = assistantMsg;
+            } else {
+                finalHistory = [...finalHistory, assistantMsg];
+            }
+            
+            setMessages(finalHistory);
+            saveConversation(finalHistory);
+        }
+
+        isMessageCommittedRef.current = false;
+        activeUserQuestionRef.current = false;
         setActiveUserQuestions([]);
         setStreamingContent("");
         setStreamingThought("");
@@ -2461,8 +2576,6 @@ export default function ChatPage() {
         streamingThoughtRef.current = "";
         liveToolCallsRef.current = [];
         missionTimelineRef.current = null;
-        isMessageCommittedRef.current = false; // Reset so next run's streaming content appears
-        activeUserQuestionRef.current = false;
 
         // If files were attached, add them to the attachments state before sending
         if (attachedFiles && attachedFiles.length > 0) {
@@ -2476,7 +2589,16 @@ export default function ChatPage() {
             setAttachments(prev => [...prev, ...newAttachments as any]);
         }
 
-        handleSend(responseText);
+        // Abort the previous agent stream before sending the form response.
+        // Prevents race conditions from the old stream still running.
+        (window as any).electronAPI?.acp?.stop?.();
+        bypassLoadingRef.current = true;
+        isMessageCommittedRef.current = true;
+
+        // Send exactly once, pushing the current execute to the next tick so state settles
+        setTimeout(() => {
+            handleSend(responseText, finalHistory);
+        }, 50);
     }, [handleSend]);
 
     // Listen for processed HITL responses from backend
@@ -2816,7 +2938,19 @@ export default function ChatPage() {
                             {availableModels.map(model => {
                                 const isDisabled = model.id.endsWith('-error') || model.id.endsWith('-empty');
                                 return (
-                                    <button key={model.id} disabled={isDisabled} onClick={() => { if (!isDisabled) { setSelectedModel(model.id); setShowModelSelector(false); } }}
+                                    <button key={model.id} disabled={isDisabled} onClick={() => {
+                                        if (isDisabled) return;
+                                        if (model.providerType === 'everfern') {
+                                            const sessionStr = localStorage.getItem('everfern_cloud_session');
+                                            if (!sessionStr) {
+                                                setShowModelSelector(false);
+                                                router.push('/auth');
+                                                return;
+                                            }
+                                        }
+                                        setSelectedModel(model.id);
+                                        setShowModelSelector(false);
+                                    }}
                                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "none", background: selectedModel === model.id ? "rgba(0,0,0,0.05)" : "transparent", color: isDisabled ? "#8a8886" : "#201e24", cursor: isDisabled ? "default" : "pointer", fontSize: 13, transition: "all 0.1s", textAlign: "left", opacity: isDisabled ? 0.7 : 1 }}
                                         onMouseEnter={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "rgba(0,0,0,0.03)"; }}
                                         onMouseLeave={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "transparent"; }}
@@ -2843,7 +2977,7 @@ export default function ChatPage() {
           // For cloud-only providers like 'everfern' and 'openrouter', don't pass baseUrl/apiKey
           // to avoid using stale values from previous provider selections
           const shouldOmitBaseUrl = settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter';
-          
+
           let finalCloudKey = settingsVlmCloudKey.trim() || undefined;
           if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
             try {
@@ -2865,6 +2999,8 @@ export default function ChatPage() {
         }
         else if (config?.vlm) { updated.vlm = config.vlm; }
         if (voiceProvider && (voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
+        // Embedding config
+        updated.embedding = { provider: embeddingProvider, model: embeddingModel };
         setConfig(updated);
         if ((window as any).electronAPI?.saveConfig) await (window as any).electronAPI.saveConfig(updated);
         setShowSettings(false);
@@ -3237,6 +3373,10 @@ export default function ChatPage() {
                     setVoiceDeepgramKey={setVoiceDeepgramKey}
                     voiceElevenlabsKey={voiceElevenlabsKey}
                     setVoiceElevenlabsKey={setVoiceElevenlabsKey}
+                    embeddingProvider={embeddingProvider}
+                    setEmbeddingProvider={setEmbeddingProvider}
+                    embeddingModel={embeddingModel}
+                    setEmbeddingModel={setEmbeddingModel}
                     modelValidationStatus={modelValidationStatus}
                     setModelValidationStatus={setModelValidationStatus}
                     isValidatingModel={isValidatingModel}
@@ -3322,6 +3462,23 @@ export default function ChatPage() {
             <style>{`
                 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
             `}</style>
+
+            {/* Health Check Screen */}
+            {showHealthCheck && !healthCheckComplete && (
+                <HealthCheckScreen
+                    onComplete={(success, errors) => {
+                        setHealthCheckComplete(true);
+                        setShowHealthCheck(false);
+                        // Mark health check as completed in this session
+                        sessionStorage.setItem('healthCheckCompleted', 'true');
+                        if (!success) {
+                            console.warn('Health check completed with errors:', errors);
+                        }
+                    }}
+                    autoStart={true}
+                />
+            )}
+
             <div style={{ height: "100vh", backgroundColor: "#f5f4f0", color: "#201e24", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
                 <PermissionDialog />
                 <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
@@ -3561,18 +3718,18 @@ export default function ChatPage() {
                                                         agentName="EverFern"
                                                         onDeny={() => {
                                                             const acpApi = (window as any).electronAPI?.acp;
-                                                            acpApi?.sendLocalExecutionResponse({ approved: false, alwaysAllow: false });
+                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: false, alwaysAllow: false });
                                                             setLocalExecutionRequest(null);
                                                         }}
                                                         onAlwaysAllow={() => {
                                                             const acpApi = (window as any).electronAPI?.acp;
                                                             setLocalAlwaysAllowed(true);
-                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: true });
+                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: true });
                                                             setLocalExecutionRequest(null);
                                                         }}
                                                         onAllowOnce={() => {
                                                             const acpApi = (window as any).electronAPI?.acp;
-                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
+                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: false });
                                                             setLocalExecutionRequest(null);
                                                         }}
                                                     />
@@ -3876,7 +4033,7 @@ export default function ChatPage() {
                                                         artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim()
                                                     );
                                                     if (cleanContent === 'Working...' || cleanContent === 'Working') {
-                                                        cleanContent = '';        
+                                                        cleanContent = '';
                                                     }
 
                                                     return (
@@ -4048,7 +4205,34 @@ export default function ChatPage() {
                                         )}
                                     </AnimatePresence>
 
-                                    <div style={{ width: "96%", maxWidth: 840, margin: "0 auto 8px auto", display: "flex", flexDirection: "column" }}>
+                                    <div style={{ width: "100%", maxWidth: 860, margin: "0 auto 8px auto", padding: "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+                                        {/* Task 7.4: Local Execution Permission Card — above input */}
+                                        {localExecutionRequest && (
+                                            <div style={{ padding: '0 0 12px' }}>
+                                                <LocalExecutionPermissionCard
+                                                    command={localExecutionRequest.command}
+                                                    shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
+                                                    reason={localExecutionRequest.reason}
+                                                    agentName="EverFern"
+                                                    onDeny={() => {
+                                                        const acpApi = (window as any).electronAPI?.acp;
+                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: false, alwaysAllow: false });
+                                                        setLocalExecutionRequest(null);
+                                                    }}
+                                                    onAlwaysAllow={() => {
+                                                        const acpApi = (window as any).electronAPI?.acp;
+                                                        setLocalAlwaysAllowed(true);
+                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: true });
+                                                        setLocalExecutionRequest(null);
+                                                    }}
+                                                    onAllowOnce={() => {
+                                                        const acpApi = (window as any).electronAPI?.acp;
+                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: false });
+                                                        setLocalExecutionRequest(null);
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
                                         <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#ffffff", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: showPermissionModal ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
                                             {/* Memory Preference Banner */}
                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
@@ -4141,34 +4325,6 @@ export default function ChatPage() {
                                                         request={hitlRequest}
                                                         onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
                                                         onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* Task 7.4: Local Execution Permission Card */}
-                                            {localExecutionRequest && (
-                                                <div style={{ padding: '16px 20px 0' }}>
-                                                    <LocalExecutionPermissionCard
-                                                        command={localExecutionRequest.command}
-                                                        shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
-                                                        reason={localExecutionRequest.reason}
-                                                        agentName="EverFern"
-                                                        onDeny={() => {
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            acpApi?.sendLocalExecutionResponse({ approved: false, alwaysAllow: false });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
-                                                        onAlwaysAllow={() => {
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            setLocalAlwaysAllowed(true);
-                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: true });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
-                                                        onAllowOnce={() => {
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            acpApi?.sendLocalExecutionResponse({ approved: true, alwaysAllow: false });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
                                                     />
                                                 </div>
                                             )}

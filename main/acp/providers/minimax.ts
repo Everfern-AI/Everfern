@@ -1,6 +1,6 @@
 /**
  * EverFern Desktop — MiniMax Provider
- * 
+ *
  * Connects to MiniMax's OpenAI-compatible API.
  * Requires a user-provided API key.
  */
@@ -139,6 +139,6 @@ export class MiniMaxProvider implements ACPProvider {
   }
 
   async listModels(): Promise<string[]> {
-    return ['minimax-m2.5', 'minimax-m2.7'];
+    return ['MiniMax-M3', 'minimax-m2.5', 'minimax-m2.7'];
   }
 }

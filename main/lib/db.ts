@@ -3,6 +3,7 @@ import * as sqliteVec from 'sqlite-vec';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { runMigrations } from './migrations/runner';
 
 let instance: sqlite3.Database | null = null;
 let currentVectorDims: number | null = null;
@@ -57,9 +58,9 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
     );
 
     -- Ensure project_id exists in case table was already created
-    -- We use a simple attempt to add it, wrapped in a try/catch in JS if needed, 
+    -- We use a simple attempt to add it, wrapped in a try/catch in JS if needed,
     -- but here we can just add it to the exec block.
-    -- SQLite ALTER TABLE ADD COLUMN is safe if the column doesn't exist in most cases 
+    -- SQLite ALTER TABLE ADD COLUMN is safe if the column doesn't exist in most cases
     -- but will throw if it does.
     -- Better to handle this in JS.
 
@@ -184,8 +185,19 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
       }
     });
 
+    // Set instance before running migrations so dbOps can use it
     instance = db;
-    resolve(db);
+
+    // Run database migrations
+    runMigrations()
+      .then(() => {
+        console.log('[DB] Database initialization complete');
+        resolve(db);
+      })
+      .catch((migrationErr) => {
+        console.error('[DB] Migration failed:', migrationErr);
+        reject(migrationErr instanceof Error ? migrationErr : new Error(String(migrationErr)));
+      });
   });
 }
 

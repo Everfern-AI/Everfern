@@ -16,6 +16,7 @@ import {
     ChevronRightIcon,
     ServerIcon,
     WrenchScrewdriverIcon,
+    CircleStackIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import Image from 'next/image';
@@ -35,6 +36,7 @@ const navSections = [
     { id: 'models', label: 'Models & Providers', icon: CpuChipIcon },
     { id: 'voice', label: 'Voice Mode', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎤</span> },
     { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon },
+    { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon },
     { id: 'skills', label: 'Custom Skills', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧩</span> },
     { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
@@ -562,6 +564,12 @@ interface SettingsPageProps {
     voiceElevenlabsKey: string;
     setVoiceElevenlabsKey: (v: string) => void;
 
+    // Embeddings
+    embeddingProvider: string;
+    setEmbeddingProvider: (v: string) => void;
+    embeddingModel: string;
+    setEmbeddingModel: (v: string) => void;
+
     handleSaveSettings: () => void;
     onOpenVlmOnboarding: () => void;
 }
@@ -607,6 +615,8 @@ export default function SettingsPage({
     voiceProvider, setVoiceProvider,
     voiceDeepgramKey, setVoiceDeepgramKey,
     voiceElevenlabsKey, setVoiceElevenlabsKey,
+    embeddingProvider, setEmbeddingProvider,
+    embeddingModel, setEmbeddingModel,
     handleSaveSettings,
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
@@ -620,6 +630,9 @@ export default function SettingsPage({
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; url?: string } | null>(null);
+    const [showVectorsModal, setShowVectorsModal] = useState(false);
+    const [vectorsData, setVectorsData] = useState<any[]>([]);
+    const [loadingVectors, setLoadingVectors] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -767,7 +780,7 @@ export default function SettingsPage({
                     />
                 </div>
 
-                {isCloudUser && (
+                {isCloudUser ? (
                     <div style={{ marginTop: 24, padding: 20, backgroundColor: '#fcfcfb', border: '1px solid #e8e6d9', borderRadius: 16 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
@@ -781,6 +794,23 @@ export default function SettingsPage({
                                 onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
                             >
                                 Sign Out
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ marginTop: 24, padding: 20, backgroundColor: '#fcfcfb', border: '1px solid #e8e6d9', borderRadius: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 4 }}>EverFern Cloud</h3>
+                                <p style={{ fontSize: 12, color: '#8a8886', margin: 0 }}>Login to access cloud models, dispatch, and sync.</p>
+                            </div>
+                            <button
+                                onClick={() => router.push('/auth')}
+                                style={{ padding: '8px 16px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#333333'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#111111'}
+                            >
+                                Login
                             </button>
                         </div>
                     </div>
@@ -1154,6 +1184,115 @@ export default function SettingsPage({
         </div>
     );
 
+    // ── Embeddings ────────────────────────────────────────────────────────
+    // Embedding model options per provider
+    const EMBEDDING_PROVIDERS = [
+        { id: 'everfern',   name: 'EverFern Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} />, models: ['qwen/qwen3-embedding-8b'], supportsEmbed: true },
+        { id: 'openai',     name: 'OpenAI',          Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} />, models: ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'], supportsEmbed: true },
+        { id: 'gemini',     name: 'Google Gemini',   Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} />, models: ['gemini-embedding-2', 'gemini-embedding-001'], supportsEmbed: true },
+        { id: 'minimax',    name: 'MiniMax',         Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} />, models: ['embo-01'], supportsEmbed: true },
+        { id: 'nvidia',     name: 'NVIDIA NIM',      Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} />, models: ['nv-embedqa-e5-v5', 'llama-3.2-nv-embedqa-1b-v2'], supportsEmbed: true },
+        { id: 'openrouter', name: 'OpenRouter',      Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} />, models: ['qwen/qwen3-embedding-8b', 'openai/text-embedding-3-large'], supportsEmbed: true },
+        { id: 'ollama',     name: 'Ollama (Local)',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} />, models: ['qwen3-embedding:latest', 'qwen3-embedding:8b', 'qwen3-embedding:4b', 'qwen3-embedding:0.6b'], supportsEmbed: true },
+        { id: 'anthropic',  name: 'Anthropic',       Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} />, models: [], supportsEmbed: false },
+        { id: 'deepseek',   name: 'DeepSeek',        Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/deepseek.svg" alt="DeepSeek" width={size} height={size} />, models: [], supportsEmbed: false },
+        { id: 'ollama-cloud', name: 'Ollama Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} />, models: [], supportsEmbed: false },
+    ];
+
+    const EmbeddingsSection = () => {
+        const selectedProvider = EMBEDDING_PROVIDERS.find(p => p.id === embeddingProvider);
+        return (
+            <div>
+                <SectionTitle>Embeddings</SectionTitle>
+                <SectionSubtitle>Configure the embedding model used for vector search, memory, and semantic retrieval.</SectionSubtitle>
+
+                {/* Provider Grid */}
+                <Card>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Embedding Provider</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 8 }}>
+                        {EMBEDDING_PROVIDERS.map(({ id, name, Logo, supportsEmbed }) => {
+                            const isSel = embeddingProvider === id;
+                            return (
+                                <div
+                                    key={id}
+                                    onClick={() => {
+                                        if (!supportsEmbed) return;
+                                        setEmbeddingProvider(id);
+                                        const prov = EMBEDDING_PROVIDERS.find(p => p.id === id);
+                                        if (prov && prov.models.length > 0) setEmbeddingModel(prov.models[0]);
+                                    }}
+                                    style={{
+                                        padding: '14px 12px',
+                                        borderRadius: 12,
+                                        border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
+                                        backgroundColor: isSel ? '#f4f4f4' : supportsEmbed ? '#ffffff' : '#f9f9f9',
+                                        cursor: supportsEmbed ? 'pointer' : 'not-allowed',
+                                        opacity: supportsEmbed ? 1 : 0.45,
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                                        transition: 'all 0.15s ease-out', position: 'relative', userSelect: 'none',
+                                    }}
+                                >
+                                    {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                    <div style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Logo size={24} />
+                                    </div>
+                                    <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center', lineHeight: 1.3 }}>{name}</span>
+                                    {!supportsEmbed && <span style={{ fontSize: 10, color: '#a8a6a1', fontWeight: 500 }}>No embedding model</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </Card>
+
+                {/* Model Selection — only show if provider supports embeddings */}
+                {selectedProvider?.supportsEmbed && selectedProvider.models.length > 0 && (
+                    <Card>
+                        <Label>Embedding Model</Label>
+                        <Select
+                            value={embeddingModel}
+                            onChange={e => setEmbeddingModel(e.target.value)}
+                        >
+                            {selectedProvider.models.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </Select>
+                        {embeddingProvider === 'ollama' && (
+                            <p style={{ fontSize: 12, color: '#8a8886', marginTop: 10, lineHeight: 1.6 }}>
+                                <strong>Hardware guide:</strong> Use <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:0.6b</code> (639MB) for low-RAM systems,{' '}
+                                <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:4b</code> (2.5GB) for mid-range,{' '}
+                                <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:latest</code> (4.7GB, 40K context) for best quality.
+                            </p>
+                        )}
+                        {embeddingProvider === 'everfern' && (
+                            <p style={{ fontSize: 12, color: '#8a8886', marginTop: 10, lineHeight: 1.6 }}>
+                                EverFern Cloud uses <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen/qwen3-embedding-8b</code> via OpenRouter on our backend. No API key needed if you're logged into EverFern Cloud.
+                            </p>
+                        )}
+                    </Card>
+                )}
+
+                {/* Info card */}
+                <Card style={{ backgroundColor: '#fafaf8' }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 8px' }}>How embeddings are used</h3>
+                    <p style={{ fontSize: 13, color: '#73716e', margin: 0, lineHeight: 1.7 }}>
+                        Embeddings convert text into vectors for semantic search — used for memory recall, document retrieval, and RAG (retrieval-augmented generation). The selected model runs every time EverFern stores or searches through memory.
+                    </p>
+                    <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {[
+                            { provider: 'Anthropic', note: 'No embedding model available. Use OpenRouter or OpenAI instead.' },
+                            { provider: 'DeepSeek', note: 'No embedding model available. Use OpenRouter or OpenAI instead.' },
+                            { provider: 'Ollama Cloud', note: 'Embedding models only available for local Ollama, not Ollama Cloud.' },
+                        ].map(({ provider, note }) => (
+                            <div key={provider} style={{ padding: '8px 12px', backgroundColor: '#fff8ed', border: '1px solid #f3e4c0', borderRadius: 10, fontSize: 12, color: '#6b5a2e' }}>
+                                <strong>{provider}:</strong> {note}
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            </div>
+        );
+    };
+
     // ── Custom Skills ────────────────────────────────────────────────────
     const SkillsSection = () => {
         const [customSkills, setCustomSkills] = useState<{ name: string; description: string }[]>([]);
@@ -1335,15 +1474,106 @@ export default function SettingsPage({
             <Card>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 8px' }}>Data Storage</h3>
                 <p style={{ fontSize: 13, color: '#8a8886', margin: '0 0 16px', lineHeight: 1.6 }}>
-                    All conversation history, API keys, and configuration are stored locally on your device in <code style={{ backgroundColor: '#f4f4f4', padding: '2px 6px', borderRadius: 6, fontSize: 11, color: '#111111' }}>~/.everfern/</code>. Nothing is sent to EverFern servers.
+                    All conversation history, memory embeddings, screenshots, and configuration are stored completely locally on your device in <code style={{ backgroundColor: '#f4f4f4', padding: '2px 6px', borderRadius: 6, fontSize: 11, color: '#111111' }}>~/.everfern/</code>. Nothing is sent to EverFern servers.
                 </p>
-                <div style={{ padding: '12px 16px', backgroundColor: '#f4f4f4', borderRadius: 12, border: '1px solid #e8e6d9' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                        <span style={{ color: '#4a4846' }}>Chat history location</span>
-                        <code style={{ color: '#111111', fontSize: 12 }}>~/.everfern/chats/</code>
-                    </div>
+                <div style={{ backgroundColor: '#f4f4f4', borderRadius: 12, border: '1px solid #e8e6d9', overflow: 'hidden' }}>
+                    {[
+                        { label: 'Chat History (SQL)', path: '~/.everfern/sql/chat.sqlite' },
+                        { label: 'AI Memory (Vectors)', path: '~/.everfern/sql/memory.sqlite' },
+                        { label: 'Screenshots & Media', path: '~/.everfern/screenshots/' },
+                        { label: 'Custom Skills', path: '~/.everfern/skills/' },
+                        { label: 'Configuration', path: '~/.everfern/config.json' }
+                    ].map((item, index, arr) => (
+                        <div key={item.path} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', fontSize: 13, borderBottom: index < arr.length - 1 ? '1px solid #e8e6d9' : 'none' }}>
+                            <span style={{ color: '#4a4846' }}>{item.label}</span>
+                            <code style={{ color: '#111111', fontSize: 12 }}>{item.path}</code>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e6d9' }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 6px' }}>Vector Search Backfill</h4>
+                    <p style={{ fontSize: 13, color: '#8a8886', margin: '0 0 12px', lineHeight: 1.5 }}>
+                        To enable semantic search for your older chats, you can manually generate their vector embeddings in the background. New chats are indexed automatically.
+                    </p>
+                    <button
+                        onClick={async () => {
+                            try {
+                                const res = await (window as any).electronAPI.history.backfill();
+                                if (res?.success) {
+                                    alert('Backfill started in background! This may take a few minutes depending on your chat history size.');
+                                }
+                            } catch (err) {
+                                console.error('Failed to start backfill', err);
+                                alert('Failed to start backfill');
+                            }
+                        }}
+                        style={{ padding: '8px 16px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                    >
+                        Backfill Missing Chats
+                    </button>
+                    <button
+                        onClick={async () => {
+                            setLoadingVectors(true);
+                            setShowVectorsModal(true);
+                            try {
+                                const data = await (window as any).electronAPI.history.getVectors(100);
+                                setVectorsData(data || []);
+                            } catch (err) {
+                                console.error('Failed to load vectors', err);
+                            } finally {
+                                setLoadingVectors(false);
+                            }
+                        }}
+                        style={{ padding: '8px 16px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #e8e6d9', cursor: 'pointer', marginLeft: 8 }}
+                    >
+                        View Vector Data
+                    </button>
                 </div>
             </Card>
+
+            {showVectorsModal && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                    <div style={{ backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 900, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e8e6d9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ margin: 0, fontSize: 18, color: '#111' }}>Raw Vector Database (Top 100)</h2>
+                            <button onClick={() => setShowVectorsModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#888' }}>&times;</button>
+                        </div>
+                        <div style={{ overflow: 'auto', flex: 1, padding: 24 }}>
+                            {loadingVectors ? (
+                                <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Loading vector rows...</div>
+                            ) : vectorsData.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>No vector data found.</div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                    <thead>
+                                        <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
+                                            <th style={{ padding: '8px 4px' }}>ID</th>
+                                            <th style={{ padding: '8px 4px' }}>Conversation</th>
+                                            <th style={{ padding: '8px 4px' }}>Role</th>
+                                            <th style={{ padding: '8px 4px' }}>Vector Size</th>
+                                            <th style={{ padding: '8px 4px' }}>Content Snippet</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {vectorsData.map((row: any) => (
+                                            <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
+                                                <td style={{ padding: '8px 4px', color: '#666' }}>{row.id.slice(0, 12)}...</td>
+                                                <td style={{ padding: '8px 4px', color: '#333' }}>{row.conversation_title || 'Unknown'}</td>
+                                                <td style={{ padding: '8px 4px' }}><span style={{ padding: '2px 6px', borderRadius: 4, background: row.role === 'user' ? '#e0f2fe' : '#f3e8ff', color: row.role === 'user' ? '#0284c7' : '#9333ea', fontSize: 11 }}>{row.role}</span></td>
+                                                <td style={{ padding: '8px 4px', color: '#10b981', fontFamily: 'monospace' }}>{row.embedding_bytes} bytes</td>
+                                                <td style={{ padding: '8px 4px', color: '#666', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {typeof row.content === 'string' ? row.content : JSON.stringify(row.content)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: 16, padding: 24 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: '#dc2626', margin: '0 0 8px' }}>Danger Zone</h3>
@@ -1470,6 +1700,7 @@ export default function SettingsPage({
         models: ModelsSection(),
         voice: VoiceSection(),
         vision: VisionSection(),
+        embeddings: EmbeddingsSection(),
         skills: SkillsSection(),
         tools: (
             <div>

@@ -46,13 +46,14 @@ YOUR RESPONSE: "${responseContent.slice(0, 500)}"
 Choose exactly one reason:
 - "task_complete"        — You fully completed the requested task with substantive output
 - "waiting_for_user_input" — You need the user to provide information, make a selection, or upload a file before you can proceed
-- "needs_hitl"           — A high-risk or irreversible action requires explicit human approval before execution
+- "needs_hitl"           — A high-risk or irreversible action requires explicit human approval before execution. Use this for: file organizing/moving/renaming, bulk operations, deleting user files, installing system packages, or any local execution on the host system.
 - "cannot_proceed"       — You are blocked and cannot make progress (missing permissions, unsupported request, etc.)
 
 Respond with JSON only:
 {
   "reason": "task_complete" | "waiting_for_user_input" | "needs_hitl" | "cannot_proceed",
-  "explanation": "one sentence explaining why"
+  "explanation": "one sentence explaining why",
+  "hitlRationale": "If reason is needs_hitl, explain what action needs approval and why"
 }`;
 
     console.log('[Brain] Building completion signal...');
@@ -183,7 +184,7 @@ YOUR CURRENT RESPONSE: "${responseContent.slice(0, 300)}"
 CONVERSATION CONTEXT: ${JSON.stringify(conversationHistory).slice(0, 200)}
 
 Available routing options:
-- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, web_search + navis for detailed extraction)
+- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction)
 - "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
 - "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
 - "route_web_explorer" — Route to Web Explorer for complex multi-step web research (multiple page visits, form filling, login workflows). For simple web lookups or single-page research, use your available web_search/navis tools directly.
@@ -198,6 +199,7 @@ CRITICAL ROUTING RULES:
 6. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available.
 7. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
 8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
+9. IMAGE/FILE ORGANIZATION: For tasks like "organize my images/pictures/photos", "sort files by content", "classify images" → ALWAYS use "continue_brain". Use system_files to list files, analyze_image to classify by content (vision), and system_files to move them. Never route image organization to a specialist. Read the image-viewer skill (SKILL.md) and follow its workflows.
 
 Respond with JSON only:
 {

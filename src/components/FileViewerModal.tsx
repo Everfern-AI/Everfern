@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ClipboardIcon, ArrowTopRightOnSquareIcon, DocumentDuplicateIcon, ListBulletIcon, DocumentTextIcon, TableCellsIcon, PresentationChartBarIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
-import FileIcon from '../FileIcon';
+import FileIcon from '../app/chat/FileIcon';
 
 interface FileViewerModalProps {
     file: { name: string; path: string } | null;

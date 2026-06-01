@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { Conversation, ConversationSummary, ChatMessage } from '../acp/types';
 import { dbOps } from '../lib/db';
+import { getSystemEmbeddingConfig, getEmbeddingModel } from '../lib/embeddings';
 
 const LEGACY_CONVERSATIONS_DIR = path.join(os.homedir(), '.everfern', 'store', 'conversations');
 const LEGACY_TIMELINE_DIR = path.join(os.homedir(), '.everfern', 'store', 'timeline');
@@ -25,6 +26,42 @@ export class ChatHistoryStore {
     if (this.migrated) return;
     await this.migrateLegacyData();
     this.migrated = true;
+  }
+
+  /**
+   * Asynchronously generates an embedding for a message and stores it in the vector DB.
+   * This is a fire-and-forget method that doesn't block UI saves.
+   */
+  private async indexMessage(id: string, content: string, maxRetries = 3): Promise<void> {
+    if (!content || typeof content !== 'string' || content.trim().length === 0) return;
+    
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        const config = getSystemEmbeddingConfig();
+        const model = getEmbeddingModel(config);
+        
+        const embedding = await model.embeddings.embedQuery(content);
+        
+        await dbOps.run(
+          `INSERT OR REPLACE INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
+          [id, `[${embedding.join(',')}]`]
+        );
+        return; // Success, exit loop
+      } catch (err: any) {
+        attempt++;
+        const errMsg = String(err).toLowerCase();
+        
+        if ((errMsg.includes('rate limit') || errMsg.includes('429') || errMsg.includes('too many requests')) && attempt < maxRetries) {
+          const delayMs = attempt * 15000; // 15s, 30s
+          console.warn(`[History] Rate limit hit for message ${id}. Retrying in ${delayMs / 1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          console.error(`[History] Failed to index message ${id} for vector search:`, err);
+          return; // Unrecoverable error or max retries reached
+        }
+      }
+    }
   }
 
   /**
@@ -238,6 +275,12 @@ export class ChatHistoryStore {
             msg.createdAt || new Date().toISOString()
           ]
         );
+
+        // Async fire-and-forget: index message content for semantic search
+        if (msg.role === 'user' || msg.role === 'assistant') {
+           const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+           this.indexMessage(msgId, textContent).catch(() => {});
+        }
       }
 
       // Cleanup orphaned/stale messages that are no longer part of this conversation
@@ -275,6 +318,118 @@ export class ChatHistoryStore {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[History] Failed to delete conversation ${id}:`, msg);
       return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Perform a semantic vector search across all chat messages.
+   */
+  async search(query: string, limit: number = 10): Promise<ConversationSummary[]> {
+    await this.init();
+    if (!query || query.trim().length === 0) return [];
+    try {
+      const config = getSystemEmbeddingConfig();
+      const model = getEmbeddingModel(config);
+      const embedding = await model.embeddings.embedQuery(query);
+
+      const rows = await dbOps.all(`
+        SELECT c.id, c.title, c.provider, c.model, c.project_id as projectId, p.name as projectName, c.created_at as createdAt, c.updated_at as updatedAt
+        FROM chat_messages_vec v
+        JOIN messages m ON v.id = m.id
+        JOIN conversations c ON m.conversation_id = c.id
+        LEFT JOIN projects p ON c.project_id = p.id
+        WHERE v.embedding MATCH ? AND k = ?
+        GROUP BY c.id
+      `, [`[${embedding.join(',')}]`, limit * 3]);
+
+      return rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        provider: row.provider,
+        model: row.model,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        messageCount: 0, // Not querying this to save time during search
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })).slice(0, limit);
+    } catch (err) {
+      console.error('[History] Vector search failed:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Backfill un-indexed messages into the vector database.
+   */
+  async backfillVectors(): Promise<{ success: boolean; count: number; error?: string }> {
+    await this.init();
+    try {
+      console.log('[History] Starting backfill of vector embeddings...');
+      const unindexedRows = await dbOps.all(`
+        SELECT m.id, m.content 
+        FROM messages m 
+        LEFT JOIN chat_messages_vec v ON m.id = v.id 
+        WHERE v.id IS NULL AND (m.role = 'user' OR m.role = 'assistant')
+      `);
+
+      let count = 0;
+      for (const row of unindexedRows) {
+        const textContent = typeof row.content === 'string' ? row.content : JSON.stringify(row.content);
+        
+        let retries = 0;
+        let success = false;
+        
+        while (!success && retries < 3) {
+          try {
+            await this.indexMessage(row.id, textContent);
+            success = true;
+          } catch (e: any) {
+            const errorMsg = String(e).toLowerCase();
+            if (errorMsg.includes('rate limit') || errorMsg.includes('429') || errorMsg.includes('too many requests')) {
+              console.warn(`[History] Rate limit hit on message ${row.id}. Waiting 15 seconds before retry...`);
+              await new Promise(r => setTimeout(r, 15000));
+              retries++;
+            } else {
+              console.error(`[History] Unrecoverable error indexing message ${row.id}:`, e);
+              break; // Skip this message on non-rate-limit errors
+            }
+          }
+        }
+        
+        if (success) {
+          count++;
+        }
+        
+        // Add a standard 2 second delay between requests to respect RPM limits (30 req/min)
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      console.log(`[History] Vector backfill completed. Indexed ${count} messages.`);
+      return { success: true, count };
+    } catch (err) {
+      console.error('[History] Vector backfill failed:', err);
+      return { success: false, count: 0, error: String(err) };
+    }
+  }
+
+  /**
+   * Fetch raw vector data for debugging and viewing in UI.
+   */
+  async getVectors(limit: number = 100): Promise<any[]> {
+    await this.init();
+    try {
+      const rows = await dbOps.all(`
+        SELECT v.id, length(v.embedding) as embedding_bytes, m.content, m.role, c.title as conversation_title, m.created_at
+        FROM chat_messages_vec v
+        JOIN messages m ON v.id = m.id
+        JOIN conversations c ON m.conversation_id = c.id
+        ORDER BY m.created_at DESC
+        LIMIT ?
+      `, [limit]);
+      return rows;
+    } catch (err) {
+      console.error('[History] Failed to get vectors:', err);
+      return [];
     }
   }
 }

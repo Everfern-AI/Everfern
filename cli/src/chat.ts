@@ -16,7 +16,7 @@ ord<string, string[]> = {
   gemini: ['gemini-3.1-pro-preview', 'gemini-3.1-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
   nvidia: ['google/gemma-4-31b-it', 'meta/llama-3.2-90b-vision-instruct', 'qwen/qwen3.5-122b-a10b', 'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mistral-small-4-119b-2603', 'nvidia/nemotron-3-super-120b-a12b'],
   ollama: [],
-  'ollama-cloud': ['qwen3-vl:235b-instruct-cloud', 'kimi-k2.6:cloud', 'glm-5.1:cloud', 'gemma4:31b-cloud', 'kimi-k2.5:cloud', 'minimax-m2.7:cloud', 'glm-5:cloud'],
+  'ollama-cloud': ['qwen3-vl:235b-instruct-cloud', 'kimi-k2.6:cloud', 'glm-5.1:cloud', 'gemma4:31b-cloud', 'kimi-k2.5:cloud', 'minimax-m2.7:cloud', 'MiniMax-M3', 'glm-5:cloud'],
   lmstudio: [],
   everfern: ['everfern-1', 'everfern-fast'],
   openrouter: ['openrouter/free', 'nvidia/nemotron-3-nano-30b-a3b', 'z-ai/glm-4-5-air', 'arcee-ai/trinity-large-preview', 'minimax/minimax-m2.5', 'openai/gpt-oss-120b', 'google/gemma-4-31b', 'meta-llama/llama-3.3-70b-instruct', 'qwen/qwen3-coder-480b-a35b'],

@@ -158,13 +158,30 @@ export function registerSystemHandlers() {
       if (stats.size <= ONE_GB) {
         try {
           const { execSync } = require('child_process');
-          const wslAttachmentsDir = `/home/${os.userInfo().username}/.everfern/attachments`;
-          const wslSourcePath = `/mnt/c/Users/${os.userInfo().username}/.everfern/attachments/${safeFileName}`.toLowerCase();
+          // First check if WSL is available
+          let wslCmd = 'wsl.exe';
+          try {
+            execSync('where wsl.exe', { stdio: 'ignore', timeout: 3000 });
+          } catch {
+            try {
+              execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 5000 });
+              wslCmd = 'wsl';
+            } catch {
+              throw new Error('WSL not available, skipping clone');
+            }
+          }
+          const wslUsername = (os.userInfo().username || 'user').toLowerCase();
+          const wslAttachmentsDir = `/home/${wslUsername}/.everfern/attachments`;
+          // Build WSL path from Windows path — keep drive letter lowercase, rest preserves case (WSL mounts /mnt/c/ case-sensitively)
+          const driveLetter = path.parse(newFilePath).root.replace(':', '').toLowerCase();
+          const wslRelPath = newFilePath.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
+          const wslSourcePath = `/mnt/${driveLetter}/${wslRelPath}`;
+          console.log(`[IPC] Cloning to WSL: ${wslSourcePath} -> ${wslAttachmentsDir}/`);
           // Create dir and copy via WSL
-          execSync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+          execSync(`${wslCmd} --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
           console.log('[IPC] File cloned to WSL:', `${wslAttachmentsDir}/${safeFileName}`);
-        } catch (cloneErr) {
-          console.warn('[IPC] Failed to clone file to WSL (non-fatal):', cloneErr);
+        } catch (cloneErr: any) {
+          console.warn(`[IPC] Failed to clone file to WSL (non-fatal): ${cloneErr.message}`);
         }
       } else {
         console.log('[IPC] File >1GB, skipping WSL clone. Accessible via /mnt/c/ path.');
@@ -470,13 +487,13 @@ export function registerSystemHandlers() {
       const service = DispatchService.getInstance();
 
       // Wire the command handler BEFORE initializing so no commands are missed
-      service.onCommand = (command: string) => {
+      service.onCommand = (command: string, model?: string) => {
         // Forward the command to all windows and bring the app to foreground
         import('electron').then(({ BrowserWindow }) => {
           BrowserWindow.getAllWindows().forEach(win => {
             if (!win.isDestroyed()) {
               win.show(); // Wake up from tray/background
-              win.webContents.send('system:dispatch-command', { command });
+              win.webContents.send('system:dispatch-command', { command, model });
             }
           });
         });
@@ -499,12 +516,12 @@ export function registerSystemHandlers() {
       const service = DispatchService.getInstance();
 
       // Wire the command handler so restored sessions also forward commands
-      service.onCommand = (command: string) => {
+      service.onCommand = (command: string, model?: string) => {
         import('electron').then(({ BrowserWindow }) => {
           BrowserWindow.getAllWindows().forEach(win => {
             if (!win.isDestroyed()) {
               win.show();
-              win.webContents.send('system:dispatch-command', { command });
+              win.webContents.send('system:dispatch-command', { command, model });
             }
           });
         });
@@ -538,6 +555,37 @@ export function registerSystemHandlers() {
       DispatchService.getInstance().broadcastToWeb(event, data);
     } catch (err) {
       console.error('[IPC] system:broadcast-dispatch error:', err);
+    }
+  });
+
+  /**
+   * Ensure an attachment file is available in the Linux VM (WSL).
+   * Retries the clone at send time if it failed during file picking.
+   */
+  ipcMain.handle('system:ensure-attachment-in-vm', async (_event, filePath: string) => {
+    if (process.platform !== 'win32') return { success: true };
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+
+    try {
+      const { execSync } = require('child_process');
+      const wslUsername = (os.userInfo().username || 'user').toLowerCase();
+      const wslAttachmentsDir = `/home/${wslUsername}/.everfern/attachments`;
+      const safeFileName = path.basename(filePath);
+      const existingTarget = `\\\\wsl.localhost\\Ubuntu\\home\\${wslUsername}\\.everfern\\attachments\\${safeFileName}`;
+
+      // Skip if already cloned
+      if (fs.existsSync(existingTarget)) return { success: true };
+
+      const driveLetter = path.parse(filePath).root.replace(':', '').toLowerCase();
+      const wslRelPath = filePath.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
+      const wslSourcePath = `/mnt/${driveLetter}/${wslRelPath}`;
+
+      execSync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+      console.log('[IPC] Attachment cloned to Linux VM:', existingTarget);
+      return { success: true };
+    } catch (err: any) {
+      console.warn('[IPC] Failed to clone attachment to Linux VM (non-fatal):', err.message);
+      return { success: false, error: err.message };
     }
   });
 }

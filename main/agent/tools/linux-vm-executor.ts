@@ -58,7 +58,82 @@ export async function runInLinuxVM(
 /**
  * Runs command in WSL (Windows Subsystem for Linux)
  */
+let _wslCmdCache: string | null = null;
+
+function getWslCmd(): string {
+  if (_wslCmdCache) return _wslCmdCache;
+  try {
+    const { execSync } = require('child_process');
+    execSync('where wsl.exe', { stdio: 'ignore', timeout: 3000 });
+    _wslCmdCache = 'wsl.exe';
+  } catch {
+    _wslCmdCache = 'wsl';
+  }
+  return _wslCmdCache;
+}
+
+/**
+ * Ensures WSL has python3, pip, and ~/.everfern/ with a Python venv set up.
+ * Runs once per process. Errors are caught and logged — never thrown,
+ * so a setup failure won't cascade into a native CMD fallback.
+ */
+let _wslSetupDone = false;
+
+export async function ensureWSLSetup(): Promise<void> {
+  if (_wslSetupDone) return;
+  _wslSetupDone = true; // only attempt once
+  const wslCmd = getWslCmd();
+  console.log('[ensureWSLSetup] Setting up WSL environment...');
+
+  try {
+    // Check if python3 is installed
+    const { stdout: whichOut } = await execAsync(`${wslCmd} --exec bash -c "command -v python3"`, { timeout: 15000 });
+    if (whichOut.trim()) {
+      console.log('[ensureWSLSetup] python3 already installed');
+    } else {
+      console.log('[ensureWSLSetup] python3 not found, installing via root...');
+      // Use --user root because apt-get needs root in WSL
+      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv"`, { timeout: 180000 });
+    }
+  } catch (err) {
+    // First attempt failed (e.g., wsl --user root unavailable). Try sudo approach.
+    console.log('[ensureWSLSetup] Root attempt failed, trying sudo...', err);
+    try {
+      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv"`, { timeout: 180000 });
+    } catch (err2) {
+      // Both install attempts failed — log and continue without python3
+      console.error('[ensureWSLSetup] Failed to install python3:', err2);
+    }
+  }
+
+  // Create ~/.everfern/ directory and set up venv (runs as default WSL user)
+  try {
+    const setupScript = [
+      'mkdir -p ~/.everfern',
+      'if [ ! -d ~/.everfern/venv ] && command -v python3 &>/dev/null; then',
+      '  python3 -m venv ~/.everfern/venv',
+      '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
+      'fi'
+    ].join(' && ');
+    await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 60000 });
+  } catch (err) {
+    console.error('[ensureWSLSetup] Failed to create venv:', err);
+  }
+
+  console.log('[ensureWSLSetup] WSL environment setup complete ✅');
+}
+
 async function runInWSL(command: string, cwd?: string): Promise<LinuxVMExecutionResult> {
+  const wslCmd = getWslCmd();
+  console.log(`[runInWSL] Using WSL command: ${wslCmd}`);
+
+  // Ensure WSL is set up (python3, .everfern/, venv) — never throws
+  try {
+    await ensureWSLSetup();
+  } catch (err) {
+    console.error('[runInWSL] WSL setup failed (continuing anyway):', err);
+  }
+
   // Translate Windows paths to Linux paths if cwd is provided
   let linuxCwd = cwd;
   if (cwd) {
@@ -73,7 +148,7 @@ async function runInWSL(command: string, cwd?: string): Promise<LinuxVMExecution
     fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
   }
 
-  return executeCommand('wsl.exe', ['--exec', 'bash', '-c', fullCommand]);
+  return executeCommand(wslCmd, ['--exec', 'bash', '-c', fullCommand]);
 }
 
 /**
@@ -253,7 +328,10 @@ export async function ensureDockerContainer(): Promise<void> {
 
       // Install basic tools in the container
       await execAsync('docker exec everfern-ubuntu apt-get update');
-      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip nodejs npm');
+      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm');
+
+      // Create ~/.everfern/ directory and Python venv
+      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && python3 -m venv ~/.everfern/venv && ~/.everfern/venv/bin/pip install --upgrade pip -q"');
     } else {
       // Check if container is running
       const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');

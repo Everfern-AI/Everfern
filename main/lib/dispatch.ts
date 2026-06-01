@@ -16,8 +16,8 @@ export class DispatchService {
   private token: string | null = null;
 
   private onActiveCallback: (() => void) | null = null;
-  /** Called when a command arrives from the web. */
-  public onCommand: ((command: string) => void) | null = null;
+  /** Called when a command arrives from the web. Receives command text and optional model override. */
+  public onCommand: ((command: string, model?: string) => void) | null = null;
 
   private constructor() {
     const configPath = path.join(os.homedir(), '.everfern', 'device_id.txt');
@@ -225,14 +225,15 @@ export class DispatchService {
 
   private handleIncomingCommand(payload: any) {
     const action: string = payload?.action || payload?.command || String(payload);
-    console.log('[DispatchService] Command received:', action);
+    const model: string | undefined = payload?.model;
+    console.log('[DispatchService] Command received:', action, model ? `(model override: ${model})` : '');
 
     // ACK immediately so the web UI knows the desktop got it
     this.broadcastToWeb('command_ack', { status: 'received', command: action });
 
     if (this.onCommand) {
       try {
-        this.onCommand(action);
+        this.onCommand(action, model);
       } catch (err) {
         console.error('[DispatchService] onCommand threw:', err);
         this.broadcastToWeb('state_update', {

@@ -79,6 +79,20 @@ export default function AuthPage() {
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, [googleWaiting]);
 
+    // ── Listen for protocol deep-link (everfern-app://auth-success) ──
+    useEffect(() => {
+        const api = (window as any).electronAPI;
+        if (!api?.on) return;
+        const handler = (url: string) => {
+            console.log('[Auth] Protocol link received:', url);
+            if (desktopCodeRef.current) {
+                pollForAuth(desktopCodeRef.current);
+            }
+        };
+        api.on('acp:protocol-link', handler);
+        return () => { api.off('acp:protocol-link', handler); };
+    }, []);
+
     async function pollForAuth(code: string) {
         try {
             const res = await fetch(`${API_URL}/api/auth/desktop-poll?code=${code}`);

@@ -13,6 +13,7 @@ import { createPresentFilesTool } from '../tools/present-files';
 import { createWorkspaceRequestTool, allowFileDeleteTool } from '../tools/control-plane';
 import { terminalTool, terminalStatusTool } from '../tools/terminal';
 import { searchMcpRegistryTool, connectMcpServerTool, listMcpToolsTool } from '../tools/mcp-registry-tool';
+import { localPermissionTool } from '../tools/local-permission';
 import { createArtifactTool } from '../tools/create-artifact';
 import { editArtifactTool } from '../tools/edit-artifact';
 import { visualizeTool } from '../tools/visualize';
@@ -24,6 +25,7 @@ import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
 import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
+import { createAnalyzeImageTool } from '../tools/analyze-image';
 import * as os from 'os';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
@@ -38,8 +40,8 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     if (mainConfig.vlm) {
       try {
         const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
-                               mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'everfern' ? 'everfern' :
-                               mainConfig.vlm.provider) as any;
+                                mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'everfern' ? 'everfern' :
+                                mainConfig.vlm.provider) as any;
         visionClient = new AIClient({
           provider: mappedProvider,
           model: mainConfig.vlm.model,
@@ -104,6 +106,8 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     webSearchTool,
     todoWriteTool,
     askUserTool,
+    createAnalyzeImageTool(runner.client, runner),
+    localPermissionTool,
     skillTool,
     createPresentFilesTool(runner),
     ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),

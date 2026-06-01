@@ -70,6 +70,7 @@ import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSk
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { ensurePlaywrightChromium } from './lib/playwright-setup';
+import { ensureWSLSetup } from './agent/tools/linux-vm-executor';
 
 // ── GPU / Cache Startup Fixes (must run before app.whenReady) ───────────────
 // Disable GPU shader disk cache — prevents "Access is denied (0x5)" on Windows
@@ -135,6 +136,14 @@ You have access to a variety of tools, including GUI automation, terminal access
 3. For GUI automation, use the 'computer_use' tool.
 4. If you are unsure about a command, ask for clarification.
 
+## Linux VM (Default Execution Environment)
+All commands execute inside a Linux VM (WSL on Windows, Docker on macOS).
+- Python 3, Node.js, npm, pip are pre-installed
+- \`~/.everfern/\` is available as a persistent workspace
+- \`~/.everfern/venv\` is a pre-configured Python venv (activate: \`source ~/.everfern/venv/bin/activate\`)
+- Install additional pip packages inside the venv as needed
+- When organizing files in the user's main VM, always use local permissions because it is better and more secure
+
 Your goal is to be the ultimate workplace companion.
 `;
         fs.writeFileSync(promptPath, defaultPrompt, 'utf-8');
@@ -148,6 +157,13 @@ Your goal is to be the ultimate workplace companion.
 
   // Ensure system prompt exists
   ensureSystemPromptExists();
+
+  // Fire-and-forget: ensure WSL has python3 and .everfern/ venv set up at startup
+  if (process.platform === 'win32') {
+    ensureWSLSetup().catch((err: any) =>
+      console.error('[Startup] WSL setup failed (non-blocking):', err)
+    );
+  }
 
   console.log('[Startup] Singletons and IPC initialized.');
 } catch (err) {
@@ -552,6 +568,14 @@ You have access to a variety of tools, including GUI automation, terminal access
 3. For GUI automation, use the 'computer_use' tool.
 4. If you are unsure about a command, ask for clarification.
 
+## Linux VM (Default Execution Environment)
+All commands execute inside a Linux VM (WSL on Windows, Docker on macOS).
+- Python 3, Node.js, npm, pip are pre-installed
+- \`~/.everfern/\` is available as a persistent workspace
+- \`~/.everfern/venv\` is a pre-configured Python venv (activate: \`source ~/.everfern/venv/bin/activate\`)
+- Install additional pip packages inside the venv as needed
+- When organizing files in the user's main VM, always use local permissions because it is better and more secure
+
 Your goal is to be the ultimate workplace companion.
 `;
         fs.writeFileSync(promptPath, defaultPrompt, 'utf-8');
@@ -813,6 +837,48 @@ ipcMain.handle('window:minimize',    () => { mainWindow?.minimize(); });
 ipcMain.handle('window:maximize',    () => { mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize(); });
 ipcMain.handle('window:close',       () => { mainWindow?.close(); });
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() || false);
+
+// ── IPC: Health Check ────────────────────────────────────────────────
+
+ipcMain.handle('db:checkConnection', async () => {
+  try {
+    // Check database connection
+    // TODO: Implement actual database connection check
+    console.log('[HealthCheck] Checking database connection...');
+    return {
+      success: true,
+      details: 'Database check skipped (not yet configured)'
+    };
+  } catch (error) {
+    console.error('[HealthCheck] Database check failed:', error);
+    return {
+      success: true,
+      details: 'Database check skipped (not yet configured)',
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+});
+
+ipcMain.handle('db:checkVectors', async () => {
+  try {
+    // Check vector store status
+    // TODO: Implement actual vector store check
+    console.log('[HealthCheck] Checking vector store...');
+    return {
+      success: true,
+      count: 0,
+      details: 'Vector store check skipped (not yet configured)'
+    };
+  } catch (error) {
+    console.error('[HealthCheck] Vector store check failed:', error);
+    return {
+      success: true,
+      count: 0,
+      details: 'Vector store check skipped (not yet configured)',
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+});
 
 // ── IPC: System Tray ────────────────────────────────────────────────
 

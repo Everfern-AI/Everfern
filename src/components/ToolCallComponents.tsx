@@ -12,12 +12,13 @@ import {
     CommandLineIcon,
     Cog6ToothIcon,
     Cog8ToothIcon,
+    FolderOpenIcon,
 } from "@heroicons/react/24/outline";
-import type { ToolCallDisplay, LiveToolCall } from '../types/index';
+import type { ToolCallDisplay, LiveToolCall } from '../app/chat/types/index';
 import { MarkdownRenderer } from './MarkdownComponents';
 import { FaviconCitation } from './FaviconCitation';
 import { DiffViewer } from '@/components/diff-viewer';
-import { SyntaxHighlighter } from '../ArtifactsPanel';
+import { SyntaxHighlighter } from './ArtifactsPanel';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { SimpleFileNotification } from './SimpleFileNotification';
 import { GradientBorderSystem } from './GradientBorderSystem';
@@ -291,19 +292,37 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const isRead = tc.toolName === 'read_file' || tc.toolName === 'read' || tc.toolName === 'view_file' || tc.toolName === 'cat';
     const isFind = tc.toolName === 'find_files' || tc.toolName === 'find' || tc.toolName === 'search_docs' || tc.toolName === 'web_search' || tc.toolName === 'remote_web_search' || tc.toolName === 'search' || tc.toolName === 'grep';
     const isBrowser = tc.toolName === 'navis' || tc.toolName === 'browser' || tc.toolName === 'computer_use';
-
-    let iconToDisplay = tc.icon;
+    const isPermission = tc.toolName === 'local_permission' || tc.toolName?.includes('permission');
+    const isFileSystem = tc.toolName === 'system_files';
+    const isSkill = tc.toolName === 'skill' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill';
+    const skillName = tc.args?.name as string | undefined;
+ 
+     let iconToDisplay = tc.icon;
     if (!iconToDisplay || (React.isValidElement(iconToDisplay) && (iconToDisplay.type === Cog6ToothIcon || iconToDisplay.type === Cog8ToothIcon))) {
         if (isLs) {
             iconToDisplay = <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" width="16" height="16"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" /></svg>;
-        } else if (isRead) {
-            iconToDisplay = <DocumentTextIcon width={16} height={16} />;
-        } else if (isBrowser) {
+         } else if (isRead) {
+             iconToDisplay = <DocumentTextIcon width={16} height={16} />;
+         } else if (isFileSystem) {
+             iconToDisplay = <FolderOpenIcon width={16} height={16} />;
+         } else if (isBrowser) {
             iconToDisplay = <img src="/assets/tool-browser.svg" className="w-4 h-4 opacity-75" alt="Browser" />;
         } else if (isFind) {
             iconToDisplay = <img src="/assets/tool-search.svg" className="w-4 h-4 opacity-75" alt="Search" />;
         } else if (isTerminal) {
             iconToDisplay = <img src="/assets/tool-terminal.svg" className="w-4 h-4 opacity-75" alt="Terminal" />;
+        } else if (isPermission) {
+            iconToDisplay = (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-75">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+            );
+        } else if (isSkill) {
+            iconToDisplay = (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-75">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+            );
         } else {
             iconToDisplay = <img src="/assets/tool-generic.svg" className="w-4 h-4 opacity-75" alt="Generic" />;
         }
@@ -376,7 +395,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={`Tool: ${tc.displayName || tc.label || tc.toolName}`}
+                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.displayName || tc.label || tc.toolName}`}
                 className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
                     isSelected
                         ? 'bg-indigo-50 border border-indigo-200'
@@ -406,7 +425,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
                         <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[#888888]' : isError ? 'text-[#ef4444]' : 'text-[#111111]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
-                            {tc.displayName || tc.label || tc.toolName}
+                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.displayName || tc.label || tc.toolName)}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (
@@ -452,7 +471,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="overflow-hidden pl-7 mt-3"
+                        className="overflow-hidden pl-7 pr-3 mt-3"
                     >
                         {hasSearchPills ? (
                             <div className="flex flex-col gap-4 pb-1">

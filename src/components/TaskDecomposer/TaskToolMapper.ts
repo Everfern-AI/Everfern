@@ -6,7 +6,7 @@
  * out-of-order arrivals, and state persistence.
  */
 
-import type { DecomposedTask, TaskStep } from '@/main/agent/runner/state';
+import type { DecomposedTask, TaskStep } from '../../../main/agent/runner/state';
 import type {
   TaskToolMapping,
   TaskToolMapperState,

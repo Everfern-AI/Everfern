@@ -20,6 +20,20 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
     return await historyStore.delete(id);
   });
 
+  ipcMain.handle('history:search', async (_event, query: string, limit?: number) => {
+    return await historyStore.search(query, limit);
+  });
+
+  ipcMain.handle('history:backfill', async () => {
+    // Run backfill asynchronously so it doesn't block IPC
+    historyStore.backfillVectors().catch(console.error);
+    return { success: true, message: 'Backfill started in background' };
+  });
+
+  ipcMain.handle('history:get-vectors', async (_event, limit?: number) => {
+    return await historyStore.getVectors(limit);
+  });
+
   // ── HITL Persistence ─────────────────────────────────────────────
   // Returns the most recent pending HITL request for a conversation, or null.
   ipcMain.handle('hitl:get-pending', async (_event, conversationId: string) => {

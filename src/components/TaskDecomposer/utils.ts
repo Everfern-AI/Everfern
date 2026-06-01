@@ -5,7 +5,7 @@
  * including validation, formatting, and state management utilities.
  */
 
-import type { DecomposedTask, TaskStep } from '@/main/agent/runner/state';
+import type { DecomposedTask, TaskStep } from '../../../main/agent/runner/state';
 import type { ToolCallDisplay, TaskStatus } from './types';
 import { ERROR_MESSAGES, PATTERNS } from './constants';
 

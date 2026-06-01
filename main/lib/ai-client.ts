@@ -14,6 +14,46 @@
 import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
 
+// ── Safe JSON Parsing ───────────────────────────────────────────────
+
+/**
+ * Safely parse JSON with auto-repair for common LLM issues:
+ * - Bad escape characters (e.g. "C:\Users" → "C:\\Users")
+ * - Truncated JSON
+ * - Single quotes instead of double quotes
+ */
+function safeParseJSON(input: string | Record<string, any>, fallback: any = {}): any {
+  if (typeof input !== 'string') return input || fallback;
+  if (!input.trim()) return fallback;
+  try {
+    return JSON.parse(input);
+  } catch (err: any) {
+    // Attempt repair: double backslashes before characters that aren't valid JSON escapes
+    // Valid JSON escapes: " \\ / b f n r t u
+    let repaired = input
+      // Fix \U, \S, \P, etc. (common in Windows paths like C:\Users)
+      .replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1')
+      // Fix trailing backslash
+      .replace(/\\$/, '\\\\');
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      // If still fails, try extracting any JSON object from the string
+      try {
+        const match = repaired.match(/\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\})*)*\}))*\}/);
+        if (match) return JSON.parse(match[0]);
+      } catch {}
+      // Also try the original with stripped control chars
+      try {
+        const stripped = input.replace(/[\x00-\x1f\x7f]/g, '');
+        return JSON.parse(stripped);
+      } catch {}
+      console.warn(`[AIClient] Failed to parse JSON, using fallback. Input: "${input.slice(0, 200)}..."`);
+      return fallback;
+    }
+  }
+}
+
 // ── Client Pool for Connection Reuse ────────────────────────────────
 
 interface ClientPoolEntry {
@@ -103,7 +143,7 @@ export interface AIClientConfig {
   maxTokens?: number;
   /** Decoupled Vision AI configuration */
   vlm?: {
-    engine: 'online' | 'local';
+    engine: 'online' | 'local' | 'cloud';
     provider: string;
     model: string;
     baseUrl?: string;
@@ -328,7 +368,7 @@ export class AIClient {
     };
   }
 
-  private _supportsVision(): boolean {
+  supportsVision(): boolean {
     if (this.config.vlm) return false;
     if (this.config.provider === 'everfern') return true;
     const modelName = this.config.model?.toLowerCase() || '';
@@ -536,7 +576,7 @@ export class AIClient {
   // ── OpenAI SDK Methods (for NVIDIA NIM and Ollama Cloud) ────────
 
   private _mapMessagesForOpenAI(messages: ChatMessage[]): any[] {
-    const supportsVision = this._supportsVision();
+    const supportsVision = this.supportsVision();
 
     let processedMessages = messages.flatMap(m => {
       let content = m.content;
@@ -547,7 +587,7 @@ export class AIClient {
         const isNvidiaTool = this.config.provider === 'nvidia' && m.role === 'tool';
         if (!isNvidiaTool) {
           content = content.filter(c => c.type !== 'image_url');
-          if (content.length === 0) content = '[Image omitted — model does not support vision]';
+          if (content.length === 0) content = '[An image was included in this message, but the current model cannot process images. To enable image analysis, switch to a vision-capable model or configure a VLM in Settings.]';
         }
       }
 
@@ -638,7 +678,7 @@ export class AIClient {
           // Rule: Bridge Tool -> User gap or Handle pending images
           // If we are exiting a tool block and have pending images, inject them
           if (last.role === 'tool' && m.role !== 'tool' && pendingImages.length > 0) {
-            if (this._supportsVision()) {
+            if (this.supportsVision()) {
               finalMessages.push({ role: 'assistant', content: 'Action completed.' });
               last = {
                 role: 'user',
@@ -724,8 +764,8 @@ export class AIClient {
       }
 
       // Final check for pending images at the end of conversation
-      if (pendingImages.length > 0 && !this._supportsVision()) {
-        // Model doesn't support vision — strip images
+      if (pendingImages.length > 0 && !this.supportsVision()) {
+        console.warn(`[AIClient] Dropping ${pendingImages.length} pending image(s) — model does not support vision`);
         pendingImages = [];
       }
       if (pendingImages.length > 0) {
@@ -832,7 +872,8 @@ export class AIClient {
     const retryWithBackoff = async <T>(
       fn: () => Promise<T>,
       maxRetries = 3,
-      baseDelayMs = 1000
+      baseDelayMs = 1000,
+      retryOnJsonError = false
     ): Promise<T> => {
       let lastError: any;
       for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -843,11 +884,12 @@ export class AIClient {
           // Retry on 500, 502, 503, 504 errors or timeout
           const status = err.status;
           const isRetryable = status >= 500 || err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET';
-          if (!isRetryable || attempt === maxRetries - 1) {
+          const isJsonError = retryOnJsonError && err instanceof SyntaxError && err.message?.includes('JSON');
+          if ((!isRetryable && !isJsonError) || attempt === maxRetries - 1) {
             throw err;
           }
           const delayMs = baseDelayMs * Math.pow(2, attempt);
-          console.warn(`[AIClient] Request failed with status ${status}, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+          console.warn(`[AIClient] Request failed (${isJsonError ? 'JSON parse' : `status ${status}`}), retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
           await new Promise(r => setTimeout(r, delayMs));
         }
       }
@@ -963,7 +1005,7 @@ export class AIClient {
         const toolCalls = Object.values(toolCallsMap).map(tc => ({
           id: tc.id,
           name: tc.name,
-          arguments: tc.arguments ? JSON.parse(tc.arguments) : {}
+          arguments: safeParseJSON(tc.arguments)
         }));
 
         return {
@@ -975,15 +1017,16 @@ export class AIClient {
           finishReason: finishReason === 'tool_calls' || toolCalls.length > 0 ? 'tool_calls' : 'stop'
         };
       } else {
-        // Non-streaming mode
+        // Non-streaming mode — retry on JSON parse errors too
         const response = await retryWithBackoff(() =>
-          this.openaiClient!.chat.completions.create(options) as Promise<any>
+          this.openaiClient!.chat.completions.create(options) as Promise<any>,
+          3, 1000, true // true = retry on JSON parse errors
         );
         const choice = response.choices?.[0];
         const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
           id: tc.id,
           name: tc.function?.name || tc.name,
-          arguments: JSON.parse(tc.function?.arguments || tc.arguments || '{}')
+          arguments: safeParseJSON(tc.function?.arguments || tc.arguments)
         }));
 
         return {
@@ -1367,7 +1410,7 @@ export class AIClient {
       const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
         id: tc.id,
         name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments || '{}'),
+        arguments: safeParseJSON(tc.function.arguments),
       }));
       return {
         id: data.id ?? `${this.config.provider}-${Date.now()}`,
@@ -1454,12 +1497,7 @@ export class AIClient {
     }
 
     const toolCalls = Object.values(toolCallsMap).map((tc: any) => {
-      let args = {};
-      try {
-        args = tc.arguments ? JSON.parse(tc.arguments) : {};
-      } catch (e) {
-        console.error('[AIClient] Failed to parse tool arguments:', tc.arguments, e);
-      }
+      const args = safeParseJSON(tc.arguments);
       return {
         id: tc.id,
         name: tc.name,
@@ -1696,7 +1734,7 @@ export class AIClient {
             parts.push({
               function_call: {
                 name: tc.name,
-                args: typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments
+                args: safeParseJSON(tc.arguments)
               }
             });
           }
@@ -1949,7 +1987,7 @@ export class AIClient {
     const toolCalls = Object.values(toolCallsMap).map((tc: any) => ({
       id: tc.id,
       name: tc.name,
-      arguments: tc.arguments ? JSON.parse(tc.arguments) : {},
+      arguments: safeParseJSON(tc.arguments),
     }));
 
     return {
@@ -2049,7 +2087,7 @@ export class AIClient {
   }
 
   private _mapOllamaMessages(messages: ChatMessage[]): any[] {
-    const supportsVision = this._supportsVision();
+    const supportsVision = this.supportsVision();
     const sanitized = this._sanitizeForLocalProvider(messages);
     return sanitized.map((m: any) => {
       let content = '';
@@ -2240,12 +2278,7 @@ export class AIClient {
     }
 
     const toolCalls = Object.values(toolCallsMap).map(tc => {
-      let args = {};
-      try {
-        args = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments;
-      } catch (e) {
-        args = tc.arguments;
-      }
+      const args = safeParseJSON(tc.arguments);
       return { id: tc.id, name: tc.name, arguments: args as Record<string, any> };
     });
 

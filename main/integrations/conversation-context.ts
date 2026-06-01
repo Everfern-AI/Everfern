@@ -333,6 +333,51 @@ export class ConversationContextManager extends EventEmitter {
   }
 
   /**
+   * Add a narrative message to conversation (for UI display only, not included in chat context)
+   *
+   * Narrative messages are explanatory text meant for the user to read but should not
+   * be sent to the AI model as part of the conversation context.
+   */
+  async addNarrativeMessage(
+    conversationId: string,
+    content: string,
+    metadata: Record<string, any> = {}
+  ): Promise<ConversationMessage> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} not found`);
+    }
+
+    const narrativeMessage: ConversationMessage = {
+      id: `narrative_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      conversationId,
+      sender: {
+        userId: 'system',
+        platforms: new Map(),
+        role: 'system',
+        lastActive: new Date()
+      },
+      content: {
+        text: content,
+        files: [],
+        metadata: {
+          ...metadata,
+          isNarrative: true  // Mark as narrative so it won't be added to chat context
+        }
+      },
+      timestamp: new Date(),
+      platform: 'system',
+      isSystem: true
+    };
+
+    // Emit event for UI display - narrative messages are not stored in conversation context
+    // They are handled by the UI layer and filtered out before sending to AI
+    this.emit('narrativeMessageAdded', conversationId, narrativeMessage);
+
+    return narrativeMessage;
+  }
+
+  /**
    * Handle stop command from any platform
    */
   async handleStopCommand(
@@ -531,6 +576,12 @@ export class ConversationContextManager extends EventEmitter {
     message: ConversationMessage
   ): Promise<void> {
     const context = conversation.contextWindow;
+
+    // Filter out narrative content - don't add to chat context if marked as narrative
+    if (message.content.metadata?.isNarrative === true) {
+      console.debug(`[ConversationContext] Skipping narrative message ${message.id} from chat context`);
+      return;
+    }
 
     // Add message to context
     context.currentMessages.push(message);

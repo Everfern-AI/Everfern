@@ -6,7 +6,7 @@
  * during streaming execution.
  */
 
-import type { DecomposedTask, TaskStep } from '@/main/agent/runner/state';
+import type { DecomposedTask, TaskStep } from '../../../main/agent/runner/state';
 import type { TaskToolMapping, TaskToolMapperState, SerializedTaskToolMapperState } from './types';
 
 /**
@@ -118,14 +118,7 @@ export interface ITaskToolMapper {
    */
   serialize(): string;
 
-  /**
-   * Deserialize mapper state from JSON
-   *
-   * @param json - JSON string representation of the mapper state
-   * @returns The deserialized TaskToolMapperState
-   * @throws Error if JSON is invalid or cannot be deserialized
-   */
-  static deserialize(json: string): TaskToolMapperState;
+
 
   /**
    * Reset the mapper to initial state

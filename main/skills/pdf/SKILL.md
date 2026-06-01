@@ -182,20 +182,33 @@ doc.build(story)
 
 ---
 
-## OCR on Scanned PDFs
+## OCR on Scanned PDFs (PaddleOCR)
+
+Use **PaddleOCR** — it's more accurate than Tesseract, handles complex layouts, and installs easily with pip.
+
+```bash
+pip install paddlepaddle paddleocr pdf2image pillow
+```
 
 ```python
-# pip install pytesseract pdf2image
-# Also requires Tesseract-OCR installed: https://github.com/UB-Mannheim/tesseract/wiki
-import pytesseract
+# Use PaddleOCR for PDF OCR — no separate Tesseract install needed
+# Models download automatically on first run (~15MB)
+from paddleocr import PaddleOCR
 from pdf2image import convert_from_path
+import numpy as np
 
-images = convert_from_path(r"C:\path\scanned.pdf", poppler_path=r"C:\path\to\poppler\bin")
+ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+
+images = convert_from_path("/path/to/scanned.pdf", dpi=300)
 text = ""
-for i, image in enumerate(images):
-    text += f"Page {i+1}:\n"
-    text += pytesseract.image_to_string(image)
-    text += "\n\n"
+for i, img in enumerate(images):
+    # Convert PIL Image to numpy array
+    img_array = np.array(img)
+    result = ocr.ocr(img_array, cls=True)
+    page_text = ""
+    for line in result[0] if result and result[0] else []:
+        page_text += line[1][0] + "\n"
+    text += f"--- Page {i+1} ---\n{page_text}\n"
 print(text)
 ```
 
@@ -210,6 +223,6 @@ print(text)
 | Extract text | pdfplumber | `page.extract_text()` |
 | Extract tables | pdfplumber | `page.extract_tables()` |
 | Create PDF | reportlab | `canvas.Canvas(...)` |
-| OCR scanned | pytesseract | Convert to image first |
+| OCR scanned | PaddleOCR | Convert to image first |
 | Watermark | pypdf | `page.merge_page(watermark)` |
 | Encrypt | pypdf | `writer.encrypt(...)` |

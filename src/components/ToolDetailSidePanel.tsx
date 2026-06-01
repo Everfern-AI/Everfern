@@ -8,6 +8,7 @@ import {
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
   BookOpen
 } from 'lucide-react';
+import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
 
 /* ============================================================
@@ -15,7 +16,7 @@ import { MarkdownViewer } from './FileViewerModal';
    ============================================================ */
 export const ToolType = {
   WEB_SEARCH: 'web_search',
-  NAVIS: 'navis',
+  FERN: 'fern',
   TERMINAL: 'terminal',
   SKILL: 'skill',
   FILE_SYSTEM: 'file_system',
@@ -68,9 +69,9 @@ export function detectToolType(toolName: string | undefined | null): string {
   const n = toolName.toLowerCase();
   if (n === 'skill') return ToolType.SKILL;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
-  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.NAVIS;
+  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
-  if (n.includes('read_file') || n.includes('write_to_file') || n.includes('replace_file_content') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
+  if (n.includes('read_file') || n.includes('write_to_file') || n.includes('replace_file_content') || n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   return ToolType.GENERIC;
 }
 
@@ -91,8 +92,9 @@ function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
   if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
-  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
+  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
+  if (n.includes('system_files')) return { Icon: FolderOpenIcon, label: 'File System', iconSize: 12 };
   return { Icon: Braces, label: 'Generic Tool' };
 }
 
@@ -137,7 +139,7 @@ function CopyBtn({ text, dark }: { text: string; dark?: boolean }) {
    PANEL HEADER
    ============================================================ */
 function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; toolName?: string; onClose: () => void }) {
-  const { Icon, label } = getToolMeta(toolName);
+  const { Icon, label, iconSize = 16 } = getToolMeta(toolName);
 
   return (
     <header style={{
@@ -155,7 +157,7 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08)',
         }}>
-          <Icon size={16} color={'#333'} strokeWidth={1.75} />
+          <Icon size={iconSize} color={'#333'} strokeWidth={1.75} />
         </div>
 
         {/* Text stack */}
@@ -843,51 +845,104 @@ export function TerminalView({
   output,
   exitCode,
   duration,
+  shellType,
 }: {
   command: string;
   output: string;
   exitCode?: number;
   duration?: number;
+  shellType?: 'windows' | 'linux';
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
   const clean   = output?.replace(/\x1b\[[0-9;]*m/g, '') || '';
+  const looksLikePS = shellType === 'windows' || /powershell\.exe/i.test(command) || /^pwsh/i.test(command);
 
-  // Try to detect user/host/path from prompt strings baked into command, fall back to defaults
+  const showExit = exitCode !== undefined || duration !== undefined;
+
+  // ── Windows/PowerShell Terminal Style ──
+  if (looksLikePS) {
+    const WIN = {
+      bg:       '#0d1117',
+      border:   'rgba(86,145,227,0.15)',
+      divider:  'rgba(86,145,227,0.08)',
+      textCmd:  'rgba(220,235,255,0.9)',
+      textOut:  'rgba(220,235,255,0.55)',
+      textErr:  '#ff7b72',
+      textDim:  'rgba(220,235,255,0.2)',
+      psPrefix: '#5691e3',
+      psPath:   '#58a6ff',
+      psChevron:'rgba(220,235,255,0.4)',
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: WIN.bg, overflow: 'hidden', fontFamily: monoStack }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(86,145,227,0.1)', borderBottom: `1px solid ${WIN.border}`, flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="#5691e3"><path d="M0 0h11v11H0zm13 0h11v11H13zm0 13h11v11H13zM0 13h11v11H0z"/></svg>
+          <span style={{ fontSize: 11, color: WIN.textCmd, fontFamily: monoStack, fontWeight: 600 }}>Windows PowerShell</span>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
+            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
+              <span style={{ color: WIN.psPrefix }}>PS </span>
+              <span style={{ color: WIN.psPath }}>C:\&gt;</span>
+              <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
+            </span>
+            <code style={{ fontSize: 13, color: WIN.textCmd, lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+              {command}
+            </code>
+          </div>
+          {clean ? (
+            <pre style={{ fontSize: 12.5, lineHeight: 1.75, color: isError ? WIN.textErr : WIN.textOut, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 8px', fontFamily: monoStack }}>
+              {clean}
+            </pre>
+          ) : (
+            <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: WIN.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
+              (no output)
+            </pre>
+          )}
+          {showExit && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 12, borderTop: `1px solid ${WIN.divider}` }}>
+              {exitCode !== undefined && (
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontFamily: monoStack, letterSpacing: '0.03em', background: isError ? 'rgba(255,123,114,0.1)' : 'rgba(63,185,80,0.1)', border: `1px solid ${isError ? 'rgba(255,123,114,0.18)' : 'rgba(63,185,80,0.18)'}`, color: isError ? WIN.textErr : '#3fb950' }}>
+                  {isError ? `exit ${exitCode}` : 'ok'}
+                </span>
+              )}
+              {duration !== undefined && (
+                <span style={{ fontSize: 11, color: WIN.textDim, fontFamily: monoStack, marginLeft: 'auto' }}>
+                  {formatDuration(duration)}
+                </span>
+              )}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
+            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
+              <span style={{ color: WIN.psPrefix }}>PS </span>
+              <span style={{ color: WIN.psPath }}>C:\&gt;</span>
+              <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
+            </span>
+            <BlinkCursor />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Linux Terminal Style (original) ──
   const user = 'ubuntu';
   const host = 'localhost';
   const path = '~';
 
-  const showExit = exitCode !== undefined || duration !== undefined;
-
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: TERM.bg, overflow: 'hidden',
-      fontFamily: monoStack,
-    }}>
-
-      {/* ── Body ── */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: TERM.bg, overflow: 'hidden', fontFamily: monoStack }}>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', display: 'flex', flexDirection: 'column' }}>
-
-        {/* Prompt + command */}
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
           <PS1 user={user} host={host} path={path} />
-          <code style={{
-            fontSize: 13, color: TERM.textCmd, lineHeight: 1.6,
-            wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack,
-          }}>
+          <code style={{ fontSize: 13, color: TERM.textCmd, lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
             {command}
           </code>
         </div>
-
-        {/* Output */}
         {clean ? (
-          <pre style={{
-            fontSize: 12.5, lineHeight: 1.75,
-            color: isError ? TERM.textErr : TERM.textOut,
-            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-            margin: '0 0 8px', fontFamily: monoStack,
-          }}>
+          <pre style={{ fontSize: 12.5, lineHeight: 1.75, color: isError ? TERM.textErr : TERM.textOut, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 8px', fontFamily: monoStack }}>
             {clean}
           </pre>
         ) : (
@@ -895,37 +950,20 @@ export function TerminalView({
             (no output)
           </pre>
         )}
-
-        {/* Exit / duration */}
         {showExit && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            marginTop: 6, paddingTop: 12,
-            borderTop: `1px solid ${TERM.divider}`,
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 12, borderTop: `1px solid ${TERM.divider}` }}>
             {exitCode !== undefined && (
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                fontFamily: monoStack, letterSpacing: '0.03em',
-                background: isError ? TERM.errBg : TERM.okBg,
-                border: `1px solid ${isError ? TERM.errBorder : TERM.okBorder}`,
-                color: isError ? TERM.errText : TERM.okText,
-              }}>
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontFamily: monoStack, letterSpacing: '0.03em', background: isError ? TERM.errBg : TERM.okBg, border: `1px solid ${isError ? TERM.errBorder : TERM.okBorder}`, color: isError ? TERM.errText : TERM.okText }}>
                 {isError ? `exit ${exitCode}` : 'ok'}
               </span>
             )}
             {duration !== undefined && (
-              <span style={{
-                fontSize: 11, color: TERM.textDim,
-                fontFamily: monoStack, marginLeft: 'auto',
-              }}>
+              <span style={{ fontSize: 11, color: TERM.textDim, fontFamily: monoStack, marginLeft: 'auto' }}>
                 {formatDuration(duration)}
               </span>
             )}
           </div>
         )}
-
-        {/* Idle prompt with cursor */}
         <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
           <PS1 user={user} host={host} path={path} />
           <BlinkCursor />
@@ -1366,7 +1404,10 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
 }
 
 function extractTerminalData(tc: any) {
-  return { command: tc.args?.command || tc.args?.CommandLine || '', output: tc.output || tc.result?.output || tc.result?.error || tc.error || '', exitCode: tc.data?.exitCode || tc.result?.data?.exitCode, duration: tc.duration || tc.result?.duration };
+  const command = tc.args?.command || tc.args?.CommandLine || '';
+  const toolName = (tc.toolName || '').toLowerCase();
+  const isWindows = toolName.includes('pwsh') || toolName.includes('powershell') || command.includes('powershell.exe') || command.includes('pwsh') || command.startsWith('powershell');
+  return { command, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '', exitCode: tc.data?.exitCode || tc.result?.data?.exitCode, duration: tc.duration || tc.result?.duration, shellType: isWindows ? 'windows' : 'linux' };
 }
 
 function extractFileSystemData(tc: any) {
@@ -1456,7 +1497,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
       let extracted: any;
       if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
-      } else if (type === ToolType.NAVIS) {
+      } else if (type === ToolType.FERN) {
         // Pass current progress snapshot for initial render
         const progress = subAgentProgress?.get(toolCall.id) || [];
         extracted = extractNavisData(toolCall, progress);
@@ -1485,10 +1526,10 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, toolCall?.id, toolCall?.output]);
 
-  // Lightweight secondary effect: ONLY updates screenshots for live NAVIS/computer_use sessions.
+  // Lightweight secondary effect: ONLY updates screenshots for live FERN/computer_use sessions.
   // Runs when new progress events arrive but skips the loading spinner and full re-parse.
   useEffect(() => {
-    if (!isOpen || !toolCall || toolType !== ToolType.NAVIS) return;
+    if (!isOpen || !toolCall || toolType !== ToolType.FERN) return;
     const progress = subAgentProgress?.get(toolCall.id) || [];
     if (progress.length === 0) return;
     try {
@@ -1506,7 +1547,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
   // screenshotPath but no base64 (i.e., the session was restored from saved history after
   // a page refresh). Loads each image via IPC and patches toolData in place.
   useEffect(() => {
-    if (!isOpen || !toolData || toolType !== ToolType.NAVIS) return;
+    if (!isOpen || !toolData || toolType !== ToolType.FERN) return;
     const screenshots: any[] = toolData.screenshots || [];
     const needLoad = screenshots.filter((s: any) => s.screenshotPath && !s.base64);
     if (needLoad.length === 0) return;
@@ -1618,7 +1659,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     );
 
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
-    if (toolType === ToolType.NAVIS) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Navis'} />;
+    if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
