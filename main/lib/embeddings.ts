@@ -57,10 +57,16 @@ export function getSystemEmbeddingConfig(): EmbeddingConfig {
         }
       }
 
-      if (config.keys && config.keys[provider]) {
-        apiKey = config.keys[provider];
+      if (config.keys && (config.keys[provider] || (provider === 'gemini' && config.keys['google']) || (provider === 'google' && config.keys['gemini']))) {
+        apiKey = config.keys[provider] || (provider === 'gemini' ? config.keys['google'] : config.keys['gemini']);
       } else {
-        const keyPath = path.join(configDir, 'keys', `${provider}.key`);
+        let keyPath = path.join(configDir, 'keys', `${provider}.key`);
+        if (!fs.existsSync(keyPath) && provider === 'gemini') {
+          keyPath = path.join(configDir, 'keys', 'google.key');
+        }
+        if (!fs.existsSync(keyPath) && provider === 'google') {
+          keyPath = path.join(configDir, 'keys', 'gemini.key');
+        }
         if (fs.existsSync(keyPath)) {
           const rawKey = fs.readFileSync(keyPath, 'utf-8').trim();
           const match = rawKey.match(/(?:nvapi-[A-Za-z0-9_-]+|sk-[A-Za-z0-9T\-]+)/);
@@ -87,7 +93,7 @@ export function getSystemEmbeddingConfig(): EmbeddingConfig {
   };
 }
 
-export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingModel {
+function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
   if (config.provider === 'ollama' || config.provider === 'lmstudio') {
     return {
       embeddings: new OllamaEmbeddings({
@@ -136,7 +142,7 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
         embedQuery: async (text: string) => {
           const modelName = config.model || "gemini-embedding-001";
           const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
-          const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${config.apiKey || ''}`;
 
           const res = await fetch(url, {
             method: 'POST',
@@ -163,7 +169,7 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
           return Promise.all(documents.map(doc => {
             const modelName = config.model || "gemini-embedding-001";
             const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${config.apiKey || ''}`;
 
             return fetch(url, {
               method: 'POST',
@@ -284,4 +290,67 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
     }),
     dimensions: 1536
   };
+}
+
+function resizeAndNormalizeEmbedding(embedding: number[], targetDim = 1536): number[] {
+  if (!Array.isArray(embedding)) {
+    console.warn('[Embeddings] Expected embedding array, got:', typeof embedding);
+    return new Array(targetDim).fill(0);
+  }
+  if (embedding.length === targetDim) return embedding;
+
+  let result = new Array(targetDim);
+  if (embedding.length > targetDim) {
+    // Truncate
+    result = embedding.slice(0, targetDim);
+  } else {
+    // Pad with zeros
+    for (let i = 0; i < targetDim; i++) {
+      result[i] = i < embedding.length ? embedding[i] : 0;
+    }
+  }
+
+  // Normalize vector (L2 norm)
+  let sumSq = 0;
+  for (let i = 0; i < targetDim; i++) {
+    sumSq += result[i] * result[i];
+  }
+  
+  const norm = Math.sqrt(sumSq);
+  if (norm > 0) {
+    for (let i = 0; i < targetDim; i++) {
+      result[i] /= norm;
+    }
+  }
+
+  return result;
+}
+
+export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingModel {
+  const result = getEmbeddingModelRaw(config);
+
+  // Wrap embeddings to guarantee 1536 dimensions
+  const originalEmbedQuery = result.embeddings.embedQuery.bind(result.embeddings);
+  const originalEmbedDocuments = result.embeddings.embedDocuments ? result.embeddings.embedDocuments.bind(result.embeddings) : undefined;
+
+  result.embeddings.embedQuery = async (text: string) => {
+    const vector = await originalEmbedQuery(text);
+    return resizeAndNormalizeEmbedding(vector, 1536);
+  };
+
+  if (originalEmbedDocuments) {
+    result.embeddings.embedDocuments = async (texts: string[]) => {
+      const vectors = await originalEmbedDocuments(texts);
+      return vectors.map(v => resizeAndNormalizeEmbedding(v, 1536));
+    };
+  } else {
+    result.embeddings.embedDocuments = async (texts: string[]) => {
+      return Promise.all(texts.map(text => result.embeddings.embedQuery(text)));
+    };
+  }
+
+  // Force dimensions to 1536 since we resize them
+  result.dimensions = 1536;
+
+  return result;
 }

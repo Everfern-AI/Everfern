@@ -75,6 +75,7 @@ import FileViewerModal from './components/FileViewerModal';
 import { SubagentPanel } from './components/SubagentPanel';
 import { ToolCallDetailPane, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
+import { SubagentPills } from '@/components/SubagentPills';
 
 
 // Extracted components
@@ -1056,8 +1057,8 @@ export default function ChatPage() {
                     { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
                     { id: "openrouter/free", name: "OpenRouter Free", provider: "OpenRouter", providerType: "openrouter", logo: OpenRouterLogo },
                     { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
+                    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "Google Gemini", providerType: "gemini", logo: GeminiLogo },
                     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", provider: "Google Gemini", providerType: "gemini", logo: GeminiLogo },
-                    { id: "gemini-3.1-flash-preview", name: "Gemini 3.1 Flash", provider: "Google Gemini", providerType: "gemini", logo: GeminiLogo },
                     { id: "google/gemma-4-31b-it", name: "Gemma 4 31B IT", provider: "NVIDIA NIM", providerType: "nvidia", logo: NvidiaLogo },
                     { id: "nvidia/llama-nemotron-32b-instruct", name: "Nemotron 32B", provider: "NVIDIA NIM", providerType: "nvidia", logo: NvidiaLogo },
                     { id: "mistralai/mistral-nemo-12b-instruct", name: "Mistral Nemo 12B", provider: "NVIDIA NIM", providerType: "nvidia", logo: NvidiaLogo },
@@ -3401,6 +3402,7 @@ export default function ChatPage() {
         <AnimatePresence>
             {showSettings && (
                 <SettingsPage
+                    activeProjectId={folderContexts[0]?.path || undefined}
                     onClose={() => setShowSettings(false)}
                     config={config}
                     username={onboardingName || config?.name || 'User'}
@@ -3802,7 +3804,9 @@ export default function ChatPage() {
 
                                                  {/* Progressive input container */}
                                                 <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
-                                                    {renderAttachmentStrip()}
+                                                     <SubagentPills phases={subagent.phases} isActive={subagent.isActive} />
+                                                    <SubagentPills phases={subagent.phases} isActive={subagent.isActive} />
+                                             {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
                                                         className="placeholder-[#a5a3a0]"

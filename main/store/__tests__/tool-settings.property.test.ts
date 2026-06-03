@@ -55,6 +55,7 @@ describe('Feature: web-tool-settings, Property 1: Config persistence round-trip'
             useVision: fc.boolean(),
             headless: fc.boolean(),
             maxSteps: fc.integer({ min: 10, max: 50 }),
+            useChromeProfile: fc.boolean(),
           }),
         }),
         (config) => {

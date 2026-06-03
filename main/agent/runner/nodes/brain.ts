@@ -9,6 +9,7 @@ import type { AIClient } from '../../../lib/ai-client';
 import { globalAbortManager } from '../abort-manager';
 import { nodeLifecycle } from '../services/node-utils';
 import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../../persistence/checkpoint-engine';
+import { loadSoul, loadAgents } from '../../personality-manager';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
@@ -434,6 +435,22 @@ export const createBrainNode = (
         returningFromSpecialist: 'web_explorer'
       };
     }
+
+    if ((state.currentIntent === 'coding' || state.currentIntent === 'build' || state.currentIntent === 'fix') && !state.returningFromSpecialist && !state.codingComplete) {
+      console.log(`[Brain] ${state.currentIntent} intent detected → routing to coding_specialist immediately`);
+
+      return {
+        pendingToolCalls: [],
+        routingDecision: {
+          decision: 'route_coding',
+          explanation: `${state.currentIntent} intent detected — delegating to coding_specialist`
+        },
+        completionSignal: null,
+        taskPhase: 'specialized_agent' as const,
+        brainToolsInFlight: false,
+        returningFromSpecialist: 'coding_specialist'
+      };
+    }
     // ────────────────────────────────────────────────────────────────────────
 
     // Load the main system prompt from synchronized location
@@ -471,6 +488,21 @@ export const createBrainNode = (
       }
     } catch (memErr) {
       console.warn('[Brain] Failed to inject persistent memory:', memErr);
+    }
+
+    // Inject OpenClaw personality and routing configurations
+    try {
+      const workspaceRoot = runner.workspaceDir;
+      const soulContent = loadSoul(workspaceRoot);
+      const agentsContent = loadAgents(workspaceRoot);
+      
+      if (systemPrompt) {
+        systemPrompt += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
+        systemPrompt += `\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}\n`;
+        console.log('[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt');
+      }
+    } catch (openclawErr) {
+      console.warn('[Brain] Failed to inject OpenClaw configurations:', openclawErr);
     }
 
     // Get original user request for context
@@ -593,25 +625,31 @@ export const createBrainNode = (
       };
       const autoDecision = intentRoutingMap[state.currentIntent];
       if (autoDecision) {
-        runner.telemetry.info(`[Brain] Auto-routing to ${autoDecision} for intent ${state.currentIntent} (brain produced no output)`);
+        const isCodingDone = autoDecision === 'route_coding' && state.codingComplete;
+        const isWebExplorerDone = autoDecision === 'route_web_explorer' && state.webExplorerComplete;
+        const isDataAnalystDone = autoDecision === 'route_data_analyst' && state.dataAnalysisComplete;
 
-        const routedState = {
-          ...result,
-          routingDecision: { decision: autoDecision, explanation: `Auto-routing for intent ${state.currentIntent} after brain produced no output` },
-          completionSignal: null,
-          taskPhase: 'specialized_agent' as const,
-          brainToolsInFlight: false,
-          returningFromSpecialist: null
-        };
+        if (!(isCodingDone || isWebExplorerDone || isDataAnalystDone)) {
+          runner.telemetry.info(`[Brain] Auto-routing to ${autoDecision} for intent ${state.currentIntent} (brain produced no output)`);
 
-        // Create checkpoint before auto-routing
-        await createAgentCheckpoint(
-          { ...state, ...routedState },
-          runner,
-          `Brain auto-routing to ${autoDecision} for intent ${state.currentIntent}`
-        );
+          const routedState = {
+            ...result,
+            routingDecision: { decision: autoDecision, explanation: `Auto-routing for intent ${state.currentIntent} after brain produced no output` },
+            completionSignal: null,
+            taskPhase: 'specialized_agent' as const,
+            brainToolsInFlight: false,
+            returningFromSpecialist: null
+          };
 
-        return routedState;
+          // Create checkpoint before auto-routing
+          await createAgentCheckpoint(
+            { ...state, ...routedState },
+            runner,
+            `Brain auto-routing to ${autoDecision} for intent ${state.currentIntent}`
+          );
+
+          return routedState;
+        }
       }
     }
 
@@ -654,34 +692,43 @@ export const createBrainNode = (
 
     // If routing to a specialized agent, set the routing decision
     if (routingDecision && routingDecision.decision.startsWith('route_')) {
-      // Auto-enable Coding Mode UI when routing to coding specialist
-      if (routingDecision.decision === 'route_coding') {
-        eventQueue?.push({
-          type: 'surface_action',
-          action: 'coding_mode',
-          active: true,
-          surfaceId: 'coding-mode'
-        });
+      const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete;
+      const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete;
+      const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete;
+
+      if (isCodingDone || isWebExplorerDone || isDataAnalystDone) {
+        runner.telemetry.info(`[Brain] Refusing to route to ${routingDecision.decision} because it has already completed`);
+        routingDecision = null;
+      } else {
+        // Auto-enable Coding Mode UI when routing to coding specialist
+        if (routingDecision.decision === 'route_coding') {
+          eventQueue?.push({
+            type: 'surface_action',
+            action: 'coding_mode',
+            active: true,
+            surfaceId: 'coding-mode'
+          });
+        }
+
+        const routedState = {
+          ...result,
+          routingDecision: routingDecision,
+          completionSignal: null,
+          // Set task phase to route to specialized agents
+          taskPhase: 'specialized_agent' as const,
+          brainToolsInFlight: false,
+          returningFromSpecialist: null
+        };
+
+        // Create checkpoint before routing to specialist
+        await createAgentCheckpoint(
+          { ...state, ...routedState },
+          runner,
+          `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
+        );
+
+        return routedState;
       }
-
-      const routedState = {
-        ...result,
-        routingDecision: routingDecision,
-        completionSignal: null,
-        // Set task phase to route to specialized agents
-        taskPhase: 'specialized_agent' as const,
-        brainToolsInFlight: false,
-        returningFromSpecialist: null
-      };
-
-      // Create checkpoint before routing to specialist
-      await createAgentCheckpoint(
-        { ...state, ...routedState },
-        runner,
-        `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
-      );
-
-      return routedState;
     }
 
     // If continuing with brain or completing task, build completion signal

@@ -108,18 +108,10 @@ function adaptTool(
   } else if (name === 'grep' || name === 'find') {
     description = `[REPO-TRIAGE] ${description} Use for mandatory triage and convention matching before writing any code.`;
   } else if (name === 'executePwsh') {
-    // Add local parameter to the terminal tool schema
-    description = `${description} Executes commands in Linux VM by default. Set local=true to run on host machine (requires user permission).`;
+    description = `${description} Executes commands natively on the host machine (main VM).`;
     if (parameters.properties) {
-      parameters.properties.local = {
-        type: 'boolean',
-        description: 'Set to true to execute on local machine instead of Linux VM (requires user permission)',
-        default: false
-      };
-      parameters.properties.reason = {
-        type: 'string',
-        description: 'Required when local=true. Explain why local execution is needed.'
-      };
+      delete parameters.properties.local;
+      delete parameters.properties.reason;
     }
   }
 
@@ -131,126 +123,22 @@ function adaptTool(
       try {
         const id = toolCallId ?? `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-        // Special handling for executePwsh tool - route through Linux VM by default
+        // Special handling for executePwsh tool - force main host execution
         if (name === 'executePwsh') {
           const command = args.command as string;
           const timeout = args.timeout as number | undefined;
-          const local = args.local as boolean | undefined;
-          const reason = args.reason as string | undefined;
 
-          // Validate reason field when local execution is requested
-          if (local === true && !reason) {
+          // Safety check: block command if it tries to kill node processes
+          const normalizedCmd = (command || '').toLowerCase();
+          if (normalizedCmd.includes('node') && (normalizedCmd.includes('stop-process') || normalizedCmd.includes('kill') || normalizedCmd.includes('taskkill'))) {
             return {
               success: false,
-              output: 'ERROR: local execution requires a reason field'
+              output: 'Security Warning: Execution of commands that terminate Node.js/agent processes is blocked to prevent application crash.',
+              error: 'blocked_command'
             };
           }
 
-          // When local=true and reason is present, emit event and pause execution
-          if (local === true && reason) {
-            if (emitEvent) {
-              const requestId = `local-exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-              // Emit the local_execution_request event
-              emitEvent({
-                type: 'local_execution_request',
-                requestId,
-                command,
-                shellType: 'Bash', // Default to Bash, could be enhanced to detect PowerShell
-                reason,
-                conversationId: undefined // Will be set by the runner if available
-              });
-
-              // Create a promise that will be resolved when the user responds
-              const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
-                // Store the resolver so the IPC handler can resolve it
-                const resolvers = getLocalExecutionResolvers();
-                console.log(`[pi-tools] 🔑 Registering resolver for requestId: ${requestId}. Map size before: ${resolvers.size}`);
-                resolvers.set(requestId, resolve);
-              });
-
-              // Wait for the user's response
-              const response = await approvalPromise;
-
-              // Clean up the resolver
-              const resolvers = getLocalExecutionResolvers();
-              console.log(`[pi-tools] 🔓 Resolving requestId: ${requestId}, approved: ${response.approved}. Map size before delete: ${resolvers.size}`);
-              resolvers.delete(requestId);
-
-              // If denied, return error
-              if (!response.approved) {
-                return {
-                  success: false,
-                  output: 'Local execution denied by user.'
-                };
-              }
-
-              // If approved, continue to execute locally
-            }
-          }
-
-          if (!local) {
-            // First check if Linux VM is available
-            console.log(`[executePwsh] local=${local}, checking VM availability for command: "${command.slice(0, 100)}..."`);
-            const vmCheck = await isLinuxVMAvailable();
-            console.log(`[executePwsh] isLinuxVMAvailable result: available=${vmCheck.available}, reason="${vmCheck.reason || '(none)'}"`);
-            if (vmCheck.available) {
-              // Route through Linux VM when available
-              try {
-                console.log(`[executePwsh] VM available, calling runInLinuxVM()`);
-
-                // Create streaming handler that emits updates and passes through onUpdate
-                const streamHandler = (chunk: string) => {
-                  if (onUpdate) {
-                    onUpdate(chunk);
-                  }
-                  if (emitEvent) {
-                    emitEvent({
-                      type: 'command-output-stream',
-                      toolCallId: id,
-                      chunk,
-                      timestamp: Date.now()
-                    });
-                  }
-                };
-
-                // Requirements 5.1, 5.2: Track command execution via RollbackManager
-                const vmResult = await withCommandTracking(command, async () => {
-                  const result = await runInLinuxVM(command, undefined, streamHandler);
-                  console.log(`[executePwsh] runInLinuxVM result: exitCode=${result.exitCode}, stdout=${result.stdout.length} chars, stderr=${result.stderr.length} chars`);
-
-                  // Format output to match pi-tools format exactly
-                  // Success case: use stdout
-                  if (result.exitCode === 0) {
-                    return {
-                      success: true,
-                      output: stripAnsi(result.stdout)
-                    };
-                  }
-
-                  // Failure case: prefer stderr, fallback to stdout if stderr is empty
-                  const errorOutput = result.stderr || result.stdout;
-                  return {
-                    success: false,
-                    output: stripAnsi(errorOutput),
-                    error: stripAnsi(errorOutput)
-                  };
-                });
-                return vmResult;
-              } catch (vmError) {
-                // If VM execution fails, fall back to native execution
-                console.warn('[executePwsh] Linux VM execution failed, falling back to native:', vmError);
-                // Continue to native execution below
-              }
-            } else {
-              // VM not available, fall back to native execution
-              console.log(`[executePwsh] VM not available (${vmCheck.reason}), falling back to native execution`);
-              // Continue to native execution below
-            }
-          }
-
-          // For local=true (approved) or VM fallback, use native exec to ensure output is captured
-          // Requirements 5.1, 5.2: Track command execution via RollbackManager
+          // Always use native exec (main host VM)
           return await withCommandTracking(command, async () => {
             try {
               const { exec } = require('child_process');
@@ -285,6 +173,13 @@ function adaptTool(
 
         // For host-side file tools, translate Linux paths to Windows paths
         if (HOST_FILE_TOOL_NAMES.has(name)) {
+          if (['write', 'read', 'edit'].includes(name) && (!args || typeof args.path !== 'string')) {
+            return {
+              success: false,
+              output: `Error: Missing or invalid 'path' parameter for tool '${name}'`,
+              error: `invalid_path`
+            };
+          }
           args = translateLinuxPathsToHostPaths(args);
         }
 

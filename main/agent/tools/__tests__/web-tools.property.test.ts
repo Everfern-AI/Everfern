@@ -93,7 +93,7 @@ describe('Feature: web-tool-settings, Property 6: Exa called with stored query a
             webSearch: { mode: 'api', headless: false, apiKey },
             webCrawl: { mode: 'local', headless: true, apiKey: '' },
             browserUse: { mode: 'local', headless: false, apiKey: '' },
-            navis: { useVision: false, headless: false, maxSteps: 25 },
+            navis: { useVision: false, headless: false, maxSteps: 25, useChromeProfile: false },
           });
           vi.mocked(exaSearch).mockResolvedValue([]);
 

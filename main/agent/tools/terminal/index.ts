@@ -19,7 +19,8 @@ export const terminalTool: AgentTool = {
       command: { type: 'string', description: 'The command to execute' },
       cwd: { type: 'string', description: 'Working directory (defaults to ~/.everfern)' },
       id: { type: 'string', description: 'Optional unique ID for this command session' },
-      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000)' }
+      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000)' },
+      target: { type: 'string', enum: ['main', 'vm'], description: "Environment target: 'main' (host system, requires permission) or 'vm' (Linux VM, no permission needed). Defaults to 'main'." }
     },
     required: ['command']
   },
@@ -29,10 +30,21 @@ export const terminalTool: AgentTool = {
     const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
     const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
     const timeoutMs = args.timeoutMs as number | undefined;
+    const target = (args.target as 'main' | 'vm') || 'main';
 
-    onUpdate?.(`Terminal [${id}]: Executing "${command}"...`);
+    // Safety check: block command if target is main and it tries to kill node processes
+    const normalizedCmd = (command || '').toLowerCase();
+    if (target === 'main' && normalizedCmd.includes('node') && (normalizedCmd.includes('stop-process') || normalizedCmd.includes('kill') || normalizedCmd.includes('taskkill'))) {
+      return {
+        success: false,
+        output: 'Security Warning: Execution of commands that terminate Node.js/agent processes is blocked to prevent application crash.',
+        error: 'blocked_command'
+      };
+    }
 
-    const info = await registry.execute(id, command, cwd, timeoutMs);
+    onUpdate?.(`Terminal [${id}] (${target}): Executing "${command}"...`);
+
+    const info = await registry.execute(id, command, cwd, timeoutMs, target);
 
     if (info.status === 'completed') {
       return {

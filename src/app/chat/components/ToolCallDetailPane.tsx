@@ -222,6 +222,7 @@ export function ToolCallDetailPane({
 }) {
   const [activeTab, setActiveTab] = useState<'input' | 'output' | 'timeline'>('input');
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
+  const isWriteOrEdit = ['write', 'edit', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file'].includes(toolCall.toolName.toLowerCase());
 
   return (
     <motion.div
@@ -344,166 +345,398 @@ export function ToolCallDetailPane({
         ))}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs / Code Editor content */}
+      {isWriteOrEdit ? (
+        <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <CodeEditorPreview toolCall={toolCall} />
+        </div>
+      ) : (
+        <>
+          {/* Tabs */}
+          <div
+            style={{
+              display: 'flex',
+              borderBottom: `1px solid ${T.border}`,
+              background: T.surface,
+              padding: '0 20px',
+              gap: 0,
+            }}
+          >
+            {['input', 'output', 'timeline'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab as any)}
+                style={{
+                  padding: '12px 16px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: activeTab === tab ? T.text : T.textMuted,
+                  background: activeTab === tab ? T.bg : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderBottom: activeTab === tab ? `2px solid ${T.blue}` : 'none',
+                  fontFamily: T.sans,
+                  transition: 'all 0.2s',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+            <AnimatePresence mode="wait">
+              {activeTab === 'input' && (
+                <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                      Arguments
+                    </div>
+                    <JsonViewer data={toolCall.arguments} />
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === 'output' && (
+                <motion.div key="output" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  {toolCall.status === 'completed' && toolCall.result ? (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                        Result
+                      </div>
+                      <JsonViewer data={toolCall.result} />
+                    </div>
+                  ) : toolCall.status === 'failed' && toolCall.error ? (
+                    <div
+                      style={{
+                        background: T.redFaint,
+                        border: `1px solid ${T.red}30`,
+                        borderRadius: T.r8,
+                        padding: '12px 14px',
+                        display: 'flex',
+                        gap: 10,
+                      }}
+                    >
+                      <AlertCircle size={16} color={T.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: T.red, marginBottom: 4, fontFamily: T.sans }}>
+                          Error
+                        </div>
+                        <code style={{ fontSize: 11, color: T.red, fontFamily: T.mono, whiteSpace: 'pre-wrap' }}>
+                          {toolCall.error}
+                        </code>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '40px 20px',
+                        color: T.textMuted,
+                        textAlign: 'center',
+                      }}
+                    >
+                      <Zap size={28} opacity={0.3} style={{ marginBottom: 8 }} />
+                      <div style={{ fontSize: 12, fontFamily: T.sans }}>No output yet</div>
+                      <div style={{ fontSize: 11, fontFamily: T.sans, opacity: 0.7 }}>
+                        Tool is still executing or has no output
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeTab === 'timeline' && (
+                <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {[
+                      { label: 'Tool Called', time: toolCall.startTime, status: 'completed' },
+                      {
+                        label: 'Executing',
+                        time: toolCall.startTime + (duration || 0) / 2,
+                        status: toolCall.status === 'executing' ? 'in-progress' : 'completed',
+                      },
+                      {
+                        label: toolCall.status === 'failed' ? 'Failed' : 'Completed',
+                        time: toolCall.endTime || toolCall.startTime,
+                        status: toolCall.status,
+                      },
+                    ].map((event, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: 12 }}>
+                        {/* Timeline dot */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <div
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              background:
+                                event.status === 'completed'
+                                  ? T.green
+                                  : event.status === 'in-progress'
+                                    ? T.blue
+                                    : T.red,
+                              border: `2px solid ${T.surface}`,
+                              boxShadow: `0 0 0 2px ${event.status === 'completed' ? T.green : event.status === 'in-progress' ? T.blue : T.red}`,
+                            }}
+                          />
+                          {idx < 2 && (
+                            <div
+                              style={{
+                                width: 2,
+                                height: 24,
+                                background: T.border,
+                              }}
+                            />
+                          )}
+                        </div>
+
+                        {/* Event */}
+                        <div style={{ flex: 1, paddingTop: 2 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
+                            {event.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>
+                            {new Date(event.time).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </>
+      )}
+    </motion.div>
+  );
+}
+
+/* ============================================================
+   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS
+   ============================================================ */
+
+function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
+  const args = toolCall.arguments || {};
+  const filePath = args.path || args.TargetFile || args.filePath || args.file || 'unknown_file';
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  const isWrite = ['write', 'write_file', 'write_to_file'].includes(toolCall.toolName.toLowerCase());
+
+  interface CodeLine {
+    text: string;
+    type: 'added' | 'removed' | 'normal';
+  }
+
+  let codeLines: CodeLine[] = [];
+
+  if (isWrite) {
+    const content = args.content || args.CodeContent || '';
+    const lines = typeof content === 'string' ? content.split('\n') : [];
+    codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
+  } else {
+    // Edit tool
+    const findStr = args.find || args.TargetContent || '';
+    const replaceStr = args.replace || args.ReplacementContent || args.insert || '';
+    const chunks = args.ReplacementChunks || [];
+
+    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+      chunks.forEach((chunk: any, idx: number) => {
+        if (idx > 0) {
+          codeLines.push({ text: '...', type: 'normal' });
+        }
+        const chunkTarget = chunk.TargetContent || '';
+        const chunkRepl = chunk.ReplacementContent || '';
+        
+        if (chunkTarget) {
+          chunkTarget.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'removed' });
+          });
+        }
+        if (chunkRepl) {
+          chunkRepl.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'added' });
+          });
+        }
+      });
+    } else {
+      if (findStr) {
+        findStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'removed' });
+        });
+      }
+      if (replaceStr) {
+        replaceStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'added' });
+        });
+      }
+    }
+  }
+
+  if (codeLines.length === 0) {
+    codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        background: '#0d1117',
+        border: '1px solid #30363d',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+      }}
+    >
+      {/* Editor Title Bar */}
       <div
         style={{
           display: 'flex',
-          borderBottom: `1px solid ${T.border}`,
-          background: T.surface,
-          padding: '0 20px',
-          gap: 0,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 16px',
+          background: '#161b22',
+          borderBottom: '1px solid #30363d',
+          userSelect: 'none',
         }}
       >
-        {['input', 'output', 'timeline'].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab as any)}
-            style={{
-              padding: '12px 16px',
-              fontSize: 12,
-              fontWeight: 600,
-              color: activeTab === tab ? T.text : T.textMuted,
-              background: activeTab === tab ? T.bg : 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              borderBottom: activeTab === tab ? `2px solid ${T.blue}` : 'none',
-              fontFamily: T.sans,
-              transition: 'all 0.2s',
-              textTransform: 'capitalize',
-            }}
-          >
-            {tab}
-          </button>
-        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+        </div>
+        
+        <div
+          style={{
+            background: '#0d1117',
+            padding: '6px 16px',
+            borderRadius: '6px 6px 0 0',
+            border: '1px solid #30363d',
+            borderBottom: 'none',
+            fontSize: 12,
+            fontFamily: T.mono,
+            color: '#c9d1d9',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: -9,
+            marginTop: -4,
+          }}
+        >
+          <span style={{ color: '#4ade80' }}>⚡</span>
+          <span>{fileName}</span>
+        </div>
+
+        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans }}>
+          {isWrite ? 'WRITE' : 'EDIT'}
+        </div>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-        <AnimatePresence mode="wait">
-          {activeTab === 'input' && (
-            <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
-                  Arguments
-                </div>
-                <JsonViewer data={toolCall.arguments} />
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'output' && (
-            <motion.div key="output" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {toolCall.status === 'completed' && toolCall.result ? (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
-                    Result
-                  </div>
-                  <JsonViewer data={toolCall.result} />
-                </div>
-              ) : toolCall.status === 'failed' && toolCall.error ? (
-                <div
-                  style={{
-                    background: T.redFaint,
-                    border: `1px solid ${T.red}30`,
-                    borderRadius: T.r8,
-                    padding: '12px 14px',
-                    display: 'flex',
-                    gap: 10,
-                  }}
-                >
-                  <AlertCircle size={16} color={T.red} style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: T.red, marginBottom: 4, fontFamily: T.sans }}>
-                      Error
-                    </div>
-                    <code style={{ fontSize: 11, color: T.red, fontFamily: T.mono, whiteSpace: 'pre-wrap' }}>
-                      {toolCall.error}
-                    </code>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '40px 20px',
-                    color: T.textMuted,
-                    textAlign: 'center',
-                  }}
-                >
-                  <Zap size={28} opacity={0.3} style={{ marginBottom: 8 }} />
-                  <div style={{ fontSize: 12, fontFamily: T.sans }}>No output yet</div>
-                  <div style={{ fontSize: 11, fontFamily: T.sans, opacity: 0.7 }}>
-                    Tool is still executing or has no output
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {activeTab === 'timeline' && (
-            <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  { label: 'Tool Called', time: toolCall.startTime, status: 'completed' },
-                  {
-                    label: 'Executing',
-                    time: toolCall.startTime + (duration || 0) / 2,
-                    status: toolCall.status === 'executing' ? 'in-progress' : 'completed',
-                  },
-                  {
-                    label: toolCall.status === 'failed' ? 'Failed' : 'Completed',
-                    time: toolCall.endTime || toolCall.startTime,
-                    status: toolCall.status,
-                  },
-                ].map((event, idx) => (
-                  <div key={idx} style={{ display: 'flex', gap: 12 }}>
-                    {/* Timeline dot */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <div
-                        style={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '50%',
-                          background:
-                            event.status === 'completed'
-                              ? T.green
-                              : event.status === 'in-progress'
-                                ? T.blue
-                                : T.red,
-                          border: `2px solid ${T.surface}`,
-                          boxShadow: `0 0 0 2px ${event.status === 'completed' ? T.green : event.status === 'in-progress' ? T.blue : T.red}`,
-                        }}
-                      />
-                      {idx < 2 && (
-                        <div
-                          style={{
-                            width: 2,
-                            height: 24,
-                            background: T.border,
-                          }}
-                        />
-                      )}
-                    </div>
-
-                    {/* Event */}
-                    <div style={{ flex: 1, paddingTop: 2 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
-                        {event.label}
-                      </div>
-                      <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>
-                        {new Date(event.time).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Path Breadcrumb */}
+      <div
+        style={{
+          padding: '6px 16px',
+          background: '#090d13',
+          borderBottom: '1px solid #21262d',
+          fontSize: 11,
+          fontFamily: T.mono,
+          color: '#8b949e',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {filePath}
       </div>
-    </motion.div>
+
+      {/* Editor Content Area */}
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '12px 0',
+          fontFamily: T.mono,
+          fontSize: 12,
+          lineHeight: '1.6',
+          color: '#c9d1d9',
+        }}
+      >
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <tbody>
+            {codeLines.map((line, idx) => {
+              const isAdded = line.type === 'added';
+              const isRemoved = line.type === 'removed';
+              const rowBg = isAdded 
+                ? 'rgba(46, 160, 67, 0.15)' 
+                : isRemoved 
+                  ? 'rgba(248, 81, 112, 0.15)' 
+                  : 'transparent';
+              
+              const textColor = isAdded 
+                ? '#4ade80' 
+                : isRemoved 
+                  ? '#f87171' 
+                  : '#8b949e';
+
+              const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+
+              return (
+                <tr 
+                  key={idx} 
+                  style={{ 
+                    background: rowBg,
+                    transition: 'background 0.1s',
+                  }}
+                >
+                  <td
+                    style={{
+                      width: 45,
+                      textAlign: 'right',
+                      paddingRight: 12,
+                      color: '#484f58',
+                      userSelect: 'none',
+                      borderRight: '1px solid #21262d',
+                      fontSize: 11,
+                    }}
+                  >
+                    {idx + 1}
+                  </td>
+                  <td
+                    style={{
+                      width: 24,
+                      textAlign: 'center',
+                      color: textColor,
+                      fontWeight: 'bold',
+                      userSelect: 'none',
+                      fontSize: 12,
+                    }}
+                  >
+                    {prefix}
+                  </td>
+                  <td
+                    style={{
+                      paddingLeft: 8,
+                      paddingRight: 16,
+                      color: textColor,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {line.text}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

@@ -43,7 +43,7 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
       // Pass entire state.messages for context-aware classification
       let classification: IntentClassification;
       try {
-        classification = await classifyIntent(content, runner.client, state.messages);
+        classification = await classifyIntent(content, runner.client, state.messages, runner.workspaceDir);
       } catch (connErr) {
         const msg = connErr instanceof Error ? connErr.message : String(connErr);
         console.warn('[Triage] AI classification failed:', msg);

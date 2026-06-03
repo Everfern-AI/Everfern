@@ -69,6 +69,7 @@ import { shell } from 'electron';
 import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
+import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
 import { ensurePlaywrightChromium } from './lib/playwright-setup';
 import { ensureWSLSetup } from './agent/tools/linux-vm-executor';
 
@@ -535,6 +536,7 @@ app.whenReady().then(async () => {
   // ── Initialize Prompt Synchronization System ──────────────────────
   console.log('[Startup] 🔄 Initializing prompt synchronization...');
   initializePromptSync(true); // Force sync to ensure latest prompts are always loaded
+  initializeOpenClawConfigs();
 
   // ── Ensure Playwright Chromium is installed (non-blocking) ─────────
   ensurePlaywrightChromium();
@@ -1977,6 +1979,41 @@ ipcMain.handle('providers:get-models', (_event, providerType: string): FlatModel
     provider: providerMeta?.name || providerType,
     providerType: type
   }));
+});
+
+ipcMain.handle('openclaw:get-configs', (_event, workspaceRoot?: string) => {
+  return {
+    soul: loadSoul(workspaceRoot),
+    agents: loadAgents(workspaceRoot)
+  };
+});
+
+ipcMain.handle('openclaw:save-configs', (_event, configs: { soul?: string; agents?: string; workspaceRoot?: string }) => {
+  try {
+    if (configs.workspaceRoot) {
+      const fs = require('fs');
+      const path = require('path');
+      if (configs.soul !== undefined) {
+        fs.writeFileSync(path.join(configs.workspaceRoot, 'SOUL.md'), configs.soul, 'utf-8');
+      }
+      if (configs.agents !== undefined) {
+        fs.writeFileSync(path.join(configs.workspaceRoot, 'agents.md'), configs.agents, 'utf-8');
+      }
+      console.log(`[EverFern] Saved configurations for workspace: ${configs.workspaceRoot}`);
+    } else {
+      if (configs.soul !== undefined) {
+        saveGlobalSoul(configs.soul);
+      }
+      if (configs.agents !== undefined) {
+        saveGlobalAgents(configs.agents);
+      }
+      console.log('[EverFern] Saved global configurations');
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('[EverFern] Save failed:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 export function isPermissionGranted() { return permissionsGranted; }

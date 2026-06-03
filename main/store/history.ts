@@ -43,8 +43,9 @@ export class ChatHistoryStore {
 
         const embedding = await model.embeddings.embedQuery(content);
 
+        await dbOps.run(`DELETE FROM chat_messages_vec WHERE id = ?`, [id]);
         await dbOps.run(
-          `INSERT OR REPLACE INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
+          `INSERT INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
           [id, `[${embedding.join(',')}]`]
         );
         return; // Success, exit loop

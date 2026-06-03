@@ -9,6 +9,7 @@ import { GraphStateType, StreamEvent } from '../../../state';
 import { AgentRunner } from '../../../runner';
 import { runAgentStep } from '../../../services/agent-runtime';
 import { ToolDefinition } from '../../../../../lib/ai-client';
+import { HumanMessage } from '@langchain/core/messages';
 
 export interface ExplorationContext {
   targetDirectory: string;
@@ -190,8 +191,15 @@ Output your analysis as a structured report with:
 
 Begin exploration now.`;
 
+    const explorationState = {
+      ...state,
+      messages: [
+        new HumanMessage(`Scan the target directory "${context.targetDirectory}" and analyze its codebase structure. Focus areas: ${context.focusAreas?.join(', ') || 'general codebase structure'}.`)
+      ]
+    };
+
     try {
-      const result = await runAgentStep(state, {
+      const result = await runAgentStep(explorationState, {
         runner,
         toolDefs: explorationTools,
         eventQueue,

@@ -78,7 +78,7 @@ export class CommandRegistry {
     return this.wslAvailable;
   }
 
-  public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), timeoutMs?: number, onData?: (data: string) => void): Promise<CommandInfo> {
+  public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), timeoutMs?: number, target: 'main' | 'vm' = 'main', onData?: (data: string) => void): Promise<CommandInfo> {
     const info: CommandInfo = {
       id,
       command,
@@ -109,19 +109,34 @@ export class CommandRegistry {
 
     // Robust shell detection for Windows (cached result)
     if (isWin) {
-      const isWslAvailable = await this.checkWslAvailable();
-      console.log(`[CommandRegistry] execute: Windows detected, WSL available=${isWslAvailable}, command="${command.slice(0, 100)}..."`);
+      if (target === 'vm') {
+        const isWslAvailable = await this.checkWslAvailable();
+        console.log(`[CommandRegistry] execute: Windows detected, target=vm, WSL available=${isWslAvailable}, command="${command.slice(0, 100)}..."`);
 
-      if (isWslAvailable) {
-        shell = this.wslCmdName;
-        console.log(`[CommandRegistry] Using WSL command: ${shell}`);
-        const { translateWindowsPathToLinux } = require('../linux-vm-executor');
-        const linuxCwd = translateWindowsPathToLinux(cwd);
-        const wslCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
-        args = ['--exec', 'bash', '-c', wslCommand];
-        spawnOptions = { cwd, shell: false, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } };
+        if (isWslAvailable) {
+          shell = this.wslCmdName;
+          console.log(`[CommandRegistry] Using WSL command: ${shell}`);
+          const { translateWindowsPathToLinux } = require('../linux-vm-executor');
+          const linuxCwd = translateWindowsPathToLinux(cwd);
+          const wslCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
+          args = ['--exec', 'bash', '-c', wslCommand];
+          spawnOptions = { cwd, shell: false, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } };
+        } else {
+          console.error('[CommandRegistry] execute: target=vm but WSL is not available!');
+          // Delete from command tracker since it failed to start
+          this.commands.delete(id);
+          return Promise.resolve({
+            id,
+            command,
+            cwd,
+            status: 'failed',
+            output: 'Error: Linux VM (WSL) is not available on this system. Please use target="main" to run host commands.',
+            exitCode: -1,
+            startTime: Date.now()
+          });
+        }
       } else {
-        console.log('[CommandRegistry] execute: WSL not available, using Host Fallback (CMD)');
+        console.log('[CommandRegistry] execute: target=main, using Host (CMD)');
         shell = 'cmd.exe';
         args = ['/c', command];
         spawnOptions.shell = true;

@@ -155,6 +155,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           headless: args.headless ?? navisSettings.headless,
           startUrl: args.startUrl,
           useVision: navisSettings.useVision,
+          useChromeProfile: navisSettings.useChromeProfile,
         });
 
         const executionTime = Date.now() - toolStartTime;

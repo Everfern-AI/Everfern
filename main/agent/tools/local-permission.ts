@@ -74,11 +74,57 @@ export const localPermissionTool: AgentTool = {
       return { success: false, output: 'Local execution denied by user.' };
     }
 
-    // Approved — return success for the agent to follow up with actual execution
-    return {
-      success: true,
-      output: `Local execution approved. You may now execute the command on the host machine:\n\n\`${command}\`\n\nUse executePwsh with local: true to run this command.`,
-      data: { approved: true, alwaysAllow: response.alwaysAllow, command, shellType }
-    };
+    // Approved — execute the command on the host machine
+    onUpdate?.(`🚀 Execution approved. Running command on host machine...`);
+
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // Select shell based on platform and request
+      let shell: string | undefined;
+      if (process.platform === 'win32') {
+        if (shellType === 'PowerShell') {
+          shell = 'powershell.exe';
+        } else if (shellType === 'PowerShell7') {
+          shell = 'pwsh.exe';
+        } else if (shellType === 'CMD') {
+          shell = 'cmd.exe';
+        } else {
+          shell = 'powershell.exe';
+        }
+      } else {
+        if (shellType === 'PowerShell' || shellType === 'PowerShell7') {
+          shell = 'pwsh';
+        } else {
+          shell = '/bin/bash';
+        }
+      }
+
+      const { stdout, stderr } = await execAsync(command, { shell, timeout: 300000 });
+
+      const combined = [stdout, stderr].filter(Boolean).join('\n');
+      const output = combined.trim() || '(Command succeeded with no output)';
+
+      const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
+
+      return {
+        success: true,
+        output: stripAnsi(output),
+        data: { approved: true, alwaysAllow: response.alwaysAllow, command, shellType }
+      };
+    } catch (execError: any) {
+      const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
+      const output = combined.trim() || '(Command failed with no output)';
+      const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
+
+      return {
+        success: false,
+        output: stripAnsi(output),
+        error: stripAnsi(output),
+        data: { approved: true, alwaysAllow: response.alwaysAllow, command, shellType }
+      };
+    }
   }
 };

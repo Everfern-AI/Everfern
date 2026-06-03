@@ -420,6 +420,23 @@ export async function runAgentStep(
       }
     }
 
+    // Global OpenClaw SOUL.md personality injection
+    try {
+      const { loadSoul } = require('../../personality-manager');
+      const soulContent = loadSoul(runner.workspaceDir);
+      
+      let systemMsg = normalizedMessages.find(m => m.role === 'system');
+      if (!systemMsg) {
+        systemMsg = { role: 'system', content: '' };
+        normalizedMessages.unshift(systemMsg);
+      }
+      
+      systemMsg.content += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
+      console.log(`[AgentRuntime] 🎭 Injected SOUL.md personality into ${nodeName} step`);
+    } catch (soulErr) {
+      console.warn('[AgentRuntime] Failed to inject SOUL.md:', soulErr);
+    }
+
     let thoughtBuffer = '';
     let isThinking = false;
     let streamedText = '';

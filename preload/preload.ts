@@ -488,6 +488,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Load a screenshot from disk by its absolute path. Returns { base64, dataUrl } or { error }. */
     load: (filePath: string) => ipcRenderer.invoke('screenshot:load', filePath),
   },
+  openclaw: {
+    getConfigs: (workspaceRoot?: string) => ipcRenderer.invoke('openclaw:get-configs', workspaceRoot),
+    saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => ipcRenderer.invoke('openclaw:save-configs', configs),
+  },
 });
 
 // ── Tool Settings Types ────────────────────────────────────────────
@@ -502,6 +506,12 @@ export interface ToolSettingsConfig {
   webSearch: ToolConfig;
   webCrawl: ToolConfig;
   browserUse: ToolConfig;
+  navis: {
+    useVision: boolean;
+    headless: boolean;
+    maxSteps: number;
+    useChromeProfile: boolean;
+  };
 }
 
 // ── Type Export (for renderer use) ────────────────────────────────
@@ -733,5 +743,9 @@ export type ElectronAPI = {
   screenshot: {
     /** Load a screenshot from disk by absolute path. Returns { base64, dataUrl } or { error }. */
     load: (filePath: string) => Promise<{ base64?: string; dataUrl?: string; error?: string }>;
+  };
+  openclaw: {
+    getConfigs: (workspaceRoot?: string) => Promise<{ soul: string; agents: string }>;
+    saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => Promise<{ success: boolean; error?: string }>;
   };
 };

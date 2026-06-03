@@ -127,6 +127,7 @@ export interface NavisOptions {
   startUrl?: string;
   onProgress?: (msg: string) => void;
   useVision?: boolean;
+  useChromeProfile?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,10 +164,10 @@ export class NavisOrchestrator {
   getEventLogger(): NavisLogger { return this.logger; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
-    const { task, maxSteps = 40, maxActionsPerStep = 8, headless = false, startUrl, useVision = false } = options;
+    const { task, maxSteps = 40, maxActionsPerStep = 8, headless = false, startUrl, useVision = false, useChromeProfile = false } = options;
 
     const runStart = Date.now();
-    await this.session.launch({ headless, startUrl, logger: this.logger });
+    await this.session.launch({ headless, startUrl, logger: this.logger, useChromeProfile });
     console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
     console.log(`[Navis] Vision mode: ${useVision ? 'ENABLED' : 'disabled'}`);
 

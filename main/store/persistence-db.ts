@@ -124,6 +124,9 @@ export async function initializePersistenceTables(): Promise<void> {
 
     console.log('[PersistenceDB] Base tables created successfully');
 
+    // Run migrations before indexes to ensure columns exist
+    await migratePersistenceSchema();
+
     // Create performance indexes
     await createPersistenceIndexes();
 
@@ -214,6 +217,19 @@ export async function migratePersistenceSchema(): Promise<void> {
       if (!columnNames.includes('compressed')) {
         await dbOps.run('ALTER TABLE checkpoints ADD COLUMN compressed BOOLEAN DEFAULT 0');
         console.log('[PersistenceDB] Added compressed column to checkpoints table');
+      }
+    }
+
+    // Add task_id to tables that need it
+    const tablesWithTaskId = ['checkpoints', 'file_snapshots', 'command_history', 'navis_sessions', 'computer_use_actions'];
+    for (const tableName of tablesWithTaskId) {
+      const tableColumns = await dbOps.all(`PRAGMA table_info(${tableName})`);
+      if (tableColumns && tableColumns.length > 0) {
+        const columnNames = tableColumns.map((c: any) => c.name);
+        if (!columnNames.includes('task_id')) {
+          await dbOps.run(`ALTER TABLE ${tableName} ADD COLUMN task_id TEXT NOT NULL DEFAULT 'legacy-task'`);
+          console.log(`[PersistenceDB] Added task_id column to ${tableName} table`);
+        }
       }
     }
 

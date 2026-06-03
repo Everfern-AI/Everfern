@@ -74,7 +74,7 @@ function getPromptFiles(): string[] {
   }
 
   return fs.readdirSync(PROMPTS_SOURCE_DIR)
-    .filter(file => file.endsWith('.md'))
+    .filter(file => file.endsWith('.md') && file.toLowerCase() !== 'soul.md' && file.toLowerCase() !== 'agents.md')
     .sort();
 }
 

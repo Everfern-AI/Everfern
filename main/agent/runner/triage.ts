@@ -29,12 +29,15 @@ CURRENT USER REQUEST:
 
 Classify the intent.`;
 
+import { loadSoul, loadAgents } from '../personality-manager';
+
 // ── Main AI Classification ────────────────────────────────────────────
 
 export async function classifyIntent(
   userInput: string,
   client?: AIClient,
-  history: any[] = []
+  history: any[] = [],
+  workspaceRoot?: string
 ): Promise<IntentClassification> {
   if (!client) {
     return { intent: 'task', confidence: 0.5, reasoning: 'AI unavailable' };
@@ -56,9 +59,13 @@ export async function classifyIntent(
   }).join('\n');
 
   try {
+    const soulContent = loadSoul(workspaceRoot);
+    const agentsContent = loadAgents(workspaceRoot);
+    const triageSystemPrompt = `${TRIAGE_SYSTEM_PROMPT}\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}`;
+
     const response = await client.chat({
       messages: [
-        { role: 'system', content: TRIAGE_SYSTEM_PROMPT },
+        { role: 'system', content: triageSystemPrompt },
         { role: 'user', content: TRIAGE_USER_TEMPLATE(userInput, historySnippet) },
       ],
       responseFormat: 'json',

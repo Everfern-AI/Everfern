@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { diffLines } from 'diff';
+import Ansi from 'ansi-to-react';
 import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
@@ -52,6 +54,7 @@ export const ToolType = {
   TERMINAL: 'terminal',
   SKILL: 'skill',
   FILE_SYSTEM: 'file_system',
+  FILE_EDITOR: 'file_editor',
   LOCAL_PERMISSION: 'local_permission',
   IMAGE_ANALYSIS: 'image_analysis',
   GENERIC: 'generic',
@@ -105,7 +108,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
-  if (n.includes('read_file') || n.includes('write_to_file') || n.includes('replace_file_content') || n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
+  if (n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
+  if (n.includes('read_file') || n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   if (n === 'local_permission') return ToolType.LOCAL_PERMISSION;
   if (n === 'analyze_image' || n.includes('analyze_image')) return ToolType.IMAGE_ANALYSIS;
   return ToolType.GENERIC;
@@ -829,7 +833,7 @@ const TERM = {
   divider:  'rgba(255,255,255,0.05)',
 
   textCmd:  'rgba(255,255,255,0.88)',
-  textOut:  'rgba(255,255,255,0.55)',
+  textOut:  'rgba(238,242,247,0.86)',
   textErr:  '#ff5f57',
   textDim:  'rgba(255,255,255,0.2)',
   textMeta: 'rgba(255,255,255,0.3)',
@@ -850,6 +854,106 @@ const TERM = {
 };
 
 const monoStack = '"Geist Mono","Berkeley Mono",ui-monospace,"SF Mono",Menlo,monospace';
+
+const ansiControlRegex = /\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/g;
+
+function normalizeTerminalOutput(output?: string) {
+  return (output || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function hasVisibleTerminalOutput(output?: string) {
+  return normalizeTerminalOutput(output).replace(ansiControlRegex, '').trim().length > 0;
+}
+
+function TerminalChrome({
+  title,
+  tint,
+  children,
+}: {
+  title: string;
+  tint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0)), #090b10',
+      overflow: 'hidden',
+      fontFamily: monoStack,
+      border: '1px solid rgba(255,255,255,0.08)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '9px 14px',
+        background: 'rgba(255,255,255,0.045)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
+        </div>
+        <span style={{
+          fontSize: 11,
+          color: 'rgba(235,245,255,0.78)',
+          fontFamily: monoStack,
+          fontWeight: 650,
+          letterSpacing: '0.01em',
+        }}>{title}</span>
+        <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: tint, boxShadow: `0 0 14px ${tint}` }} />
+      </div>
+      <style>{`
+        .everfern-terminal-output code {
+          background: transparent !important;
+          color: inherit;
+          font: inherit;
+          white-space: inherit;
+        }
+        .everfern-terminal-output span {
+          font-family: inherit;
+        }
+        .everfern-terminal-output ::selection {
+          background: rgba(110, 168, 254, 0.35);
+        }
+      `}</style>
+      {children}
+    </div>
+  );
+}
+
+function TerminalAnsiOutput({
+  output,
+  isError,
+  palette,
+}: {
+  output: string;
+  isError: boolean;
+  palette: { textOut: string; textErr: string };
+}) {
+  return (
+    <pre
+      className="everfern-terminal-output"
+      style={{
+        fontSize: 12.5,
+        lineHeight: 1.68,
+        color: isError ? palette.textErr : palette.textOut,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        margin: '0 0 8px',
+        fontFamily: monoStack,
+        tabSize: 2,
+      }}
+    >
+      <Ansi>{normalizeTerminalOutput(output)}</Ansi>
+    </pre>
+  );
+}
 
 function PS1({ user = 'ubuntu', host = 'localhost', path = '~' }: { user?: string; host?: string; path?: string }) {
   return (
@@ -892,7 +996,7 @@ export function TerminalView({
   shellType?: 'windows' | 'linux';
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
-  const clean   = output?.replace(/\x1b\[[0-9;]*m/g, '') || '';
+  const hasOutput = hasVisibleTerminalOutput(output);
   const isWindows = shellType === 'windows';
 
   // Detect if command looks like a PowerShell command
@@ -907,7 +1011,7 @@ export function TerminalView({
       border:   'rgba(86,145,227,0.15)',
       divider:  'rgba(86,145,227,0.08)',
       textCmd:  'rgba(220,235,255,0.9)',
-      textOut:  'rgba(220,235,255,0.55)',
+      textOut:  'rgba(230,241,255,0.86)',
       textErr:  '#ff7b72',
       textDim:  'rgba(220,235,255,0.2)',
       textMeta: 'rgba(220,235,255,0.3)',
@@ -917,14 +1021,14 @@ export function TerminalView({
     };
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: WIN.bg, overflow: 'hidden', fontFamily: monoStack }}>
+      <TerminalChrome title="Windows PowerShell" tint="#58a6ff">
         {/* Windows title bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(86,145,227,0.1)', borderBottom: `1px solid ${WIN.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'none', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(86,145,227,0.1)', borderBottom: `1px solid ${WIN.border}`, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="#5691e3"><path d="M0 0h11v11H0zm13 0h11v11H13zm0 13h11v11H13zM0 13h11v11H0z"/></svg>
           <span style={{ fontSize: 11, color: WIN.textCmd, fontFamily: monoStack, fontWeight: 600 }}>Windows PowerShell</span>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 24px', display: 'flex', flexDirection: 'column', background: WIN.bg }}>
           {/* Prompt + command */}
           <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
             <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
@@ -938,10 +1042,8 @@ export function TerminalView({
           </div>
 
           {/* Output */}
-          {clean ? (
-            <pre style={{ fontSize: 12.5, lineHeight: 1.75, color: isError ? WIN.textErr : WIN.textOut, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 8px', fontFamily: monoStack }}>
-              {clean}
-            </pre>
+          {hasOutput ? (
+            <TerminalAnsiOutput output={output} isError={isError} palette={WIN} />
           ) : (
             <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: WIN.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
               (no output)
@@ -983,7 +1085,7 @@ export function TerminalView({
             </div>
           )}
         </div>
-      </div>
+      </TerminalChrome>
     );
   }
 
@@ -993,7 +1095,7 @@ export function TerminalView({
   const path = '~';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: TERM.bg, overflow: 'hidden', fontFamily: monoStack }}>
+    <TerminalChrome title="Terminal" tint="#5af78e">
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
           <PS1 user={user} host={host} path={path} />
@@ -1001,10 +1103,8 @@ export function TerminalView({
             {command}
           </code>
         </div>
-        {clean ? (
-          <pre style={{ fontSize: 12.5, lineHeight: 1.75, color: isError ? TERM.textErr : TERM.textOut, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '0 0 8px', fontFamily: monoStack }}>
-            {clean}
-          </pre>
+        {hasOutput ? (
+          <TerminalAnsiOutput output={output} isError={isError} palette={TERM} />
         ) : (
           <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: TERM.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
             (no output)
@@ -1038,7 +1138,7 @@ export function TerminalView({
           </div>
         )}
       </div>
-    </div>
+    </TerminalChrome>
   );
 }
 /* ============================================================
@@ -1569,6 +1669,345 @@ function FileSystemView({ toolName, path, args, output }: { toolName: string; pa
 }
 
 /* ============================================================
+   FILE EDITOR VIEW — IDE-styled code editor showing additions
+   ============================================================ */
+const EDITOR_COLORS = {
+  bg: '#121214',
+  gutterBg: '#18181b',
+  gutterText: '#52525b',
+  border: '#27272a',
+  text: '#e4e4e7',
+  keyword: '#e879f9', // pink/magenta
+  string: '#34d399', // green
+  number: '#60a5fa', // blue
+  comment: '#71717a', // grey
+};
+
+const detectLanguage = (ext: string): string => {
+  const langMap: Record<string, string> = {
+    js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+    py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
+    json: 'json', sql: 'sql', md: 'markdown', yml: 'yaml', yaml: 'yaml',
+    txt: 'text'
+  };
+  return langMap[ext.toLowerCase()] || 'text';
+};
+
+const syntaxHighlightLine = (line: string, ext: string) => {
+  const colors = EDITOR_COLORS;
+  
+  // Comment detection
+  const commentMatch = line.match(/^(\s*)(#|\/\/|\/\*|<!--)(.*)/);
+  if (commentMatch) {
+    return <span style={{ color: colors.comment }}>{line}</span>;
+  }
+
+  // Regex patterns
+  const stringPattern = /(['"`])(.*?)\1/g;
+  const keywordPattern = /\b(if|else|for|while|function|def|class|return|const|let|var|import|export|from|async|await|try|catch|throw|new|this|true|false|null|undefined|and|or|not|in|is|lambda|def|self|super|pass|break|continue|interface|type|public|private|protected)\b/g;
+  const numberPattern = /\b(\d+\.?\d*)\b/g;
+
+  const stringMatches = Array.from(line.matchAll(stringPattern));
+  const keywordMatches = Array.from(line.matchAll(keywordPattern));
+  const numberMatches = Array.from(line.matchAll(numberPattern));
+
+  const allMatches = [
+    ...stringMatches.map(m => ({ type: 'string', index: m.index!, value: m[0] })),
+    ...keywordMatches.map(m => ({ type: 'keyword', index: m.index!, value: m[0] })),
+    ...numberMatches.map(m => ({ type: 'number', index: m.index!, value: m[0] })),
+  ].sort((a, b) => a.index - b.index);
+
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  allMatches.forEach((match, idx) => {
+    if (match.index < lastIndex) return;
+
+    if (match.index > lastIndex) {
+      elements.push(<span key={`txt-${idx}`} style={{ color: colors.text }}>{line.slice(lastIndex, match.index)}</span>);
+    }
+    const color = colors[match.type as keyof typeof colors] || colors.text;
+    elements.push(<span key={`tok-${idx}`} style={{ color }}>{match.value}</span>);
+    lastIndex = match.index + match.value.length;
+  });
+
+  if (lastIndex < line.length) {
+    elements.push(<span key="tail" style={{ color: colors.text }}>{line.slice(lastIndex)}</span>);
+  }
+
+  return <>{elements.length > 0 ? elements : <span style={{ color: colors.text }}>{line}</span>}</>;
+};
+
+interface LineProps {
+  type: 'add' | 'del' | 'normal';
+  content: string;
+  lineNumber?: string | number;
+  ext: string;
+}
+
+const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
+  let lineBg = 'transparent';
+  let textColor = EDITOR_COLORS.text;
+  let indicator = ' ';
+  let indicatorColor = EDITOR_COLORS.gutterText;
+
+  if (type === 'add') {
+    lineBg = 'rgba(34, 197, 94, 0.08)'; // subtle green bg
+    textColor = '#4ade80'; // green text
+    indicator = '+';
+    indicatorColor = '#4ade80';
+  } else if (type === 'del') {
+    lineBg = 'rgba(239, 68, 68, 0.08)'; // subtle red bg
+    textColor = '#f87171'; // red text
+    indicator = '-';
+    indicatorColor = '#f87171';
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      backgroundColor: lineBg,
+      fontFamily: T.mono,
+      fontSize: 12,
+      lineHeight: '20px',
+      minWidth: 'fit-content',
+    }}>
+      {/* Line Gutter */}
+      <div style={{
+        width: 48,
+        flexShrink: 0,
+        backgroundColor: EDITOR_COLORS.gutterBg,
+        color: EDITOR_COLORS.gutterText,
+        textAlign: 'right',
+        paddingRight: 8,
+        userSelect: 'none',
+        borderRight: `1px solid ${EDITOR_COLORS.border}`,
+      }}>
+        {lineNumber}
+      </div>
+
+      {/* Indicator (+ or -) */}
+      <div style={{
+        width: 20,
+        flexShrink: 0,
+        textAlign: 'center',
+        color: indicatorColor,
+        fontWeight: 'bold',
+        userSelect: 'none',
+      }}>
+        {indicator}
+      </div>
+
+      {/* Code Text */}
+      <pre style={{
+        margin: 0,
+        paddingLeft: 4,
+        paddingRight: 16,
+        whiteSpace: 'pre',
+        color: textColor,
+        overflow: 'visible',
+      }}>
+        {type === 'normal' ? syntaxHighlightLine(content, ext) : content}
+      </pre>
+    </div>
+  );
+};
+
+function FileEditorView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
+  const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
+  const { isWrite, isMulti, chunks, oldContent, newContent } = useMemo(() => {
+    const name = (toolName || '').toLowerCase();
+    
+    let oldContent = '';
+    let newContent = '';
+    let isWrite = false;
+    let isMulti = false;
+    let chunks: any[] = [];
+
+    if (name.includes('write')) {
+      isWrite = true;
+      newContent = args?.CodeContent || args?.code || args?.content || '';
+    } else {
+      if (args?.ReplacementChunks && Array.isArray(args.ReplacementChunks)) {
+        isMulti = true;
+        chunks = args.ReplacementChunks.map((chunk: any) => ({
+          target: chunk.TargetContent || chunk.target || '',
+          replacement: chunk.ReplacementContent || chunk.replacement || '',
+          startLine: chunk.StartLine,
+          endLine: chunk.EndLine,
+        }));
+      } else {
+        oldContent = args?.TargetContent || args?.target || '';
+        newContent = args?.ReplacementContent || args?.replacement || '';
+      }
+    }
+
+    return { isWrite, isMulti, chunks, oldContent, newContent };
+  }, [toolName, args]);
+
+  // Helper to render diff lines for a target and replacement
+  const renderDiffLines = (oldText: string, newText: string, startLine = 1) => {
+    if (isWrite) {
+      const lines = newText.split('\n');
+      return lines.map((line, idx) => (
+        <CodeLine
+          key={idx}
+          type="add"
+          content={line}
+          lineNumber={startLine + idx}
+          ext={ext}
+        />
+      ));
+    }
+
+    // Compute diff
+    const changes = diffLines(oldText, newText);
+    const lineElements: React.ReactNode[] = [];
+    let oldLine = startLine;
+    let newLine = startLine;
+
+    changes.forEach((change, changeIdx) => {
+      // Split the text while keeping trailing spaces/newlines
+      const lines = change.value.replace(/\n$/, '').split('\n');
+      lines.forEach((line, lineIdx) => {
+        const key = `${changeIdx}-${lineIdx}`;
+        if (change.added) {
+          lineElements.push(
+            <CodeLine
+              key={key}
+              type="add"
+              content={line}
+              lineNumber={newLine++}
+              ext={ext}
+            />
+          );
+        } else if (change.removed) {
+          lineElements.push(
+            <CodeLine
+              key={key}
+              type="del"
+              content={line}
+              lineNumber={oldLine++}
+              ext={ext}
+            />
+          );
+        } else {
+          lineElements.push(
+            <CodeLine
+              key={key}
+              type="normal"
+              content={line}
+              lineNumber={newLine++}
+              ext={ext}
+            />
+          );
+          oldLine++;
+        }
+      });
+    });
+
+    return lineElements;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Title bar */}
+      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: 0, letterSpacing: '-0.015em', fontFamily: T.sans }}>
+            {toolName}
+          </h3>
+          <span style={{
+            fontSize: 9.5,
+            fontWeight: 700,
+            color: isWrite ? T.green : T.textSecondary,
+            background: isWrite ? T.greenFaint : T.surfaceRaised,
+            border: `1px solid ${isWrite ? 'rgba(34,197,94,0.15)' : T.border}`,
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontFamily: T.sans
+          }}>
+            {isWrite ? 'Write Operation' : 'Edit Operation'}
+          </span>
+        </div>
+        {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
+      </div>
+
+      {/* Editor Body */}
+      <div style={{ flex: 1, overflowY: 'auto', background: EDITOR_COLORS.bg, padding: 16 }}>
+        <div style={{
+          border: `1px solid ${EDITOR_COLORS.border}`,
+          borderRadius: T.r8,
+          overflow: 'hidden',
+          backgroundColor: EDITOR_COLORS.bg,
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          {/* Editor Header / Tab bar */}
+          <div style={{
+            height: 36,
+            backgroundColor: EDITOR_COLORS.gutterBg,
+            borderBottom: `1px solid ${EDITOR_COLORS.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            paddingLeft: 16,
+            paddingRight: 16,
+            justifyContent: 'space-between',
+            userSelect: 'none',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Colored Dots */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#ef4444' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#fbbf24' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+              </div>
+              <span style={{ fontSize: 11, color: '#a1a1aa', fontFamily: T.mono, marginLeft: 12 }}>
+                {path.split(/[/\\]/).pop() || 'Untitled'}
+              </span>
+            </div>
+            {/* Copy button */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <CopyBtn text={isWrite ? newContent : isMulti ? chunks.map(c => c.replacement).join('\n') : newContent} dark />
+            </div>
+          </div>
+
+          {/* Editor Code Area */}
+          <div style={{
+            overflowX: 'auto',
+            paddingTop: 8,
+            paddingBottom: 8,
+            backgroundColor: EDITOR_COLORS.bg,
+          }}>
+            {isMulti ? (
+              chunks.map((chunk, idx) => (
+                <div key={idx} style={{ marginBottom: idx < chunks.length - 1 ? 16 : 0 }}>
+                  <div style={{
+                    backgroundColor: '#18181b',
+                    color: '#a1a1aa',
+                    padding: '4px 16px',
+                    fontSize: 10,
+                    fontWeight: 'bold',
+                    fontFamily: T.mono,
+                    borderTop: idx > 0 ? `1px dashed ${EDITOR_COLORS.border}` : 'none',
+                    borderBottom: `1px solid ${EDITOR_COLORS.border}`,
+                  }}>
+                    @@ Chunk {idx + 1} (Line {chunk.startLine || '?'} to {chunk.endLine || '?'}) @@
+                  </div>
+                  {renderDiffLines(chunk.target, chunk.replacement, chunk.startLine || 1)}
+                </div>
+              ))
+            ) : (
+              renderDiffLines(oldContent, newContent, 1)
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    LOCAL PERMISSION VIEW
    ============================================================ */
 function LocalPermissionView({
@@ -1920,7 +2359,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractTerminalData(toolCall);
       } else if (type === ToolType.SKILL) {
         extracted = extractSkillData(toolCall);
-      } else if (type === ToolType.FILE_SYSTEM) {
+      } else if (type === ToolType.FILE_SYSTEM || type === ToolType.FILE_EDITOR) {
         extracted = extractFileSystemData(toolCall);
       } else if (type === ToolType.LOCAL_PERMISSION) {
         extracted = extractLocalPermissionData(toolCall);
@@ -2082,6 +2521,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
+    if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     if (toolType === ToolType.LOCAL_PERMISSION) return <LocalPermissionView {...toolData} />;
     if (toolType === ToolType.IMAGE_ANALYSIS) return <ImageAnalysisView {...toolData} />;
     return <GenericView {...toolData} />;

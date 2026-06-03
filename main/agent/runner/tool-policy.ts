@@ -123,12 +123,27 @@ export const builtInPolicies = {
 
                 // Smart check for terminal/bash tools
                 if (['terminal_execute', 'executePwsh', 'bash', 'exec'].includes(ctx.toolName)) {
-                    const command = String(ctx.args.command || ctx.args.code || ctx.args.script || '');
-                    if (isDangerousTerminal(command)) {
-                        console.log(`[ToolPolicy] Dangerous command detected: "${command}" → Requiring approval`);
-                        return 'owner_only';
+                    const target = ctx.args.target || 'main';
+
+                    // 1. Check auto-approval store (Allow Always / Allow Prefix)
+                    try {
+                        const { toolApprovalStore } = require('../../store/tool-approvals');
+                        if (toolApprovalStore.isApproved(ctx.toolName, ctx.args)) {
+                            console.log(`[ToolPolicy] Command auto-approved via toolApprovalStore`);
+                            return 'allow';
+                        }
+                    } catch (e) {
+                        console.error('[ToolPolicy] Error checking toolApprovalStore:', e);
                     }
-                    return 'allow';
+
+                    // 2. VM execution is isolated and doesn't require permission
+                    if (target === 'vm') {
+                        return 'allow';
+                    }
+
+                    // 3. Main host execution ALWAYS requires permission
+                    console.log(`[ToolPolicy] Command on main host detected → Requiring approval`);
+                    return 'owner_only';
                 }
 
                 if (ownerOnlyTools.includes(ctx.toolName)) {

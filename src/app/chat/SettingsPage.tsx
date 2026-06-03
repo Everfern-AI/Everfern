@@ -32,6 +32,7 @@ const MORE_PROVIDERS = [
 
 const navSections = [
     { id: 'general', label: 'General', icon: Cog6ToothIcon },
+    { id: 'openclaw', label: 'Personality & Routing (EverFern)', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎭</span> },
     { id: 'profile', label: 'Profile', icon: UserCircleIcon },
     { id: 'models', label: 'Models & Providers', icon: CpuChipIcon },
     { id: 'voice', label: 'Voice Mode', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎤</span> },
@@ -525,6 +526,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 interface SettingsPageProps {
+    activeProjectId?: string;
     onClose: () => void;
     config: any;
     username: string;
@@ -598,6 +600,7 @@ const visionProviders = [
 ];
 
 export default function SettingsPage({
+    activeProjectId,
     onClose,
     config,
     username,
@@ -624,6 +627,47 @@ export default function SettingsPage({
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
     const [activeSection, setActiveSection] = useState('general');
+    const [soul, setSoul] = useState('');
+    const [agents, setAgents] = useState('');
+    const [isSavingOpenClaw, setIsSavingOpenClaw] = useState(false);
+    const [openClawScope, setOpenClawScope] = useState<'global' | 'workspace'>('global');
+
+    useEffect(() => {
+        const fetchOpenClaw = async () => {
+            try {
+                const scopePath = openClawScope === 'workspace' ? activeProjectId : undefined;
+                const result = await (window as any).electronAPI?.openclaw?.getConfigs(scopePath);
+                if (result) {
+                    setSoul(result.soul || '');
+                    setAgents(result.agents || '');
+                }
+            } catch (err) {
+                console.error('Failed to load OpenClaw configs:', err);
+            }
+        };
+        fetchOpenClaw();
+    }, [activeProjectId, openClawScope]);
+
+    const handleSaveOpenClaw = async () => {
+        setIsSavingOpenClaw(true);
+        try {
+            const scopePath = openClawScope === 'workspace' ? activeProjectId : undefined;
+            const res = await (window as any).electronAPI?.openclaw?.saveConfigs({
+                soul,
+                agents,
+                workspaceRoot: scopePath
+            });
+            if (res?.success) {
+                alert('OpenClaw configurations saved successfully!');
+            } else {
+                alert(`Failed to save: ${res?.error || 'Unknown error'}`);
+            }
+        } catch (err: any) {
+            alert(`Error saving configurations: ${err.message}`);
+        } finally {
+            setIsSavingOpenClaw(false);
+        }
+    };
     const [toastState, setToastState] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [profileName, setProfileName] = useState(username || 'User');
     const [displayName, setDisplayName] = useState(username || 'User');
@@ -1707,8 +1751,106 @@ export default function SettingsPage({
         </motion.div>
     );
 
+    const OpenClawSection = () => {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+            >
+                <SectionTitle>Personality & Agent Customization</SectionTitle>
+                <SectionSubtitle>Configure the behavior core (SOUL.md) and agent routing rules (agents.md) using custom behavior rules.</SectionSubtitle>
+
+                {activeProjectId && (
+                    <Card style={{ marginBottom: 20, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 2 }}>Configuration Scope</div>
+                            <div style={{ fontSize: 12, color: '#8a8886' }}>Edit configurations globally or for the current active project.</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                                onClick={() => setOpenClawScope('global')}
+                                style={{
+                                    padding: '6px 12px', borderRadius: 8, border: '1px solid #e8e6d9', fontSize: 13,
+                                    backgroundColor: openClawScope === 'global' ? '#111111' : '#ffffff',
+                                    color: openClawScope === 'global' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer', fontWeight: openClawScope === 'global' ? 600 : 400
+                                }}
+                            >
+                                Global
+                            </button>
+                            <button
+                                onClick={() => setOpenClawScope('workspace')}
+                                style={{
+                                    padding: '6px 12px', borderRadius: 8, border: '1px solid #e8e6d9', fontSize: 13,
+                                    backgroundColor: openClawScope === 'workspace' ? '#111111' : '#ffffff',
+                                    color: openClawScope === 'workspace' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer', fontWeight: openClawScope === 'workspace' ? 600 : 400
+                                }}
+                            >
+                                Project Workspace
+                            </button>
+                        </div>
+                    </Card>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: '#111111', marginBottom: 4 }}>SOUL.md (Personality Core)</div>
+                            <div style={{ fontSize: 12, color: '#8a8886' }}>Defines how the AI speaks, acts, and behaves. You can make it AGI-like, direct, concise, or give it a custom persona.</div>
+                        </div>
+                        <textarea
+                            value={soul}
+                            onChange={(e) => setSoul(e.target.value)}
+                            style={{
+                                width: '100%', height: 260, fontFamily: 'monospace', fontSize: 13, padding: 12,
+                                border: '1px solid #e8e6d9', borderRadius: 8, backgroundColor: '#faf9f6', resize: 'vertical'
+                            }}
+                            placeholder="Enter SOUL.md content..."
+                        />
+                    </Card>
+
+                    <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: '#111111', marginBottom: 4 }}>agents.md (Routing Protocol)</div>
+                            <div style={{ fontSize: 12, color: '#8a8886' }}>Outlines the roles and operational rules for routing tasks to specialized sub-agents.</div>
+                        </div>
+                        <textarea
+                            value={agents}
+                            onChange={(e) => setAgents(e.target.value)}
+                            style={{
+                                width: '100%', height: 260, fontFamily: 'monospace', fontSize: 13, padding: 12,
+                                border: '1px solid #e8e6d9', borderRadius: 8, backgroundColor: '#faf9f6', resize: 'vertical'
+                            }}
+                            placeholder="Enter agents.md content..."
+                        />
+                    </Card>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                        <button
+                            onClick={handleSaveOpenClaw}
+                            disabled={isSavingOpenClaw}
+                            style={{
+                                padding: '10px 20px', borderRadius: 10, border: 'none',
+                                backgroundColor: '#111111', color: '#ffffff', fontSize: 14, fontWeight: 600,
+                                cursor: isSavingOpenClaw ? 'not-allowed' : 'pointer', opacity: isSavingOpenClaw ? 0.7 : 1,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)', transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = '#2a2826'; }}
+                            onMouseLeave={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = '#111111'; }}
+                        >
+                            {isSavingOpenClaw ? 'Saving...' : 'Save Configuration'}
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+        );
+    };
+
     const sectionContent: Record<string, React.ReactNode> = {
         general: GeneralSection(),
+        openclaw: OpenClawSection(),
         profile: ProfileSection(),
         models: ModelsSection(),
         voice: VoiceSection(),

@@ -201,7 +201,9 @@ export function registerAgentHandlers() {
 
   ipcMain.handle('agent:rollback-turn', async (_event, conversationId: string, timestamp: number) => {
     const { getRollbackManager } = require('../agent/persistence/rollback-manager');
-    const result = await getRollbackManager().rollbackSinceTimestamp(conversationId, timestamp);
+    const manager = getRollbackManager();
+    await manager.initialize();
+    const result = await manager.rollbackSinceTimestamp(conversationId, timestamp);
     return result;
   });
 

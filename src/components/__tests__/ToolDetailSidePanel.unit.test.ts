@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { extractNavisData, extractWebSearchData } from '../ToolDetailSidePanel';
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { extractNavisData, extractWebSearchData, TerminalView } from '../ToolDetailSidePanel';
 
 describe('extractNavisData', () => {
   it('should extract screenshots from tc.data.screenshot (array of strings)', () => {
@@ -110,6 +112,25 @@ describe('extractWebSearchData', () => {
     };
     const result = extractWebSearchData(tc);
     expect(result?.results[0].domain).toBe('example.org');
+  });
+});
+
+describe('TerminalView', () => {
+  it('renders ANSI-colored PowerShell output without stripping color spans', () => {
+    render(
+      React.createElement(TerminalView, {
+        command: 'powershell -Command Write-Host Colored -ForegroundColor Red',
+        output: '\u001b[31mColored\u001b[0m\nplain',
+        exitCode: 0,
+        shellType: 'windows',
+      })
+    );
+
+    const colored = screen.getByText('Colored');
+    expect(colored).toBeInTheDocument();
+    expect(colored.tagName.toLowerCase()).toBe('span');
+    expect(colored).toHaveStyle({ color: 'rgb(187, 0, 0)' });
+    expect(screen.getByText('plain')).toBeInTheDocument();
   });
 });
 

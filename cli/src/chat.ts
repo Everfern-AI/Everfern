@@ -13,7 +13,7 @@ ord<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini', 'o3-mini'],
   anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-5', 'claude-haiku-4-5-20251001', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   deepseek: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-  gemini: ['gemini-3.1-pro-preview', 'gemini-3.1-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+  gemini: ['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
   nvidia: ['google/gemma-4-31b-it', 'meta/llama-3.2-90b-vision-instruct', 'qwen/qwen3.5-122b-a10b', 'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mistral-small-4-119b-2603', 'nvidia/nemotron-3-super-120b-a12b'],
   ollama: [],
   'ollama-cloud': ['qwen3-vl:235b-instruct-cloud', 'kimi-k2.6:cloud', 'glm-5.1:cloud', 'gemma4:31b-cloud', 'kimi-k2.5:cloud', 'minimax-m2.7:cloud', 'MiniMax-M3', 'glm-5:cloud'],

@@ -24,6 +24,7 @@ interface NavisConfig {
     useVision: boolean;
     headless: boolean;
     maxSteps: number;
+    useChromeProfile: boolean;
 }
 
 interface ToolSettingsConfig {
@@ -37,6 +38,7 @@ const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     useVision: true,
     headless: false,
     maxSteps: 12,
+    useChromeProfile: false,
 };
 
 const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
@@ -356,6 +358,50 @@ export function ToolSettingsSection() {
                             <div style={{
                                 position: 'absolute', top: 3,
                                 left: config.navis.useVision ? 23 : 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                backgroundColor: '#ffffff',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Chrome Profile Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Chrome Profile</Label>
+                    <div
+                        onClick={() => handleNavisChange({ ...config.navis, useChromeProfile: !config.navis.useChromeProfile })}
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '12px 16px', backgroundColor: config.navis.useChromeProfile ? '#eef7f1' : '#f9f9f8',
+                            border: `1px solid ${config.navis.useChromeProfile ? '#2f8f5b' : '#e8e6d9'}`,
+                            borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.useChromeProfile ? '#e2f1e8' : '#f4f4f4'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.useChromeProfile ? '#eef7f1' : '#f9f9f8'}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <ComputerDesktopIcon width={18} height={18} style={{ color: config.navis.useChromeProfile ? '#2f8f5b' : '#8a8886' }} />
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    {config.navis.useChromeProfile ? 'Use Your Chrome Profile' : 'Use Isolated Browser'}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 330 }}>
+                                    {config.navis.useChromeProfile
+                                        ? 'Runs Navis in your default Chrome profile and groups tabs as Navis Agent'
+                                        : 'Runs Navis in its own Playwright Chromium session'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{
+                            width: 44, height: 24, borderRadius: 12, position: 'relative',
+                            backgroundColor: config.navis.useChromeProfile ? '#2f8f5b' : '#e8e6d9',
+                            transition: 'background 0.2s', flexShrink: 0,
+                        }}>
+                            <div style={{
+                                position: 'absolute', top: 3,
+                                left: config.navis.useChromeProfile ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: '#ffffff',
                                 transition: 'left 0.2s',

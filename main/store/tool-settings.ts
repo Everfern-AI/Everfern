@@ -16,6 +16,7 @@ export interface NavisConfig {
   useVision: boolean;
   headless: boolean;
   maxSteps: number;
+  useChromeProfile: boolean;
 }
 
 export interface ToolSettingsConfig {
@@ -29,6 +30,7 @@ export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   useVision: false,
   headless: false,
   maxSteps: 200,
+  useChromeProfile: false,
 };
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {

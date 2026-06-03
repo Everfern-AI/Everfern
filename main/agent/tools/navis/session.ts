@@ -2,10 +2,13 @@
  * Navis — Browser Session Manager
  *
  * Handles Playwright browser lifecycle: launch, context, page/tab management, cleanup.
- * No chrome extension — pure Playwright automation.
+ * Uses pure Playwright automation, with an optional Chrome profile helper extension for tab grouping.
  */
 
 import { chromium as pwChromium, Browser, BrowserContext, Page } from 'playwright';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
@@ -16,6 +19,7 @@ export interface SessionConfig {
   headless?: boolean;
   startUrl?: string;
   logger?: NavisLogger;
+  useChromeProfile?: boolean;
 }
 
 export interface TabInfo {
@@ -23,6 +27,137 @@ export interface TabInfo {
   url: string;
   title: string;
   isActive: boolean;
+}
+
+interface ChromeProfileLaunchConfig {
+  executablePath: string;
+  userDataDir: string;
+  profileDirectory: string;
+}
+
+function getChromeProfileLaunchConfig(): ChromeProfileLaunchConfig {
+  const home = os.homedir();
+
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          {
+            executablePath: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
+          },
+          {
+            executablePath: path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
+          },
+        ]
+      : process.platform === 'darwin'
+      ? [
+          {
+            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            userDataDir: path.join(home, 'Library', 'Application Support', 'Google', 'Chrome'),
+          },
+        ]
+      : [
+          {
+            executablePath: '/usr/bin/google-chrome',
+            userDataDir: path.join(home, '.config', 'google-chrome'),
+          },
+          {
+            executablePath: '/usr/bin/google-chrome-stable',
+            userDataDir: path.join(home, '.config', 'google-chrome'),
+          },
+        ];
+
+  const match = candidates.find(candidate => fs.existsSync(candidate.executablePath) && fs.existsSync(candidate.userDataDir));
+  if (!match) {
+    throw new Error('Google Chrome profile not found. Install Chrome or turn off "Run on your Chrome profile" in Navis settings.');
+  }
+
+  return {
+    ...match,
+    profileDirectory: getLastUsedChromeProfile(match.userDataDir),
+  };
+}
+
+function getLastUsedChromeProfile(userDataDir: string): string {
+  const localStatePath = path.join(userDataDir, 'Local State');
+  try {
+    const localState = JSON.parse(fs.readFileSync(localStatePath, 'utf-8'));
+    const lastUsed = localState?.profile?.last_used;
+    if (typeof lastUsed === 'string' && fs.existsSync(path.join(userDataDir, lastUsed))) {
+      return lastUsed;
+    }
+  } catch {}
+
+  if (fs.existsSync(path.join(userDataDir, 'Default'))) return 'Default';
+  if (fs.existsSync(path.join(userDataDir, 'Profile 1'))) return 'Profile 1';
+  return 'Default';
+}
+
+function ensureNavisTabGroupExtension(): string {
+  const extensionDir = path.join(os.tmpdir(), 'everfern-navis-tab-group-extension');
+  fs.mkdirSync(extensionDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(extensionDir, 'manifest.json'),
+    JSON.stringify(
+      {
+        manifest_version: 3,
+        name: 'EverFern Navis Tab Group',
+        version: '1.0.0',
+        permissions: ['tabs', 'tabGroups'],
+        background: { service_worker: 'service-worker.js' },
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  fs.writeFileSync(
+    path.join(extensionDir, 'service-worker.js'),
+    `
+const NAVIS_GROUP_TITLE = 'Navis Agent';
+let navisGroupId = -1;
+
+async function ensureNavisGroup(tabId) {
+  if (!tabId) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || tab.windowId < 0) return;
+
+    if (typeof tab.groupId === 'number' && tab.groupId >= 0) {
+      try {
+        await chrome.tabGroups.update(tab.groupId, { title: NAVIS_GROUP_TITLE, color: 'blue' });
+        navisGroupId = tab.groupId;
+        return;
+      } catch {}
+    }
+
+    if (navisGroupId >= 0) {
+      try {
+        await chrome.tabs.group({ tabIds: [tabId], groupId: navisGroupId });
+        return;
+      } catch {
+        navisGroupId = -1;
+      }
+    }
+
+    navisGroupId = await chrome.tabs.group({ tabIds: [tabId] });
+    await chrome.tabGroups.update(navisGroupId, { title: NAVIS_GROUP_TITLE, color: 'blue' });
+  } catch (error) {
+    console.warn('[Navis Tab Group] Failed to group tab', error);
+  }
+}
+
+chrome.tabs.onCreated.addListener(tab => {
+  ensureNavisGroup(tab.id);
+});
+`.trimStart(),
+    'utf-8',
+  );
+
+  return extensionDir;
 }
 
 export class BrowserSession {
@@ -51,7 +186,7 @@ export class BrowserSession {
   }
 
   async launch(config: SessionConfig = {}): Promise<void> {
-    const { headless = false, startUrl, logger } = config;
+    const { headless = false, startUrl, logger, useChromeProfile = false } = config;
     this.logger = logger || null;
 
     const realUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -64,44 +199,67 @@ export class BrowserSession {
 
     // Always launch fresh browser
     try {
-      const executablePath = findChromiumExecutable() || undefined;
+      const chromeProfile = useChromeProfile ? getChromeProfileLaunchConfig() : null;
+      const executablePath = chromeProfile?.executablePath || findChromiumExecutable() || undefined;
       if (executablePath) {
         console.log(`[Navis] Using Chromium executable: ${executablePath}`);
       }
 
-      this.browser = await chromium.launch({
-        headless,
-        executablePath,
-        args: [
-          '--no-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-infobars',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-default-apps',
-          '--no-first-run',
-          '--disable-translate',
-          '--disable-features=ChromeWhatsNewUI',
-          '--disable-background-networking',
-          '--disable-sync',
-          '--metrics-recording-only',
-          '--disable-component-update',
-          '--safebrowsing-disable-auto-update',
-          '--disable-hang-monitor',
-          '--disable-popup-blocking',
-          '--disable-prompt-on-repost',
-          '--disable-domain-reliability',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--lang=en-US',
-          '--window-size=1280,1024',
-        ],
-      });
+      const launchArgs = [
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-infobars',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-default-apps',
+        '--no-first-run',
+        '--disable-translate',
+        '--disable-features=ChromeWhatsNewUI',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--disable-component-update',
+        '--safebrowsing-disable-auto-update',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-domain-reliability',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--lang=en-US',
+        '--window-size=1280,1024',
+      ];
 
-      this.context = await this.browser.newContext({
-        viewport: { width: 1280, height: 1024 },
-        userAgent: realUA,
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-      });
+      if (chromeProfile) {
+        const extensionDir = ensureNavisTabGroupExtension();
+        launchArgs.push(
+          `--profile-directory=${chromeProfile.profileDirectory}`,
+          `--load-extension=${extensionDir}`,
+          '--no-startup-window',
+        );
+
+        this.context = await chromium.launchPersistentContext(chromeProfile.userDataDir, {
+          headless: false,
+          executablePath,
+          args: launchArgs,
+          viewport: { width: 1280, height: 1024 },
+          userAgent: realUA,
+          locale: 'en-US',
+          timezoneId: 'America/New_York',
+        });
+        this.browser = this.context.browser();
+      } else {
+        this.browser = await chromium.launch({
+          headless,
+          executablePath,
+          args: launchArgs,
+        });
+
+        this.context = await this.browser.newContext({
+          viewport: { width: 1280, height: 1024 },
+          userAgent: realUA,
+          locale: 'en-US',
+          timezoneId: 'America/New_York',
+        });
+      }
 
     // Inject overlay into all future pages in this context
     await this.context.addInitScript(OVERLAY_SCRIPT);
@@ -125,7 +283,7 @@ export class BrowserSession {
       await this.openTab('about:blank');
     }
 
-    this.logger?.browserLaunch(`headless=${headless}, 1280x1024, real Chrome`);
+    this.logger?.browserLaunch(`headless=${useChromeProfile ? false : headless}, 1280x1024, ${useChromeProfile ? 'Chrome profile' : 'real Chrome'}`);
   }
 
   async openTab(url?: string): Promise<Page> {
