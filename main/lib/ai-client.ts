@@ -624,7 +624,7 @@ export class AIClient {
       if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
       if (m.tool_calls && m.tool_calls.length > 0) {
         msg.tool_calls = m.tool_calls.map((tc, idx) => ({
-          id: tc.id || `call_${m.role}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+          id: tc.id || `call${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
           type: 'function',
           function: { name: tc.name, arguments: JSON.stringify(tc.arguments || {}) }
         }));
@@ -635,14 +635,14 @@ export class AIClient {
         msg.content = typeof content === 'string' ? content : JSON.stringify(content);
       } else if (m.role === 'tool') {
         msg.content = typeof content === 'string' ? content : JSON.stringify(content);
-        msg.tool_call_id = m.tool_call_id || 'unknown';
+        msg.tool_call_id = m.tool_call_id || 'call1234567890abcdef';
       }
 
       return [msg];
     });
 
-    // Final Role-Alternation Pass for NVIDIA NIM
-    if (this.config.provider === 'nvidia') {
+    // Final Role-Alternation Pass for NVIDIA NIM and Minimax
+    if (this.config.provider === 'nvidia' || this.config.provider === 'minimax') {
       const finalMessages: any[] = [];
       const seenToolCallIds = new Set<string>();
       let pendingImages: any[] = [];
@@ -835,7 +835,7 @@ export class AIClient {
     // last message is NOT from the assistant, otherwise the server-side HF chat
     // template raises: "Cannot set add_generation_prompt to True when the last
     // message is from the assistant."
-    if (this.config.provider === 'nvidia' && processedMessages.length > 0) {
+    if ((this.config.provider === 'nvidia' || this.config.provider === 'minimax') && processedMessages.length > 0) {
       const last = processedMessages[processedMessages.length - 1];
       if (last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0)) {
         console.warn('[AIClient] Stripping trailing assistant message for NVIDIA NIM HF template compatibility');
@@ -845,6 +845,20 @@ export class AIClient {
       if (processedMessages.length === 0) {
         processedMessages.push({ role: 'user', content: 'Please continue.' });
       }
+    }
+
+    if (this.config.provider === 'minimax') {
+      processedMessages = processedMessages.map(m => {
+        if (m.tool_call_id) {
+          m.tool_call_id = String(m.tool_call_id).replace(/[^a-zA-Z0-9]/g, '');
+        }
+        if (m.tool_calls) {
+          m.tool_calls.forEach((tc: any) => {
+            if (tc.id) tc.id = String(tc.id).replace(/[^a-zA-Z0-9]/g, '');
+          });
+        }
+        return m;
+      });
     }
 
     return processedMessages;

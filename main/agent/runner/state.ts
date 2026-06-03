@@ -3,7 +3,7 @@ import type { MissionTimeline, MissionStep } from './mission-tracker';
 import type { ThinkingDuration } from './duration-tracker';
 
 // Type definitions to fix imports
-export type IntentType = 'unknown' | 'coding' | 'research' | 'task' | 'question' | 'conversation' | 'build' | 'fix' | 'analyze' | 'automate';
+export type IntentType = 'unknown' | 'coding' | 'research' | 'task' | 'question' | 'conversation' | 'build' | 'fix' | 'analyze' | 'automate' | 'background_task';
 export type TaskPhase = 'triage' | 'planning' | 'routing' | 'specialized_agent' | 'validation' | 'hitl' | 'orchestrating' | 'executing' | 'evaluating' | 'brain';
 
 export interface TaskStep {
@@ -158,6 +158,30 @@ export const GraphState = Annotation.Root({
   // Bugfixes: Routing state persistence
   brainToolsInFlight: Annotation<boolean>(),
   returningFromSpecialist: Annotation<string | null>(),
+
+  // Multi-Agent Coding Coordination
+  subagentCoordination: Annotation<{
+    phase: 'exploration' | 'planning' | 'implementation' | 'review' | 'testing' | 'complete';
+    currentAgent: string;
+    completedPhases: string[];
+    sharedContext: {
+      codebaseMap?: any;
+      developmentPlan?: any;
+      implementationResults?: any;
+      reviewResults?: any;
+      testResults?: any;
+    };
+  }>(),
+
+  // Plan approval system
+  pendingApproval: Annotation<{
+    type: 'development_plan' | 'security_review' | 'deployment';
+    content: string;
+    nextPhase: string;
+  }>(),
+
+  // Completion summary
+  completionSummary: Annotation<string>(),
 
   // Debate system: stores the result of the three-agent debate chamber
   debateResult: Annotation<any>(),

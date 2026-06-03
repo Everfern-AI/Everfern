@@ -60,12 +60,14 @@ export const localPermissionTool: AgentTool = {
 
     const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
       const resolvers = getLocalExecutionResolvers();
+      console.log(`[local-permission] 🔑 Registering resolver for requestId: ${requestId}. Map size before: ${resolvers.size}`);
       resolvers.set(requestId, resolve);
     });
 
     const response = await approvalPromise;
 
     const resolvers = getLocalExecutionResolvers();
+    console.log(`[local-permission] 🔓 Resolving requestId: ${requestId}, approved: ${response.approved}. Map size before delete: ${resolvers.size}`);
     resolvers.delete(requestId);
 
     if (!response.approved) {

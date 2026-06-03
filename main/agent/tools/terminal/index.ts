@@ -18,7 +18,8 @@ export const terminalTool: AgentTool = {
     properties: {
       command: { type: 'string', description: 'The command to execute' },
       cwd: { type: 'string', description: 'Working directory (defaults to ~/.everfern)' },
-      id: { type: 'string', description: 'Optional unique ID for this command session' }
+      id: { type: 'string', description: 'Optional unique ID for this command session' },
+      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000)' }
     },
     required: ['command']
   },
@@ -27,10 +28,11 @@ export const terminalTool: AgentTool = {
     const command = args.command as string;
     const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
     const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
+    const timeoutMs = args.timeoutMs as number | undefined;
 
     onUpdate?.(`Terminal [${id}]: Executing "${command}"...`);
 
-    const info = await registry.execute(id, command, cwd);
+    const info = await registry.execute(id, command, cwd, timeoutMs);
 
     if (info.status === 'completed') {
       return {

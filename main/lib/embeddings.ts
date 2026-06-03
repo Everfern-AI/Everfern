@@ -115,7 +115,13 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
               encoding_format: "float"
             })
           });
-          const data = await res.json() as any;
+          const resText = await res.text();
+          let data: any;
+          try {
+            data = JSON.parse(resText);
+          } catch (e) {
+            throw new Error(`Invalid JSON from Nvidia: ${resText.slice(0, 100)}...`);
+          }
           if (!res.ok) throw new Error(data.error?.message || data.error || res.statusText);
           return data.data[0].embedding;
         }
@@ -143,7 +149,13 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
               content: { parts: [{ text }] }
             })
           });
-          const data = await res.json() as any;
+          const resText = await res.text();
+          let data: any;
+          try {
+            data = JSON.parse(resText);
+          } catch (e) {
+            throw new Error(`Invalid JSON from Gemini: ${resText.slice(0, 100)}...`);
+          }
           if (!res.ok) throw new Error(data.error?.message || res.statusText);
           return data.embedding.values;
         },
@@ -164,7 +176,13 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
                 content: { parts: [{ text: doc }] }
               })
             }).then(async res => {
-              const data = await res.json() as any;
+              const text = await res.text();
+              let data: any;
+              try {
+                data = JSON.parse(text);
+              } catch (e) {
+                throw new Error(`Invalid JSON from Gemini: ${text.slice(0, 100)}...`);
+              }
               if (!res.ok) throw new Error(data.error?.message || res.statusText);
               return data.embedding.values;
             });

@@ -199,15 +199,30 @@ export function registerAgentHandlers() {
     }
   });
 
-  ipcMain.handle('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+  ipcMain.handle('agent:rollback-turn', async (_event, conversationId: string, timestamp: number) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const result = await getRollbackManager().rollbackSinceTimestamp(conversationId, timestamp);
+    return result;
+  });
+
+  // NOTE: Must use ipcMain.on (not ipcMain.handle) here because the renderer preload
+  // uses ipcRenderer.send (one-way fire-and-forget), not ipcRenderer.invoke.
+  // ipcMain.handle only receives messages from ipcRenderer.invoke.
+  ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+    console.log('[local-execution-response] Received IPC response:', JSON.stringify(response));
     // Import here to avoid circular dependencies
     const { getLocalExecutionResolvers } = require('../agent/tools/pi-tools');
     const resolvers = getLocalExecutionResolvers();
+    
+    console.log(`[local-execution-response] Resolvers Map size: ${resolvers.size}. Keys:`, Array.from(resolvers.keys()));
 
     // Resolve the specific request
     const resolver = resolvers.get(response.requestId);
     if (resolver) {
+      console.log(`[local-execution-response] ✅ Found and executing resolver for requestId: ${response.requestId}`);
       resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow });
+    } else {
+      console.warn('[local-execution-response] ❌ No resolver found for requestId:', response?.requestId);
     }
   });
 

@@ -25,6 +25,7 @@ export interface LocalExecutionRequest {
 }
 
 export interface LocalExecutionResponse {
+  requestId: string;
   approved: boolean;
   alwaysAllow: boolean;
 }
@@ -153,6 +154,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chat:          (req: any)   => ipcRenderer.invoke('acp:chat', req),
     stream:        (req: any)   => ipcRenderer.invoke('acp:stream', req),
     stop:          ()            => ipcRenderer.invoke('acp:stop'),
+    rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
 
     onStreamChunk: (cb: (chunk: { delta: string; done: boolean }) => void) => {
       ipcRenderer.on('acp:stream-chunk', (_e, chunk) => cb(chunk));
@@ -571,6 +573,7 @@ export type ElectronAPI = {
     listTools:             () => Promise<{ success: boolean; tools: { name: string; description: string }[]; error?: string }>;
     chat:                  (req: any) => Promise<any>;
     stream:                (req: any) => Promise<any>;
+    rollbackTurn:          (conversationId: string, timestamp: number) => Promise<any>;
     onStreamChunk:         (cb: (chunk: { delta: string; done: boolean }) => void) => void;
     onThought:             (cb: (data: { content: string }) => void) => void;
     onToolStart:           (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => void;

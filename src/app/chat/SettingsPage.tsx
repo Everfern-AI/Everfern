@@ -569,6 +569,8 @@ interface SettingsPageProps {
     setEmbeddingProvider: (v: string) => void;
     embeddingModel: string;
     setEmbeddingModel: (v: string) => void;
+    embeddingApiKey: string;
+    setEmbeddingApiKey: (v: string) => void;
 
     handleSaveSettings: () => void;
     onOpenVlmOnboarding: () => void;
@@ -617,6 +619,7 @@ export default function SettingsPage({
     voiceElevenlabsKey, setVoiceElevenlabsKey,
     embeddingProvider, setEmbeddingProvider,
     embeddingModel, setEmbeddingModel,
+    embeddingApiKey, setEmbeddingApiKey,
     handleSaveSettings,
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
@@ -1267,6 +1270,16 @@ export default function SettingsPage({
                             <p style={{ fontSize: 12, color: '#8a8886', marginTop: 10, lineHeight: 1.6 }}>
                                 EverFern Cloud uses <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen/qwen3-embedding-8b</code> via OpenRouter on our backend. No API key needed if you're logged into EverFern Cloud.
                             </p>
+                        )}
+                        {embeddingProvider !== 'everfern' && embeddingProvider !== 'ollama' && (
+                            <div style={{ marginTop: 16 }}>
+                                <Label>API Key</Label>
+                                <div style={{ position: 'relative' }}>
+                                    <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                    <Input type="password" placeholder="sk-..." value={embeddingApiKey} onChange={e => setEmbeddingApiKey(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                                </div>
+                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 4 }}>Required for {selectedProvider?.name || 'this provider'}.</p>
+                            </div>
                         )}
                     </Card>
                 )}

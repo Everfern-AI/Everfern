@@ -7,6 +7,9 @@
 
 import type { AgentTool, ToolResult } from '../runner/types';
 import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
+import { getRollbackManager } from '../persistence/rollback-manager';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
@@ -162,6 +165,7 @@ function adaptTool(
               const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
                 // Store the resolver so the IPC handler can resolve it
                 const resolvers = getLocalExecutionResolvers();
+                console.log(`[pi-tools] 🔑 Registering resolver for requestId: ${requestId}. Map size before: ${resolvers.size}`);
                 resolvers.set(requestId, resolve);
               });
 
@@ -170,6 +174,7 @@ function adaptTool(
 
               // Clean up the resolver
               const resolvers = getLocalExecutionResolvers();
+              console.log(`[pi-tools] 🔓 Resolving requestId: ${requestId}, approved: ${response.approved}. Map size before delete: ${resolvers.size}`);
               resolvers.delete(requestId);
 
               // If denied, return error
@@ -189,73 +194,93 @@ function adaptTool(
             console.log(`[executePwsh] local=${local}, checking VM availability for command: "${command.slice(0, 100)}..."`);
             const vmCheck = await isLinuxVMAvailable();
             console.log(`[executePwsh] isLinuxVMAvailable result: available=${vmCheck.available}, reason="${vmCheck.reason || '(none)'}"`);
-            if (!vmCheck.available) {
-              console.log(`[executePwsh] VM not available, returning error`);
-              return {
-                success: false,
-                output: `ERROR: Linux VM is not available. This action cannot be done.\nReason: ${vmCheck.reason || 'Unknown error'}\n\nPlease install/configure the VM before executing commands. Alternatively, you can explicitly request local execution by passing local: true (requires user permission).`,
-                error: `Linux VM is not available: ${vmCheck.reason || 'Unknown error'}`
-              };
-            }
+            if (vmCheck.available) {
+              // Route through Linux VM when available
+              try {
+                console.log(`[executePwsh] VM available, calling runInLinuxVM()`);
 
-            // Route through Linux VM by default
-            try {
-              console.log(`[executePwsh] VM available, calling runInLinuxVM()`);
-              const result = await runInLinuxVM(command);
-              console.log(`[executePwsh] runInLinuxVM result: exitCode=${result.exitCode}, stdout=${result.stdout.length} chars, stderr=${result.stderr.length} chars`);
-
-              // Format output to match pi-tools format exactly
-              // Success case: use stdout
-              if (result.exitCode === 0) {
-                return {
-                  success: true,
-                  output: stripAnsi(result.stdout)
+                // Create streaming handler that emits updates and passes through onUpdate
+                const streamHandler = (chunk: string) => {
+                  if (onUpdate) {
+                    onUpdate(chunk);
+                  }
+                  if (emitEvent) {
+                    emitEvent({
+                      type: 'command-output-stream',
+                      toolCallId: id,
+                      chunk,
+                      timestamp: Date.now()
+                    });
+                  }
                 };
-              }
 
-              // Failure case: prefer stderr, fallback to stdout if stderr is empty
-              const errorOutput = result.stderr || result.stdout;
-              return {
-                success: false,
-                output: stripAnsi(errorOutput),
-                error: stripAnsi(errorOutput)
-              };
-            } catch (vmError) {
-              // If VM execution fails, fall back to native execution
-              console.warn('[executePwsh] Linux VM execution failed, falling back to native:', vmError);
+                // Requirements 5.1, 5.2: Track command execution via RollbackManager
+                const vmResult = await withCommandTracking(command, async () => {
+                  const result = await runInLinuxVM(command, undefined, streamHandler);
+                  console.log(`[executePwsh] runInLinuxVM result: exitCode=${result.exitCode}, stdout=${result.stdout.length} chars, stderr=${result.stderr.length} chars`);
+
+                  // Format output to match pi-tools format exactly
+                  // Success case: use stdout
+                  if (result.exitCode === 0) {
+                    return {
+                      success: true,
+                      output: stripAnsi(result.stdout)
+                    };
+                  }
+
+                  // Failure case: prefer stderr, fallback to stdout if stderr is empty
+                  const errorOutput = result.stderr || result.stdout;
+                  return {
+                    success: false,
+                    output: stripAnsi(errorOutput),
+                    error: stripAnsi(errorOutput)
+                  };
+                });
+                return vmResult;
+              } catch (vmError) {
+                // If VM execution fails, fall back to native execution
+                console.warn('[executePwsh] Linux VM execution failed, falling back to native:', vmError);
+                // Continue to native execution below
+              }
+            } else {
+              // VM not available, fall back to native execution
+              console.log(`[executePwsh] VM not available (${vmCheck.reason}), falling back to native execution`);
               // Continue to native execution below
             }
           }
 
           // For local=true (approved) or VM fallback, use native exec to ensure output is captured
-          try {
-            const { exec } = require('child_process');
-            const { promisify } = require('util');
-            const execAsync = promisify(exec);
-            
-            // Use powershell.exe on Windows, bash otherwise
-            const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
-            
-            const { stdout, stderr } = await execAsync(command, { shell, timeout: timeout || 300000 });
-            
-            const combined = [stdout, stderr].filter(Boolean).join('\n');
-            const output = combined.trim() || '(Command succeeded with no output)';
-            
-            return {
-              success: true,
-              output: stripAnsi(output)
-            };
-          } catch (execError: any) {
-            // Execution failed or returned non-zero exit code
-            const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
-            const output = combined.trim() || '(Command failed with no output)';
-            
-            return {
-              success: false,
-              output: stripAnsi(output),
-              error: stripAnsi(output)
-            };
-          }
+          // Requirements 5.1, 5.2: Track command execution via RollbackManager
+          return await withCommandTracking(command, async () => {
+            try {
+              const { exec } = require('child_process');
+              const { promisify } = require('util');
+              const execAsync = promisify(exec);
+
+              // Use powershell.exe on Windows, bash otherwise
+              const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+
+              const { stdout, stderr } = await execAsync(command, { shell, timeout: timeout || 300000 });
+
+              const combined = [stdout, stderr].filter(Boolean).join('\n');
+              const output = combined.trim() || '(Command succeeded with no output)';
+
+              return {
+                success: true,
+                output: stripAnsi(output)
+              };
+            } catch (execError: any) {
+              // Execution failed or returned non-zero exit code
+              const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
+              const output = combined.trim() || '(Command failed with no output)';
+
+              return {
+                success: false,
+                output: stripAnsi(output),
+                error: stripAnsi(output)
+              };
+            }
+          });
         }
 
         // For host-side file tools, translate Linux paths to Windows paths
@@ -294,6 +319,220 @@ let loadedCodingTools: AgentTool[] | null = null;
 
 // File read cache: path → { content, mtime }
 const fileReadCache = new Map<string, { content: string; mtime: number }>();
+
+/**
+ * Get current agent context for rollback tracking.
+ * This should be set by the agent runtime when executing tasks.
+ */
+let currentAgentContext: { taskId?: string; stepNumber?: number } = {};
+
+/**
+ * Set the current agent context for rollback tracking.
+ * Called by the agent runtime before tool execution.
+ */
+export function setAgentContext(taskId: string, stepNumber: number): void {
+  currentAgentContext = { taskId, stepNumber };
+}
+
+/**
+ * Clear the current agent context.
+ */
+export function clearAgentContext(): void {
+  currentAgentContext = {};
+}
+
+/**
+ * Get the current agent context for rollback tracking.
+ * Used by other tools (e.g. batch_write) that need to track operations.
+ */
+export function getAgentContext(): { taskId?: string; stepNumber?: number } {
+  return { ...currentAgentContext };
+}
+
+/**
+ * Wrapper for file operations that tracks changes for rollback.
+ * Captures file state before modification and tracks the operation.
+ */
+async function withRollbackTracking(
+  toolName: string,
+  args: Record<string, unknown>,
+  executor: (toolCallId: string, params: any) => Promise<any>,
+  toolCallId: string
+): Promise<any> {
+  const rollbackManager = getRollbackManager();
+
+  // Initialize rollback manager if needed
+  try {
+    await rollbackManager.initialize();
+  } catch (error) {
+    console.warn('[pi-tools] Failed to initialize rollback manager:', error);
+  }
+
+  const { taskId, stepNumber } = currentAgentContext;
+
+  // Only track if we have agent context
+  if (!taskId || stepNumber === undefined) {
+    console.warn('[pi-tools] No agent context available for rollback tracking');
+    return executor(toolCallId, args);
+  }
+
+  // Handle different file operations
+  if (toolName === 'write') {
+    const filePath = args.path as string;
+    if (!filePath) {
+      return executor(toolCallId, args);
+    }
+
+    try {
+      // Check if file exists and capture content before write
+      let contentBefore = '';
+      let fileExists = false;
+
+      try {
+        if (fs.existsSync(filePath)) {
+          contentBefore = fs.readFileSync(filePath, 'utf-8');
+          fileExists = true;
+        }
+      } catch (readError) {
+        // File might not be readable, continue anyway
+        console.warn(`[pi-tools] Could not read file before write: ${filePath}`, readError);
+      }
+
+      // Execute the write operation
+      const result = await executor(toolCallId, args);
+
+      // Track the operation after successful execution
+      if (!result.isError) {
+        try {
+          const contentAfter = args.text as string || '';
+
+          if (fileExists) {
+            // File modification
+            await rollbackManager.trackFileModification(
+              path.resolve(filePath),
+              contentBefore,
+              contentAfter,
+              taskId,
+              stepNumber
+            );
+          } else {
+            // File creation
+            await rollbackManager.trackFileCreation(
+              path.resolve(filePath),
+              taskId,
+              stepNumber
+            );
+          }
+        } catch (trackError) {
+          console.warn(`[pi-tools] Failed to track write operation for ${filePath}:`, trackError);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`[pi-tools] Error in write operation for ${filePath}:`, error);
+      throw error;
+    }
+  } else if (toolName === 'edit') {
+    const filePath = args.path as string;
+    if (!filePath) {
+      return executor(toolCallId, args);
+    }
+
+    try {
+      // Capture content before edit
+      let contentBefore = '';
+
+      try {
+        if (fs.existsSync(filePath)) {
+          contentBefore = fs.readFileSync(filePath, 'utf-8');
+        }
+      } catch (readError) {
+        console.warn(`[pi-tools] Could not read file before edit: ${filePath}`, readError);
+      }
+
+      // Execute the edit operation
+      const result = await executor(toolCallId, args);
+
+      // Track the operation after successful execution
+      if (!result.isError) {
+        try {
+          // Read content after edit
+          let contentAfter = '';
+          try {
+            if (fs.existsSync(filePath)) {
+              contentAfter = fs.readFileSync(filePath, 'utf-8');
+            }
+          } catch (readError) {
+            console.warn(`[pi-tools] Could not read file after edit: ${filePath}`, readError);
+          }
+
+          if (contentBefore !== contentAfter) {
+            await rollbackManager.trackFileModification(
+              path.resolve(filePath),
+              contentBefore,
+              contentAfter,
+              taskId,
+              stepNumber
+            );
+          }
+        } catch (trackError) {
+          console.warn(`[pi-tools] Failed to track edit operation for ${filePath}:`, trackError);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`[pi-tools] Error in edit operation for ${filePath}:`, error);
+      throw error;
+    }
+  }
+
+  // For non-file operations, just execute normally
+  return executor(toolCallId, args);
+}
+
+/**
+ * Wrapper for command execution that tracks commands for rollback.
+ */
+async function withCommandTracking(
+  command: string,
+  executor: () => Promise<ToolResult>
+): Promise<ToolResult> {
+  const rollbackManager = getRollbackManager();
+
+  // Initialize rollback manager if needed
+  try {
+    await rollbackManager.initialize();
+  } catch (error) {
+    console.warn('[pi-tools] Failed to initialize rollback manager:', error);
+  }
+
+  const { taskId, stepNumber } = currentAgentContext;
+
+  // Execute the command
+  const result = await executor();
+
+  // Track the command if we have agent context
+  if (taskId && stepNumber !== undefined) {
+    try {
+      const exitCode = result.success ? 0 : 1;
+      const output = result.output || '';
+
+      await rollbackManager.trackCommandExecution(
+        command,
+        output,
+        exitCode,
+        taskId,
+        stepNumber
+      );
+    } catch (trackError) {
+      console.warn(`[pi-tools] Failed to track command execution: ${command}`, trackError);
+    }
+  }
+
+  return result;
+}
 
 // Allow dependency injection for testing
 let piCodingAgentModule: any = null;
@@ -350,10 +589,16 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
     m = await loader();
   }
 
+  // Wrap write and edit executors with rollback tracking
+  const writeExecutorWithTracking = (toolCallId: string, params: any) =>
+    withRollbackTracking('write', params, m.writeTool.execute, toolCallId);
+  const editExecutorWithTracking = (toolCallId: string, params: any) =>
+    withRollbackTracking('edit', params, m.editTool.execute, toolCallId);
+
   loadedCodingTools = [
     adaptTool(m.readToolDefinition, withReadCache(m.readTool.execute)),
-    adaptTool(m.writeToolDefinition, m.writeTool.execute),
-    adaptTool(m.editToolDefinition, m.editTool.execute),
+    adaptTool(m.writeToolDefinition, writeExecutorWithTracking),
+    adaptTool(m.editToolDefinition, editExecutorWithTracking),
     adaptTool(m.findToolDefinition, m.findTool.execute),
     adaptTool(m.grepToolDefinition, m.grepTool.execute),
     adaptTool(m.lsToolDefinition, m.lsTool.execute),

@@ -34,15 +34,15 @@ export class ChatHistoryStore {
    */
   private async indexMessage(id: string, content: string, maxRetries = 3): Promise<void> {
     if (!content || typeof content !== 'string' || content.trim().length === 0) return;
-    
+
     let attempt = 0;
     while (attempt < maxRetries) {
       try {
         const config = getSystemEmbeddingConfig();
         const model = getEmbeddingModel(config);
-        
+
         const embedding = await model.embeddings.embedQuery(content);
-        
+
         await dbOps.run(
           `INSERT OR REPLACE INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
           [id, `[${embedding.join(',')}]`]
@@ -51,7 +51,7 @@ export class ChatHistoryStore {
       } catch (err: any) {
         attempt++;
         const errMsg = String(err).toLowerCase();
-        
+
         if ((errMsg.includes('rate limit') || errMsg.includes('429') || errMsg.includes('too many requests')) && attempt < maxRetries) {
           const delayMs = attempt * 15000; // 15s, 30s
           console.warn(`[History] Rate limit hit for message ${id}. Retrying in ${delayMs / 1000}s...`);
@@ -158,9 +158,9 @@ export class ChatHistoryStore {
     await this.init();
     try {
       const convRow = await dbOps.get(`
-        SELECT c.*, p.name as projectName 
-        FROM conversations c 
-        LEFT JOIN projects p ON c.project_id = p.id 
+        SELECT c.*, p.name as projectName
+        FROM conversations c
+        LEFT JOIN projects p ON c.project_id = p.id
         WHERE c.id = ?`, [id]);
       if (!convRow) return null;
 
@@ -283,15 +283,17 @@ export class ChatHistoryStore {
         }
       }
 
-      // Cleanup orphaned/stale messages that are no longer part of this conversation
-      if (savedIds.length > 0) {
+      // Cleanup orphaned/stale messages ONLY if this is a full conversation save
+      // (indicated by (conversation as any).isFullSave flag)
+      // This prevents deleting previous messages when doing real-time partial saves
+      if ((conversation as any).isFullSave !== false && savedIds.length > 0) {
         const placeholders = savedIds.map(() => '?').join(',');
         await dbOps.run(
-          `DELETE FROM messages 
+          `DELETE FROM messages
            WHERE conversation_id = ? AND id NOT IN (${placeholders})`,
           [conversation.id, ...savedIds]
         );
-      } else {
+      } else if ((conversation as any).isFullSave !== false) {
         await dbOps.run(
           'DELETE FROM messages WHERE conversation_id = ?',
           [conversation.id]
@@ -367,19 +369,19 @@ export class ChatHistoryStore {
     try {
       console.log('[History] Starting backfill of vector embeddings...');
       const unindexedRows = await dbOps.all(`
-        SELECT m.id, m.content 
-        FROM messages m 
-        LEFT JOIN chat_messages_vec v ON m.id = v.id 
+        SELECT m.id, m.content
+        FROM messages m
+        LEFT JOIN chat_messages_vec v ON m.id = v.id
         WHERE v.id IS NULL AND (m.role = 'user' OR m.role = 'assistant')
       `);
 
       let count = 0;
       for (const row of unindexedRows) {
         const textContent = typeof row.content === 'string' ? row.content : JSON.stringify(row.content);
-        
+
         let retries = 0;
         let success = false;
-        
+
         while (!success && retries < 3) {
           try {
             await this.indexMessage(row.id, textContent);
@@ -396,11 +398,11 @@ export class ChatHistoryStore {
             }
           }
         }
-        
+
         if (success) {
           count++;
         }
-        
+
         // Add a standard 2 second delay between requests to respect RPM limits (30 req/min)
         await new Promise(r => setTimeout(r, 2000));
       }

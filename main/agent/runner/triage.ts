@@ -13,6 +13,7 @@ INTENT CATEGORIES:
 - analyze — Processing data, generating reports, charts, visualizations from datasets
 - research — Web research, searching the internet, investigating topics, AND all browser-based web interaction including opening URLs in a browser (NOT desktop automation)
 - automate — Desktop GUI automation: clicking native UI elements, interacting with desktop applications (NOT websites or browser-based tasks)
+- background_task — Running a silent, scheduled, or cron background agent loop, checking file system/build/lint status in the background
 - question — Answering factual questions, explaining concepts, providing information
 - conversation — Greetings, small talk, acknowledgments, follow-ups with no actionable task
 - task — General actionable task that doesn't clearly fit the above

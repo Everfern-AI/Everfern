@@ -215,7 +215,10 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           {/* Deny */}
           <button
             ref={denyButtonRef}
-            onClick={onDeny}
+            onClick={() => {
+              console.log("[LocalExecutionPermissionCard] Clicked Deny");
+              onDeny();
+            }}
             onKeyDown={handleKeyDown}
             aria-label="Deny local execution"
             style={{
@@ -245,7 +248,10 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
 
           {/* Always Allow */}
           <button
-            onClick={onAlwaysAllow}
+            onClick={() => {
+              console.log("[LocalExecutionPermissionCard] Clicked Always Allow");
+              onAlwaysAllow();
+            }}
             onKeyDown={handleKeyDown}
             aria-label="Always allow local execution"
             style={{
@@ -275,7 +281,10 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
 
           {/* Allow Once — primary CTA */}
           <button
-            onClick={onAllowOnce}
+            onClick={() => {
+              console.log("[LocalExecutionPermissionCard] Clicked Allow Once");
+              onAllowOnce();
+            }}
             onKeyDown={handleKeyDown}
             aria-label="Allow local execution once"
             style={{

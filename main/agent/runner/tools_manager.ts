@@ -26,6 +26,7 @@ import { createNavisTool } from '../tools/navis/navis';
 import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
+import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
 import * as os from 'os';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
@@ -126,6 +127,9 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     createScheduledTaskTool,
     listScheduledTasksTool,
     deleteScheduledTaskTool,
+    rememberFactTool,
+    recallFactTool,
+    updateProfileTool,
   );
 
   // Add dynamically connected MCP tools

@@ -10,6 +10,10 @@ import {
     ChevronUpIcon,
     ChevronDownIcon,
     FolderOpenIcon,
+    FolderPlusIcon,
+    ArrowRightIcon,
+    TrashIcon,
+    DocumentDuplicateIcon,
     CodeBracketIcon,
     PhotoIcon,
     CpuChipIcon,
@@ -113,7 +117,12 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
     if (n.includes("edit") || n.includes("update") || n.includes("modify") || n.includes("patch"))
         return { icon: <PencilSquareIcon style={s} />, shape: "square" };
 
-    if (n.includes("system_files") || n.includes("folder") || n.includes("directory"))
+    if (n === "system_files") {
+        // Action-specific icons — resolved at runtime via args; fallback to folder
+        return { icon: <FolderOpenIcon style={s} />, shape: "square" };
+    }
+
+    if (n.includes("folder") || n.includes("directory"))
         return { icon: <FolderOpenIcon style={s} />, shape: "square" };
 
     if (n.includes("code") || n.includes("python") || n.includes("js"))
@@ -385,26 +394,57 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
     const label = isSkill
         ? `Skill - ${skillName || tc.label || tc.toolName?.replace(/_/g, " ") || "Tool"}`
         : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool"));
-    const { icon, shape } = getToolMeta(tc.toolName);
+    let { icon, shape } = getToolMeta(tc.toolName);
 
-    const desc = (() => {
+    // system_files: pick action-specific icon at render time
+    if (tc.toolName === 'system_files') {
+        const sfa = String(tc.args?.action ?? '');
+        const sz = { width: 13, height: 13, flexShrink: 0 as const };
+        if (sfa === 'move')   icon = <ArrowRightIcon style={sz} />;
+        else if (sfa === 'rename') icon = <DocumentDuplicateIcon style={sz} />;
+        else if (sfa === 'mkdirp') icon = <FolderPlusIcon style={sz} />;
+        else if (sfa === 'delete') icon = <TrashIcon style={sz} />;
+        else                  icon = <FolderOpenIcon style={sz} />;
+    }
+
+    // Terse tool label shown inside the pill (path / command / url / name)
+    const pillLabel = (() => {
+        // system_files: build action-specific label from the right args
+        if (tc.toolName === 'system_files') {
+            const action = String(tc.args?.action ?? '');
+            const from  = String(tc.args?.from ?? tc.args?.path ?? '');
+            const to    = String(tc.args?.to ?? '');
+            const p     = String(tc.args?.path ?? '');
+            const bn    = (s: string) => s.split(/[/\\]/).at(-1) ?? s;
+            if ((action === 'move' || action === 'rename') && from) {
+                return to ? `${bn(from)} → ${bn(to)}` : bn(from);
+            }
+            if (action === 'mkdirp' && p) return bn(p);
+            if (action === 'delete' && p) return bn(p);
+            if (action === 'list'   && p && p !== '.') return bn(p);
+            return label;
+        }
         if (tc.args?.query) return String(tc.args.query);
         if (tc.args?.url) return String(tc.args.url);
         if (tc.args?.url_to_visit) return String(tc.args.url_to_visit);
         if (tc.args?.command) return String(tc.args.command).slice(0, 80);
         if (tc.args?.path) return String(tc.args.path);
         if (tc.args?.content) return String(tc.args.content).slice(0, 60) + "…";
-        if (tc.description) {
-            const trimmed = tc.description.trim();
-            if (trimmed.startsWith("{") && (trimmed.includes('"messages"') || trimmed.includes('"tool_calls"'))) {
-                return label;
-            }
-            if (trimmed.startsWith("<tool_call>")) {
-                return label;
-            }
-            return tc.description;
-        }
         return label;
+    })();
+
+    // Narrative caption shown above the pill (agent reasoning before the tool call)
+    const narrativeCaption = (() => {
+        if (!tc.description) return null;
+        const trimmed = tc.description.trim();
+        // Suppress JSON blobs and raw tool_call XML
+        if (trimmed.startsWith("{") && (trimmed.includes('"messages"') || trimmed.includes('"tool_calls"'))) return null;
+        if (trimmed.startsWith("<tool_call>")) return null;
+        // Don't repeat what's already in the pill label
+        if (trimmed === pillLabel) return null;
+        // Truncate to one short line
+        const maxLen = 120;
+        return trimmed.length > maxLen ? trimmed.slice(0, maxLen) + "…" : trimmed;
     })();
 
     // using globally defined galliumSurface
@@ -414,59 +454,81 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
             initial={{ opacity: 0, y: 3 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.18 }}
-            onClick={onClick}
-            style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "7px 14px 7px 8px",
-                borderRadius: 14,
-                cursor: onClick ? "pointer" : "default",
-                fontSize: 12.5,
-                color: isDone ? "#aaa" : "#333",
-                lineHeight: 1.4,
-                marginBottom: 4,
-                position: "relative",
-                overflow: "hidden",
-                ...galliumSurface,
-            }}
+            style={{ marginBottom: 4 }}
         >
-            <IconContainer icon={icon} shape={shape} />
-
-            <span style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                flex: 1,
-            }}>
-                {desc}
-            </span>
-
-            {isRunning && (
-                <motion.span
-                    style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "#22c55e",
-                        flexShrink: 0,
-                    }}
-                    animate={{ opacity: [1, 0.35, 1] }}
-                    transition={{ repeat: Infinity, duration: 1.2 }}
-                />
+            {/* Narrative caption above the pill */}
+            {narrativeCaption && (
+                <div style={{
+                    fontSize: 11,
+                    color: "#9ca3af",
+                    fontStyle: "italic",
+                    lineHeight: 1.4,
+                    marginBottom: 4,
+                    paddingLeft: 2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: "100%",
+                }}>
+                    {narrativeCaption}
+                </div>
             )}
 
-            {isRunning && (
-                <motion.div
-                    style={{
-                        position: "absolute", inset: 0,
-                        background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.42) 50%, transparent 100%)",
-                        pointerEvents: "none",
-                    }}
-                    animate={{ x: ["-100%", "100%"] }}
-                    transition={{ repeat: Infinity, duration: 1.8, ease: "linear" }}
-                />
-            )}
+            {/* The pill itself */}
+            <div
+                onClick={onClick}
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "7px 14px 7px 8px",
+                    borderRadius: 14,
+                    cursor: onClick ? "pointer" : "default",
+                    fontSize: 12.5,
+                    color: isDone ? "#aaa" : "#333",
+                    lineHeight: 1.4,
+                    position: "relative",
+                    overflow: "hidden",
+                    ...galliumSurface,
+                }}
+            >
+                <IconContainer icon={icon} shape={shape} />
+
+                <span style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                }}>
+                    {pillLabel}
+                </span>
+
+                {isRunning && (
+                    <motion.span
+                        style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: "#22c55e",
+                            flexShrink: 0,
+                        }}
+                        animate={{ opacity: [1, 0.35, 1] }}
+                        transition={{ repeat: Infinity, duration: 1.2 }}
+                    />
+                )}
+
+                {isRunning && (
+                    <motion.div
+                        style={{
+                            position: "absolute", inset: 0,
+                            background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.42) 50%, transparent 100%)",
+                            pointerEvents: "none",
+                        }}
+                        animate={{ x: ["-100%", "100%"] }}
+                        transition={{ repeat: Infinity, duration: 1.8, ease: "linear" }}
+                    />
+                )}
+            </div>
         </motion.div>
     );
 };

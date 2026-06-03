@@ -8,9 +8,70 @@ import { loadPrompt } from '../../../lib/prompt-sync';
 import type { AIClient } from '../../../lib/ai-client';
 import { globalAbortManager } from '../abort-manager';
 import { nodeLifecycle } from '../services/node-utils';
+import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../../persistence/checkpoint-engine';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
+
+/**
+ * Create a checkpoint for the current agent state.
+ *
+ * Implements error handling that logs but doesn't break execution as per
+ * Requirement 2.5: When checkpoint creation fails, log error and continue execution
+ *
+ * @param state - Current agent state
+ * @param runner - Agent runner for telemetry
+ * @param stepDescription - Description of the step for logging
+ * @returns The created checkpoint (or failed checkpoint placeholder)
+ */
+async function createAgentCheckpoint(
+  state: GraphStateType,
+  runner: AgentRunner,
+  stepDescription: string
+): Promise<Checkpoint | FailedCheckpoint> {
+  const checkpointEngine = getCheckpointEngine();
+
+  // Use missionId as task identifier, or generate one if not available
+  const taskId = state.missionId || `brain-task-${Date.now()}`;
+
+  try {
+    const startTime = Date.now();
+    const checkpoint = await checkpointEngine.createCheckpoint(state, taskId);
+    const duration = Date.now() - startTime;
+
+    // Check if checkpoint creation succeeded
+    if ('failed' in checkpoint && checkpoint.failed) {
+      // This is a FailedCheckpoint - log the failure but don't throw
+      runner.telemetry.warn(`[Brain] Checkpoint creation failed for step: ${stepDescription}. Execution continues.`);
+      console.warn(`[Brain] Checkpoint failed: ${stepDescription} (taskId: ${taskId})`);
+    } else {
+      // Successful checkpoint
+      runner.telemetry.info(`[Brain] Checkpoint created in ${duration}ms for step: ${stepDescription}`);
+      console.log(`[Brain] Checkpoint created: id=${checkpoint.id} task=${taskId} step=${checkpoint.stepNumber} (${stepDescription})`);
+    }
+
+    return checkpoint;
+  } catch (error) {
+    // Catch any unexpected errors and log them, but don't throw
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    runner.telemetry.warn(`[Brain] Unexpected checkpoint error: ${errorMessage} (taskId: ${taskId}, step: ${state.iterations})`);
+    console.error(`[Brain] Unexpected checkpoint error for step "${stepDescription}":`, error);
+
+    // Return a failed checkpoint to maintain execution flow
+    return {
+      id: `failed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      taskId,
+      stepNumber: state.iterations || 0,
+      timestamp: Date.now(),
+      stateJson: '',
+      stateHash: '',
+      deltaOnly: false,
+      previousCheckpointId: null,
+      compressed: false,
+      failed: true,
+    } satisfies FailedCheckpoint;
+  }
+}
 
 /**
  * After the brain produces a response with no tool calls, ask it to self-assess
@@ -191,7 +252,7 @@ Available routing options:
 - "complete_task"      — Task is complete, no further routing needed
 
 CRITICAL ROUTING RULES:
-1. If user asks to "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app" → ALWAYS use "route_coding" (Coding Specialist handles project creation)
+1. If user asks to "write code", "fix a bug", "implement a feature", "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app", or perform ANY software development task → ALWAYS use "route_coding"
 2. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), prefer "continue_brain" to use web_search + navis directly. Only use "route_web_explorer" for complex multi-step workflows.
 3. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
 4. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis.
@@ -387,6 +448,31 @@ export const createBrainNode = (
       }
     }
 
+    // Inject graph-based persistent memories (USER_PROFILE.md and PROJECT_STATE.md)
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const memoryDir = path.join(os.homedir(), '.everfern', 'memory');
+      const profilePath = path.join(memoryDir, 'USER_PROFILE.md');
+      const projectPath = path.join(memoryDir, 'PROJECT_STATE.md');
+
+      let memoryInjection = '\n\n# PERSISTENT MEMORY & SYSTEM STATE\n';
+      if (fs.existsSync(profilePath)) {
+        memoryInjection += `\n## USER_PROFILE.md (User preferences, rules, styles):\n${fs.readFileSync(profilePath, 'utf-8')}\n`;
+      }
+      if (fs.existsSync(projectPath)) {
+        memoryInjection += `\n## PROJECT_STATE.md (Persistent facts, architectural choices):\n${fs.readFileSync(projectPath, 'utf-8')}\n`;
+      }
+
+      if (systemPrompt && memoryInjection !== '\n\n# PERSISTENT MEMORY & SYSTEM STATE\n') {
+        systemPrompt += memoryInjection;
+        console.log('[Brain] 🧠 Injected persistent memories into system prompt');
+      }
+    } catch (memErr) {
+      console.warn('[Brain] Failed to inject persistent memory:', memErr);
+    }
+
     // Get original user request for context
     const allMessages = state.messages || [];
     const firstUserMsg = allMessages.find((m: any) => {
@@ -424,6 +510,14 @@ export const createBrainNode = (
       'Processing request with Brain orchestrator'
     );
 
+    // Create checkpoint after agent step completion
+    // Requirements: 1.1, 1.6, 2.1, 2.5
+    const checkpoint = await createAgentCheckpoint(
+      { ...state, ...result },  // Merge original state with result
+      runner,
+      `Brain step ${(state.iterations || 0) + 1}`
+    );
+
 
     // Extract the brain's response text for analysis
     const messages = result.messages as any[] | undefined;
@@ -441,6 +535,13 @@ export const createBrainNode = (
     // If there are pending tool calls, continue with brain execution
     const hasPendingTools = result.pendingToolCalls && result.pendingToolCalls.length > 0;
     if (hasPendingTools) {
+      // Create checkpoint before returning with pending tools
+      await createAgentCheckpoint(
+        { ...state, ...result },
+        runner,
+        `Brain with pending tools: ${result.pendingToolCalls?.map((tc: any) => tc.name).join(', ') || 'none'}`
+      );
+
       return {
         ...result,
         completionSignal: null,
@@ -456,13 +557,23 @@ export const createBrainNode = (
     const hasNoOutput = !responseContent || responseContent.trim().length === 0;
     if (hasNoOutput && state.iterations > 1) {
       runner.telemetry.warn(`[Brain] No output on iteration ${state.iterations} — forcing task_complete to prevent loop`);
-      return {
+
+      const finalState = {
         ...result,
         completionSignal: { reason: 'task_complete' as const, explanation: 'Brain produced no output after multiple iterations.' },
         routingDecision: null,
         brainToolsInFlight: false,
         returningFromSpecialist: null
       };
+
+      // Create checkpoint before forcing completion
+      await createAgentCheckpoint(
+        { ...state, ...finalState },
+        runner,
+        `Brain forced completion (no output on iteration ${state.iterations})`
+      );
+
+      return finalState;
     }
 
     // Auto-route based on intent when brain produces empty output.
@@ -484,7 +595,7 @@ export const createBrainNode = (
       if (autoDecision) {
         runner.telemetry.info(`[Brain] Auto-routing to ${autoDecision} for intent ${state.currentIntent} (brain produced no output)`);
 
-        return {
+        const routedState = {
           ...result,
           routingDecision: { decision: autoDecision, explanation: `Auto-routing for intent ${state.currentIntent} after brain produced no output` },
           completionSignal: null,
@@ -492,6 +603,15 @@ export const createBrainNode = (
           brainToolsInFlight: false,
           returningFromSpecialist: null
         };
+
+        // Create checkpoint before auto-routing
+        await createAgentCheckpoint(
+          { ...state, ...routedState },
+          runner,
+          `Brain auto-routing to ${autoDecision} for intent ${state.currentIntent}`
+        );
+
+        return routedState;
       }
     }
 
@@ -543,7 +663,8 @@ export const createBrainNode = (
           surfaceId: 'coding-mode'
         });
       }
-      return {
+
+      const routedState = {
         ...result,
         routingDecision: routingDecision,
         completionSignal: null,
@@ -552,6 +673,15 @@ export const createBrainNode = (
         brainToolsInFlight: false,
         returningFromSpecialist: null
       };
+
+      // Create checkpoint before routing to specialist
+      await createAgentCheckpoint(
+        { ...state, ...routedState },
+        runner,
+        `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
+      );
+
+      return routedState;
     }
 
     // If continuing with brain or completing task, build completion signal

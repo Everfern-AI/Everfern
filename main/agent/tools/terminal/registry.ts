@@ -78,7 +78,7 @@ export class CommandRegistry {
     return this.wslAvailable;
   }
 
-  public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), onData?: (data: string) => void): Promise<CommandInfo> {
+  public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), timeoutMs?: number, onData?: (data: string) => void): Promise<CommandInfo> {
     const info: CommandInfo = {
       id,
       command,
@@ -128,24 +128,27 @@ export class CommandRegistry {
       }
     }
 
-    // Create a detailed debug header to prepend to output
-    const environmentType = process.platform === 'win32'
-      ? (shell === 'wsl' || shell === 'wsl.exe' ? 'WSL (Ubuntu)' : 'Host Fallback (CMD)')
-      : process.platform === 'darwin'
-      ? 'Host (macOS)'
-      : 'Native Linux';
-
-    const debugHeader = `[EverFern VM Debug - Environment: ${environmentType}]\n` +
-      `Command: ${command}\n` +
-      `--------------------------------------------------\n`;
-
-    info.output = debugHeader;
+    info.output = '';
 
     const proc = spawn(shell, args, spawnOptions);
     this.processes.set(id, proc);
     info.pid = proc.pid;
 
     const MAX_OUTPUT_LENGTH = 50000;
+
+    let timeoutId: NodeJS.Timeout | null = null;
+    const IDLE_TIMEOUT_MS = timeoutMs || 60000;
+
+    const resetTimeout = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        info.status = 'failed';
+        info.output += `\n[Timeout: Command produced no output for ${IDLE_TIMEOUT_MS/1000} seconds and was terminated.]`;
+        proc.kill('SIGKILL');
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    resetTimeout();
 
     const decodeBuffer = (buf: Buffer): string => {
       if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
@@ -158,6 +161,7 @@ export class CommandRegistry {
     };
 
     proc.stdout?.on('data', (data) => {
+      resetTimeout();
       const decoded = decodeBuffer(data);
       console.log(`[Terminal] ${decoded.trimEnd()}`);
       info.output += decoded;
@@ -168,6 +172,7 @@ export class CommandRegistry {
     });
 
     proc.stderr?.on('data', (data) => {
+      resetTimeout();
       const decoded = decodeBuffer(data);
       console.error(`[Terminal Error] ${decoded.trimEnd()}`);
       info.output += decoded;
@@ -179,13 +184,18 @@ export class CommandRegistry {
 
     return new Promise((resolve) => {
       proc.on('close', (code) => {
-        info.status = code === 0 ? 'completed' : 'failed';
+        if (timeoutId) clearTimeout(timeoutId);
+        // Only override status if it's not already failed due to timeout
+        if (info.status !== 'failed' || !info.output.includes('[Timeout:')) {
+          info.status = code === 0 ? 'completed' : 'failed';
+        }
         info.exitCode = code ?? -1;
         this.processes.delete(id);
         resolve(info);
       });
 
       proc.on('error', (err) => {
+        if (timeoutId) clearTimeout(timeoutId);
         info.status = 'failed';
         info.output += `\nError: ${err.message}`;
         this.processes.delete(id);

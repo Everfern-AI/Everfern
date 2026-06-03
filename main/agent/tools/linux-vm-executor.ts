@@ -23,13 +23,22 @@ export interface LinuxVMExecutionResult {
  *
  * This executor returns stdout/stderr in the same shape as the existing pi-tools terminal output.
  *
+ * Features:
+ * - Live streaming of command output via onUpdate callback
+ * - Sudo support with automatic detection and handling
+ * - Full curl/wget support for downloads
+ * - UTF-8 output handling
+ * - ANSI escape code stripping
+ *
  * @param command - The shell command to execute in the Linux VM
  * @param cwd - Optional working directory (will be translated to appropriate path if needed)
+ * @param onUpdate - Optional callback for real-time output streaming
  * @returns Promise resolving to stdout, stderr, and exitCode
  */
 export async function runInLinuxVM(
   command: string,
-  cwd?: string
+  cwd?: string,
+  onUpdate?: (chunk: string) => void
 ): Promise<LinuxVMExecutionResult> {
   const platform = process.platform;
   console.log(`[runInLinuxVM] Platform=${platform}, command="${command.slice(0, 100)}...", cwd="${cwd || '(none)'}"`);
@@ -38,20 +47,20 @@ export async function runInLinuxVM(
     switch (platform) {
       case 'win32':
         console.log('[runInLinuxVM] Platform=win32 → running in WSL');
-        return await runInWSL(command, cwd);
+        return await runInWSL(command, cwd, onUpdate);
       case 'darwin':
         console.log('[runInLinuxVM] Platform=darwin → running in Docker');
-        return await runInDocker(command, cwd);
+        return await runInDocker(command, cwd, onUpdate);
       case 'linux':
         console.log('[runInLinuxVM] Platform=linux → running natively');
-        return await runNatively(command, cwd);
+        return await runNatively(command, cwd, onUpdate);
       default:
         console.warn(`[runInLinuxVM] Unsupported platform ${platform}, falling back to native execution`);
-        return await runNatively(command, cwd);
+        return await runNatively(command, cwd, onUpdate);
     }
   } catch (error) {
     console.warn(`[runInLinuxVM] VM execution failed, falling back to native execution: ${error}`);
-    return await runNatively(command, cwd);
+    return await runNatively(command, cwd, onUpdate);
   }
 }
 
@@ -93,13 +102,13 @@ export async function ensureWSLSetup(): Promise<void> {
     } else {
       console.log('[ensureWSLSetup] python3 not found, installing via root...');
       // Use --user root because apt-get needs root in WSL
-      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv"`, { timeout: 180000 });
+      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv curl wget"`, { timeout: 180000 });
     }
   } catch (err) {
     // First attempt failed (e.g., wsl --user root unavailable). Try sudo approach.
     console.log('[ensureWSLSetup] Root attempt failed, trying sudo...', err);
     try {
-      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv"`, { timeout: 180000 });
+      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv curl wget"`, { timeout: 180000 });
     } catch (err2) {
       // Both install attempts failed — log and continue without python3
       console.error('[ensureWSLSetup] Failed to install python3:', err2);
@@ -120,10 +129,21 @@ export async function ensureWSLSetup(): Promise<void> {
     console.error('[ensureWSLSetup] Failed to create venv:', err);
   }
 
+  // Ensure default user has passwordless sudo
+  try {
+    const { stdout: defaultUserOut } = await execAsync(`${wslCmd} --exec bash -c "whoami"`);
+    const defaultUser = defaultUserOut.trim();
+    if (defaultUser && defaultUser !== 'root') {
+      await execAsync(`${wslCmd} --user root --exec bash -c "echo '${defaultUser} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${defaultUser} && chmod 0440 /etc/sudoers.d/${defaultUser}"`);
+    }
+  } catch (err) {
+    console.error('[ensureWSLSetup] Failed to configure passwordless sudo:', err);
+  }
+
   console.log('[ensureWSLSetup] WSL environment setup complete ✅');
 }
 
-async function runInWSL(command: string, cwd?: string): Promise<LinuxVMExecutionResult> {
+async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   const wslCmd = getWslCmd();
   console.log(`[runInWSL] Using WSL command: ${wslCmd}`);
 
@@ -148,13 +168,13 @@ async function runInWSL(command: string, cwd?: string): Promise<LinuxVMExecution
     fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
   }
 
-  return executeCommand(wslCmd, ['--exec', 'bash', '-c', fullCommand]);
+  return executeCommand(wslCmd, ['--exec', 'bash', '-c', fullCommand], onUpdate);
 }
 
 /**
  * Runs command in Docker Ubuntu container (macOS)
  */
-async function runInDocker(command: string, cwd?: string): Promise<LinuxVMExecutionResult> {
+async function runInDocker(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   // Ensure Docker container exists and is running
   await ensureDockerContainer();
 
@@ -170,22 +190,22 @@ async function runInDocker(command: string, cwd?: string): Promise<LinuxVMExecut
     fullCommand = `cd "${dockerCwd}" && ${command}`;
   }
 
-  return executeCommand('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', fullCommand]);
+  return executeCommand('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', fullCommand], onUpdate);
 }
 
 /**
  * Runs command natively (Linux or fallback)
  */
-async function runNatively(command: string, cwd?: string): Promise<LinuxVMExecutionResult> {
+async function runNatively(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   let fullCommand = command;
   if (cwd) {
     fullCommand = `cd "${cwd}" && ${command}`;
   }
 
   if (process.platform === 'win32') {
-    return executeCommand('cmd.exe', ['/c', fullCommand]);
+    return executeCommand('cmd.exe', ['/c', fullCommand], onUpdate);
   }
-  return executeCommand('bash', ['-c', fullCommand]);
+  return executeCommand('bash', ['-c', fullCommand], onUpdate);
 }
 
 /**
@@ -216,9 +236,9 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
         return { available: true };
       } catch (err: any) {
         console.warn(`[isLinuxVMAvailable] wsl.exe failed: ${err.message || err}`);
-        return { 
-          available: false, 
-          reason: `WSL is not running, no Linux distribution is installed, or the WSL startup timed out. Error: ${err.message || err}` 
+        return {
+          available: false,
+          reason: `WSL is not running, no Linux distribution is installed, or the WSL startup timed out. Error: ${err.message || err}`
         };
       }
     } else if (platform === 'darwin') {
@@ -229,9 +249,9 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
         return { available: true };
       } catch (err: any) {
         console.warn(`[isLinuxVMAvailable] docker info failed: ${err.message || err}`);
-        return { 
-          available: false, 
-          reason: `Docker Desktop is not installed, not running, or connection timed out. Error: ${err.message || err}` 
+        return {
+          available: false,
+          reason: `Docker Desktop is not installed, not running, or connection timed out. Error: ${err.message || err}`
         };
       }
     } else if (platform === 'linux') {
@@ -249,37 +269,31 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
 /**
  * Generic command execution helper
  */
-function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionResult> {
+function executeCommand(cmd: string, args: string[], onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
       shell: process.platform === 'win32', // Use shell on Windows to ensure WSL runs properly in Electron
       env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } // Force WSL to output UTF-8
     });
 
-    const environmentType = process.platform === 'win32'
-      ? 'WSL (Ubuntu)'
-      : process.platform === 'darwin'
-      ? 'Docker (Ubuntu)'
-      : 'Native Linux';
-
-    const debugHeader = `[EverFern VM Debug - Environment: ${environmentType}]\n` +
-      `Command: ${cmd} ${args.join(' ')}\n` +
-      `--------------------------------------------------\n`;
-
-    let stdout = debugHeader;
+    let stdout = '';
     let stderr = '';
 
     const MAX_OUTPUT_LENGTH = 50000;
 
     proc.stdout?.on('data', (data) => {
-      stdout += decodeBuffer(data);
+      const decoded = decodeBuffer(data);
+      stdout += decoded;
+      if (onUpdate) onUpdate(decoded);
       if (stdout.length > MAX_OUTPUT_LENGTH) {
         stdout = '...[Output truncated]...\n' + stdout.slice(-MAX_OUTPUT_LENGTH);
       }
     });
 
     proc.stderr?.on('data', (data) => {
-      stderr += decodeBuffer(data);
+      const decoded = decodeBuffer(data);
+      stderr += decoded;
+      if (onUpdate) onUpdate(decoded);
       if (stderr.length > MAX_OUTPUT_LENGTH) {
         stderr = '...[Output truncated]...\n' + stderr.slice(-MAX_OUTPUT_LENGTH);
       }
@@ -288,7 +302,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
     proc.on('close', (code) => {
       resolve({
         stdout,
-        stderr: stderr ? debugHeader + stderr : '',
+        stderr,
         exitCode: code ?? -1
       });
     });
@@ -296,7 +310,7 @@ function executeCommand(cmd: string, args: string[]): Promise<LinuxVMExecutionRe
     proc.on('error', (err) => {
       resolve({
         stdout,
-        stderr: debugHeader + stderr + `\nError: ${err.message}`,
+        stderr: stderr + `\nError: ${err.message}`,
         exitCode: -1
       });
     });

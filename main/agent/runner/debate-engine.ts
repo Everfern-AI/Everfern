@@ -25,10 +25,10 @@ import type {
 const DEFAULT_CONFIG: DebateEngineConfig = {
   enableDebate: true,
   complexityThreshold: 'moderate',
-  timeoutMs: 180000,
-  vanguardTimeoutMs: 60000,
-  phantomTimeoutMs: 60000,
-  arbiterTimeoutMs: 45000,
+  timeoutMs: 240000, // Increased from 180000 to account for streaming delays
+  vanguardTimeoutMs: 90000, // Increased from 60000 for streaming support
+  phantomTimeoutMs: 90000, // Increased from 60000 for streaming support
+  arbiterTimeoutMs: 75000, // Increased from 45000 for streaming support
   maxRetries: 1,
   verbose: false,
 };
@@ -173,16 +173,24 @@ export class PeerAgentDebateEngine {
   /**
    * Run a function with a timeout.
    * If it takes too long, reject with a timeout error.
+   *
+   * For streaming operations, this automatically adds a 45-second buffer
+   * to allow the LLM to complete its response streaming.
    */
   private async runWithTimeout<T>(
     fn: () => Promise<T>,
     timeoutMs: number,
     timeoutMessage: string
   ): Promise<T> {
+    // Add buffer time for streaming responses
+    // Most streaming operations complete within this window
+    const streamingBufferMs = 45000;
+    const totalTimeoutMs = timeoutMs + streamingBufferMs;
+
     return Promise.race([
       fn(),
       new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+        setTimeout(() => reject(new Error(timeoutMessage)), totalTimeoutMs)
       ),
     ]);
   }

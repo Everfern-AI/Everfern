@@ -381,6 +381,7 @@ export class AgentRunner {
     projectId?: string,
     isSubagent?: boolean,
     assistantMessageId?: string,
+    isBackground?: boolean,
   ): AsyncGenerator<StreamEvent, void, unknown> {
     // Reset abort state for new execution
     globalAbortManager.reset();
@@ -619,6 +620,7 @@ export class AgentRunner {
                   missionTimeline: missionTracker.getTimeline(),
                 }
               ] as any,
+              isFullSave: false, // Flag to prevent deleting previous messages during partial saves
               updatedAt: new Date().toISOString()
             } as any);
           } catch (err) {
@@ -699,6 +701,7 @@ export class AgentRunner {
                 missionSteps: missionTracker.getSteps(),
                 currentStepId: 'step:triage',
                 decompositionAttempts: 0,
+                currentIntent: isBackground ? 'background_task' as any : undefined,
               }, threadConfig);
             }
           } catch (err) {

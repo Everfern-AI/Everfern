@@ -524,6 +524,14 @@ app.whenReady().then(async () => {
   // Start the extension bridge server (localhost:4001)
   bridgeServer.start();
 
+  // Start the Agent Gateway Control Plane server (localhost:4002)
+  try {
+    const { agentGatewayServer } = require('./agent/gateway');
+    agentGatewayServer.start();
+  } catch (gatewayErr) {
+    console.error('[Startup] Failed to start Agent Gateway:', gatewayErr);
+  }
+
   // ── Initialize Prompt Synchronization System ──────────────────────
   console.log('[Startup] 🔄 Initializing prompt synchronization...');
   initializePromptSync(true); // Force sync to ensure latest prompts are always loaded
@@ -797,6 +805,14 @@ app.on('activate', () => {
 
 // ── ShowUI process cleanup on quit ──────────────────────────────────
 app.on('before-quit', async () => {
+  // Stop Agent Gateway Control Plane
+  try {
+    const { agentGatewayServer } = require('./agent/gateway');
+    agentGatewayServer.stop();
+  } catch (gatewayErr) {
+    console.error('[Shutdown] Failed to stop Agent Gateway:', gatewayErr);
+  }
+
   // Requirement 7.2: Clean up MessageHandler
   if (messageHandler) {
     try {

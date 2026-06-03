@@ -7,6 +7,51 @@ import { AgentRunner } from '../runner';
 import { normalizeMessages } from './message-utils';
 import { captureScreen } from '../../tools/computer-use';
 import { globalAbortManager } from '../abort-manager';
+import { SERIALIZATION_VERSION } from '../../persistence/state-serializer';
+import {
+  getSessionPersistenceManager,
+  initializeSessionPersistenceManager,
+} from '../../persistence/session-manager';
+
+// ── State restoration types ───────────────────────────────────────────
+
+/**
+ * Options for resuming an agent task from a persisted checkpoint.
+ *
+ * Requirement 1.3: Restore most recent LangGraph_State for active tasks
+ * Requirement 1.6: Resume from exact state before shutdown
+ */
+export interface AgentResumptionOptions {
+  /**
+   * Task ID to resume from — the most recent checkpoint for this task will be loaded.
+   * When provided, the agent initializes from the persisted state rather than a fresh slate.
+   */
+  resumeFromTaskId: string;
+
+  /**
+   * Optional specific checkpoint ID to restore from.
+   * When omitted, the latest checkpoint for `resumeFromTaskId` is used.
+   */
+  checkpointId?: string;
+}
+
+/**
+ * Result of restoring agent state from a checkpoint.
+ *
+ * Requirement 1.3, 1.4, 1.5, 1.6, 11.4, 11.5
+ */
+export interface AgentRestorationResult {
+  /** The restored LangGraph state ready for graph injection */
+  restoredState: GraphStateType;
+  /** The checkpoint ID that was restored */
+  checkpointId: string;
+  /** Step number at time of checkpoint */
+  stepNumber: number;
+  /** Whether the state is fully compatible with the current serialization version */
+  compatible: boolean;
+  /** Warning messages for partially-compatible states */
+  warnings: string[];
+}
 
 export interface AgentStepOptions {
   runner: AgentRunner;
@@ -15,6 +60,256 @@ export interface AgentStepOptions {
   maxVerifyRetries?: number;
   systemPromptOverride?: string;
   nodeName: string;
+}
+
+// ── State compatibility validation ───────────────────────────────────
+
+/**
+ * Validate that a restored state is compatible with the current code version.
+ *
+ * Checks the serializationVersion stored in the state metadata and emits
+ * warnings for version mismatches or missing required fields.
+ *
+ * Requirement 11.4: Validate state structure against a schema during deserialization
+ * Requirement 11.5: Report deserialization errors with specific field information
+ *
+ * @param state - The deserialized state to validate
+ * @returns Validation result with compatibility flag and warnings
+ */
+function validateRestoredStateCompatibility(
+  state: GraphStateType & { serializationVersion?: string; timestamp?: number }
+): { compatible: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+
+  // Check serialization version for forward-compatibility
+  // Requirement 11.4: Validate state structure
+  const storedVersion = state.serializationVersion;
+  if (!storedVersion) {
+    warnings.push(
+      'Restored state is missing serializationVersion — may have been saved by an older version of EverFern'
+    );
+  } else if (storedVersion !== SERIALIZATION_VERSION) {
+    warnings.push(
+      `State was serialized with version ${storedVersion} but current version is ${SERIALIZATION_VERSION}. ` +
+      `Minor version differences are usually safe; major differences may cause unexpected behavior.`
+    );
+  }
+
+  // Validate required fields are present
+  // Requirement 11.4: Validate the state structure against a schema
+  const requiredFields: Array<keyof GraphStateType> = ['messages', 'iterations'];
+  const missingFields: string[] = [];
+  for (const field of requiredFields) {
+    if (state[field] === undefined || state[field] === null) {
+      missingFields.push(field);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    // Requirement 11.5: Report deserialization errors with specific field information
+    warnings.push(
+      `Restored state is missing required fields: ${missingFields.join(', ')}. ` +
+      `These will be initialized to defaults.`
+    );
+  }
+
+  // Validate messages array integrity
+  if (!Array.isArray(state.messages)) {
+    warnings.push('Restored state messages field is not an array — conversation history may be lost.');
+  } else if (state.messages.length === 0) {
+    warnings.push('Restored state has no messages — the conversation history may have been empty at checkpoint time.');
+  }
+
+  // Validate iterations counter
+  if (typeof state.iterations !== 'number' || state.iterations < 0) {
+    warnings.push(
+      `Restored state has invalid iterations value (${state.iterations}) — will reset to 0.`
+    );
+  }
+
+  // State is compatible if there are no critical issues (missing required fields are fixable)
+  const hasCompatibilityBreakingIssues =
+    !Array.isArray(state.messages) ||
+    (typeof state.iterations !== 'number');
+
+  return {
+    compatible: !hasCompatibilityBreakingIssues,
+    warnings,
+  };
+}
+
+/**
+ * Apply default values to fill missing or invalid fields in a restored state.
+ *
+ * Ensures the state is always safe to inject into the LangGraph graph,
+ * even if some fields were missing from the checkpoint.
+ *
+ * Requirement 1.6: Resume from exact state before shutdown (with safe defaults for gaps)
+ */
+function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateType {
+  return {
+    messages: state.messages ?? [],
+    currentIntent: state.currentIntent ?? 'unknown',
+    intentConfidence: state.intentConfidence ?? 0,
+    decomposedTask: state.decomposedTask ?? null,
+    taskPhase: state.taskPhase ?? 'brain',
+    pendingToolCalls: state.pendingToolCalls ?? [],
+    toolCallRecords: state.toolCallRecords ?? [],
+    activeAgent: state.activeAgent ?? '',
+    completionSignal: state.completionSignal ?? null,
+    routingDecision: state.routingDecision ?? null,
+    webExplorerComplete: state.webExplorerComplete ?? false,
+    navisInvoked: state.navisInvoked ?? false,
+    searchInvoked: state.searchInvoked ?? false,
+    codingComplete: state.codingComplete ?? false,
+    missionId: state.missionId ?? '',
+    missionTimeline: state.missionTimeline ?? null,
+    missionSteps: state.missionSteps ?? [],
+    agiHints: state.agiHints ?? '',
+    pauseGeneration: state.pauseGeneration ?? false,
+    iterations: (typeof state.iterations === 'number' && state.iterations >= 0)
+      ? state.iterations
+      : 0,
+    validationResult: state.validationResult ?? null,
+    shouldContinueIteration: state.shouldContinueIteration ?? false,
+    hitlApprovalResult: state.hitlApprovalResult ?? null,
+    currentStepId: state.currentStepId ?? '',
+    webExplorerSelfLoopCount: state.webExplorerSelfLoopCount ?? 0,
+    dataAnalysisComplete: state.dataAnalysisComplete ?? false,
+    computerUseComplete: state.computerUseComplete ?? false,
+    deepResearchComplete: state.deepResearchComplete ?? false,
+    deepResearchSelfLoopCount: state.deepResearchSelfLoopCount ?? 0,
+    subagentSpawned: state.subagentSpawned ?? null,
+    completedSteps: state.completedSteps ?? [],
+    decompositionAttempts: state.decompositionAttempts ?? 0,
+    brainToolsInFlight: state.brainToolsInFlight ?? false,
+    returningFromSpecialist: state.returningFromSpecialist ?? null,
+    debateResult: state.debateResult ?? null,
+    ...(state as Record<string, unknown>)['toolCallHistory'] !== undefined
+      ? { toolCallHistory: (state as Record<string, unknown>)['toolCallHistory'] }
+      : { toolCallHistory: [] },
+    ...(state as Record<string, unknown>)['userConfirmation'] !== undefined
+      ? { userConfirmation: (state as Record<string, unknown>)['userConfirmation'] }
+      : {},
+    ...(state as Record<string, unknown>)['finalResponse'] !== undefined
+      ? { finalResponse: (state as Record<string, unknown>)['finalResponse'] }
+      : { finalResponse: '' },
+  } as GraphStateType;
+}
+
+// ── State restoration entry point ─────────────────────────────────────
+
+/**
+ * Initialize the agent state from a persisted checkpoint.
+ *
+ * This is the primary entry point for restoring a previously interrupted task.
+ * It loads the latest (or specified) checkpoint for the given task ID,
+ * validates compatibility with the current code version, and returns
+ * the restored state ready for LangGraph injection.
+ *
+ * On any failure, logs the error and returns null so the caller can fall
+ * back to a fresh agent initialization — agent execution is never blocked
+ * by a restoration failure.
+ *
+ * Requirement 1.3: Restore most recent LangGraph_State for active tasks
+ * Requirement 1.4: Maintain conversation history across restarts
+ * Requirement 1.5: Preserve tool call history and results across restarts
+ * Requirement 1.6: Resume from exact state before shutdown
+ * Requirement 11.4: Validate state structure against a schema
+ * Requirement 11.5: Report deserialization errors with specific field information
+ *
+ * @param options - Resumption options including task ID and optional checkpoint ID
+ * @returns Restoration result with restored state, or null on failure
+ */
+export async function initializeRestoredAgentState(
+  options: AgentResumptionOptions
+): Promise<AgentRestorationResult | null> {
+  const { resumeFromTaskId, checkpointId } = options;
+
+  try {
+    console.log(
+      `[AgentRuntime] Restoring agent state for task ${resumeFromTaskId}` +
+      (checkpointId ? ` from checkpoint ${checkpointId}` : ' from latest checkpoint')
+    );
+
+    // Ensure session persistence manager is initialized
+    // Requirement 1.3: Session_Persistence_Manager SHALL restore the most recent LangGraph_State
+    const manager = getSessionPersistenceManager();
+    await initializeSessionPersistenceManager();
+
+    // Retrieve the restored state
+    let rawState: GraphStateType | null;
+
+    if (checkpointId) {
+      // Restore from specific checkpoint
+      rawState = await manager.restoreState(checkpointId);
+    } else {
+      // Restore from latest checkpoint for the task
+      rawState = await manager.restoreLatestCheckpoint(resumeFromTaskId);
+    }
+
+    if (!rawState) {
+      console.warn(
+        `[AgentRuntime] No checkpoint found for task ${resumeFromTaskId} — will start fresh`
+      );
+      return null;
+    }
+
+    // Find the actual checkpoint metadata for reporting
+    const checkpoints = await manager.listCheckpointsForTask(resumeFromTaskId, 1);
+    const latestCheckpoint = checkpoints[0];
+    const resolvedCheckpointId = checkpointId ?? latestCheckpoint?.id ?? `restored-${Date.now()}`;
+    const stepNumber = latestCheckpoint?.stepNumber ?? (rawState.iterations ?? 0);
+
+    // Validate compatibility with current code version
+    // Requirement 11.4: Validate state structure
+    const { compatible, warnings } = validateRestoredStateCompatibility(
+      rawState as GraphStateType & { serializationVersion?: string; timestamp?: number }
+    );
+
+    // Log warnings for operators to review
+    for (const warning of warnings) {
+      console.warn(`[AgentRuntime] State restoration warning: ${warning}`);
+    }
+
+    if (!compatible) {
+      console.error(
+        `[AgentRuntime] Restored state for task ${resumeFromTaskId} is not compatible with current code version. ` +
+        `Warnings: ${warnings.join('; ')}`
+      );
+      // Requirement 11.5: Report deserialization errors
+      // Even on incompatibility, we attempt restoration with defaults to maximize continuity
+      console.warn(
+        '[AgentRuntime] Attempting partial restoration with defaults for incompatible fields...'
+      );
+    }
+
+    // Apply defaults to fill missing fields from the restored state
+    // Requirement 1.6: Resume from exact state, filling gaps with safe defaults
+    const restoredState = applyRestorationDefaults(rawState);
+
+    console.log(
+      `[AgentRuntime] State restored successfully for task ${resumeFromTaskId}: ` +
+      `${restoredState.messages?.length ?? 0} messages, step ${stepNumber}, ` +
+      `compatible=${compatible}, warnings=${warnings.length}`
+    );
+
+    return {
+      restoredState,
+      checkpointId: resolvedCheckpointId,
+      stepNumber,
+      compatible,
+      warnings,
+    };
+  } catch (error) {
+    // Never block agent execution due to restoration failure
+    // Requirement 2.5 pattern: Log error and continue
+    console.error(
+      `[AgentRuntime] Failed to restore agent state for task ${resumeFromTaskId}:`,
+      error
+    );
+    return null;
+  }
 }
 
 /**
@@ -54,8 +349,8 @@ export async function runAgentStep(
     // Only use separate VLM if main model isn't vision-native OR if a specific VLM provider is configured
     const mainProvider = runner.client.provider;
     let isVisionNative = ['openai', 'anthropic', 'gemini', 'nvidia', 'google'].includes(mainProvider);
-    
-    // If a separate VLM provider is configured that is DIFFERENT from the main provider, 
+
+    // If a separate VLM provider is configured that is DIFFERENT from the main provider,
     // we should prefer the VLM for grounding tasks.
     if (vlm?.model && vlm.provider !== mainProvider) {
       isVisionNative = false;

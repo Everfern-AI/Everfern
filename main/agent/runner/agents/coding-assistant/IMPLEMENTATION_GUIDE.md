@@ -1,388 +1,482 @@
-# AI Coding Assistant - Implementation Guide
+# Multi-Agent Coding System - Implementation Guide
 
 ## Overview
 
-This is a hands-off AI coding assistant that works like Windsurf/Cursor for Kiro. It intelligently understands any codebase without hardcoded patterns and provides context-aware assistance.
+This guide details how to integrate and extend the multi-agent coding system in EverFern Desktop.
 
-## Architecture
+## Integration with Brain Router
 
-### Core Components
+### Routing Flow
 
-#### 1. **Assistant Engine** (`core/assistant-engine.ts`)
-- Main orchestrator for all AI assistance
-- Processes user requests and generates responses
-- Manages hands-off vs guided modes
-- Coordinates all other components
-
-**Key Features:**
-- Autonomous action generation
-- Intelligent suggestion filtering
-- Session management
-- Configuration management
-
-#### 2. **Intent Classifier** (`core/intent-classifier.ts`)
-- Classifies user intent without hardcoded patterns
-- Uses AI-powered analysis to understand user goals
-- Extracts intent details and context
-- Generates reasoning and suggested approaches
-
-**Supported Intents:**
-- `create_component` - Build UI components
-- `create_api` - Build API endpoints
-- `create_database` - Set up database models
-- `setup_project` - Scaffold new projects
-- `fix_bug` - Debug and fix issues
-- `refactor` - Improve code quality
-- `optimize` - Enhance performance
-- `test` - Add tests
-- `document` - Create documentation
-- `deploy` - Configure deployment
-
-#### 3. **Conversation Handler** (`core/conversation-handler.ts`)
-- Generates natural language responses
-- Handles user clarification requests
-- Provides context-aware tips
-- Formats suggestions for display
-
-### Analysis Components
-
-#### 1. **Codebase Analyzer** (`codebase-analyzer.ts`)
-- AI-powered codebase understanding
-- Detects frameworks, languages, patterns
-- Analyzes project structure and capabilities
-- Evaluates code quality
-
-**No Hardcoded Patterns:**
-- Analyzes dependencies dynamically
-- Detects frameworks from actual code
-- Understands any project structure
-- Learns from file organization
-
-#### 2. **Pattern Detector** (`analysis/pattern-detector.ts`)
-- Identifies code patterns and conventions
-- Detects architectural patterns
-- Recognizes coding styles
-- Finds best practices
-
-#### 3. **Project Scanner** (`analysis/project-scanner.ts`)
-- Scans project structure
-- Identifies file types and organization
-- Detects configuration files
-- Maps project layout
-
-#### 4. **Dependency Tracker** (`analysis/dependency-tracker.ts`)
-- Tracks file dependencies
-- Manages import relationships
-- Detects circular dependencies
-- Maintains dependency graph
-
-### Suggestion Components
-
-#### 1. **Intelligent Suggestions Engine** (`intelligent-suggestions.ts`)
-- Generates context-aware suggestions
-- Provides multiple suggestion types
-- Prioritizes by confidence and impact
-- Filters based on user preferences
-
-**Suggestion Types:**
-- Code completions
-- Refactoring opportunities
-- Security improvements
-- Performance optimizations
-- Testing recommendations
-- Best practice suggestions
-
-#### 2. **Completion Provider** (`suggestions/completion-provider.ts`)
-- Code completion suggestions
-- Framework-specific templates
-- Context-aware snippets
-
-#### 3. **Refactor Advisor** (`suggestions/refactor-advisor.ts`)
-- Code quality improvements
-- Duplication detection
-- Architecture suggestions
-
-#### 4. **Security Advisor** (`suggestions/security-advisor.ts`)
-- Security vulnerability detection
-- Best practice recommendations
-- Compliance checking
-
-#### 5. **Performance Advisor** (`suggestions/performance-advisor.ts`)
-- Performance optimization suggestions
-- Bundle size analysis
-- Memory usage optimization
-
-### Code Generation Components
-
-#### 1. **Code Generator** (`generators/code-generator.ts`)
-- Generates code from descriptions
-- Creates complete implementations
-- Follows project patterns
-- Maintains consistency
-
-#### 2. **Template Engine** (`generators/template-engine.ts`)
-- Framework-specific templates
-- Boilerplate generation
-- Pattern-based code creation
-
-### Tool Components
-
-#### 1. **Error Fixer** (`tools/error-fixer.ts`)
-- Automatic error detection
-- Self-correction capabilities
-- Error learning system
-
-#### 2. **Import Manager** (`tools/import-manager.ts`)
-- Smart import organization
-- Circular dependency resolution
-- Import optimization
-
-#### 3. **Code Formatter** (`tools/code-formatter.ts`)
-- Code style enforcement
-- Consistent formatting
-- Linting integration
-
-#### 4. **Test Generator** (`tools/test-generator.ts`)
-- Automatic test creation
-- Test coverage analysis
-- Test infrastructure setup
-
-### Context Management
-
-#### 1. **Context Manager** (`context-manager.ts`)
-- Session management
-- Conversation history
-- File change tracking
-- Task management
-- User preferences
-
-## Usage
-
-### Basic Usage
-
-```typescript
-import { createAIAssistantEngine } from './coding-assistant';
-
-// Create engine with configuration
-const engine = createAIAssistantEngine({
-  handsOffMode: true,
-  proactiveMode: true,
-  maxSuggestions: 5,
-  confidenceThreshold: 0.7
-});
-
-// Process user request
-const result = await engine.processUserRequest(context, state, eventQueue);
-
-// Result contains:
-// - response: Natural language response
-// - suggestions: Array of suggestions
-// - actions: Autonomous actions to execute
-// - needsUserInput: Whether clarification is needed
+```
+User: "Build a user authentication system"
+  ↓
+Brain analyzes intent
+  ↓
+Brain routing decision: "route_coding"
+  ↓
+Graph routes to: coding_specialist node
+  ↓
+Coding Specialist:
+  - Activates multi-agent system
+  - Orchestrates 5 specialized subagents
+  - Manages state coordination
+  - Returns to brain when complete
 ```
 
-### Hands-Off Mode
+### Code Integration
 
-In hands-off mode, the assistant automatically executes high-confidence actions:
+The multi-agent system is automatically invoked in `createCodingSpecialistNode`:
 
 ```typescript
-const config = {
-  handsOffMode: true,  // Enable autonomous execution
-  confidenceThreshold: 0.7  // Only execute actions with >70% confidence
+// In coding-specialist.ts
+export const createCodingSpecialistNode = (
+  runner: AgentRunner,
+  eventQueue?: StreamEvent[],
+  missionTracker?: MissionTracker,
+  toolDefs?: ToolDefinition[]
+) => {
+  return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
+    // Initialize coordination
+    const coordination: SubagentCoordination = state.subagentCoordination || {
+      phase: 'exploration',
+      currentAgent: 'coding_specialist',
+      completedPhases: [],
+      sharedContext: {}
+    };
+
+    // Phase 1: Exploration
+    // Phase 2: Planning
+    // Phase 3: Implementation
+    // Phase 4: Review
+    // Phase 5: Testing
+    // Complete
+  };
 };
 ```
 
-### Guided Mode
+## State Management
 
-In guided mode, the assistant provides suggestions and waits for user confirmation:
+### Adding Subagent Coordination to Graph State
+
+The state already includes:
 
 ```typescript
-const config = {
-  handsOffMode: false,  // Require user confirmation
-  proactiveMode: true   // Still provide proactive suggestions
+// In state.ts - GraphState
+subagentCoordination: Annotation<{
+  phase: 'exploration' | 'planning' | 'implementation' | 'review' | 'testing' | 'complete';
+  currentAgent: string;
+  completedPhases: string[];
+  sharedContext: {
+    codebaseMap?: any;
+    developmentPlan?: any;
+    implementationResults?: any;
+    reviewResults?: any;
+    testResults?: any;
+  };
+}>(),
+
+pendingApproval: Annotation<{
+  type: 'development_plan' | 'security_review' | 'deployment';
+  content: string;
+  nextPhase: string;
+}>(),
+
+completionSummary: Annotation<string>(),
+```
+
+### Context Flow
+
+```
+Phase 1: Exploration
+  ├─ Read: User request
+  ├─ Analyze: Codebase structure
+  └─ Output: codebaseMap
+
+Phase 2: Planning
+  ├─ Read: User request + codebaseMap
+  ├─ Develop: Strategy and roadmap
+  └─ Output: developmentPlan
+
+Phase 3: Implementation
+  ├─ Read: developmentPlan
+  ├─ Write: Code files
+  └─ Output: implementationResults
+
+Phase 4: Review
+  ├─ Read: implementationResults
+  ├─ Check: Security, performance, quality
+  └─ Output: reviewResults
+
+Phase 5: Testing
+  ├─ Read: reviewResults
+  ├─ Execute: TDD cycle
+  └─ Output: testResults
+```
+
+## Extending the System
+
+### Adding a New Subagent
+
+To create a new specialized subagent:
+
+#### 1. Create Agent File
+
+```typescript
+// subagents/my-agent.ts
+
+import { GraphStateType, StreamEvent } from '../../state';
+import { AgentRunner } from '../../runner';
+import { ToolDefinition } from '../../../lib/ai-client';
+import { runAgentStep } from '../../services/agent-runtime';
+
+export interface MyAgentContext {
+  // Your context properties
+}
+
+export interface MyAgentOutput {
+  // Your output properties
+}
+
+export const createMyAgent = (
+  runner: AgentRunner,
+  context: MyAgentContext,
+  eventQueue?: StreamEvent[]
+) => {
+  return async (state: GraphStateType): Promise<MyAgentOutput> => {
+    console.log('[MyAgent] Starting...');
+
+    const myTools: ToolDefinition[] = [
+      {
+        name: 'my_tool',
+        description: 'Description of my tool',
+        parameters: {
+          type: 'object',
+          properties: {
+            param1: { type: 'string' }
+          },
+          required: ['param1']
+        }
+      }
+    ];
+
+    const systemPrompt = `You are the MyAgent...`;
+
+    const result = await runAgentStep(state, {
+      runner,
+      toolDefs: myTools,
+      eventQueue,
+      nodeName: 'my_agent',
+      systemPromptOverride: systemPrompt
+    });
+
+    return {
+      output: result
+    };
+  };
 };
 ```
 
-## Key Features
-
-### 1. No Hardcoded Patterns
-- Analyzes actual code instead of using regex patterns
-- Understands any framework or project structure
-- Learns from existing code patterns
-- Adapts to project conventions
-
-### 2. AI-Powered Intent Detection
-- Classifies user intent without hardcoded rules
-- Extracts relevant details from user input
-- Generates reasoning for classifications
-- Suggests appropriate approaches
-
-### 3. Context-Aware Assistance
-- Understands project structure and patterns
-- Follows existing code conventions
-- Provides framework-specific guidance
-- Maintains consistency across changes
-
-### 4. Autonomous Execution
-- Executes high-confidence actions automatically
-- Generates production-ready code
-- Handles errors and self-corrects
-- Provides detailed progress updates
-
-### 5. Natural Language Interaction
-- Generates contextual responses
-- Asks clarifying questions when needed
-- Provides helpful tips and guidance
-- Explains reasoning and suggestions
-
-## Integration with Kiro
-
-### Agent Graph Integration
+#### 2. Export from Index
 
 ```typescript
-// In agent graph
-import { createAIAssistantEngine } from './coding-assistant';
+// subagents/index.ts
 
-const aiAssistantNode = createAIAssistantEngine({
-  handsOffMode: true
-});
-
-// Add to graph
-graph.addNode('ai_assistant', aiAssistantNode);
+export { createMyAgent } from './my-agent';
+export type { MyAgentContext, MyAgentOutput } from './my-agent';
 ```
 
-### Tool Integration
-
-The assistant uses existing Kiro tools:
-- `readFile` - Read file contents
-- `writeFile` - Create/modify files
-- `getDiagnostics` - Check for errors
-- `semanticRename` - Rename symbols
-- `smartRelocate` - Move files
-- `reportProgress` - Update progress
-
-### Event Queue Integration
-
-Progress updates are streamed via event queue:
+#### 3. Integrate into Orchestrator
 
 ```typescript
+// coding-specialist.ts
+
+if (coordination.phase === 'my_phase' && !coordination.completedPhases.includes('my_phase')) {
+  const myAgent = createMyAgent(runner, context, eventQueue);
+  const myResult = await myAgent(state);
+
+  coordination.sharedContext.myResults = myResult;
+  coordination.completedPhases.push('my_phase');
+  coordination.phase = 'next_phase';
+}
+```
+
+### Modifying Agent Behavior
+
+#### Change Phase Order
+
+```typescript
+// In coding-specialist.ts, modify the orchestration loop
+coordination.phase = 'testing';  // Skip directly to testing
+```
+
+#### Adjust Strictness Levels
+
+```typescript
+// In review phase
+const reviewContext: ReviewContext = {
+  // ...
+  strictnessLevel: 'strict'  // or 'lenient' for faster iterations
+};
+```
+
+#### Configure Tool Availability
+
+```typescript
+// Filter tools for specific phases
+const phasedTools = allTools.filter(t => {
+  const readOnlyPhases = ['exploration', 'review'];
+  if (readOnlyPhases.includes(coordination.phase)) {
+    return !['write_code', 'delete_file', 'modify_config'].includes(t.name);
+  }
+  return true;
+});
+```
+
+## Testing the Multi-Agent System
+
+### Unit Testing Subagents
+
+```typescript
+// subagents/__tests__/exploration-agent.test.ts
+
+describe('ExplorationAgent', () => {
+  test('should analyze codebase structure', async () => {
+    const context: ExplorationContext = {
+      targetDirectory: './test-project',
+      scanDepth: 2,
+      includeTests: true,
+      includeDocs: true,
+      excludePatterns: ['node_modules']
+    };
+
+    const agent = createExplorationAgent(mockRunner, context);
+    const result = await agent(mockState);
+
+    expect(result.codebaseMap).toBeDefined();
+    expect(result.codebaseMap.structure).toBeDefined();
+    expect(result.codebaseMap.architecture).toBeDefined();
+  });
+});
+```
+
+### Integration Testing
+
+```typescript
+// __tests__/multi-agent-integration.test.ts
+
+describe('Multi-Agent Coding System', () => {
+  test('should orchestrate all phases successfully', async () => {
+    const node = createCodingSpecialistNode(mockRunner, mockEventQueue);
+    let state = mockState;
+
+    // Run phases
+    state = await node(state);
+    expect(state.subagentCoordination.phase).toBe('planning');
+
+    state = await node(state);
+    expect(state.subagentCoordination.phase).toBe('implementation');
+
+    state = await node(state);
+    expect(state.subagentCoordination.phase).toBe('review');
+
+    state = await node(state);
+    expect(state.subagentCoordination.phase).toBe('testing');
+
+    state = await node(state);
+    expect(state.subagentCoordination.phase).toBe('complete');
+    expect(state.codingComplete).toBe(true);
+  });
+});
+```
+
+## Performance Optimization
+
+### Caching Strategy
+
+```typescript
+// Cache codebase map to avoid re-scanning
+const codebaseCacheKey = `${projectRoot}:${Date.now() % 3600000}`;
+const cachedMap = codebaseCache.get(codebaseCacheKey);
+
+if (cachedMap && !needsFreshAnalysis) {
+  coordination.sharedContext.codebaseMap = cachedMap;
+  coordination.completedPhases.push('exploration');
+  coordination.phase = 'planning';
+}
+```
+
+### Parallel Execution
+
+```typescript
+// Run independent phases in parallel where possible
+const [explorationResult, initialPlanResult] = await Promise.all([
+  explorationAgent(state),
+  preliminaryPlanningAgent(state)  // Lightweight planning based on heuristics
+]);
+```
+
+### Memory Management
+
+```typescript
+// Clean up large objects after each phase
+coordination.sharedContext = {
+  ...coordination.sharedContext,
+  largeAnalysis: null,  // Clear if no longer needed
+  cacheResults: {
+    codebaseMap: compact(coordination.sharedContext.codebaseMap),
+    developmentPlan: compact(coordination.sharedContext.developmentPlan)
+  }
+};
+```
+
+## Debugging
+
+### Enable Verbose Logging
+
+```typescript
+const DEBUG = true;
+
+if (DEBUG) {
+  console.log(`[CodingSpecialist] Phase: ${coordination.phase}`);
+  console.log(`[CodingSpecialist] Completed: ${coordination.completedPhases.join(', ')}`);
+  console.log(`[CodingSpecialist] Context keys: ${Object.keys(coordination.sharedContext).join(', ')}`);
+}
+```
+
+### Trace Execution Flow
+
+```typescript
+// Add execution markers
 eventQueue?.push({
-  type: 'thought',
-  content: '🧠 AI Assistant: Analyzing your request...'
+  type: 'debug',
+  phase: coordination.phase,
+  agent: coordination.currentAgent,
+  contextSize: JSON.stringify(coordination.sharedContext).length,
+  timestamp: Date.now()
 });
 ```
 
-## Configuration
-
-### Assistant Config
+### Inspect State at Each Phase
 
 ```typescript
-interface AIAssistantConfig {
-  handsOffMode: boolean;           // Enable autonomous execution
-  proactiveMode: boolean;          // Provide proactive suggestions
-  learningEnabled: boolean;        // Learn from interactions
-  maxSuggestions: number;          // Max suggestions to return
-  confidenceThreshold: number;     // Min confidence for actions (0-1)
+// Save state snapshot for analysis
+const stateSnapshots = [];
+
+stateSnapshots.push({
+  phase: coordination.phase,
+  state: JSON.parse(JSON.stringify(state)),
+  timestamp: Date.now()
+});
+
+// For debugging: inspect stateSnapshots at the end
+console.log('State evolution:', stateSnapshots);
+```
+
+## Troubleshooting Guide
+
+### Issue: "Exploration phase hangs"
+
+**Cause**: Large directory tree or permission issues
+**Solution**:
+```typescript
+const explorationContext: ExplorationContext = {
+  scanDepth: 2,  // Reduce from 3
+  excludePatterns: ['node_modules', '.git', 'dist', 'build', '.next']
+};
+```
+
+### Issue: "Planning agent produces generic plan"
+
+**Cause**: Codebase map is incomplete
+**Solution**:
+```typescript
+// Verify codebase map quality
+console.assert(
+  coordination.sharedContext.codebaseMap?.structure?.files?.length > 0,
+  'Codebase map missing files'
+);
+```
+
+### Issue: "Worker agent fails to build"
+
+**Cause**: Build command incorrect or dependencies missing
+**Solution**:
+```typescript
+const workerContext: WorkerContext = {
+  buildCommand: detectBuildCommand(),  // Verify this matches package.json
+  testCommand: detectTestCommand(),
+  // ... other context
+};
+```
+
+### Issue: "Code review too strict"
+
+**Cause**: Strictness level too high for iterative development
+**Solution**:
+```typescript
+const reviewContext: ReviewContext = {
+  strictnessLevel: 'lenient',  // Change from 'standard'
+  reviewCriteria: {
+    security: true,
+    performance: false,  // Skip performance for MVP
+    maintainability: true,
+    testCoverage: true,
+    documentation: false,  // Skip for quick iteration
+    codeStyle: false
+  }
+};
+```
+
+## Deployment Checklist
+
+- [ ] All subagent files created and exported
+- [ ] State.ts updated with coordination types
+- [ ] Coding-specialist.ts integrated multi-agent orchestration
+- [ ] Error handling and fallback mode implemented
+- [ ] Event streaming for UI updates enabled
+- [ ] Logging added for debugging
+- [ ] Integration tests passing
+- [ ] Performance optimizations applied
+- [ ] Documentation updated
+- [ ] Team trained on new system
+
+## Monitoring
+
+### Metrics to Track
+
+```typescript
+interface MultiAgentMetrics {
+  phaseDurations: Record<string, number>;
+  phaseSuccessRate: Record<string, number>;
+  averagePlanComplexity: number;
+  averageCodeReviewIssues: number;
+  averageTestCoverage: number;
+  fallbackActivationRate: number;
 }
 ```
 
-### User Preferences
+### Dashboard Integration
 
 ```typescript
-interface UserPreferences {
-  codingStyle: 'functional' | 'object-oriented' | 'mixed';
-  preferredFrameworks: string[];
-  testingApproach: 'tdd' | 'unit-first' | 'integration-first' | 'minimal';
-  codeVerbosity: 'minimal' | 'moderate' | 'verbose';
-  securityLevel: 'basic' | 'standard' | 'high' | 'paranoid';
-  performancePriority: 'readability' | 'balanced' | 'performance';
-  documentationLevel: 'minimal' | 'standard' | 'comprehensive';
+// Send metrics to monitoring system
+if (globalMonitoring) {
+  globalMonitoring.recordMetrics({
+    system: 'multi-agent-coding',
+    phase: coordination.phase,
+    duration: Date.now() - phaseStartTime,
+    success: !hadErrors,
+    agentCount: 5
+  });
 }
 ```
 
-## Development Roadmap
+## Future Roadmap
 
-### Phase 1: Core Foundation ✅
-- [x] Assistant engine
-- [x] Intent classifier
-- [x] Conversation handler
-- [x] Type definitions
-- [x] Codebase analyzer
-
-### Phase 2: Analysis Components 🚧
-- [ ] Pattern detector
-- [ ] Project scanner
-- [ ] Dependency tracker
-- [ ] Code metrics analyzer
-
-### Phase 3: Suggestion Providers 📋
-- [ ] Completion provider
-- [ ] Refactor advisor
-- [ ] Security advisor
-- [ ] Performance advisor
-
-### Phase 4: Code Generators 📋
-- [ ] Code generator
-- [ ] Template engine
-- [ ] Framework generators
-
-### Phase 5: Tools 📋
-- [ ] Error fixer
-- [ ] Import manager
-- [ ] Code formatter
-- [ ] Test generator
-
-### Phase 6: Integration 📋
-- [ ] Agent graph integration
-- [ ] Tool integration
-- [ ] Event streaming
-- [ ] Session persistence
-
-## Testing Strategy
-
-### Unit Tests
-- Intent classification accuracy
-- Suggestion generation
-- Context management
-- Code generation
-
-### Integration Tests
-- End-to-end workflows
-- Multi-component interactions
-- Tool integration
-- Error handling
-
-### Property-Based Tests
-- Intent classification consistency
-- Suggestion quality metrics
-- Code generation correctness
-
-## Performance Considerations
-
-### Caching
-- Cache codebase analysis (5-minute TTL)
-- Cache suggestion results
-- Cache intent classifications
-
-### Optimization
-- Lazy load components
-- Batch file operations
-- Parallel analysis where possible
-- Stream results progressively
-
-## Security Considerations
-
-- Validate all user input
-- Sanitize generated code
-- Check for injection vulnerabilities
-- Verify file operations
-- Audit sensitive operations
-
-## Future Enhancements
-
-1. **Multi-Language Support** - Support more programming languages
-2. **Cloud Integration** - Sync preferences and context
-3. **Team Collaboration** - Share patterns and templates
-4. **Plugin System** - Extensible architecture
-5. **Learning System** - Improve from user interactions
-6. **Advanced Analytics** - Track productivity metrics
+- [ ] Parallel subagent execution
+- [ ] Domain-specific subagents (mobile, DevOps, ML)
+- [ ] Learning from past implementations
+- [ ] Automatic optimization suggestions
+- [ ] Multi-language support
+- [ ] Distributed execution
+- [ ] Custom subagent marketplace

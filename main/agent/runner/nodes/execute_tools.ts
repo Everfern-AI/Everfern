@@ -14,6 +14,7 @@ import { interrupt } from '@langchain/langgraph';
 import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import type { AIClient } from '../../../lib/ai-client';
+import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
 
 /**
  * Determine if an error should trigger automatic retry with correction
@@ -188,7 +189,7 @@ export const createExecuteToolsNode = (
     // AGI: Parallel Execution Strategy
     const homedirNorm = os.homedir().replace(/\\/g, '/');
     const safeConvId = conversationId || 'current';
-    
+
     const analysis = analyzeToolDependencies(state.pendingToolCalls.map(tc => ({
       name: tc.name,
       args: validateAndCorrectToolArgs(tc.name, tc.arguments, homedirNorm, safeConvId),
@@ -197,6 +198,19 @@ export const createExecuteToolsNode = (
 
     const parallelGroups = groupParallelTools(analysis);
     const { executeSynchronizedParallelGroup } = await import('../parallel-executor');
+
+    // Set agent context for rollback tracking before executing tools.
+    // Requirements 4.1, 4.2, 4.3, 5.1, 5.2: Tool execution context needed for RollbackManager.
+    // Use missionId as the task identifier; fall back to a timestamped ID when unavailable.
+    const rollbackTaskId = state.missionId || `exec-task-${Date.now()}`;
+    const rollbackStepNumber = state.iterations || 0;
+    try {
+      setAgentContext(rollbackTaskId, rollbackStepNumber);
+      console.log(`[ExecuteTools] Rollback context set: taskId=${rollbackTaskId}, step=${rollbackStepNumber}`);
+    } catch (ctxError) {
+      // Non-fatal: log and continue; rollback tracking will be skipped for this execution
+      console.warn('[ExecuteTools] Failed to set rollback context:', ctxError);
+    }
 
     for (let g = 0; g < parallelGroups.length; g++) {
       const group = parallelGroups[g];
@@ -285,8 +299,23 @@ export const createExecuteToolsNode = (
     }
 
     nodeIntegrator.completeNode('execute_tools', `Completed ${calls.length} tool calls`);
+
+    // Clear rollback context after tool execution completes.
+    // Requirements 4.1, 4.2, 4.3, 5.1, 5.2: Clean up context to prevent stale tracking.
+    try {
+      clearAgentContext();
+    } catch (ctxError) {
+      console.warn('[ExecuteTools] Failed to clear rollback context:', ctxError);
+    }
+
     return result;
     } catch (error) {
+      // Clear rollback context even when execution fails to prevent stale state.
+      try {
+        clearAgentContext();
+      } catch (ctxError) {
+        console.warn('[ExecuteTools] Failed to clear rollback context on error:', ctxError);
+      }
       nodeIntegrator.failNode('execute_tools', error instanceof Error ? error.message : String(error));
       throw error;
     }

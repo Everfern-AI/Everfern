@@ -82,7 +82,27 @@ export const buildGraph = (
         return `**${name}** — \`${JSON.stringify(args).slice(0, 120)}\``;
       };
 
-      const toolSummary = state.pendingToolCalls?.map(formatToolCallSummary).join('\n') || 'No tools pending';
+      // If pendingToolCalls is empty but we're in HITL, check the message history for tool calls
+      let toolsToDisplay = state.pendingToolCalls || [];
+      if (toolsToDisplay.length === 0 && state.messages && state.messages.length > 0) {
+        // Look for tool calls in the last assistant message
+        for (let i = state.messages.length - 1; i >= 0; i--) {
+          const msg = state.messages[i] as any;
+          if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+            toolsToDisplay = msg.tool_calls.map((tc: any) => ({
+              name: tc.function?.name || tc.name || 'unknown',
+              arguments: tc.function?.arguments ?
+                (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
+                : tc.arguments || {}
+            }));
+            break;
+          }
+        }
+      }
+
+      const toolSummary = toolsToDisplay.length > 0
+        ? toolsToDisplay.map(formatToolCallSummary).join('\n')
+        : 'No tools pending';
 
       const hitlRationale = state.completionSignal?.hitlRationale || 'High-risk operation detected';
       const reasoning = hitlRationale;
@@ -95,7 +115,7 @@ export const buildGraph = (
         timestamp,
         question: "High-risk action detected. Please review and approve:",
         details: {
-          tools: state.pendingToolCalls || [],
+          tools: toolsToDisplay,
           summary: toolSummary,
           reasoning,
         },
@@ -181,7 +201,7 @@ export const buildGraph = (
         const type = answerStr.includes('[HITL_APPROVED_ALWAYS]') ? 'exact' : 'prefix';
 
         // Register policies for all pending tools
-        for (const tc of state.pendingToolCalls || []) {
+        for (const tc of toolsToDisplay) {
           const args = tc.arguments || {};
           let pattern = '';
 

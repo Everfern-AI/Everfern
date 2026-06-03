@@ -216,7 +216,7 @@ export class SchedulerService {
 
       (async () => {
         try {
-          const stream = runner.runStream(task.prompt, [], client.model, conversationId, undefined, task.projectId);
+          const stream = runner.runStream(task.prompt, [], client.model, conversationId, undefined, task.projectId, false, undefined, true);
           for await (const event of stream) {
             // Processing...
           }

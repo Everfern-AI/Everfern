@@ -12,6 +12,38 @@ import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
 
 /* ============================================================
+   ANIMATIONS & STYLES
+   ============================================================ */
+const animationStyles = `
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+// Inject animation styles
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = animationStyles;
+  document.head.appendChild(style);
+}
+
+/* ============================================================
    TYPES
    ============================================================ */
 export const ToolType = {
@@ -933,14 +965,23 @@ export function TerminalView({
           )}
 
           {/* Idle prompt with cursor */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
-            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
-              <span style={{ color: WIN.psPrefix }}>PS </span>
-              <span style={{ color: WIN.psPath }}>C:\&gt;</span>
-              <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
-            </span>
-            <BlinkCursor />
-          </div>
+          {showExit ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
+              <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
+                <span style={{ color: WIN.psPrefix }}>PS </span>
+                <span style={{ color: WIN.psPath }}>C:\&gt;</span>
+                <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
+              </span>
+              <BlinkCursor />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14, color: WIN.textDim, fontSize: 16, fontFamily: monoStack, letterSpacing: '2px' }}>
+              <span style={{ animation: 'pulse 1.5s infinite' }}>.</span>
+              <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.2s' }}>.</span>
+              <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.4s' }}>.</span>
+              <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.6s' }}>.</span>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -983,10 +1024,19 @@ export function TerminalView({
             )}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
-          <PS1 user={user} host={host} path={path} />
-          <BlinkCursor />
-        </div>
+        {showExit ? (
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
+            <PS1 user={user} host={host} path={path} />
+            <BlinkCursor />
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14, color: TERM.textDim, fontSize: 16, fontFamily: monoStack, letterSpacing: '2px' }}>
+            <span style={{ animation: 'pulse 1.5s infinite' }}>.</span>
+            <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.2s' }}>.</span>
+            <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.4s' }}>.</span>
+            <span style={{ animation: 'pulse 1.5s infinite', animationDelay: '0.6s' }}>.</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1172,7 +1222,7 @@ function CollapsibleSection({
   );
 }
 
-function GenericView({ toolName, args, output }: { toolName: string; args?: any; output?: string }) {
+function GenericView({ toolName, args, output, result }: { toolName: string; args?: any; output?: string; result?: any }) {
   const argEntries = Object.entries(args || {});
 
   return (
@@ -1204,17 +1254,49 @@ function GenericView({ toolName, args, output }: { toolName: string; args?: any;
 
         {output && (
           <CollapsibleSection icon={Terminal} label="Output" defaultOpen>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-              <CopyBtn text={output} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                {/* Execution Status Indicator */}
+                <div style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: result?.exitCode === 0 ? T.green : (result?.exitCode ? T.red : T.amber),
+                  animation: !result ? 'pulse 2s infinite' : 'none'
+                }} />
+                <span style={{ fontSize: 11, color: T.textMuted, fontFamily: T.sans }}>
+                  {!result ? 'Running...' : result.exitCode === 0 ? 'Success' : `Exit Code: ${result.exitCode}`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {result?.duration && (
+                  <span style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Clock size={12} /> {(result.duration / 1000).toFixed(2)}s
+                  </span>
+                )}
+                <CopyBtn text={output} />
+              </div>
             </div>
             <div style={{
               margin: 0, fontFamily: T.mono, fontSize: 12, lineHeight: 1.85,
               background: T.inkBg, color: T.inkText,
               padding: '18px 20px', borderRadius: T.r10,
-              border: `1px solid ${T.inkBorder}`, maxHeight: 360, overflowY: 'auto',
+              border: `1px solid ${T.inkBorder}`, maxHeight: 420, overflowY: 'auto',
               boxShadow: '0 1px 3px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.5)',
+              position: 'relative'
             }}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {/* Live Streaming Indicator */}
+              {!result && (
+                <div style={{
+                  position: 'absolute', top: 12, right: 12,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 11, color: T.amber, fontFamily: T.sans,
+                  background: 'rgba(251, 191, 36, 0.1)', padding: '4px 8px',
+                  borderRadius: 4, border: `1px solid rgba(251, 191, 36, 0.2)`
+                }}>
+                  <div style={{ width: 6, height: 6, background: T.amber, borderRadius: '50%', animation: 'pulse 1s infinite' }} />
+                  LIVE
+                </div>
+              )}
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingRight: 60 }}>
                 <code>{output}</code>
               </pre>
             </div>
@@ -1440,7 +1522,7 @@ function extractFileSystemData(tc: any) {
 }
 
 function extractGenericData(tc: any) {
-  return { toolName: tc.toolName, args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+  return { toolName: tc.toolName, args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '', result: tc.result || tc.data || (tc.output ? { exitCode: 0 } : null) };
 }
 
 function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {

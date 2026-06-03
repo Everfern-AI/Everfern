@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { runMigrations } from './migrations/runner';
+import { initializePersistenceTables, migratePersistenceSchema } from '../store/persistence-db';
 
 let instance: sqlite3.Database | null = null;
 let currentVectorDims: number | null = null;
@@ -190,7 +191,12 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
 
     // Run database migrations
     runMigrations()
-      .then(() => {
+      .then(async () => {
+        console.log('[DB] Running persistence table initialization...');
+        // Initialize persistence tables for long-running agentic tasks
+        await initializePersistenceTables();
+        // Run persistence schema migrations (idempotent)
+        await migratePersistenceSchema();
         console.log('[DB] Database initialization complete');
         resolve(db);
       })

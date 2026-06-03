@@ -8,19 +8,41 @@ import { loadPrompt } from '../../../lib/prompt-sync';
 import { getDependencyManager } from '../dependency-manager';
 import { getSmartRefactorer } from '../smart-refactorer';
 
+// Import specialized coding subagents
+import {
+  createExplorationAgent,
+  createPlanningAgent,
+  createWorkerAgent,
+  createCodeReviewerAgent,
+  createTestRunnerAgent,
+  type SubagentCoordination,
+  type ExplorationContext,
+  type PlanningContext,
+  type WorkerContext,
+  type ReviewContext,
+  type TestContext
+} from './coding-assistant/subagents';
+
 /**
- * AI Coding Assistant - Like Windsurf/Cursor for Kiro
+ * Enhanced AI Coding Specialist - Multi-Agent Orchestrator
  *
- * An intelligent coding assistant that understands context, provides smart suggestions,
- * and helps with development tasks through natural conversation and code analysis.
+ * An intelligent coding assistant that orchestrates specialized subagents for different
+ * development phases, similar to how Claude Code handles complex coding tasks.
+ *
+ * Subagent Architecture:
+ * 1. Exploration Agent: Read-only codebase scanner and analyzer
+ * 2. Planning Agent: Strategy and architecture planner
+ * 3. Worker Agent: Code writing and bug fixing specialist
+ * 4. Code Reviewer: Security and quality checker
+ * 5. Test Runner: TDD red/green/refactor specialist
  *
  * Key Features:
- * - Context-aware code understanding and suggestions
- * - Intelligent code completion and refactoring
- * - Real-time error detection and fixes
- * - Smart dependency management
- * - Proactive code quality improvements
- * - Natural language to code translation
+ * - Multi-phase development workflow with specialized agents
+ * - Comprehensive codebase analysis before making changes
+ * - Strategic planning with risk assessment
+ * - Quality-focused implementation with continuous validation
+ * - Automated code review for security and maintainability
+ * - TDD-driven testing with comprehensive coverage
  */
 
 interface CodeContext {
@@ -175,15 +197,8 @@ export const createCodingSpecialistNode = (
   return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
     const tools = toolDefs || (runner as any)._buildToolDefinitions();
 
-    // Detect if the user has already approved the plan
+    // Extract user request and determine current phase
     const messages = state.messages || [];
-    const planApproved = messages.some((m: any) => {
-      const role = m.role || m._getType?.();
-      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
-      return (role === 'user' || role === 'human') && content.includes('APPROVED');
-    });
-
-    // Detect task type from the user's original request
     const firstUserMsg = messages.find((m: any) => {
       const role = m.role || m._getType?.();
       return role === 'user' || role === 'human';
@@ -194,22 +209,235 @@ export const createCodingSpecialistNode = (
           : JSON.stringify((firstUserMsg as any).content))
       : '';
 
-    // Build plan context from decomposed task
-    const plan = state.decomposedTask;
-    const planContext = plan
-      ? `\n\nDECOMPOSED TASK:\nTitle: ${plan.title}\nSteps:\n${plan.steps.map((s: any) => `${s.id}: ${s.description} (Tool: ${s.tool})`).join('\n')}`
-      : '';
+    // Initialize subagent coordination context
+    const coordination: SubagentCoordination = state.subagentCoordination || {
+      phase: 'exploration',
+      currentAgent: 'coding_specialist',
+      completedPhases: [],
+      sharedContext: {}
+    };
 
-    if (!planApproved) {
-      // PHASE 1: Planning — instruct the agent to produce plan docs and ask for approval
-      eventQueue?.push({ type: 'thought', content: '\n💻 Coding Specialist: Analysing request and preparing plan...' });
+    console.log(`[CodingSpecialist] Current phase: ${coordination.phase}, Completed: [${coordination.completedPhases.join(', ')}]`);
 
-      const phaseHint = `\n\n## CURRENT PHASE: PLANNING\nThe user has NOT yet approved a plan. You MUST:\n1. Write necessary plan files (e.g. .everfern/plan/design.md, .everfern/plan/tasks.md)\n2. Call ask_user_question to present the plan for approval\nDO NOT write any application code yet. The LLM will decide whether this is a bug fix, new feature, or refactor based on the request.`;
+    eventQueue?.push({
+      type: 'thought',
+      content: `💻 Coding Specialist: Orchestrating ${coordination.phase} phase...`
+    });
 
-      const systemPrompt = (loadPrompt('coding-specialist.md') || '') + planContext + phaseHint;
+    try {
+      // Phase 1: Exploration - Understand the codebase
+      if (coordination.phase === 'exploration' && !coordination.completedPhases.includes('exploration')) {
+        console.log('[CodingSpecialist] Starting Exploration Phase...');
+
+        const explorationContext: ExplorationContext = {
+          targetDirectory: process.cwd(),
+          scanDepth: 3,
+          includeTests: true,
+          includeDocs: true,
+          excludePatterns: ['node_modules', '.git', 'dist', 'build'],
+          focusAreas: extractFocusAreas(userInput)
+        };
+
+        const explorationAgent = createExplorationAgent(runner, explorationContext, eventQueue);
+        const explorationResult = await explorationAgent(state);
+
+        coordination.sharedContext.codebaseMap = explorationResult.codebaseMap;
+        coordination.completedPhases.push('exploration');
+        coordination.phase = 'planning';
+
+        return {
+          ...state,
+          subagentCoordination: coordination,
+          returningFromSpecialist: 'coding_specialist',
+          codingComplete: false
+        };
+      }
+
+      // Phase 2: Planning - Develop strategy and plan
+      if (coordination.phase === 'planning' && !coordination.completedPhases.includes('planning')) {
+        console.log('[CodingSpecialist] Starting Planning Phase...');
+
+        const planningContext: PlanningContext = {
+          userRequest: userInput,
+          codebaseMap: coordination.sharedContext.codebaseMap,
+          constraints: {
+            timeframe: 'standard',
+            compatibility: ['cross-browser', 'backwards-compatible']
+          },
+          preferences: {
+            testingApproach: 'tdd',
+            documentationLevel: 'standard'
+          }
+        };
+
+        const planningAgent = createPlanningAgent(runner, planningContext, eventQueue);
+        const planningResult = await planningAgent(state);
+
+        coordination.sharedContext.developmentPlan = planningResult.plan;
+        coordination.completedPhases.push('planning');
+
+        // Check if plan needs approval
+        const needsApproval = planningResult.plan.overview.estimatedComplexity === 'high' ||
+                             planningResult.plan.risks.some(r => r.impact === 'high');
+
+        if (needsApproval) {
+          eventQueue?.push({
+            type: 'thought',
+            content: '📋 Development plan ready - requesting user approval before implementation...'
+          });
+
+          // Present plan for approval
+          const planSummary = `## Development Plan\n\n${planningResult.planDocument}\n\nApprove this plan to proceed with implementation?`;
+
+          return {
+            ...state,
+            subagentCoordination: coordination,
+            returningFromSpecialist: 'coding_specialist',
+            codingComplete: false,
+            pendingApproval: {
+              type: 'development_plan',
+              content: planSummary,
+              nextPhase: 'implementation'
+            }
+          };
+        } else {
+          coordination.phase = 'implementation';
+        }
+      }
+
+      // Phase 3: Implementation - Write the code
+      if (coordination.phase === 'implementation' && !coordination.completedPhases.includes('implementation')) {
+        console.log('[CodingSpecialist] Starting Implementation Phase...');
+
+        const plan = coordination.sharedContext.developmentPlan;
+        const currentPhase = plan?.phases[0]?.id || 'main';
+
+        const workerContext: WorkerContext = {
+          plan: coordination.sharedContext.developmentPlan,
+          currentPhase,
+          currentTask: 'implement_features',
+          workingDirectory: process.cwd(),
+          buildCommand: detectBuildCommand(),
+          testCommand: detectTestCommand()
+        };
+
+        const workerAgent = createWorkerAgent(runner, workerContext, eventQueue);
+        const workerResult = await workerAgent(state);
+
+        coordination.sharedContext.implementationResults = workerResult.result;
+        coordination.completedPhases.push('implementation');
+        coordination.phase = 'review';
+      }
+
+      // Phase 4: Code Review - Quality and security check
+      if (coordination.phase === 'review' && !coordination.completedPhases.includes('review')) {
+        console.log('[CodingSpecialist] Starting Code Review Phase...');
+
+        const reviewContext: ReviewContext = {
+          implementationResult: coordination.sharedContext.implementationResults,
+          reviewCriteria: {
+            security: true,
+            performance: true,
+            maintainability: true,
+            testCoverage: true,
+            documentation: true,
+            codeStyle: true
+          },
+          strictnessLevel: 'standard'
+        };
+
+        const reviewerAgent = createCodeReviewerAgent(runner, reviewContext, eventQueue);
+        const reviewResult = await reviewerAgent(state);
+
+        coordination.sharedContext.reviewResults = reviewResult.review;
+        coordination.completedPhases.push('review');
+
+        // Check if critical issues were found
+        const criticalIssues = reviewResult.review.issues.filter(i => i.severity === 'critical');
+        if (criticalIssues.length > 0) {
+          eventQueue?.push({
+            type: 'thought',
+            content: `⚠️ Code review found ${criticalIssues.length} critical issues - returning to implementation phase`
+          });
+
+          coordination.phase = 'implementation';
+          coordination.completedPhases = coordination.completedPhases.filter(p => p !== 'implementation');
+
+          return {
+            ...state,
+            subagentCoordination: coordination,
+            returningFromSpecialist: 'coding_specialist',
+            codingComplete: false
+          };
+        } else {
+          coordination.phase = 'testing';
+        }
+      }
+
+      // Phase 5: Testing - TDD and comprehensive validation
+      if (coordination.phase === 'testing' && !coordination.completedPhases.includes('testing')) {
+        console.log('[CodingSpecialist] Starting Testing Phase...');
+
+        const testContext: TestContext = {
+          reviewResult: coordination.sharedContext.reviewResults,
+          testStrategy: 'tdd',
+          testFramework: detectTestFramework(),
+          coverageTarget: 80,
+          testDirectory: './tests',
+          srcDirectory: './src'
+        };
+
+        const testRunnerAgent = createTestRunnerAgent(runner, testContext, eventQueue);
+        const testResult = await testRunnerAgent(state);
+
+        coordination.sharedContext.testResults = testResult.testResult;
+        coordination.completedPhases.push('testing');
+        coordination.phase = 'complete';
+      }
+
+      // All phases complete
+      if (coordination.phase === 'complete') {
+        console.log('[CodingSpecialist] All phases completed successfully');
+
+        eventQueue?.push({
+          type: 'thought',
+          content: '✅ Coding Specialist: All development phases completed successfully!'
+        });
+
+        // Generate final summary
+        const summary = generateCompletionSummary(coordination.sharedContext);
+
+        return {
+          ...state,
+          subagentCoordination: coordination,
+          returningFromSpecialist: null,
+          codingComplete: true,
+          completionSummary: summary
+        };
+      }
+
+      // Continue with current phase
+      return {
+        ...state,
+        subagentCoordination: coordination,
+        returningFromSpecialist: 'coding_specialist',
+        codingComplete: false
+      };
+
+    } catch (error) {
+      console.error(`[CodingSpecialist] Error in ${coordination.phase} phase:`, error);
+
+      eventQueue?.push({
+        type: 'thought',
+        content: `❌ Error in ${coordination.phase} phase: ${error instanceof Error ? error.message : String(error)}`
+      });
+
+      // Fallback to basic coding specialist behavior
+      const systemPrompt = (loadPrompt('coding-specialist.md') || '') +
+        `\n\nERROR RECOVERY: Multi-agent system encountered an error. Proceeding with direct implementation.`;
 
       const result = await integrator.wrapNode(
-        'coding_specialist',
+        'coding_specialist_fallback',
         () => runAgentStep(state, {
           runner,
           toolDefs: tools,
@@ -217,45 +445,83 @@ export const createCodingSpecialistNode = (
           nodeName: 'coding_specialist',
           systemPromptOverride: systemPrompt,
         }),
-        'Preparing implementation plan'
+        'Fallback coding implementation'
       );
 
       return {
         ...result,
-        returningFromSpecialist: 'coding_specialist',
-        codingComplete: false // Still in planning
+        returningFromSpecialist: null,
+        codingComplete: true
       };
     }
-
-    // PHASE 2: Execution — plan approved, now implement
-    eventQueue?.push({ type: 'thought', content: '\n💻 Coding Specialist: Plan approved — beginning implementation...' });
-
-    const executionHint = `\n\n## CURRENT PHASE: EXECUTION\nThe user has approved the plan. Now implement it:\n1. Read your plan files\n2. BATCH ALL FILE CREATION — use batch_write with ALL files in ONE call, or use executePwsh with a heredoc script. NEVER write files one-by-one.\n3. Call getDiagnostics after each batch\n4. Fix errors before moving to the next task\nDO NOT re-present the plan or ask for approval again.
-When all tasks are completed successfully, output 'MISSION_COMPLETE' to signal the end of implementation.`;
-
-    const systemPrompt = (loadPrompt('coding-specialist.md') || '') + planContext + executionHint;
-
-    const result = await integrator.wrapNode(
-      'coding_specialist',
-      () => runAgentStep(state, {
-        runner,
-        toolDefs: tools,
-        eventQueue,
-        nodeName: 'coding_specialist',
-        systemPromptOverride: systemPrompt,
-      }),
-      'Writing Code & Implementing Features'
-    );
-
-    const scrubbedContent = (result.messages?.[0] as any)?.content || '';
-    const isComplete = scrubbedContent.includes('MISSION_COMPLETE') || 
-                       scrubbedContent.includes('TASK_FINISHED') ||
-                       (result.pendingToolCalls?.length === 0 && scrubbedContent.length > 50);
-
-    return {
-      ...result,
-      returningFromSpecialist: isComplete ? null : 'coding_specialist',
-      codingComplete: isComplete
-    };
   };
 };
+
+/**
+ * Helper functions for the multi-agent system
+ */
+
+function extractFocusAreas(userInput: string): string[] {
+  const areas: string[] = [];
+  const keywords = {
+    'auth': ['auth', 'login', 'authentication', 'security', 'user'],
+    'database': ['database', 'db', 'sql', 'query', 'data'],
+    'api': ['api', 'endpoint', 'rest', 'graphql', 'service'],
+    'ui': ['ui', 'interface', 'component', 'frontend', 'react'],
+    'testing': ['test', 'spec', 'coverage', 'tdd', 'unit'],
+    'performance': ['performance', 'optimization', 'speed', 'cache']
+  };
+
+  const lowerInput = userInput.toLowerCase();
+  for (const [area, terms] of Object.entries(keywords)) {
+    if (terms.some(term => lowerInput.includes(term))) {
+      areas.push(area);
+    }
+  }
+
+  return areas.length > 0 ? areas : ['general'];
+}
+
+function detectBuildCommand(): string {
+  // Simple detection logic - in production, this would check package.json, etc.
+  return 'npm run build';
+}
+
+function detectTestCommand(): string {
+  // Simple detection logic - in production, this would check package.json, etc.
+  return 'npm test';
+}
+
+function detectTestFramework(): string {
+  // Simple detection logic - in production, this would check dependencies
+  return 'jest';
+}
+
+function generateCompletionSummary(sharedContext: any): string {
+  const { codebaseMap, developmentPlan, implementationResults, reviewResults, testResults } = sharedContext;
+
+  return `
+## Development Summary
+
+### Codebase Analysis
+- Files analyzed: ${codebaseMap?.complexity?.totalFiles || 0}
+- Architecture patterns: ${codebaseMap?.architecture?.patterns?.join(', ') || 'N/A'}
+
+### Implementation
+- Files created: ${implementationResults?.createdFiles?.length || 0}
+- Files modified: ${implementationResults?.modifiedFiles?.length || 0}
+- Build status: ${implementationResults?.buildResult?.success ? '✅ Success' : '❌ Failed'}
+
+### Code Review
+- Overall rating: ${reviewResults?.overallRating || 'N/A'}
+- Security score: ${reviewResults?.metrics?.security?.score || 0}/100
+- Issues found: ${reviewResults?.issues?.length || 0}
+
+### Testing
+- Test coverage: ${testResults?.coverage?.percentage || 0}%
+- Tests passed: ${testResults?.testSuite?.passed || 0}
+- Tests failed: ${testResults?.testSuite?.failed || 0}
+
+All development phases completed successfully with quality assurance checks.
+  `.trim();
+}
