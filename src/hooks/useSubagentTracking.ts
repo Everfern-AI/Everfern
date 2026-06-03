@@ -191,8 +191,10 @@ export function useSubagentTracking(conversationId: string | null) {
 
     // Computed
     totalDuration:
-      state.phases.length > 0 && state.phases[state.phases.length - 1].endTime
-        ? state.phases[state.phases.length - 1].endTime - state.phases[0].startTime
+      state.phases.length > 0 &&
+      state.phases[state.phases.length - 1].endTime &&
+      state.phases[0].startTime
+        ? state.phases[state.phases.length - 1].endTime! - state.phases[0].startTime!
         : 0,
   };
 }

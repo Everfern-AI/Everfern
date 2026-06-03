@@ -492,6 +492,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getConfigs: (workspaceRoot?: string) => ipcRenderer.invoke('openclaw:get-configs', workspaceRoot),
     saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => ipcRenderer.invoke('openclaw:save-configs', configs),
   },
+
+  // ── Analytics ──────────────────────────────────────────────────────
+  analytics: {
+    getSummary: () => ipcRenderer.invoke('analytics:get-summary'),
+    getModelPricing: () => ipcRenderer.invoke('analytics:get-model-pricing'),
+    getModelInfo: (modelId: string) => ipcRenderer.invoke('analytics:get-model-info', modelId),
+    recordUsage: (params: { conversationId?: string; model: string; provider: string; promptTokens: number; completionTokens: number }) =>
+      ipcRenderer.invoke('analytics:record-usage', params),
+  },
 });
 
 // ── Tool Settings Types ────────────────────────────────────────────
@@ -747,5 +756,11 @@ export type ElectronAPI = {
   openclaw: {
     getConfigs: (workspaceRoot?: string) => Promise<{ soul: string; agents: string }>;
     saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => Promise<{ success: boolean; error?: string }>;
+  };
+  analytics: {
+    getSummary: () => Promise<{ success: boolean; data?: any; error?: string }>;
+    getModelPricing: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
+    getModelInfo: (modelId: string) => Promise<{ success: boolean; data?: { contextWindow: number; inputCostPer1M: number; outputCostPer1M: number }; error?: string }>;
+    recordUsage: (params: { conversationId?: string; model: string; provider: string; promptTokens: number; completionTokens: number }) => Promise<{ success: boolean; error?: string }>;
   };
 };

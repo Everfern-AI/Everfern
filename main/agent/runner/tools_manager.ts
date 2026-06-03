@@ -18,7 +18,6 @@ import { createArtifactTool } from '../tools/create-artifact';
 import { editArtifactTool } from '../tools/edit-artifact';
 import { visualizeTool } from '../tools/visualize';
 import { pptxGeneratorTool } from '../tools/pptx-generator';
-import { batchWriteTool } from '../tools/batch-write';
 import { sendDiscordMessageTool, sendTelegramMessageTool } from '../tools/messaging';
 import { createScheduledTaskTool, listScheduledTasksTool, deleteScheduledTaskTool } from '../tools/scheduled-tasks';
 import { mcpRegistry } from '../tools/mcp';
@@ -27,6 +26,7 @@ import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
+import { previewLiveUrlTool } from '../tools/preview-live-url';
 import * as os from 'os';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
@@ -117,7 +117,6 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     searchMcpRegistryTool,
     connectMcpServerTool,
     listMcpToolsTool,
-    batchWriteTool,
     createArtifactTool(runner),
     editArtifactTool(runner),
     visualizeTool,
@@ -130,6 +129,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     rememberFactTool,
     recallFactTool,
     updateProfileTool,
+    previewLiveUrlTool,
   );
 
   // Add dynamically connected MCP tools

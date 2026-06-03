@@ -372,7 +372,7 @@ export class AIClient {
     if (this.config.vlm) return false;
     if (this.config.provider === 'everfern') return true;
     const modelName = this.config.model?.toLowerCase() || '';
-    const visionKeywords = ['vision', 'image', 'vl-', 'vl:'];
+    const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
     if (this.config.provider === 'anthropic') return true;
     if (this.config.provider === 'gemini') return true;
@@ -591,17 +591,18 @@ export class AIClient {
         }
       }
 
+      // Flatten assistant/system messages to prevent format errors on strict APIs (Nvidia, Ollama Cloud, etc.)
+      if (m.role === 'assistant' || m.role === 'system') {
+        content = typeof m.content === 'string'
+          ? m.content
+          : m.content.filter(c => c.type === 'text').map(c => 'text' in c ? c.text : '').join('\n');
+      }
+
       // Nvidia NIM/OpenAI strict validation:
       if (this.config.provider === 'nvidia') {
-        // Flatten assistant/system messages as before to prevent format errors
-        if (m.role === 'assistant' || m.role === 'system') {
-          content = typeof m.content === 'string'
-            ? m.content
-            : m.content.filter(c => c.type === 'text').map(c => 'text' in c ? c.text : '').join('\n');
-        }
         // Tool responses CANNOT contain image_url blocks in strict OpenAI schemas (like NIM).
         // We must defer the image into a subsequent user message AFTER all tools.
-        else if (m.role === 'tool' && Array.isArray(m.content)) {
+        if (m.role === 'tool' && Array.isArray(m.content)) {
           const hasImages = m.content.some(c => c.type === 'image_url');
           if (hasImages) {
             const textContent = m.content.filter(c => c.type === 'text').map(c => 'text' in c ? c.text : '').join('\n');

@@ -462,15 +462,31 @@ export class AgentRunner {
         // Try to find the request ID from state manager
         const state = stateManager.getState(convId);
         const interruptData = stateManager.getInterruptData(convId);
+        let requestId = (interruptData as any)?.id;
 
-        if (interruptData && (interruptData as any).id) {
+        if (!requestId) {
+          // Fallback: get the most recent pending HITL record from disk
+          try {
+            const { listHitlRecords } = await import('../../store/hitl');
+            const records = listHitlRecords(convId);
+            const pending = records.find(r => r.status === 'pending');
+            if (pending) {
+              requestId = pending.request.id;
+              console.log(`[Runner] Falling back to disk pending request ID: ${requestId}`);
+            }
+          } catch (diskErr) {
+            console.warn('[Runner] Failed to read pending HITL records from disk:', diskErr);
+          }
+        }
+
+        if (requestId) {
           const { saveHitlResponse } = await import('../../store/hitl');
           const responseId = crypto.randomUUID();
           const timestamp = new Date().toISOString();
 
           saveHitlResponse({
             id: responseId,
-            requestId: (interruptData as any).id,
+            requestId,
             conversationId: convId,
             timestamp,
             approved,
@@ -478,6 +494,8 @@ export class AgentRunner {
           });
 
           console.log(`[Runner] HITL response saved: ${responseId} (${approved ? 'approved' : 'rejected'})`);
+        } else {
+          console.warn('[Runner] No pending HITL request ID found to resolve.');
         }
       }
 

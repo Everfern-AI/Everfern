@@ -46,6 +46,26 @@ export const terminalTool: AgentTool = {
 
     const info = await registry.execute(id, command, cwd, timeoutMs, target);
 
+    try {
+      const { getAgentContext } = require('../pi-tools');
+      const { getRollbackManager } = require('../../persistence/rollback-manager');
+      const { taskId, stepNumber } = getAgentContext();
+      if (taskId && stepNumber !== undefined) {
+        const rollbackManager = getRollbackManager();
+        await rollbackManager.initialize();
+        const exitCode = info.exitCode ?? (info.status === 'completed' ? 0 : 1);
+        await rollbackManager.trackCommandExecution(
+          command,
+          info.output || '',
+          exitCode,
+          taskId,
+          stepNumber
+        );
+      }
+    } catch (trackError) {
+      console.warn(`[terminalTool] Failed to track command execution: ${command}`, trackError);
+    }
+
     if (info.status === 'completed') {
       return {
         success: true,

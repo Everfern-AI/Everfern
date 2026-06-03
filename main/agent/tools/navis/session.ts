@@ -35,6 +35,28 @@ interface ChromeProfileLaunchConfig {
   profileDirectory: string;
 }
 
+function copyEssentialProfileItem(src: string, dest: string): void {
+  try {
+    if (!fs.existsSync(src)) return;
+    const stat = fs.statSync(src);
+    if (stat.isDirectory()) {
+      fs.mkdirSync(dest, { recursive: true });
+      const entries = fs.readdirSync(src);
+      for (const entry of entries) {
+        // Skip heavy directories that aren't related to session / logins
+        if (entry === 'Cache' || entry === 'Code Cache' || entry === 'GPUCache' || entry === 'Service Worker' || entry === 'WebStorage' || entry === 'BrowserMetrics') {
+          continue;
+        }
+        copyEssentialProfileItem(path.join(src, entry), path.join(dest, entry));
+      }
+    } else {
+      fs.copyFileSync(src, dest);
+    }
+  } catch (err) {
+    console.warn(`[Navis] Warning: failed to copy profile item ${src}:`, err);
+  }
+}
+
 function getChromeProfileLaunchConfig(): ChromeProfileLaunchConfig {
   const home = os.homedir();
 
@@ -47,6 +69,10 @@ function getChromeProfileLaunchConfig(): ChromeProfileLaunchConfig {
           },
           {
             executablePath: path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
+          },
+          {
+            executablePath: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'Application', 'chrome.exe'),
             userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
           },
         ]
@@ -165,6 +191,7 @@ export class BrowserSession {
   private context: BrowserContext | null = null;
   private activePage: Page | null = null;
   private logger: NavisLogger | null = null;
+  private tempUserDataDir: string | null = null;
 
   setActivePage(page: Page) {
     this.activePage = page;
@@ -199,12 +226,6 @@ export class BrowserSession {
 
     // Always launch fresh browser
     try {
-      const chromeProfile = useChromeProfile ? getChromeProfileLaunchConfig() : null;
-      const executablePath = chromeProfile?.executablePath || findChromiumExecutable() || undefined;
-      if (executablePath) {
-        console.log(`[Navis] Using Chromium executable: ${executablePath}`);
-      }
-
       const launchArgs = [
         '--no-sandbox',
         '--disable-dev-shm-usage',
@@ -228,25 +249,133 @@ export class BrowserSession {
         '--window-size=1280,1024',
       ];
 
-      if (chromeProfile) {
-        const extensionDir = ensureNavisTabGroupExtension();
-        launchArgs.push(
-          `--profile-directory=${chromeProfile.profileDirectory}`,
-          `--load-extension=${extensionDir}`,
-          '--no-startup-window',
-        );
+      if (useChromeProfile) {
+        try {
+          const chromeProfile = getChromeProfileLaunchConfig();
+          const executablePath = chromeProfile.executablePath || findChromiumExecutable() || undefined;
+          if (executablePath) {
+            console.log(`[Navis] Using Chromium executable: ${executablePath}`);
+          }
 
-        this.context = await chromium.launchPersistentContext(chromeProfile.userDataDir, {
-          headless: false,
-          executablePath,
-          args: launchArgs,
-          viewport: { width: 1280, height: 1024 },
-          userAgent: realUA,
-          locale: 'en-US',
-          timezoneId: 'America/New_York',
-        });
-        this.browser = this.context.browser();
+          const profileLaunchArgs = [
+            ...launchArgs,
+            `--profile-directory=${chromeProfile.profileDirectory}`,
+            `--load-extension=${ensureNavisTabGroupExtension()}`,
+          ];
+
+          let finalUserDataDir = chromeProfile.userDataDir;
+
+          try {
+            console.log(`[Navis] Attempting to launch with Chrome profile directly...`);
+            this.context = await chromium.launchPersistentContext(finalUserDataDir, {
+              headless,
+              executablePath,
+              args: profileLaunchArgs,
+              viewport: { width: 1280, height: 1024 },
+              userAgent: realUA,
+              locale: 'en-US',
+              timezoneId: 'America/New_York',
+            });
+          } catch (launchErr: any) {
+            console.warn(`[Navis] Failed to launch with direct Chrome profile (usually because Chrome is running): ${launchErr.message}`);
+            console.log(`[Navis] Falling back to launching with a copied temporary Chrome profile...`);
+
+            // Create temporary copy of the profile to bypass locks
+            const tempUserDataDir = path.join(os.tmpdir(), `everfern-navis-chrome-profile-${Date.now()}`);
+            const srcProfileDir = path.join(chromeProfile.userDataDir, chromeProfile.profileDirectory);
+            const destProfileDir = path.join(tempUserDataDir, chromeProfile.profileDirectory);
+
+            console.log(`[Navis] Copying profile files from ${srcProfileDir} to ${destProfileDir}...`);
+            try {
+              fs.mkdirSync(destProfileDir, { recursive: true });
+              
+              // Copy essential session & cookie files/dirs
+              const essentials = [
+                'Preferences',
+                'Secure Preferences',
+                'Login Data',
+                'Cookies',
+                'Network',
+                'Local Storage',
+                'Session Storage',
+              ];
+
+              for (const item of essentials) {
+                const srcPath = path.join(srcProfileDir, item);
+                const destPath = path.join(destProfileDir, item);
+                copyEssentialProfileItem(srcPath, destPath);
+              }
+
+              // Copy Local State from user data dir root to temp user data dir root (crucial for DPAPI decrypting cookies/logins on Windows)
+              const srcLocalState = path.join(chromeProfile.userDataDir, 'Local State');
+              const destLocalState = path.join(tempUserDataDir, 'Local State');
+              if (fs.existsSync(srcLocalState)) {
+                try {
+                  fs.copyFileSync(srcLocalState, destLocalState);
+                  console.log(`[Navis] Copied Local State file to ${destLocalState}`);
+                } catch (localStateErr) {
+                  console.warn(`[Navis] Warning: failed to copy Local State:`, localStateErr);
+                }
+              }
+
+              // Remove any lock files in the destination to ensure clean launch
+              const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile'];
+              for (const lockFile of lockFiles) {
+                const lockPath = path.join(tempUserDataDir, lockFile);
+                if (fs.existsSync(lockPath)) {
+                  try { fs.unlinkSync(lockPath); } catch {}
+                }
+                const lockPathProfile = path.join(destProfileDir, lockFile);
+                if (fs.existsSync(lockPathProfile)) {
+                  try { fs.unlinkSync(lockPathProfile); } catch {}
+                }
+              }
+
+              finalUserDataDir = tempUserDataDir;
+              this.tempUserDataDir = tempUserDataDir;
+
+              console.log(`[Navis] Launching Playwright with temporary profile: ${finalUserDataDir}`);
+              this.context = await chromium.launchPersistentContext(finalUserDataDir, {
+                headless,
+                executablePath,
+                args: profileLaunchArgs,
+                viewport: { width: 1280, height: 1024 },
+                userAgent: realUA,
+                locale: 'en-US',
+                timezoneId: 'America/New_York',
+              });
+            } catch (copyErr: any) {
+              console.error(`[Navis] Failed to copy temporary profile: ${copyErr.message}`);
+              throw copyErr; // Rethrow to fall back to clean standard Chromium launch below
+            }
+          }
+        } catch (chromeProfileErr: any) {
+          console.warn(`[Navis] Chrome profile setup/launch failed completely: ${chromeProfileErr.message}`);
+          console.log(`[Navis] Falling back to fresh Chromium context...`);
+
+          this.browser = await chromium.launch({
+            headless: false,
+            executablePath: findChromiumExecutable() || undefined,
+            args: launchArgs,
+          });
+
+          this.context = await this.browser.newContext({
+            viewport: { width: 1280, height: 1024 },
+            userAgent: realUA,
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
+          });
+        }
+
+        if (this.context) {
+          this.browser = this.context.browser();
+        }
       } else {
+        const executablePath = findChromiumExecutable() || undefined;
+        if (executablePath) {
+          console.log(`[Navis] Using Chromium executable: ${executablePath}`);
+        }
+
         this.browser = await chromium.launch({
           headless,
           executablePath,
@@ -468,6 +597,18 @@ export class BrowserSession {
 
       // Clear active page reference
       this.activePage = null;
+
+      // Clean up temporary user data directory if it was created
+      if (this.tempUserDataDir && fs.existsSync(this.tempUserDataDir)) {
+        console.log(`[Navis] 🔴 Cleaning up temporary Chrome profile: ${this.tempUserDataDir}`);
+        try {
+          fs.rmSync(this.tempUserDataDir, { recursive: true, force: true });
+          console.log('[Navis] ✅ Temporary Chrome profile cleaned up');
+        } catch (rmErr) {
+          console.warn('[Navis] ⚠️ Failed to delete temporary Chrome profile folder:', rmErr);
+        }
+        this.tempUserDataDir = null;
+      }
 
       const totalCloseTime = Date.now() - closeStartTime;
       console.log(`[Navis] ✅ CLOSURE COMPLETE - Total cleanup time: ${totalCloseTime}ms`);

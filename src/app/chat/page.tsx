@@ -4158,8 +4158,8 @@ export default function ChatPage() {
                                                     );
                                                 })()}
 
-                                                {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && (
-                                                    <LoadingBreadcrumb text={isDebating ? "AI agents are debating for you.." : getNodeDisplayName(currentNode)} />
+                                                {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && !isDebating && (
+                                                    <LoadingBreadcrumb text={getNodeDisplayName(currentNode)} />
                                                 )}
                                                 {(activeUserQuestions.length > 0 || showHitlApproval) && (
                                                     <div style={{

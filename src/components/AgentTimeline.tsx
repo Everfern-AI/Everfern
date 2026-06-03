@@ -25,6 +25,7 @@ import {
 import type { SubAgentProgressEvent } from "./types";
 import type { MissionTimeline as MissionTimelineType, MissionStep } from "./MissionTimeline";
 import { ReasoningBlock } from "./ReasoningComponents";
+import { InlineDebateProgress } from "./InlineDebateProgress";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ToolCallDisplay {
@@ -762,6 +763,8 @@ export const AgentTimeline = ({
     generatedTitle,
     onPillClick,
     subAgentProgress,
+    debateData,
+    isDebating,
 }: AgentTimelineProps) => {
     // Elapsed time
     const startTime = useRef(new Date());
@@ -876,6 +879,16 @@ export const AgentTimeline = ({
                     </span>
                 )}
             </div>
+
+            {/* ── Debate Progress ── */}
+            {(isDebating || debateData) && (
+                <div style={{ margin: "0 0 16px 0" }}>
+                    <InlineDebateProgress
+                        debate={debateData}
+                        isDebating={!!isDebating}
+                    />
+                </div>
+            )}
 
             {/* ── Narrative / overview (Reasoning Block) ── */}
             {narrative && (

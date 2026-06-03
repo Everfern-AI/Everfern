@@ -178,7 +178,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
    ============================================================ */
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; color: string; icon: React.ComponentType; text: string }> = {
+  const config: Record<string, { bg: string; color: string; icon: React.ComponentType<{ size?: number }>; text: string }> = {
     pending: { bg: T.surfaceRaised, color: T.textMuted, icon: Clock, text: 'Pending' },
     executing: { bg: T.blueFaint, color: T.blue, icon: Zap, text: 'Executing' },
     completed: { bg: T.greenFaint, color: T.green, icon: CheckCircle, text: 'Completed' },
@@ -222,7 +222,7 @@ export function ToolCallDetailPane({
 }) {
   const [activeTab, setActiveTab] = useState<'input' | 'output' | 'timeline'>('input');
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
-  const isWriteOrEdit = ['write', 'edit', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file'].includes(toolCall.toolName.toLowerCase());
+  const isCodeOrFileViewer = ['write', 'edit', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file', 'read', 'read_file', 'view_file'].includes(toolCall.toolName.toLowerCase());
 
   return (
     <motion.div
@@ -346,7 +346,7 @@ export function ToolCallDetailPane({
       </div>
 
       {/* Tabs / Code Editor content */}
-      {isWriteOrEdit ? (
+      {isCodeOrFileViewer ? (
         <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <CodeEditorPreview toolCall={toolCall} />
         </div>
@@ -523,10 +523,14 @@ export function ToolCallDetailPane({
    ============================================================ */
 
 function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
-  const args = toolCall.arguments || {};
-  const filePath = args.path || args.TargetFile || args.filePath || args.file || 'unknown_file';
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const filePath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || 'unknown_file';
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
-  const isWrite = ['write', 'write_file', 'write_to_file'].includes(toolCall.toolName.toLowerCase());
+  
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  const isWrite = ['write', 'write_file', 'write_to_file'].includes(toolNameLower);
+  const isEdit = ['edit', 'edit_file', 'replace_file_content', 'multi_replace_file_content'].includes(toolNameLower);
+  const isRead = ['read', 'read_file', 'view_file'].includes(toolNameLower);
 
   interface CodeLine {
     text: string;
@@ -536,16 +540,56 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   let codeLines: CodeLine[] = [];
 
   if (isWrite) {
-    const content = args.content || args.CodeContent || '';
+    const content = args.content || args.text || args.CodeContent || '';
     const lines = typeof content === 'string' ? content.split('\n') : [];
     codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
+  } else if (isRead) {
+    let outputText = '';
+    if (toolCall.result) {
+      if (typeof toolCall.result === 'string') {
+        outputText = toolCall.result;
+      } else if (typeof toolCall.result.output === 'string') {
+        outputText = toolCall.result.output;
+      } else if (Array.isArray(toolCall.result.content)) {
+        outputText = toolCall.result.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n');
+      } else {
+        outputText = JSON.stringify(toolCall.result);
+      }
+    } else if (toolCall.status === 'executing' || toolCall.status === 'pending') {
+      outputText = 'Reading file contents...';
+    } else if (toolCall.error) {
+      outputText = `Error reading file: ${toolCall.error}`;
+    }
+    const lines = outputText.split('\n');
+    codeLines = lines.map(line => ({ text: line, type: 'normal' as const }));
   } else {
     // Edit tool
     const findStr = args.find || args.TargetContent || '';
     const replaceStr = args.replace || args.ReplacementContent || args.insert || '';
     const chunks = args.ReplacementChunks || [];
 
-    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+    if (args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
+      args.edits.forEach((edit: any, idx: number) => {
+        if (idx > 0) {
+          codeLines.push({ text: '...', type: 'normal' });
+        }
+        const oldText = edit.oldText || '';
+        const newText = edit.newText || '';
+        if (oldText) {
+          oldText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'removed' });
+          });
+        }
+        if (newText) {
+          newText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'added' });
+          });
+        }
+      });
+    } else if (chunks && Array.isArray(chunks) && chunks.length > 0) {
       chunks.forEach((chunk: any, idx: number) => {
         if (idx > 0) {
           codeLines.push({ text: '...', type: 'normal' });
@@ -634,8 +678,8 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
           <span>{fileName}</span>
         </div>
 
-        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans }}>
-          {isWrite ? 'WRITE' : 'EDIT'}
+        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase' }}>
+          {isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
         </div>
       </div>
 

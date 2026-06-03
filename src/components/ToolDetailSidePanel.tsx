@@ -23,6 +23,7 @@ export const ToolType = {
   SKILL: 'skill',
   FILE_SYSTEM: 'file_system',
   FILE_EDITOR: 'file_editor',
+  LIVE_PREVIEW: 'live_preview',
   GENERIC: 'generic',
 };
 
@@ -55,6 +56,9 @@ const T = {
   greenFaint: 'rgba(34,197,94,0.08)',
   red: '#ef4444',
   redFaint: 'rgba(239,68,68,0.07)',
+  amber: '#f59e0b',
+  blue: '#3b82f6',
+  blueFaint: 'rgba(59,130,246,0.08)',
 
   // Radius
   r4: 4, r6: 6, r8: 8, r10: 10, r12: 12, r14: 14, r16: 16,
@@ -71,11 +75,12 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (!toolName) return ToolType.GENERIC;
   const n = toolName.toLowerCase();
   if (n === 'skill') return ToolType.SKILL;
+  if (n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
-  if (n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
-  if (n.includes('read_file') || n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
+  if (n === 'read' || n === 'read_file' || n === 'view_file' || n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
+  if (n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   return ToolType.GENERIC;
 }
 
@@ -95,6 +100,7 @@ export function getFaviconUrl(domain: string): string {
 function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
   if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
+  if (n.includes('preview_live_url')) return { Icon: Globe, label: 'Live Preview' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
@@ -920,11 +926,17 @@ function TerminalAnsiOutput({
 function PS1({ user = 'ubuntu', host = 'localhost', path = '~' }: { user?: string; host?: string; path?: string }) {
   return (
     <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
-      <span style={{ color: TERM.psUser }}>{user}</span>
-      <span style={{ color: TERM.psAt }}>@</span>
-      <span style={{ color: TERM.psHost }}>{host}</span>
-      <span style={{ color: TERM.psSep }}>:</span>
-      <span style={{ color: TERM.psPath }}>{path}</span>
+      {path !== '~' ? (
+        <span style={{ color: TERM.psPath }}>{path}</span>
+      ) : (
+        <>
+          <span style={{ color: TERM.psUser }}>{user}</span>
+          <span style={{ color: TERM.psAt }}>@</span>
+          <span style={{ color: TERM.psHost }}>{host}</span>
+          <span style={{ color: TERM.psSep }}>:</span>
+          <span style={{ color: TERM.psPath }}>{path}</span>
+        </>
+      )}
       <span style={{ color: TERM.psDollar, margin: '0 8px 0 4px' }}>$</span>
     </span>
   );
@@ -950,12 +962,14 @@ export function TerminalView({
   exitCode,
   duration,
   shellType,
+  cwd,
 }: {
   command: string;
   output: string;
   exitCode?: number;
   duration?: number;
   shellType?: 'windows' | 'linux';
+  cwd?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
   const hasOutput = hasVisibleTerminalOutput(output);
@@ -989,7 +1003,7 @@ export function TerminalView({
           <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
             <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
               <span style={{ color: WIN.psPrefix }}>PS </span>
-              <span style={{ color: WIN.psPath }}>C:\&gt;</span>
+              <span style={{ color: WIN.psPath }}>{cwd || 'C:\\'}</span>
               <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
             </span>
             <code style={{ fontSize: 13, color: WIN.textCmd, lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
@@ -1020,7 +1034,7 @@ export function TerminalView({
           <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
             <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
               <span style={{ color: WIN.psPrefix }}>PS </span>
-              <span style={{ color: WIN.psPath }}>C:\&gt;</span>
+              <span style={{ color: WIN.psPath }}>{cwd || 'C:\\'}</span>
               <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
             </span>
             <BlinkCursor />
@@ -1033,7 +1047,7 @@ export function TerminalView({
   // ── Linux Terminal Style (original) ──
   const user = 'ubuntu';
   const host = 'localhost';
-  const path = '~';
+  const path = cwd || '~';
 
   return (
     <TerminalChrome title="Terminal" tint="#5af78e">
@@ -1155,6 +1169,178 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
         </p>
       )}
     </motion.article>
+  );
+}
+
+/* ============================================================
+   LIVE PREVIEW VIEW
+   ============================================================ */
+function extractLivePreviewData(tc: any) {
+  const url = tc.args?.url || tc.data?.url || tc.output || '';
+  return { url };
+}
+
+function LivePreviewView({ url }: { url: string }) {
+  const [currentUrl, setCurrentUrl] = useState(url);
+  const [iframeUrl, setIframeUrl] = useState(url);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    setCurrentUrl(url);
+    setIframeUrl(url);
+  }, [url]);
+
+  const handleReload = () => {
+    if (iframeRef.current) {
+      iframeRef.current.src = iframeUrl;
+    }
+  };
+
+  const handleNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    let target = currentUrl.trim();
+    if (target && !/^https?:\/\//i.test(target)) {
+      target = 'http://' + target;
+    }
+    setIframeUrl(target);
+    setCurrentUrl(target);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: T.bg }}>
+      {/* Browser Address Bar / Header */}
+      <div style={{
+        padding: '8px 16px',
+        background: T.surface,
+        borderBottom: `1px solid ${T.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flexShrink: 0
+      }}>
+        {/* Nav Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button 
+            disabled 
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 4,
+              color: T.textPlaceholder,
+              cursor: 'not-allowed',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <button 
+            disabled 
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 4,
+              color: T.textPlaceholder,
+              cursor: 'not-allowed',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+          <button 
+            onClick={handleReload}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 4,
+              color: T.textSecondary,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+            className="hover:text-zinc-900 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Address Input */}
+        <form onSubmit={handleNavigate} style={{ flex: 1, display: 'flex' }}>
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: T.bg,
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r6,
+            padding: '4px 12px',
+            height: 28
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="3">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+            <input
+              type="text"
+              value={currentUrl}
+              onChange={(e) => setCurrentUrl(e.target.value)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: 12,
+                color: T.text,
+                fontFamily: T.sans,
+                width: '100%'
+              }}
+            />
+          </div>
+        </form>
+
+        {/* Open External */}
+        <a 
+          href={iframeUrl} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 4,
+            color: T.textSecondary,
+            display: 'flex',
+            alignItems: 'center',
+            textDecoration: 'none'
+          }}
+          className="hover:text-zinc-900 transition-colors"
+          title="Open in new tab"
+        >
+          <ExternalLink size={14} />
+        </a>
+      </div>
+
+      {/* Frame wrapper */}
+      <div style={{ flex: 1, position: 'relative', background: '#fff' }}>
+        <iframe
+          ref={iframeRef}
+          src={iframeUrl}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            background: '#fff'
+          }}
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1508,15 +1694,24 @@ function extractTerminalData(tc: any) {
   const command = tc.args?.command || tc.args?.CommandLine || '';
   const toolName = (tc.toolName || '').toLowerCase();
   const isWindows = toolName.includes('pwsh') || toolName.includes('powershell') || command.includes('powershell.exe') || command.includes('pwsh') || command.startsWith('powershell');
-  return { command, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '', exitCode: tc.data?.exitCode || tc.result?.data?.exitCode, duration: tc.duration || tc.result?.duration, shellType: isWindows ? 'windows' : 'linux' };
+  return {
+    command,
+    output: tc.output || tc.result?.output || tc.result?.error || tc.error || '',
+    exitCode: tc.data?.exitCode || tc.result?.data?.exitCode,
+    duration: tc.duration || tc.result?.duration,
+    shellType: isWindows ? 'windows' : 'linux',
+    cwd: tc.data?.cwd || tc.result?.data?.cwd || tc.args?.cwd || ''
+  };
 }
 
 function extractFileSystemData(tc: any) {
-  return { toolName: tc.toolName, path: tc.args?.path || tc.args?.TargetFile || tc.args?.SearchPath || tc.args?.DirectoryPath || '', args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+  const args = tc.args || tc.arguments || {};
+  return { toolName: tc.toolName, path: args.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || '', args, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
 }
 
 function extractGenericData(tc: any) {
-  return { toolName: tc.toolName, args: tc.args || {}, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+  const args = tc.args || tc.arguments || {};
+  return { toolName: tc.toolName, args, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
 }
 
 function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
@@ -1701,7 +1896,7 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
 
 function FileEditorView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
   const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
-  const { isWrite, isMulti, chunks, oldContent, newContent } = useMemo(() => {
+  const { isWrite, isMulti, chunks, oldContent, newContent, isRead } = useMemo(() => {
     const name = (toolName || '').toLowerCase();
     
     let oldContent = '';
@@ -1709,10 +1904,14 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
     let isWrite = false;
     let isMulti = false;
     let chunks: any[] = [];
+    let isRead = false;
 
     if (name.includes('write')) {
       isWrite = true;
       newContent = args?.CodeContent || args?.code || args?.content || '';
+    } else if (name === 'read' || name === 'read_file' || name === 'view_file') {
+      isRead = true;
+      newContent = output || '';
     } else {
       if (args?.ReplacementChunks && Array.isArray(args.ReplacementChunks)) {
         isMulti = true;
@@ -1728,17 +1927,17 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
       }
     }
 
-    return { isWrite, isMulti, chunks, oldContent, newContent };
-  }, [toolName, args]);
+    return { isWrite, isMulti, chunks, oldContent, newContent, isRead };
+  }, [toolName, args, output]);
 
   // Helper to render diff lines for a target and replacement
   const renderDiffLines = (oldText: string, newText: string, startLine = 1) => {
-    if (isWrite) {
+    if (isWrite || isRead) {
       const lines = newText.split('\n');
       return lines.map((line, idx) => (
         <CodeLine
           key={idx}
-          type="add"
+          type={isRead ? 'normal' : 'add'}
           content={line}
           lineNumber={startLine + idx}
           ext={ext}
@@ -1806,14 +2005,14 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
           <span style={{
             fontSize: 9.5,
             fontWeight: 700,
-            color: isWrite ? T.green : T.textSecondary,
-            background: isWrite ? T.greenFaint : T.surfaceRaised,
-            border: `1px solid ${isWrite ? 'rgba(34,197,94,0.15)' : T.border}`,
+            color: isWrite ? T.green : isRead ? T.blue : T.textSecondary,
+            background: isWrite ? T.greenFaint : isRead ? T.blueFaint : T.surfaceRaised,
+            border: `1px solid ${isWrite ? 'rgba(34,197,94,0.15)' : isRead ? 'rgba(59,130,246,0.15)' : T.border}`,
             padding: '2px 8px',
             borderRadius: 20,
             fontFamily: T.sans
           }}>
-            {isWrite ? 'Write Operation' : 'Edit Operation'}
+            {isWrite ? 'Write Operation' : isRead ? 'Read Operation' : 'Edit Operation'}
           </span>
         </div>
         {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
@@ -1937,6 +2136,8 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
       let extracted: any;
       if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
+      } else if (type === ToolType.LIVE_PREVIEW) {
+        extracted = extractLivePreviewData(toolCall);
       } else if (type === ToolType.FERN) {
         // Pass current progress snapshot for initial render
         const progress = subAgentProgress?.get(toolCall.id) || [];
@@ -2098,6 +2299,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
       </div>
     );
 
+    if (toolType === ToolType.LIVE_PREVIEW) return <LivePreviewView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
     if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;

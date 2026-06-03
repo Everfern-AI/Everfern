@@ -13,12 +13,41 @@ export interface CommandInfo {
   startTime: number;
 }
 
+interface PersistentShell {
+  proc: ChildProcess;
+  target: 'main' | 'vm';
+  currentCwd: string;
+  lastRequestedCwd: string;
+  activeExecution: {
+    id: string;
+    command: string;
+    cwd: string;
+    marker: string;
+    output: string;
+    onData?: (data: string) => void;
+    resolve: (info: CommandInfo) => void;
+    timeoutId?: NodeJS.Timeout;
+    startTime: number;
+  } | null;
+  queue: {
+    id: string;
+    command: string;
+    cwd: string;
+    timeoutMs?: number;
+    onData?: (data: string) => void;
+    resolve: (info: CommandInfo) => void;
+  }[];
+}
+
 export class CommandRegistry {
   private static instance: CommandRegistry;
   private commands: Map<string, CommandInfo> = new Map();
-  private processes: Map<string, ChildProcess> = new Map();
+  private processes: Map<string, ChildProcess> = new Map(); // Keep for compatibility
+  private shells: Map<'main' | 'vm', PersistentShell> = new Map();
   private wslAvailable: boolean | null = null;
   private wslCmdName: string = 'wsl.exe';
+  private lastWslCheck: number = 0;
+  private readonly WSL_RECHECK_MS: number = 30000;
 
   private constructor() {}
 
@@ -29,14 +58,10 @@ export class CommandRegistry {
     return CommandRegistry.instance;
   }
 
-  private lastWslCheck: number = 0;
-  private readonly WSL_RECHECK_MS: number = 30000; // Retry WSL after 30 seconds if previously unavailable
-
   private async checkWslAvailable(): Promise<boolean> {
     if (this.wslAvailable !== null && this.wslAvailable) {
       return this.wslAvailable;
     }
-    // If cached as unavailable, retry after cooldown period
     if (this.wslAvailable === false && Date.now() - this.lastWslCheck < this.WSL_RECHECK_MS) {
       console.log(`[CommandRegistry] checkWslAvailable: cached=false, skipping retry (cooldown ${this.WSL_RECHECK_MS}ms)`);
       return false;
@@ -57,10 +82,6 @@ export class CommandRegistry {
       this.wslAvailable = true;
       console.log(`[CommandRegistry] checkWslAvailable: ${this.wslCmdName} OK`);
     } catch (err: any) {
-      // First attempt failed. Try ensureWSLSetup as second chance — it confirms WSL works
-      // by running `command -v python3` inside WSL, which is more lenient if WSL is slow.
-      // Wrap with 30s timeout to avoid blocking on apt install (180s) — if setup is slow,
-      // it continues in background and next command retries.
       console.warn(`[CommandRegistry] First WSL check failed: ${err.message || err}. Trying ensureWSLSetup as second chance...`);
       try {
         const { ensureWSLSetup } = require('../linux-vm-executor');
@@ -78,92 +99,72 @@ export class CommandRegistry {
     return this.wslAvailable;
   }
 
-  public async execute(id: string, command: string, cwd: string = path.join(os.homedir(), '.everfern'), timeoutMs?: number, target: 'main' | 'vm' = 'main', onData?: (data: string) => void): Promise<CommandInfo> {
-    const info: CommandInfo = {
-      id,
-      command,
-      cwd,
-      status: 'running',
-      output: '',
-      startTime: Date.now()
-    };
-    this.commands.set(id, info);
-
+  private async getOrCreateShell(target: 'main' | 'vm', cwd: string): Promise<PersistentShell> {
+    let shell = this.shells.get(target);
     const isWin = process.platform === 'win32';
 
-    // Ensure cwd exists
+    if (
+      shell &&
+      shell.proc.exitCode === null &&
+      shell.proc.signalCode === null &&
+      shell.proc.killed === false
+    ) {
+      return shell;
+    }
+
+    console.log(`[CommandRegistry] Spawning persistent shell for target=${target} in cwd=${cwd}`);
+
     const fs = require('fs');
-    if (!fs.existsSync(cwd)) {
+    let targetCwd = cwd;
+    if (!fs.existsSync(targetCwd)) {
       try {
-        fs.mkdirSync(cwd, { recursive: true });
-        console.log(`[CommandRegistry] Created missing cwd: ${cwd}`);
+        fs.mkdirSync(targetCwd, { recursive: true });
       } catch (err) {
-        console.warn(`[CommandRegistry] Failed to create cwd: ${cwd}. Falling back to home directory. Error: ${err}`);
-        cwd = os.homedir();
+        console.warn(`[CommandRegistry] Failed to create cwd ${targetCwd}. Falling back to home.`, err);
+        targetCwd = os.homedir();
       }
     }
 
-    let shell = 'bash';
-    let args = ['-c', command];
-    let spawnOptions: any = { cwd, shell: false, env: { ...process.env } };
+    let executable = 'bash';
+    let args: string[] = [];
+    let spawnOptions: any = { cwd: targetCwd, shell: false, env: { ...process.env } };
 
-    // Robust shell detection for Windows (cached result)
     if (isWin) {
       if (target === 'vm') {
         const isWslAvailable = await this.checkWslAvailable();
-        console.log(`[CommandRegistry] execute: Windows detected, target=vm, WSL available=${isWslAvailable}, command="${command.slice(0, 100)}..."`);
-
-        if (isWslAvailable) {
-          shell = this.wslCmdName;
-          console.log(`[CommandRegistry] Using WSL command: ${shell}`);
-          const { translateWindowsPathToLinux } = require('../linux-vm-executor');
-          const linuxCwd = translateWindowsPathToLinux(cwd);
-          const wslCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
-          args = ['--exec', 'bash', '-c', wslCommand];
-          spawnOptions = { cwd, shell: false, env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } };
-        } else {
-          console.error('[CommandRegistry] execute: target=vm but WSL is not available!');
-          // Delete from command tracker since it failed to start
-          this.commands.delete(id);
-          return Promise.resolve({
-            id,
-            command,
-            cwd,
-            status: 'failed',
-            output: 'Error: Linux VM (WSL) is not available on this system. Please use target="main" to run host commands.',
-            exitCode: -1,
-            startTime: Date.now()
-          });
+        if (!isWslAvailable) {
+          throw new Error('Linux VM (WSL) is not available on this system.');
         }
+        executable = this.wslCmdName;
+        args = ['--exec', 'bash'];
+        spawnOptions.env = { ...process.env, WSL_UTF8: '1', WSLENV: '' };
       } else {
-        console.log('[CommandRegistry] execute: target=main, using Host (CMD)');
-        shell = 'cmd.exe';
-        args = ['/c', command];
-        spawnOptions.shell = true;
+        executable = 'cmd.exe';
+        args = ['/q'];
       }
+    } else {
+      executable = 'bash';
+      args = [];
     }
 
-    info.output = '';
+    const proc = spawn(executable, args, spawnOptions);
 
-    const proc = spawn(shell, args, spawnOptions);
-    this.processes.set(id, proc);
-    info.pid = proc.pid;
-
-    const MAX_OUTPUT_LENGTH = 50000;
-
-    let timeoutId: NodeJS.Timeout | null = null;
-    const IDLE_TIMEOUT_MS = timeoutMs || 60000;
-
-    const resetTimeout = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        info.status = 'failed';
-        info.output += `\n[Timeout: Command produced no output for ${IDLE_TIMEOUT_MS/1000} seconds and was terminated.]`;
-        proc.kill('SIGKILL');
-      }, IDLE_TIMEOUT_MS);
+    const newShell: PersistentShell = {
+      proc,
+      target,
+      currentCwd: targetCwd,
+      lastRequestedCwd: targetCwd,
+      activeExecution: null,
+      queue: []
     };
 
-    resetTimeout();
+    this.shells.set(target, newShell);
+
+    if (isWin && target === 'main') {
+      proc.stdin?.write('@echo off\n');
+    } else {
+      proc.stdin?.write('export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin"\n');
+    }
 
     const decodeBuffer = (buf: Buffer): string => {
       if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
@@ -175,48 +176,248 @@ export class CommandRegistry {
       return buf.toString('utf8').replace(/\0/g, '');
     };
 
+    const MAX_OUTPUT_LENGTH = 50000;
+
     proc.stdout?.on('data', (data) => {
-      resetTimeout();
       const decoded = decodeBuffer(data);
-      console.log(`[Terminal] ${decoded.trimEnd()}`);
-      info.output += decoded;
-      onData?.(decoded);
-      if (info.output.length > MAX_OUTPUT_LENGTH) {
-        info.output = '...[Output truncated]...\n' + info.output.slice(-MAX_OUTPUT_LENGTH);
+      const active = newShell.activeExecution;
+      if (active) {
+        console.log(`[Terminal ${target}] ${decoded.trimEnd()}`);
+        active.output += decoded;
+        active.onData?.(decoded);
+
+        if (active.output.length > MAX_OUTPUT_LENGTH) {
+          active.output = '...[Output truncated]...\n' + active.output.slice(-MAX_OUTPUT_LENGTH);
+        }
+
+        const markerIndex = active.output.indexOf(active.marker);
+        if (markerIndex !== -1) {
+          const afterMarker = active.output.substring(markerIndex + active.marker.length);
+          const lines = afterMarker.split(/\r?\n/);
+          if (lines.length >= 3) {
+            const exitCodeStr = lines[0].trim();
+            const exitCode = parseInt(exitCodeStr, 10);
+            const newCwd = lines[1].trim();
+
+            if (newCwd) {
+              newShell.currentCwd = newCwd;
+              if (target === 'vm' && isWin) {
+                const { translateLinuxPathToHost } = require('../linux-vm-executor');
+                newShell.currentCwd = translateLinuxPathToHost(newCwd);
+              }
+            }
+
+            const cleanOutput = active.output.substring(0, markerIndex);
+
+            if (active.timeoutId) clearTimeout(active.timeoutId);
+
+            const info: CommandInfo = {
+              id: active.id,
+              command: active.command,
+              cwd: newShell.currentCwd,
+              pid: proc.pid,
+              status: exitCode === 0 ? 'completed' : 'failed',
+              output: cleanOutput,
+              exitCode,
+              startTime: active.startTime
+            };
+
+            this.commands.set(active.id, info);
+            this.processes.delete(active.id);
+
+            newShell.activeExecution = null;
+            active.resolve(info);
+
+            this.processQueue(target);
+          }
+        }
       }
     });
 
     proc.stderr?.on('data', (data) => {
-      resetTimeout();
       const decoded = decodeBuffer(data);
-      console.error(`[Terminal Error] ${decoded.trimEnd()}`);
-      info.output += decoded;
-      onData?.(decoded);
-      if (info.output.length > MAX_OUTPUT_LENGTH) {
-        info.output = '...[Output truncated]...\n' + info.output.slice(-MAX_OUTPUT_LENGTH);
+      const active = newShell.activeExecution;
+      if (active) {
+        console.error(`[Terminal Error ${target}] ${decoded.trimEnd()}`);
+        active.output += decoded;
+        active.onData?.(decoded);
+
+        if (active.output.length > MAX_OUTPUT_LENGTH) {
+          active.output = '...[Output truncated]...\n' + active.output.slice(-MAX_OUTPUT_LENGTH);
+        }
       }
     });
 
-    return new Promise((resolve) => {
-      proc.on('close', (code) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        // Only override status if it's not already failed due to timeout
-        if (info.status !== 'failed' || !info.output.includes('[Timeout:')) {
-          info.status = code === 0 ? 'completed' : 'failed';
-        }
-        info.exitCode = code ?? -1;
-        this.processes.delete(id);
-        resolve(info);
-      });
+    proc.on('close', (code) => {
+      console.log(`[CommandRegistry] Persistent shell ${target} closed with code ${code}`);
+      if (this.shells.get(target) === newShell) {
+        this.shells.delete(target);
+      }
 
-      proc.on('error', (err) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        info.status = 'failed';
-        info.output += `\nError: ${err.message}`;
-        this.processes.delete(id);
-        resolve(info);
-      });
+      const active = newShell.activeExecution;
+      if (active) {
+        if (active.timeoutId) clearTimeout(active.timeoutId);
+        const info: CommandInfo = {
+          id: active.id,
+          command: active.command,
+          cwd: newShell.currentCwd,
+          pid: proc.pid,
+          status: 'failed',
+          output: active.output + `\n[Shell exited unexpectedly with code ${code}]`,
+          exitCode: code ?? -1,
+          startTime: active.startTime
+        };
+        this.commands.set(active.id, info);
+        this.processes.delete(active.id);
+        active.resolve(info);
+        newShell.activeExecution = null;
+      }
+
+      const queue = newShell.queue;
+      newShell.queue = [];
+      for (const req of queue) {
+        const info: CommandInfo = {
+          id: req.id,
+          command: req.command,
+          cwd: newShell.currentCwd,
+          status: 'failed',
+          output: 'Shell exited unexpectedly before command execution',
+          exitCode: -1,
+          startTime: Date.now()
+        };
+        this.commands.set(req.id, info);
+        req.resolve(info);
+      }
     });
+
+    proc.on('error', (err) => {
+      console.error(`[CommandRegistry] Persistent shell ${target} process error:`, err);
+    });
+
+    return newShell;
+  }
+
+  private processQueue(target: 'main' | 'vm'): void {
+    const shell = this.shells.get(target);
+    if (!shell) return;
+    if (shell.activeExecution) return;
+    if (shell.queue.length === 0) return;
+
+    const req = shell.queue.shift()!;
+    const marker = `__EF_DONE_${Date.now()}_${Math.random().toString(36).substring(2, 10)}__`;
+
+    shell.activeExecution = {
+      id: req.id,
+      command: req.command,
+      cwd: req.cwd,
+      marker,
+      output: '',
+      onData: req.onData,
+      resolve: req.resolve,
+      startTime: Date.now()
+    };
+
+    this.processes.set(req.id, shell.proc);
+
+    const timeoutMs = req.timeoutMs || 60000;
+    shell.activeExecution.timeoutId = setTimeout(() => {
+      console.log(`[CommandRegistry] Command ${req.id} timed out. Terminating shell.`);
+      const active = shell.activeExecution;
+      if (active) {
+        active.output += `\n[Timeout: Command produced no output for ${timeoutMs/1000} seconds and was terminated.]`;
+        const info: CommandInfo = {
+          id: active.id,
+          command: active.command,
+          cwd: shell.currentCwd,
+          pid: shell.proc.pid,
+          status: 'failed',
+          output: active.output,
+          exitCode: -1,
+          startTime: active.startTime
+        };
+        this.commands.set(active.id, info);
+        this.processes.delete(active.id);
+        active.resolve(info);
+      }
+      shell.activeExecution = null;
+      shell.proc.kill('SIGKILL');
+    }, timeoutMs);
+
+    const isWin = process.platform === 'win32';
+    const isCmd = target === 'main' && isWin;
+
+    const needCd = req.cwd !== shell.lastRequestedCwd;
+    if (needCd) {
+      shell.lastRequestedCwd = req.cwd;
+    }
+
+    if (isCmd) {
+      shell.proc.stdin?.write(`@set "EF_M=${marker}"\n`);
+      if (needCd) {
+        shell.proc.stdin?.write(`cd /d "${req.cwd}"\n`);
+      }
+      shell.proc.stdin?.write(`${req.command}\n`);
+      shell.proc.stdin?.write(`@echo %EF_M% %errorlevel%\n`);
+      shell.proc.stdin?.write(`@cd\n`);
+    } else {
+      const { translateWindowsPathToLinux } = require('../linux-vm-executor');
+      const linuxCwd = isWin ? translateWindowsPathToLinux(req.cwd) : req.cwd;
+      shell.proc.stdin?.write(`export EF_M="${marker}"\n`);
+      if (needCd) {
+        shell.proc.stdin?.write(`cd "${linuxCwd}"\n`);
+      }
+      shell.proc.stdin?.write(`${req.command}\n`);
+      shell.proc.stdin?.write(`echo "$EF_M \$?"\n`);
+      shell.proc.stdin?.write(`pwd\n`);
+    }
+  }
+
+  public async execute(
+    id: string,
+    command: string,
+    cwd: string = path.join(os.homedir(), '.everfern'),
+    timeoutMs?: number,
+    target: 'main' | 'vm' = 'main',
+    onData?: (data: string) => void
+  ): Promise<CommandInfo> {
+    const info: CommandInfo = {
+      id,
+      command,
+      cwd,
+      status: 'running',
+      output: '',
+      startTime: Date.now()
+    };
+    this.commands.set(id, info);
+
+    try {
+      const shell = await this.getOrCreateShell(target, cwd);
+
+      return new Promise<CommandInfo>((resolve) => {
+        shell.queue.push({
+          id,
+          command,
+          cwd,
+          timeoutMs,
+          onData,
+          resolve
+        });
+
+        this.processQueue(target);
+      });
+    } catch (err: any) {
+      const failedInfo: CommandInfo = {
+        id,
+        command,
+        cwd,
+        status: 'failed',
+        output: `Error: ${err.message || err}`,
+        exitCode: -1,
+        startTime: Date.now()
+      };
+      this.commands.set(id, failedInfo);
+      return failedInfo;
+    }
   }
 
   public listCommands(): CommandInfo[] {
@@ -224,13 +425,48 @@ export class CommandRegistry {
   }
 
   public terminate(id: string): boolean {
-    const proc = this.processes.get(id);
-    if (proc) {
-      proc.kill();
-      const info = this.commands.get(id);
-      if (info) info.status = 'terminated';
-      this.processes.delete(id);
-      return true;
+    for (const [target, shell] of this.shells.entries()) {
+      const active = shell.activeExecution;
+      if (active && active.id === id) {
+        console.log(`[CommandRegistry] Terminating active command ${id} by killing shell process.`);
+        if (active.timeoutId) clearTimeout(active.timeoutId);
+
+        const info: CommandInfo = {
+          id: active.id,
+          command: active.command,
+          cwd: shell.currentCwd,
+          pid: shell.proc.pid,
+          status: 'terminated',
+          output: active.output + '\n[Command terminated by user/agent]',
+          exitCode: -1,
+          startTime: active.startTime
+        };
+        this.commands.set(id, info);
+        this.processes.delete(id);
+        active.resolve(info);
+        shell.activeExecution = null;
+
+        shell.proc.kill('SIGKILL');
+        return true;
+      }
+
+      const queueIndex = shell.queue.findIndex(req => req.id === id);
+      if (queueIndex !== -1) {
+        const req = shell.queue[queueIndex];
+        shell.queue.splice(queueIndex, 1);
+        const info: CommandInfo = {
+          id: req.id,
+          command: req.command,
+          cwd: shell.currentCwd,
+          status: 'terminated',
+          output: 'Command terminated before execution started',
+          exitCode: -1,
+          startTime: Date.now()
+        };
+        this.commands.set(id, info);
+        req.resolve(info);
+        return true;
+      }
     }
     return false;
   }

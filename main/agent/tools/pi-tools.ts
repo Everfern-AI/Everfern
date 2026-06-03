@@ -173,7 +173,22 @@ function adaptTool(
 
         // For host-side file tools, translate Linux paths to Windows paths
         if (HOST_FILE_TOOL_NAMES.has(name)) {
-          if (['write', 'read', 'edit'].includes(name) && (!args || typeof args.path !== 'string')) {
+          if (name === 'write') {
+            if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+              return {
+                success: false,
+                output: "Error: Missing or invalid 'path' parameter for tool 'write'",
+                error: "invalid_path"
+              };
+            }
+            if (!args || typeof args.content !== 'string') {
+              return {
+                success: false,
+                output: "Error: Missing or invalid 'content' parameter for tool 'write'",
+                error: "invalid_content"
+              };
+            }
+          } else if (['read', 'edit'].includes(name) && (!args || typeof args.path !== 'string')) {
             return {
               success: false,
               output: `Error: Missing or invalid 'path' parameter for tool '${name}'`,
@@ -299,7 +314,7 @@ async function withRollbackTracking(
       // Track the operation after successful execution
       if (!result.isError) {
         try {
-          const contentAfter = args.text as string || '';
+          const contentAfter = args.content as string || args.text as string || '';
 
           if (fileExists) {
             // File modification

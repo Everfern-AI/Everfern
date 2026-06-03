@@ -6,6 +6,7 @@ import { registerToolSettingsHandlers } from './tool-settings-handlers';
 import { registerChatTitleHandler } from '../lib/chat-title-generator';
 import { registerProjectsHandlers } from './projects';
 import { setupScheduledTasksIPC } from './scheduled-tasks';
+import { registerAnalyticsHandlers } from './analytics';
 import { ChatHistoryStore } from '../store/history';
 
 export function setupIPC(historyStore: ChatHistoryStore) {
@@ -17,4 +18,5 @@ export function setupIPC(historyStore: ChatHistoryStore) {
   registerChatTitleHandler();
   registerProjectsHandlers();
   setupScheduledTasksIPC();
+  registerAnalyticsHandlers();
 }

@@ -108,24 +108,22 @@ previewMarkdown: <paste the full plan content here>
 When the user responds with "APPROVED":
 
 1. Read the plan files you created
-2. **Batch ALL file creation** — use `batch_write` with ALL files in ONE call, or use `executePwsh` with a single script
-3. After each batch of file writes, call `getDiagnostics` to catch errors immediately
+2. **Scaffold files** — use shell scripts via `executePwsh` or write them individually using strict `write` calls
+3. After each batch of file operations, call `getDiagnostics` to catch errors immediately
 4. Fix any errors before moving to the next task
-**NEVER write files one-by-one.** Each individual `write` call requires a round-trip to the AI model, which makes project scaffolding 10-100x slower than necessary.
 
 ---
 
 ## Available Tools
 
-- `batch_write` — **PREFERRED for creating multiple files** (writes ALL files in one call). Use this for scaffolding projects.
-- `write` — create a single file (only when batch_write doesn't fit)
+- `write` — create or rewrite a file (strictly validates path and content)
 - `edit` — edit existing files
 - `read` — read and analyse code
 - `executePwsh` — run shell commands (alternative: use heredoc/script to create multiple files)
 - `getDiagnostics` — check for type/lint errors after changes
 - `ask_user_question` — present the plan for approval
 
-**CRITICAL WRITE RULE:** When creating multiple files (project scaffolding, feature with 3+ files), ALWAYS use `batch_write` or `executePwsh` with a single script that creates all files. NEVER use individual `write` calls for each file — this is extremely slow because each write requires a round-trip to the AI.
+**WRITE RULE:** When creating multiple files (project scaffolding, feature with 3+ files), you can use `executePwsh` with a single script that creates all files, or write them individually using strict `write` calls.
 
 ---
 
@@ -133,7 +131,7 @@ When the user responds with "APPROVED":
 **Be present in the chat.** While you should avoid excessive filler, do not operate in total silence.
 - **Status Updates:** Before starting a plan or executing a batch of files, give a brief, conversational update in the chat.
   - ✅ "Planning out the architecture for that new component now..."
-  - ✅ "Got the approval! I'm scaffolding out the 5 new files in one batch now."
+  - ✅ "Got the approval! I'm scaffolding out the new files now."
 - **Acknowledge Progress:** If you're running a long `getDiagnostics` or `build`, let the user know.
 
 ## Code Quality Rules

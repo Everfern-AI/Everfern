@@ -62,7 +62,7 @@ const T = {
    AGENTS METADATA
    ============================================================ */
 
-const AGENTS_META: Record<string, { icon: React.ComponentType, label: string, description: string, color: string }> = {
+const AGENTS_META: Record<string, { icon: React.ComponentType<{ size?: number; strokeWidth?: number }>, label: string, description: string, color: string }> = {
   exploration_agent: {
     icon: Eye,
     label: 'Exploration',

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { PlusIcon, ChatBubbleLeftIcon, MagnifyingGlassIcon, Cog6ToothIcon, ChatBubbleLeftRightIcon, FolderIcon, SparklesIcon, CodeBracketIcon, EllipsisHorizontalIcon, TrashIcon, Bars3Icon, BriefcaseIcon, ArchiveBoxIcon, SquaresPlusIcon, UserCircleIcon, LinkIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, ChatBubbleLeftIcon, MagnifyingGlassIcon, Cog6ToothIcon, ChatBubbleLeftRightIcon, FolderIcon, SparklesIcon, CodeBracketIcon, EllipsisHorizontalIcon, TrashIcon, Bars3Icon, BriefcaseIcon, ArchiveBoxIcon, SquaresPlusIcon, UserCircleIcon, LinkIcon, ChartBarIcon } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
 
 interface SidebarProps {
@@ -18,6 +18,7 @@ interface SidebarProps {
     onCustomizeClick?: () => void;
     onIntegrationClick?: () => void;
     onProjectsClick?: () => void;
+    onAnalyticsClick?: () => void;
 }
 
 interface ConversationSummary {
@@ -28,7 +29,7 @@ interface ConversationSummary {
     projectName?: string;
 }
 
-export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick }: SidebarProps) {
+export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick }: SidebarProps) {
     const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
     const [username, setUsername] = useState<string>("User");
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -206,8 +207,11 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 </div>
             </div>
 
+            {/* Scrollable Middle Area */}
+            <div className="custom-scrollbar" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", overflowX: "hidden" }}>
+
             {/* Primary actions */}
-            <div style={{ padding: isOpen ? "10px 10px" : "10px 0", display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+            <div style={{ padding: isOpen ? "10px 10px" : "10px 0", display: "flex", flexDirection: "column", gap: 2, alignItems: "center", flexShrink: 0 }}>
                 <button
                     onClick={onNewChat}
                     style={{
@@ -248,6 +252,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         { icon: ArchiveBoxIcon, label: "Projects" },
                         { icon: SquaresPlusIcon, label: "Artifacts" },
                         { icon: CodeBracketIcon, label: "Code" },
+                        { icon: ChartBarIcon, label: "Analytics" },
                     ].map((item) => (
                         <button
                             key={item.label}
@@ -276,6 +281,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                 else if (item.label === "Customize" && onCustomizeClick) onCustomizeClick();
                                 else if (item.label === "Integrations" && onIntegrationClick) onIntegrationClick();
                                 else if (item.label === "Projects" && onProjectsClick) onProjectsClick();
+                                else if (item.label === "Analytics" && onAnalyticsClick) onAnalyticsClick();
                             }}
                             title={!isOpen ? item.label : undefined}
                         >
@@ -287,7 +293,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
             </div>
 
             {/* History List - Only show if open */}
-            <div style={{ flex: 1, overflowY: "auto", padding: isOpen ? "12px 8px 20px" : "12px 0 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ padding: isOpen ? "12px 8px 20px" : "12px 0 20px", display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
                 {isOpen && history.length > 0 && (
                     <div style={{ padding: "12px 12px 12px", fontSize: 11, fontWeight: 700, color: "#8a8886", width: "100%", textTransform: "uppercase" }}>Recents</div>
                 )}
@@ -378,7 +384,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     </button>
                 ))}
             </div>
-
+            </div>
             {/* Footer */}
             <div style={{ padding: isOpen ? 12 : "12px 0", borderTop: "1px solid #e8e6d9", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: isOpen ? "10px 12px" : "10px 0", justifyContent: isOpen ? "flex-start" : "center", borderRadius: 14 }}>

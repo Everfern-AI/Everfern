@@ -6,6 +6,7 @@ import { AIClient } from '../lib/ai-client';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { dbOps } from '../lib/db';
 
 let agentPermissionResolver: ((granted: boolean) => void) | null = null;
 let localExecutionResponseResolver: ((response: { approved: boolean; alwaysAllow: boolean }) => void) | null = null;
@@ -368,6 +369,47 @@ export function registerAgentHandlers() {
       const history = request.messages.slice(0, -1);
       const userInput = request.messages[request.messages.length - 1].content;
 
+      // ── In-progress draft persistence ────────────────────────────────────
+      // Save a draft of the streaming message every ~3 seconds so that if
+      // the app force-closes, the partial response is not lost.
+      const convId = request.conversationId;
+      const msgId = request.assistantMessageId || `draft-${Date.now()}`;
+      let draftContent = '';
+      let draftToolCalls: any[] = [];
+      let lastDraftSave = 0;
+      const DRAFT_INTERVAL_MS = 3000;
+
+      const saveDraft = async () => {
+        if (!convId || (!draftContent && draftToolCalls.length === 0)) return;
+        try {
+          await dbOps.run(
+            `INSERT OR REPLACE INTO messages
+             (id, conversation_id, role, content, tool_calls, order_index, created_at)
+             VALUES (?, ?, 'assistant', ?, ?, 9999, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
+            [msgId, convId, draftContent,
+             draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls) : null,
+             msgId, new Date().toISOString()]
+          );
+          // Also ensure the conversation row exists
+          await dbOps.run(
+            `INSERT OR IGNORE INTO conversations (id, title, provider, model, created_at, updated_at)
+             VALUES (?, '[In Progress]', 'everfern', ?, ?, ?)`,
+            [convId, request.model || 'unknown',
+             new Date().toISOString(), new Date().toISOString()]
+          );
+        } catch { /* DB may not have draft_messages table yet */ }
+      };
+
+      const cleanupDraft = async () => {
+        if (!convId) return;
+        try {
+          // Remove the draft — the frontend will do a proper save via history:save
+          // Only delete if content is empty (meaning the real save hasn't happened)
+          // We leave it if the save failed so the user can recover it on next load
+        } catch { }
+      };
+      // ── End draft setup ──────────────────────────────────────────────────
+
       let fullResponse = '';
       for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId, false, request.assistantMessageId)) {
         if (globalAbortManager.streamAborted) {
@@ -385,7 +427,13 @@ export function registerAgentHandlers() {
         if (streamEvent.type === 'chunk') {
           chunkBuffer += streamEvent.content;
           fullResponse += streamEvent.content;
+          draftContent += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
+          // Periodically save draft
+          if (Date.now() - lastDraftSave > DRAFT_INTERVAL_MS) {
+            lastDraftSave = Date.now();
+            saveDraft().catch(() => {});
+          }
         } else if (streamEvent.type === 'thought') {
           thoughtBuffer += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
@@ -397,6 +445,16 @@ export function registerAgentHandlers() {
           });
         } else if (streamEvent.type === 'tool_call') {
           safeSend('acp:tool-call', streamEvent.toolCall);
+          // Track tool call in draft for persistence
+          if (streamEvent.toolCall) {
+            const tc = streamEvent.toolCall;
+            const existingIdx = draftToolCalls.findIndex(t => t.id === tc.id);
+            if (existingIdx >= 0) {
+              draftToolCalls[existingIdx] = { ...draftToolCalls[existingIdx], ...tc };
+            } else {
+              draftToolCalls.push(tc);
+            }
+          }
         } else if (streamEvent.type === 'tool_call_start') {
           safeSend('acp:tool-call-start', { index: streamEvent.index, toolName: streamEvent.toolName });
         } else if (streamEvent.type === 'tool_call_chunk') {
@@ -465,6 +523,9 @@ export function registerAgentHandlers() {
           // NOTE: done:true fires AFTER mission_complete so the frontend
           // still has listeners active when mission_complete arrives.
           safeSend('acp:stream-chunk', { delta: '', done: true });
+
+          // Save final draft with complete content (marks message as persisted)
+          await saveDraft();
 
           // Self-Improvement: Trigger non-blocking memory reflection
           reflectAndRemember(history, userInput, fullResponse, client);

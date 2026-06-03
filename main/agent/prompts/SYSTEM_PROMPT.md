@@ -146,19 +146,18 @@ Using `target: 'vm'` for coding tasks causes path mismatches and broken environm
 | Multiple file reads (1–4 files) | Direct parallel tool calls in one block |
 | Multiple file reads (5+ files) | Spawn a sub-agent |
 | Multiple web searches | One parallel block of `web_search` calls |
-| Multiple file writes (different paths) | Single `batch_write` call |
+| Multiple file writes (different paths) | Execute a script (e.g. powershell/bash) or write individually |
 | Independent sub-agents | One parallel spawn block |
 | Step B requires output from Step A | Sequential only |
 
-> **Critical write rule:** When scaffolding, plan all files upfront and emit them in a single `batch_write` call. Writing one-by-one is a performance failure.
+> **Write rule:** When scaffolding multiple files, you can use shell scripts via terminal or execute them individually.
 
 ### 3.4 File Operations — Surgical Edit Protocol
 
 **Preference order:**
 1. `edit` — surgical line replacement (always preferred for existing files)
 2. `str_replace` — find-and-replace for targeted changes
-3. `batch_write` — create multiple new files in one call (preferred for scaffolding)
-4. `write` — single new file (only when `batch_write` doesn't fit)
+3. `write` — create or rewrite a file (strictly validates path and content)
 
 **Mandatory pre-edit read:** Read the file first. Identify the exact lines to change. Write only those lines.
 
@@ -168,7 +167,7 @@ Using `target: 'vm'` for coding tasks causes path mismatches and broken environm
 
 Use for native desktop app interaction: opening applications, playing media, system settings, clicking non-browser UI. Route here immediately when the user says "open an app", "play a song", or "do a local OS action."
 
-**Never use for:** websites, web forms, browser login, or anything browser-based — route those to `navis`.
+**Never use for:** websites, web forms, browser login, booking trips, finding the best recommendations/options, deep research, or anything browser-based/web-based — route those to `navis`.
 
 ### 3.6 Code Search Order
 
@@ -204,7 +203,12 @@ Use for native desktop app interaction: opening applications, playing media, sys
 - Finding specific pricing, features, specs, or contact info
 - Extracting structured data from multiple pages
 - Filling forms, creating accounts, downloading resources
+- Booking trips, flights, hotels, or travel reservations
+- Finding recommendations, comparing options, or finding the "best option" for a user request
+- Any interactive web browser task or deep research task
 - Any interactive element that search snippets can't provide
+
+**Mandatory Tool Preference:** For all tasks that require browser usage, web search, booking, comparing options, or deep research, you MUST use `navis` (or `web_search`) and **never** fall back to the `computer_use` (OS automation) tool.
 
 **Navis delegation format:**
 ```
