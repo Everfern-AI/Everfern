@@ -330,6 +330,20 @@ You do not need to use complex execution plans or tools for this interaction.`;
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
       });
+
+      // Record into analytics DB (fire-and-forget — never block the agent)
+      try {
+        const { recordUsage } = await import('../../../store/analytics');
+        const cfg = (runner as any).config;
+        const convId: string | undefined = (state as any).conversationId ?? undefined;
+        recordUsage({
+          conversationId: convId,
+          model: modelUsed ?? cfg?.model ?? 'unknown',
+          provider: cfg?.provider ?? cfg?.engine ?? 'unknown',
+          promptTokens: usage.promptTokens ?? 0,
+          completionTokens: usage.completionTokens ?? 0,
+        }).catch(() => { /* never throw */ });
+      } catch { /* analytics never blocks execution */ }
     }
 
     if (!response.toolCalls || response.toolCalls.length === 0) {

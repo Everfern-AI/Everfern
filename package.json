@@ -9,6 +9,7 @@
     "dev:electron": "tsc -p tsconfig.electron.json -w",
     "prebuild:electron-ts": "node -e \"require('fs').rmSync('dist-electron', { recursive: true, force: true })\"",
     "build:electron-ts": "tsc -p tsconfig.electron.json",
+    "postbuild:electron-ts": "node -e \"const fs=require('fs'),path=require('path');const src='main/lib/migrations',dst='dist-electron/main/lib/migrations';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.sql')).forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dst,f)));console.log('[Build] SQL migrations copied to dist-electron')\"",
     "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=4 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
     "build:next": "next build",
     "build:electron": "npm run build:electron-ts && electron-builder",

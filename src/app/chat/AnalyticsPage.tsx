@@ -39,6 +39,41 @@ function formatTokens(n: number): string {
     return String(n);
 }
 
+const CustomDollarIcon = (props: any) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <line x1="12" y1="1" x2="12" y2="23"></line>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+    </svg>
+);
+
+const CustomCpuIcon = (props: any) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+        <rect x="9" y="9" width="6" height="6"></rect>
+        <line x1="9" y1="1" x2="9" y2="4"></line>
+        <line x1="15" y1="1" x2="15" y2="4"></line>
+        <line x1="9" y1="20" x2="9" y2="23"></line>
+        <line x1="15" y1="20" x2="15" y2="23"></line>
+        <line x1="20" y1="9" x2="23" y2="9"></line>
+        <line x1="20" y1="14" x2="23" y2="14"></line>
+        <line x1="1" y1="9" x2="4" y2="9"></line>
+        <line x1="1" y1="14" x2="4" y2="14"></line>
+    </svg>
+);
+
+const CustomSparklesIcon = (props: any) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M12 3l2 5h5l-4 4 1.5 5.5L12 15l-4.5 2.5L9 12 5 8h5l2-5z" />
+    </svg>
+);
+
+const CustomTrendingUpIcon = (props: any) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+        <polyline points="17 6 23 6 23 12"></polyline>
+    </svg>
+);
+
 function StatCard({ icon: Icon, label, value, sub, color }: {
     icon: React.ElementType;
     label: string;
@@ -69,7 +104,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
                 <Icon style={{ width: 20, height: 20, color }} />
             </div>
             <div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: "#111111", letterSpacing: "-0.02em" }}>{value}</div>
+                <div style={{ fontSize: 26, fontWeight: 500, color: "#111111", letterSpacing: "-0.02em" }}>{value}</div>
                 <div style={{ fontSize: 13, color: "#8a8886", fontWeight: 500, marginTop: 2 }}>{label}</div>
                 {sub && <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{sub}</div>}
             </div>
@@ -166,6 +201,7 @@ function DonutChart({ segments, size = 120 }: {
     segments: Array<{ label: string; value: number; color: string }>;
     size?: number;
 }) {
+    const [hovered, setHovered] = useState<{ label: string; value: number; x: number; y: number } | null>(null);
     const total = segments.reduce((a, b) => a + b.value, 0);
     if (total === 0) return <div style={{ width: size, height: size, background: "#f0eee1", borderRadius: "50%" }} />;
 
@@ -175,28 +211,63 @@ function DonutChart({ segments, size = 120 }: {
     const circumference = 2 * Math.PI * radius;
 
     return (
-        <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-            {segments.map((seg, i) => {
-                const pct = seg.value / total;
-                const offset = circumference * (1 - pct);
-                const dashoffset = -circumference * cumulative;
-                cumulative += pct;
-                return (
-                    <circle
-                        key={i}
-                        cx={size / 2}
-                        cy={size / 2}
-                        r={radius}
-                        fill="none"
-                        stroke={seg.color}
-                        strokeWidth={strokeWidth}
-                        strokeDasharray={`${circumference * pct} ${circumference * (1 - pct)}`}
-                        strokeDashoffset={dashoffset}
-                        style={{ transition: "stroke-dasharray 0.4s ease" }}
-                    />
-                );
-            })}
-        </svg>
+        <div style={{ position: "relative", width: size, height: size }}>
+            <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                {segments.map((seg, i) => {
+                    const pct = seg.value / total;
+                    const dashoffset = -circumference * cumulative;
+                    cumulative += pct;
+                    return (
+                        <circle
+                            key={i}
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={radius}
+                            fill="none"
+                            stroke={seg.color}
+                            strokeWidth={strokeWidth}
+                            strokeDasharray={`${circumference * pct} ${circumference * (1 - pct)}`}
+                            strokeDashoffset={dashoffset}
+                            onMouseMove={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setHovered({ label: seg.label, value: seg.value, x: e.clientX - rect.left, y: e.clientY - rect.top });
+                            }}
+                            onMouseLeave={() => setHovered(null)}
+                            style={{ 
+                                transition: "stroke-dasharray 0.4s ease, opacity 0.2s", 
+                                opacity: hovered && hovered.label !== seg.label ? 0.5 : 1,
+                                cursor: "pointer"
+                            }}
+                        />
+                    );
+                })}
+            </svg>
+            <AnimatePresence>
+                {hovered && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        style={{
+                            position: "absolute",
+                            left: hovered.x + 10,
+                            top: hovered.y + 10,
+                            background: "#000",
+                            color: "#fff",
+                            padding: "4px 8px",
+                            borderRadius: 4,
+                            fontSize: 12,
+                            pointerEvents: "none",
+                            whiteSpace: "nowrap",
+                            zIndex: 100,
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                        }}
+                    >
+                        {hovered.label}: {formatCost(hovered.value)}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }
 
@@ -277,7 +348,7 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                         <ChartBarIcon style={{ width: 22, height: 22, color: "#111" }} />
                     </div>
                     <div>
-                        <div style={{ fontSize: 17, fontWeight: 600, color: "#111111", letterSpacing: "-0.02em" }}>Analytics</div>
+                        <div style={{ fontSize: 17, fontWeight: 500, color: "#111111", letterSpacing: "-0.02em" }}>Analytics</div>
                         <div style={{ fontSize: 12, color: "#8a8886" }}>Usage & cost tracking</div>
                     </div>
                 </div>
@@ -406,22 +477,22 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* Stat Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-                <StatCard icon={CurrencyDollarIcon} label="Total Spend" value={formatCost(summary.totalCost)} sub={`Avg ${formatCost(summary.avgCostPerRequest)} per request`} color="#10b981" />
-                <StatCard icon={CpuChipIcon} label="Total Tokens" value={formatTokens(summary.totalTokens)} sub={`${formatTokens(summary.totalPromptTokens)} in · ${formatTokens(summary.totalCompletionTokens)} out`} color="#6366f1" />
-                <StatCard icon={SparklesIcon} label="Total Requests" value={summary.totalRequests.toLocaleString()} color="#f59e0b" />
-                <StatCard icon={ArrowTrendingUpIcon} label="Top Model" value={summary.topModels[0]?.model?.split("/").pop() || "—"} sub={summary.topModels[0]?.provider} color="#3b82f6" />
+                <StatCard icon={CustomDollarIcon} label="Total Spend" value={formatCost(summary.totalCost)} sub={`Avg ${formatCost(summary.avgCostPerRequest)} per request`} color="#10b981" />
+                <StatCard icon={CustomCpuIcon} label="Total Tokens" value={formatTokens(summary.totalTokens)} sub={`${formatTokens(summary.totalPromptTokens)} in · ${formatTokens(summary.totalCompletionTokens)} out`} color="#6366f1" />
+                <StatCard icon={CustomSparklesIcon} label="Total Requests" value={summary.totalRequests.toLocaleString()} color="#f59e0b" />
+                <StatCard icon={CustomTrendingUpIcon} label="Top Model" value={summary.topModels[0]?.model?.split("/").pop() || "—"} sub={summary.topModels[0]?.provider} color="#3b82f6" />
             </div>
 
             {/* Daily cost chart */}
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 16 }}>Daily Spend (last 30 days)</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 16 }}>Daily Spend (last 30 days)</div>
                 <BarChart data={summary.dailyUsage} valueKey="cost" labelKey="date" color="#10b981" height={140} />
             </div>
 
             {/* Provider pie + token split */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 16 }}>By Provider</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 16 }}>By Provider</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
                         <DonutChart
                             size={100}
@@ -444,7 +515,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 </div>
 
                 <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 16 }}>Token Split</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 16 }}>Token Split</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         <div>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
@@ -478,7 +549,7 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 20 }}>Models by Cost</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 20 }}>Models by Cost</div>
                 {summary.topModels.length === 0 ? (
                     <div style={{ color: "#bbb", fontSize: 13, textAlign: "center", padding: "30px 0" }}>No data yet</div>
                 ) : (
@@ -496,7 +567,7 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
             </div>
 
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 20 }}>Model Details</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 20 }}>Model Details</div>
                 <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
@@ -531,19 +602,19 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 6 }}>Token Usage — Last 30 Days</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 6 }}>Token Usage — Last 30 Days</div>
                 <div style={{ fontSize: 12, color: "#8a8886", marginBottom: 16 }}>Daily total tokens processed</div>
                 <BarChart data={summary.dailyUsage} valueKey="tokens" labelKey="date" color="#6366f1" height={160} />
             </div>
 
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 6 }}>Monthly Spend</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 6 }}>Monthly Spend</div>
                 <div style={{ fontSize: 12, color: "#8a8886", marginBottom: 16 }}>Cost over the last 12 months</div>
                 <BarChart data={summary.monthlyUsage} valueKey="cost" labelKey="month" color="#f59e0b" height={160} />
             </div>
 
             <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 6 }}>Usage by Hour</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 6 }}>Usage by Hour</div>
                 <div style={{ fontSize: 12, color: "#8a8886", marginBottom: 16 }}>When you use EverFern the most</div>
                 <BarChart
                     data={Array.from({ length: 24 }, (_, h) => {
@@ -563,7 +634,7 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
             {/* Monthly table */}
             {summary.monthlyUsage.length > 0 && (
                 <div style={{ background: "#ffffff", borderRadius: 20, border: "1px solid #e8e6d9", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 16 }}>Monthly Breakdown</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: "#111", marginBottom: 16 }}>Monthly Breakdown</div>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                             <tr style={{ borderBottom: "1px solid #f0eee1" }}>

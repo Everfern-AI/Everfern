@@ -155,6 +155,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stream:        (req: any)   => ipcRenderer.invoke('acp:stream', req),
     stop:          ()            => ipcRenderer.invoke('acp:stop'),
     rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
+    getRollbackChanges: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-changes', conversationId, timestamp),
 
     onStreamChunk: (cb: (chunk: { delta: string; done: boolean }) => void) => {
       ipcRenderer.on('acp:stream-chunk', (_e, chunk) => cb(chunk));
@@ -593,6 +594,7 @@ export type ElectronAPI = {
     chat:                  (req: any) => Promise<any>;
     stream:                (req: any) => Promise<any>;
     rollbackTurn:          (conversationId: string, timestamp: number) => Promise<any>;
+    getRollbackChanges:    (conversationId: string, timestamp: number) => Promise<{ files: { path: string; operation: string; timestamp: number }[]; commands: { command: string; reversible: boolean; timestamp: number }[] }>;
     onStreamChunk:         (cb: (chunk: { delta: string; done: boolean }) => void) => void;
     onThought:             (cb: (data: { content: string }) => void) => void;
     onToolStart:           (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => void;

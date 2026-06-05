@@ -457,7 +457,17 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → END');
                     return END;
                 case 'continue_brain':
-                    // Fix: continue_brain should loop back to brain to continue execution
+                    // If completion signal says the turn is over, END — don't loop.
+                    // This prevents the infinite greeting loop where brain keeps saying
+                    // "waiting_for_user_input" but routing back to itself.
+                    if (
+                        completionSignal?.reason === 'waiting_for_user_input' ||
+                        completionSignal?.reason === 'task_complete' ||
+                        completionSignal?.reason === 'cannot_proceed'
+                    ) {
+                        console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal?.reason} → END (avoid loop)`);
+                        return END;
+                    }
                     console.log('[Graph] ➡️ Brain routing decision: continue_brain → brain');
                     return 'brain';
                 default:

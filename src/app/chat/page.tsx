@@ -68,6 +68,8 @@ import FileArtifact from './FileArtifact';
 import FileViewerPane from './FileViewerPane';
 import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
+import AnalyticsPage from './AnalyticsPage';
+import RevertModal from './components/RevertModal';
 import ProjectsPage from '../components/ProjectsPage';
 import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from './components/ToolDetailSidePanel';
@@ -183,6 +185,12 @@ export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
+    const [modelInfo, setModelInfo] = useState<{
+        contextLength: number;
+        maxCompletionTokens: number | null;
+        promptPricing: number;
+        completionPricing: number;
+    } | null>(null);
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
     const [folderContexts, setFolderContexts] = useState<FolderContext[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -213,10 +221,15 @@ export default function ChatPage() {
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showIntegrationSettings, setShowIntegrationSettings] = useState(false);
     const [showProjectsPage, setShowProjectsPage] = useState(false);
+    const [showAnalyticsPage, setShowAnalyticsPage] = useState(false);
     const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
     const [showCustomizeModal, setShowCustomizeModal] = useState(false);
     const [showScheduledTaskModal, setShowScheduledTaskModal] = useState(false);
     const [scheduledTasksRefreshTrigger, setScheduledTasksRefreshTrigger] = useState(0);
+
+    // Revert modal state
+    const [showRevertModal, setShowRevertModal] = useState(false);
+    const [revertTarget, setRevertTarget] = useState<{ conversationId: string; timestamp: number; msgIndex: number } | null>(null);
 
     const { debate: debateData, isDebating } = useDebateStream();
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
@@ -1075,6 +1088,148 @@ export default function ChatPage() {
 
     useEffect(() => { if (config) fetchModels(); }, [config, fetchModels]);
 
+    // Fetch model info from EverFern Cloud API
+    const fetchModelInfo = useCallback(async (modelId: string) => {
+        try {
+            console.log('[ModelInfo] 📡 Starting fetch for model:', modelId);
+
+            // Extract model search query from full ID
+            // e.g., "minimax/minimax-m3" → "minimax-m3"
+            // e.g., "minimax/minimax-m2.7" → "minimax-m2.7"
+            const parts = modelId.split('/');
+            const modelPart = parts[parts.length - 1];
+
+            // For MiniMax models, keep the full name (minimax-m3, minimax-m2.7, etc.)
+            // For other models, remove size suffix like -7b, -70b
+            const searchQuery = modelPart.includes('minimax')
+                ? modelPart
+                : modelPart.replace(/-\d+b$/i, '');
+
+            console.log('[ModelInfo] Search query:', searchQuery);
+
+            const apiUrl = `https://api.everfern.app/public/info/model?q=${encodeURIComponent(searchQuery)}`;
+            console.log('[ModelInfo] Fetching from:', apiUrl);
+
+            const response = await fetch(apiUrl);
+            console.log('[ModelInfo] 📡 Fetch response received. Status:', response.status);
+
+            if (!response.ok) {
+                console.warn('[ModelInfo] ❌ Failed to fetch model info. Status:', response.status, response.statusText);
+                console.warn('[ModelInfo] Using fallback values (128k context)');
+                setModelInfo({
+                    contextLength: 128000,
+                    maxCompletionTokens: 4096,
+                    promptPricing: 0,
+                    completionPricing: 0
+                });
+                return;
+            }
+
+            const data = await response.json();
+            console.log('[ModelInfo] 📡 API response data:', data);
+
+            if (data.matches && data.matches.length > 0) {
+                const model = data.matches[0];
+                console.log('[ModelInfo] ✅ Found model match:', {
+                    id: model.id,
+                    name: model.name,
+                    context_length: model.context_length,
+                    max_completion_tokens: model.max_completion_tokens,
+                    pricing: model.pricing
+                });
+
+                const newModelInfo = {
+                    contextLength: model.context_length || 128000,
+                    maxCompletionTokens: model.max_completion_tokens,
+                    promptPricing: parseFloat(model.pricing.prompt) || 0,
+                    completionPricing: parseFloat(model.pricing.completion) || 0
+                };
+
+                console.log('[ModelInfo] 🔄 About to set modelInfo to:', newModelInfo);
+                setModelInfo(newModelInfo);
+                console.log('[ModelInfo] ✅ setModelInfo() called successfully');
+            } else {
+                console.warn('[ModelInfo] ❌ No matches found for query:', searchQuery);
+                console.warn('[ModelInfo] Using fallback values (128k context)');
+                // Fallback to default values if no match
+                const fallbackInfo = {
+                    contextLength: 128000,
+                    maxCompletionTokens: 4096,
+                    promptPricing: 0,
+                    completionPricing: 0
+                };
+                console.log('[ModelInfo] 🔄 About to set fallback modelInfo to:', fallbackInfo);
+                setModelInfo(fallbackInfo);
+            }
+        } catch (error) {
+            console.error('[ModelInfo] 💥 Error fetching model info:', error);
+            console.error('[ModelInfo] Error details:', error instanceof Error ? error.message : String(error));
+            // Fallback to default values
+            setModelInfo({
+                contextLength: 128000,
+                maxCompletionTokens: 4096,
+                promptPricing: 0,
+                completionPricing: 0
+            });
+        }
+    }, []);
+
+    // Fetch model info when selected model changes
+    useEffect(() => {
+        if (selectedModel) {
+            console.log('[ModelInfo] Effect: selectedModel changed to:', selectedModel);
+            // For local models (fern-1, ollama*, lmstudio*), use fallback
+            if (selectedModel === 'fern-1' || selectedModel.includes('ollama') || selectedModel.includes('lmstudio')) {
+                console.log('[ModelInfo] Local model detected, skipping API fetch');
+                setModelInfo({
+                    contextLength: 128000,
+                    maxCompletionTokens: 4096,
+                    promptPricing: 0,
+                    completionPricing: 0
+                });
+            } else {
+                console.log('[ModelInfo] Cloud model detected, fetching from API');
+                fetchModelInfo(selectedModel);
+            }
+        }
+    }, [selectedModel, fetchModelInfo]);
+
+    // Debug effect: log modelInfo whenever it changes
+    useEffect(() => {
+        console.log('[ModelInfo] ✓ modelInfo state updated:', JSON.stringify(modelInfo, null, 2));
+    }, [modelInfo]);
+
+    // Estimate token count (rough approximation: 1 token ≈ 4 characters)
+    const estimateTokens = (text: string): number => {
+        return Math.ceil(text.length / 4);
+    };
+
+    // Calculate current input tokens
+    const currentTokens = useMemo(() => {
+        return estimateTokens(inputValue);
+    }, [inputValue]);
+
+    // Calculate estimated cost
+    const estimatedCost = useMemo(() => {
+        if (!modelInfo || (modelInfo.promptPricing === 0 && modelInfo.completionPricing === 0)) {
+            return null;
+        }
+
+        const inputTokens = currentTokens;
+        const promptCost = inputTokens * modelInfo.promptPricing;
+
+        // Estimate completion tokens (average response length)
+        const estimatedCompletionTokens = Math.min(
+            1000, // average response length
+            modelInfo.maxCompletionTokens || 4096
+        );
+        const completionCost = estimatedCompletionTokens * modelInfo.completionPricing;
+
+        return promptCost + completionCost;
+    }, [currentTokens, modelInfo]);
+
+    useEffect(() => { if (config) fetchModels(); }, [config, fetchModels]);
+
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (showModelSelector && config) { fetchModels(); interval = setInterval(fetchModels, 3000); }
@@ -1706,7 +1861,20 @@ export default function ChatPage() {
                     setStreamingThought(streamingThoughtRef.current);
                 }
             });
-            acpApi.onUsage(({ totalTokens }: { promptTokens: number; completionTokens: number; totalTokens: number }) => { hasReceivedUsageData.current = true; setContextTokens({ used: totalTokens, max: 128000 }); });
+            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens }: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
+                // Calculate pricing using model info if available
+                if (modelInfo) {
+                    const promptCost = (promptTokens || 0) * modelInfo.promptPricing;
+                    const completionCost = (completionTokens || 0) * modelInfo.completionPricing;
+                    const totalCost = promptCost + completionCost;
+
+                    console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
+                    console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
+                }
+
+                hasReceivedUsageData.current = true;
+                setContextTokens({ used: totalTokens, max: 128000 });
+            });
             acpApi.onSurfaceAction((data: any) => {
                 if (data.action === 'create' || data.action === 'update') {
                     setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
@@ -1782,7 +1950,7 @@ export default function ChatPage() {
         })();
     }, [activeConversationId, selectedModel, availableModels]);
 
-    const saveConversation = useCallback(async (msgs: Message[]) => {
+    const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = false) => {
         if (msgs.length === 0) return;
         // Use the ref for synchronous reads — avoids duplicate IDs when called
         // multiple times before React flushes the state update.
@@ -1820,7 +1988,7 @@ export default function ChatPage() {
             projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
             createdAt: msgs[0]?.timestamp ? (msgs[0].timestamp instanceof Date ? msgs[0].timestamp.toISOString() : new Date(msgs[0].timestamp).toISOString()) : new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            isFullSave: false // Mark as partial save to preserve previous messages
+            isFullSave // Use the provided parameter
         } as any;
 
         if ((window as any).electronAPI?.history?.save) await (window as any).electronAPI.history.save(conversation);
@@ -1854,7 +2022,7 @@ export default function ChatPage() {
         } catch (error) { console.error('Voice playback error:', error); setVoicePlayback(false); }
     }, [voiceOutputEnabled, voiceProvider, voiceElevenlabsKey, voiceVoiceId]);
 
-    const handleUndoTurn = useCallback(async (msgIndex: number) => {
+    const handleUndoTurn = useCallback((msgIndex: number) => {
         const assistantMsg = messages[msgIndex];
         if (!assistantMsg || assistantMsg.role !== 'assistant') return;
 
@@ -1863,28 +2031,53 @@ export default function ChatPage() {
         const userMsg = messages[userMsgIndex];
         if (!userMsg || userMsg.role !== 'user') return;
 
-        const confirmUndo = window.confirm("Are you sure you want to revert? This will undo all files and commands from this turn.");
-        if (!confirmUndo) return;
+        const convId = activeConversationId ?? activeConversationIdRef.current;
+        if (!convId) return;
+
+        // Handle different timestamp formats (Date object, number, or numeric string from SQLite)
+        let timestamp: number;
+        if (userMsg.timestamp instanceof Date) {
+            timestamp = userMsg.timestamp.getTime();
+        } else if (typeof userMsg.timestamp === 'number') {
+            timestamp = userMsg.timestamp;
+        } else if (typeof userMsg.timestamp === 'string' && !isNaN(Number(userMsg.timestamp))) {
+            // SQLite might return timestamps as numeric strings
+            timestamp = Number(userMsg.timestamp);
+        } else {
+            // Fallback for ISO strings
+            timestamp = new Date(userMsg.timestamp).getTime();
+        }
+
+        // Open the custom revert modal — it will fetch what changed and confirm
+        setRevertTarget({ conversationId: convId, timestamp, msgIndex });
+        setShowRevertModal(true);
+    }, [messages, activeConversationId]);
+
+    const handleConfirmRevert = useCallback(async () => {
+        if (!revertTarget) return;
+        const { conversationId, timestamp, msgIndex } = revertTarget;
+        const userMsgIndex = msgIndex - 1;
+        const userMsg = messages[userMsgIndex];
 
         try {
-            const timestamp = userMsg.timestamp instanceof Date ? userMsg.timestamp.getTime() : new Date(userMsg.timestamp).getTime();
-            if (activeConversationId) {
-                await (window as any).electronAPI?.acp?.rollbackTurn?.(activeConversationId, timestamp);
-            }
-            
-            // Restore user prompt
-            setInputValue(userMsg.content);
+            await (window as any).electronAPI?.acp?.rollbackTurn?.(conversationId, timestamp);
 
-            // Remove this user message and all subsequent messages
+            // Restore user prompt in the input box
+            if (userMsg) setInputValue(userMsg.content);
+
+            // Remove the user message and all subsequent messages
             const newMessages = messages.slice(0, userMsgIndex);
             setMessages(newMessages);
             messagesRef.current = newMessages;
-            saveConversation(newMessages);
+            saveConversation(newMessages, true); // True = full save (delete removed messages from db)
         } catch (error) {
             console.error("Failed to undo turn:", error);
             alert("Failed to undo turn: " + error);
+        } finally {
+            setShowRevertModal(false);
+            setRevertTarget(null);
         }
-    }, [messages, activeConversationId, saveConversation]);
+    }, [revertTarget, messages, saveConversation]);
 
     const handleSend = useCallback((overrideValue?: any, currentMessages?: Message[]) => {
         console.log('[Frontend handleSend] CALLED - Starting new message send');
@@ -1936,6 +2129,7 @@ export default function ChatPage() {
         missionTimelineRef.current = null;
         toolCallMap.current.clear();
         hasReceivedUsageData.current = false;
+        assistantMessageIdRef.current = crypto.randomUUID();
 
         const currentM = availableModels.find(m => m.id === selectedModel) || availableModels[0];
 
@@ -1984,6 +2178,9 @@ export default function ChatPage() {
 
                     if (toolName === 'ask_user_question' || toolName === 'approve_actions') {
                         console.log(`[Frontend] Received ${toolName} tool_start:`, JSON.stringify({ toolName, toolArgs }, null, 2));
+                        // Set the flag immediately so mission_complete doesn't clear the form
+                        activeUserQuestionRef.current = true;
+                        return;
                     }
 
                     // Consume the pending narrative once — clear immediately so subsequent
@@ -2035,11 +2232,6 @@ export default function ChatPage() {
                     console.log('[Frontend] Total tools AFTER adding:', liveToolCallsRef.current.length);
                     console.log('[Frontend] Updated liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, label: tc.label, status: tc.status })));
 
-                    // Handle ask_user_question or approve_actions tool start - questions are set in onToolCall
-                    if (toolName === 'ask_user_question' || toolName === 'approve_actions') {
-                        // Set the flag immediately so mission_complete doesn't clear the form
-                        activeUserQuestionRef.current = true;
-                    }
                 });
                 api.onViewSkill(({ name }: { name: string }) => {
                     const display = resolveToolDisplay('view_skill', { name });
@@ -2221,6 +2413,17 @@ export default function ChatPage() {
                 });
                 api.onUsage(({ promptTokens, completionTokens, totalTokens }: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
                     console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
+
+                    // Calculate pricing using model info if available
+                    if (modelInfo) {
+                        const promptCost = promptTokens * modelInfo.promptPricing;
+                        const completionCost = completionTokens * modelInfo.completionPricing;
+                        const totalCost = promptCost + completionCost;
+
+                        console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
+                        console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
+                    }
+
                     hasReceivedUsageData.current = true;
                     setContextTokens({ used: totalTokens, max: 128000 });
                 });
@@ -3202,7 +3405,13 @@ export default function ChatPage() {
     const renderComposerRightActions = (showVolumeToggle = false) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {/* Context Token Ring */}
-            <ContextTokenRing used={contextTokens.used} max={contextTokens.max} />
+            <ContextTokenRing
+                used={contextTokens.used}
+                max={contextTokens.max}
+                modelInfo={modelInfo}
+                estimatedCost={estimatedCost}
+                isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
+            />
 
             {renderModelSelector(true)}
 
@@ -3572,11 +3781,12 @@ export default function ChatPage() {
                 activeTaskIds={activeTaskIds}
                 onSelectConversation={handleSelectConversation}
                 onNewChat={handleNewChat}
-                onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); }}
-                onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); }}
-                onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); }}
-                onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); }}
-                onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
+                onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
+                onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
             />
 
             <CompletionToast />
@@ -3612,7 +3822,14 @@ export default function ChatPage() {
 
                     <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "#ffffff", margin: "0 12px 12px 0", borderRadius: 28, border: "1px solid #e8e6d9", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", overflow: "hidden" }}>
                         {/* Main Chat Area */}
-                        {showProjectsPage ? (
+                        {showAnalyticsPage ? (
+                            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "#fff" }}>
+                                <AnalyticsPage
+                                    onClose={() => setShowAnalyticsPage(false)}
+                                    sidebarOpen={sidebarOpen}
+                                />
+                            </div>
+                        ) : showProjectsPage ? (
                             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "#fff" }}>
                                 <ProjectsPage
                                     onClose={() => setShowProjectsPage(false)}
@@ -3811,6 +4028,7 @@ export default function ChatPage() {
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
                                                         className="placeholder-[#a5a3a0]"
                                                         style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
+
                                                     {/* Progressive fade at the bottom of the textarea */}
                                                     <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, transparent, #f4f4f4 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
                                                     <div style={{ flex: 1 }} />
@@ -4045,7 +4263,7 @@ export default function ChatPage() {
                                                                 />
                                                             ))}
                                                             <RateLimitContinueButton content={msg.content} onContinue={() => handleSend("continue")} />
-                                                            
+
                                                             <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 12 }}>
                                                                 <button
                                                                     onClick={() => handleUndoTurn(idx)}
@@ -4422,13 +4640,15 @@ export default function ChatPage() {
                                             )}
 
                                             {renderAttachmentStrip()}
-                                            <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
-                                                <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
-                                                    disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                    style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
-                                            </div>
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                                <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
+                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
+                                                        disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                        style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
+                                                </div>
 
-                                            {/* Voice recording status */}
+
+                                            </div>
                                             {(isRecording || voiceLoading || voiceTranscript) && (
                                                 <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
                                                     {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "#ef4444" }}>Recording...</span></div>}
@@ -4738,6 +4958,13 @@ export default function ChatPage() {
                     isOpen={showScheduledTaskModal}
                     onClose={() => setShowScheduledTaskModal(false)}
                     onSave={handleSaveScheduledTask}
+                />
+                <RevertModal
+                    isOpen={showRevertModal}
+                    onClose={() => { setShowRevertModal(false); setRevertTarget(null); }}
+                    onConfirm={handleConfirmRevert}
+                    conversationId={revertTarget?.conversationId ?? null}
+                    targetTimestamp={revertTarget?.timestamp ?? null}
                 />
             </div>
         </>

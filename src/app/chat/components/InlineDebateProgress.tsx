@@ -190,40 +190,40 @@ export function InlineDebateProgress({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="overflow-hidden w-full"
           >
-            <div className="pl-6 pb-2.5 ml-[9px] border-l border-zinc-200/80 dark:border-zinc-800">
+            <div className="pl-6 pb-2.5 ml-[9px] border-l border-zinc-200/80 dark:border-zinc-800" style={{ paddingRight: '24px' }}>
               {isDebating ? (
-                <div className="bg-[#fcfcfd] border border-zinc-200/80 rounded-lg p-3.5 flex flex-col gap-3.5 shadow-sm text-zinc-800 dark:bg-zinc-900/30 dark:border-zinc-800 dark:text-zinc-200 w-full">
+                <div className="bg-[#fcfcfd] border border-zinc-200/80 rounded-lg flex flex-col gap-4 shadow-sm text-zinc-800 dark:bg-zinc-900/30 dark:border-zinc-800 dark:text-zinc-200 w-full max-w-full" style={{ padding: '20px', marginLeft: '8px', marginRight: '8px' }}>
                   <div className="flex items-center justify-between border-b border-zinc-100 pb-2 dark:border-zinc-800">
                     <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
                       Live Debate Chamber Feed
                     </span>
-                    <span className="flex items-center gap-1.5 text-[11px] text-purple-600 font-medium bg-purple-50 px-2.5 py-0.5 rounded-full dark:bg-purple-950/40 dark:text-purple-300">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping" />
+                    <span className="flex items-center text-[13px] text-zinc-600 font-semibold bg-zinc-100 rounded-full dark:bg-zinc-800 dark:text-zinc-300" style={{ gap: '8px', paddingLeft: '12px', paddingRight: '14px', paddingTop: '6px', paddingBottom: '6px' }}>
+                      <span className="w-2 h-2 rounded-full bg-zinc-500 animate-ping" />
                       Active Debate
                     </span>
                   </div>
 
                   {/* Vanguard Stage */}
-                  <div className="flex gap-3 text-[13px]">
-                    <div className="flex flex-col items-center">
+                  <div className="flex gap-3 text-[13px] w-full" style={{ paddingLeft: '4px', paddingRight: '4px' }}>
+                    <div className="flex flex-col items-center shrink-0">
                       {debate?.proposal?.id ? (
                         <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px]">✓</div>
                       ) : getActivePhase() === 'vanguard' ? (
-                        <div className="w-5 h-5 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                        <div className="w-5 h-5 rounded-full border-2 border-zinc-400 border-t-transparent animate-spin" />
                       ) : (
                         <div className="w-5 h-5 rounded-full bg-zinc-150 text-zinc-400 flex items-center justify-center font-bold text-[10px] dark:bg-zinc-800">1</div>
                       )}
                       <div className="w-0.5 flex-1 bg-zinc-200/80 my-1 min-h-[16px] dark:bg-zinc-800" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0" style={{ paddingRight: '8px' }}>
                       <div className="flex items-center gap-2 font-semibold text-zinc-900 dark:text-zinc-100">
                         <span>Vanguard Agent</span>
-                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 px-1.5 py-0.2 rounded dark:bg-zinc-850">Planner</span>
+                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 rounded dark:bg-zinc-850" style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '3px', paddingBottom: '3px' }}>Planner</span>
                       </div>
                       {debate?.proposal?.id ? (
-                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded p-2 text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300">
+                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300 w-full" style={{ padding: '12px', marginRight: '8px' }}>
                           <p className="font-semibold text-zinc-800 dark:text-zinc-200 mb-0.5">Proposed Plan:</p>
-                          <p className="italic mb-1 text-zinc-700 dark:text-zinc-300">"{debate.proposal.approach}"</p>
+                          <p className="italic mb-1 text-zinc-700 dark:text-zinc-300 break-words">"{debate.proposal.approach}"</p>
                           <div className="text-[11px] text-zinc-400 font-medium mt-1">
                             Steps: {debate.proposal.stepCount} | Estimated: {Math.round(debate.proposal.estimatedTimeMs / 1000)}s
                           </div>
@@ -237,35 +237,35 @@ export function InlineDebateProgress({
                   </div>
 
                   {/* Phantom Stage */}
-                  <div className="flex gap-3 text-[13px]">
-                    <div className="flex flex-col items-center">
+                  <div className="flex gap-3 text-[13px] w-full" style={{ paddingLeft: '4px', paddingRight: '4px' }}>
+                    <div className="flex flex-col items-center shrink-0">
                       {debate?.review?.id ? (
                         <div className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold text-[10px] ${debate.review.assessment === 'viable' ? 'bg-emerald-500' : 'bg-amber-500'}`}>✓</div>
                       ) : getActivePhase() === 'phantom' ? (
-                        <div className="w-5 h-5 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                        <div className="w-5 h-5 rounded-full border-2 border-zinc-400 border-t-transparent animate-spin" />
                       ) : (
                         <div className="w-5 h-5 rounded-full bg-zinc-150 text-zinc-400 flex items-center justify-center font-bold text-[10px] dark:bg-zinc-800">2</div>
                       )}
                       <div className="w-0.5 flex-1 bg-zinc-200/80 my-1 min-h-[16px] dark:bg-zinc-800" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0" style={{ paddingRight: '8px' }}>
                       <div className="flex items-center gap-2 font-semibold text-zinc-900 dark:text-zinc-100">
                         <span>Phantom Agent</span>
-                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 px-1.5 py-0.2 rounded dark:bg-zinc-850">Critic</span>
+                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 rounded dark:bg-zinc-850" style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '3px', paddingBottom: '3px' }}>Critic</span>
                       </div>
                       {debate?.review?.id ? (
-                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded p-2 text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300">
+                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300 w-full" style={{ padding: '12px', marginRight: '8px' }}>
                           <p className="font-semibold text-zinc-800 dark:text-zinc-200 mb-0.5">Critique Completed:</p>
-                          <p className="mb-1">
+                          <p className="mb-1 break-words">
                             Assessment: <span className={`font-semibold capitalize ${debate.review.assessment === 'viable' ? 'text-green-600' : debate.review.assessment === 'concerning' ? 'text-yellow-600' : 'text-red-600'}`}>{debate.review.assessment}</span>
                           </p>
                           <div className="text-[11px] text-zinc-400 font-medium">
                             Concerns flagged: {debate.review.concernCount} ({debate.review.criticalCount} critical)
                           </div>
                           {debate.review.concerns && debate.review.concerns.length > 0 && (
-                            <ul className="mt-1.5 pl-4 list-disc text-zinc-500 text-[11px] max-h-24 overflow-y-auto space-y-1">
+                            <ul className="mt-1.5 pl-4 list-disc text-zinc-500 text-[11px] max-h-24 overflow-y-auto space-y-1 break-words">
                               {debate.review.concerns.map((c, i) => (
-                                <li key={i}>
+                                <li key={i} className="break-words">
                                   <span className="font-semibold text-zinc-700 dark:text-zinc-300">[{c.severity}] {c.title}</span>: {c.description}
                                 </li>
                               ))}
@@ -281,30 +281,30 @@ export function InlineDebateProgress({
                   </div>
 
                   {/* Arbiter Stage */}
-                  <div className="flex gap-3 text-[13px]">
-                    <div className="flex flex-col items-center">
+                  <div className="flex gap-3 text-[13px] w-full" style={{ paddingLeft: '4px', paddingRight: '4px' }}>
+                    <div className="flex flex-col items-center shrink-0">
                       {debate?.finalPlan?.id ? (
                         <div className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold text-[10px] ${debate.finalPlan.goNogo === 'go' ? 'bg-emerald-500' : debate.finalPlan.goNogo === 'no-go' ? 'bg-red-500' : 'bg-amber-500'}`}>✓</div>
                       ) : getActivePhase() === 'arbiter' ? (
-                        <div className="w-5 h-5 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                        <div className="w-5 h-5 rounded-full border-2 border-zinc-400 border-t-transparent animate-spin" />
                       ) : (
                         <div className="w-5 h-5 rounded-full bg-zinc-150 text-zinc-400 flex items-center justify-center font-bold text-[10px] dark:bg-zinc-800">3</div>
                       )}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0" style={{ paddingRight: '8px' }}>
                       <div className="flex items-center gap-2 font-semibold text-zinc-900 dark:text-zinc-100">
                         <span>Arbiter Agent</span>
-                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 px-1.5 py-0.2 rounded dark:bg-zinc-850">Judge</span>
+                        <span className="text-[10px] text-zinc-400 font-normal bg-zinc-100 rounded dark:bg-zinc-850" style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '3px', paddingBottom: '3px' }}>Judge</span>
                       </div>
                       {debate?.finalPlan?.id ? (
-                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded p-2 text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300">
+                        <div className="mt-1 bg-zinc-50 border border-zinc-150 rounded text-[12px] text-zinc-600 dark:bg-zinc-800/40 dark:border-zinc-800/60 dark:text-zinc-300 w-full" style={{ padding: '12px', marginRight: '8px' }}>
                           <p className="font-semibold text-zinc-800 dark:text-zinc-200 mb-0.5">Final Decision:</p>
                           <p className="font-bold text-zinc-900 dark:text-zinc-100 mb-0.5 uppercase tracking-wide">
                             {debate.finalPlan.goNogo === 'go' ? '🟢 APPROVED' : debate.finalPlan.goNogo === 'no-go' ? '🔴 REJECTED' : '🟡 PROCEED WITH CAUTION'}
                           </p>
-                          <p className="text-[11px] italic mt-1 text-zinc-500 dark:text-zinc-400">"{debate.finalPlan.explanation}"</p>
-                          
-                          <div className="mt-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <p className="text-[11px] italic mt-1 text-zinc-500 dark:text-zinc-400 break-words">"{debate.finalPlan.explanation}"</p>
+
+                          <div className="mt-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 break-words">
                             <span>Steps: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.stepCount}</strong></span>
                             <span>Resolved: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.addressedConcerns} concerns</strong></span>
                             {debate.finalPlan.remainingRisks > 0 && (
@@ -327,17 +327,29 @@ export function InlineDebateProgress({
                 </div>
               ) : (
                 debate && (
-                  <div className="bg-white border border-[#e5e7eb] rounded-md p-3 flex flex-col gap-2 dark:bg-zinc-900 dark:border-zinc-800">
+                  <div
+                    className="bg-white border border-[#e5e7eb] rounded-md p-3 flex flex-col gap-2 dark:bg-zinc-900 dark:border-zinc-800"
+                    style={{ padding: '16px', gap: '12px' }}
+                  >
                     {/* Explanation - truncated and better formatted */}
-                    <div className="px-2 py-1.5 rounded-md text-[12px] leading-[1.5] bg-[#f9fafb] text-[#4b5563] border border-[#f3f4f6] dark:bg-zinc-950 dark:border-zinc-850 dark:text-zinc-300">
+                    <div
+                      className="px-2 py-1.5 rounded-md text-[12px] leading-[1.5] bg-[#f9fafb] text-[#4b5563] border border-[#f3f4f6] dark:bg-zinc-950 dark:border-zinc-850 dark:text-zinc-300"
+                      style={{ padding: '8px' }}
+                    >
                       <p className="whitespace-pre-wrap wrap-break-word">
                         {truncateText(debate.finalPlan.explanation, 250)}
                       </p>
                     </div>
 
                     {/* Stats Grid - Compact */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850">
+                    <div
+                      className="grid grid-cols-3 gap-1.5"
+                      style={{ gap: '12px', padding: '0 4px' }}
+                    >
+                      <div
+                        className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850"
+                        style={{ padding: '10px' }}
+                      >
                         <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
                           Steps
                         </p>
@@ -345,7 +357,10 @@ export function InlineDebateProgress({
                           {debate.finalPlan.stepCount || debate.proposal.stepCount}
                         </p>
                       </div>
-                      <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850">
+                      <div
+                        className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850"
+                        style={{ padding: '10px' }}
+                      >
                         <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
                           Concerns
                         </p>
@@ -353,7 +368,10 @@ export function InlineDebateProgress({
                           {debate.review.concernCount}
                         </p>
                       </div>
-                      <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850">
+                      <div
+                        className="bg-[#f9fafb] border border-[#e5e7eb] rounded-md px-2 py-1.5 dark:bg-zinc-950 dark:border-zinc-850"
+                        style={{ padding: '10px' }}
+                      >
                         <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
                           Risk
                         </p>

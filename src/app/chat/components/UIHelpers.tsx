@@ -2,9 +2,26 @@ import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { WaveformIcon } from './UIIcons';
 
-const ContextTokenRing = ({ used, max }: { used: number; max: number }) => {
-    const pct = Math.min((used / max) * 100, 100);
-    const displayTokens = used >= 1000 ? `${(used / 1000).toFixed(1)}k` : `${used}`;
+const ContextTokenRing = ({
+    used,
+    max,
+    modelInfo,
+    estimatedCost,
+    isLocalModel
+}: {
+    used: number;
+    max: number;
+    modelInfo?: {
+        contextLength: number;
+        promptPricing: number;
+        completionPricing: number;
+    } | null;
+    estimatedCost?: number | null;
+    isLocalModel?: boolean;
+}) => {
+    // Use modelInfo context length if available, otherwise fall back to passed max
+    const actualMax = modelInfo?.contextLength || max;
+    const pct = Math.min((used / actualMax) * 100, 100);
     const ringColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
     const bgColor = 'rgba(0,0,0,0.06)';
 
@@ -13,18 +30,49 @@ const ContextTokenRing = ({ used, max }: { used: number; max: number }) => {
             <div style={{
                 position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
                 backgroundColor: '#1a1a1a', borderRadius: 8, padding: '6px 12px',
-                display: 'flex', alignItems: 'center', gap: 4, opacity: 0, pointerEvents: 'none',
+                display: 'flex', flexDirection: 'column', gap: 4, opacity: 0, pointerEvents: 'none',
                 transition: 'opacity 0.15s ease', whiteSpace: 'nowrap', zIndex: 9999, marginBottom: 8,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
             }} className="token-ring-tooltip">
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                    {displayTokens}
-                </span>
-                <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#9ca3af', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                    {Math.round(max / 1000)}k
-                </span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
+                {/* Token count */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                        {used.toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: '#9ca3af', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                        {actualMax.toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
+                </div>
+
+                {/* Pricing (only show for non-local models with cost) */}
+                {/* Est. cost = current input tokens cost + estimated completion tokens cost (avg 1000 tokens) */}
+                {!isLocalModel && estimatedCost !== null && estimatedCost !== undefined && estimatedCost > 0 && (
+                    <div style={{
+                        fontSize: 11,
+                        color: '#9ca3af',
+                        fontFamily: "'Figtree', system-ui, sans-serif",
+                        borderTop: '1px solid rgba(255,255,255,0.1)',
+                        paddingTop: 4
+                    }}>
+                        Est. ${estimatedCost.toFixed(4)}
+                    </div>
+                )}
+
+                {/* Warning if near limit */}
+                {pct > 80 && (
+                    <div style={{
+                        fontSize: 11,
+                        color: '#ef4444',
+                        fontWeight: 600,
+                        fontFamily: "'Figtree', system-ui, sans-serif",
+                        borderTop: '1px solid rgba(255,255,255,0.1)',
+                        paddingTop: 4
+                    }}>
+                        ⚠ Near limit
+                    </div>
+                )}
             </div>
             <svg width="32" height="32" viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="16" cy="16" r="12" fill="none" stroke={bgColor} strokeWidth="3" />

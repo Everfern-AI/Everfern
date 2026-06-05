@@ -133,7 +133,7 @@ export async function initializePersistenceTables(): Promise<void> {
     console.log('[PersistenceDB] Persistence database initialization complete');
   } catch (error) {
     console.error('[PersistenceDB] Failed to initialize persistence tables:', error);
-    throw error;
+    // Non-fatal: don't block DB init if persistence tables fail
   }
 }
 
@@ -151,40 +151,33 @@ export async function initializePersistenceTables(): Promise<void> {
  * **Validates: Requirement 12.1 (Performance under 200ms)**
  */
 async function createPersistenceIndexes(): Promise<void> {
-  try {
-    await dbOps.exec(`
-      -- Checkpoints indexes
-      CREATE INDEX IF NOT EXISTS idx_checkpoints_task_id ON checkpoints(task_id);
-      CREATE INDEX IF NOT EXISTS idx_checkpoints_step ON checkpoints(task_id, step_number);
-      CREATE INDEX IF NOT EXISTS idx_checkpoints_timestamp ON checkpoints(timestamp);
+  // Create each index individually so one failure doesn't abort the rest
+  const indexes: [string, string][] = [
+    ['idx_checkpoints_task_id', 'CREATE INDEX IF NOT EXISTS idx_checkpoints_task_id ON checkpoints(task_id)'],
+    ['idx_checkpoints_step', 'CREATE INDEX IF NOT EXISTS idx_checkpoints_step ON checkpoints(task_id, step_number)'],
+    ['idx_file_snapshots_task', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_task ON file_snapshots(task_id, step_number)'],
+    ['idx_file_snapshots_path', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_path ON file_snapshots(file_path)'],
+    ['idx_file_snapshots_timestamp', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_timestamp ON file_snapshots(timestamp)'],
+    ['idx_command_history_task', 'CREATE INDEX IF NOT EXISTS idx_command_history_task ON command_history(task_id, step_number)'],
+    ['idx_command_history_timestamp', 'CREATE INDEX IF NOT EXISTS idx_command_history_timestamp ON command_history(timestamp)'],
+    ['idx_task_schedules_status', 'CREATE INDEX IF NOT EXISTS idx_task_schedules_status ON task_schedules(status)'],
+    ['idx_task_schedules_next_execution', 'CREATE INDEX IF NOT EXISTS idx_task_schedules_next_execution ON task_schedules(next_execution_time)'],
+    ['idx_navis_sessions_task', 'CREATE INDEX IF NOT EXISTS idx_navis_sessions_task ON navis_sessions(task_id)'],
+    ['idx_navis_sessions_timestamp', 'CREATE INDEX IF NOT EXISTS idx_navis_sessions_timestamp ON navis_sessions(timestamp)'],
+    ['idx_computer_use_task', 'CREATE INDEX IF NOT EXISTS idx_computer_use_task ON computer_use_actions(task_id, step_number)'],
+    ['idx_computer_use_timestamp', 'CREATE INDEX IF NOT EXISTS idx_computer_use_timestamp ON computer_use_actions(timestamp)'],
+  ];
 
-      -- File snapshots indexes
-      CREATE INDEX IF NOT EXISTS idx_file_snapshots_task ON file_snapshots(task_id, step_number);
-      CREATE INDEX IF NOT EXISTS idx_file_snapshots_path ON file_snapshots(file_path);
-      CREATE INDEX IF NOT EXISTS idx_file_snapshots_timestamp ON file_snapshots(timestamp);
-
-      -- Command history indexes
-      CREATE INDEX IF NOT EXISTS idx_command_history_task ON command_history(task_id, step_number);
-      CREATE INDEX IF NOT EXISTS idx_command_history_timestamp ON command_history(timestamp);
-
-      -- Task schedules indexes
-      CREATE INDEX IF NOT EXISTS idx_task_schedules_status ON task_schedules(status);
-      CREATE INDEX IF NOT EXISTS idx_task_schedules_next_execution ON task_schedules(next_execution_time);
-
-      -- Navis sessions indexes
-      CREATE INDEX IF NOT EXISTS idx_navis_sessions_task ON navis_sessions(task_id);
-      CREATE INDEX IF NOT EXISTS idx_navis_sessions_timestamp ON navis_sessions(timestamp);
-
-      -- Computer Use actions indexes
-      CREATE INDEX IF NOT EXISTS idx_computer_use_task ON computer_use_actions(task_id, step_number);
-      CREATE INDEX IF NOT EXISTS idx_computer_use_timestamp ON computer_use_actions(timestamp);
-    `);
-
-    console.log('[PersistenceDB] Performance indexes created successfully');
-  } catch (error) {
-    console.error('[PersistenceDB] Failed to create indexes:', error);
-    throw error;
+  for (const [name, sql] of indexes) {
+    try {
+      await dbOps.exec(sql);
+    } catch (err) {
+      // Non-fatal: index may reference a column that doesn't exist in an older schema
+      console.warn(`[PersistenceDB] Skipping index ${name}:`, err instanceof Error ? err.message : String(err));
+    }
   }
+
+  console.log('[PersistenceDB] Performance indexes created successfully');
 }
 
 /**
@@ -214,9 +207,44 @@ export async function migratePersistenceSchema(): Promise<void> {
     if (checkpointColumns && checkpointColumns.length > 0) {
       const columnNames = checkpointColumns.map((c: any) => c.name);
 
+      if (!columnNames.includes('step_number')) {
+        await dbOps.run('ALTER TABLE checkpoints ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
+        console.log('[PersistenceDB] Added step_number column to checkpoints table');
+      }
+
       if (!columnNames.includes('compressed')) {
         await dbOps.run('ALTER TABLE checkpoints ADD COLUMN compressed BOOLEAN DEFAULT 0');
         console.log('[PersistenceDB] Added compressed column to checkpoints table');
+      }
+    }
+
+    // Check and add step_number to file_snapshots
+    const fileSnapshotColumns = await dbOps.all("PRAGMA table_info(file_snapshots)");
+    if (fileSnapshotColumns && fileSnapshotColumns.length > 0) {
+      const columnNames = fileSnapshotColumns.map((c: any) => c.name);
+      if (!columnNames.includes('step_number')) {
+        await dbOps.run('ALTER TABLE file_snapshots ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
+        console.log('[PersistenceDB] Added step_number column to file_snapshots table');
+      }
+    }
+
+    // Check and add step_number to command_history
+    const commandHistoryColumns = await dbOps.all("PRAGMA table_info(command_history)");
+    if (commandHistoryColumns && commandHistoryColumns.length > 0) {
+      const columnNames = commandHistoryColumns.map((c: any) => c.name);
+      if (!columnNames.includes('step_number')) {
+        await dbOps.run('ALTER TABLE command_history ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
+        console.log('[PersistenceDB] Added step_number column to command_history table');
+      }
+    }
+
+    // Check and add step_number to computer_use_actions
+    const computerUseColumns = await dbOps.all("PRAGMA table_info(computer_use_actions)");
+    if (computerUseColumns && computerUseColumns.length > 0) {
+      const columnNames = computerUseColumns.map((c: any) => c.name);
+      if (!columnNames.includes('step_number')) {
+        await dbOps.run('ALTER TABLE computer_use_actions ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
+        console.log('[PersistenceDB] Added step_number column to computer_use_actions table');
       }
     }
 

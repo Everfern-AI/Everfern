@@ -43,9 +43,10 @@ export class ChatHistoryStore {
 
         const embedding = await model.embeddings.embedQuery(content);
 
-        await dbOps.run(`DELETE FROM chat_messages_vec WHERE id = ?`, [id]);
+        // vec0 virtual tables don't support INSERT OR REPLACE — use INSERT OR IGNORE
+        // so re-indexing the same message ID is a silent no-op.
         await dbOps.run(
-          `INSERT INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
+          `INSERT OR IGNORE INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
           [id, `[${embedding.join(',')}]`]
         );
         return; // Success, exit loop

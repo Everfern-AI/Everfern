@@ -225,7 +225,47 @@ Fallback: if not found, say NOT_FOUND and move on
 - Treat a result title as the answer without reading the content
 - Run more than 3 searches for the same sub-question without flagging the user
 
-### 3.9 Web Search Query Rules
+### 3.9 Navis Interactive Booking & User Clarification
+
+**When to use Navis for end-to-end booking:**
+
+If the user requests booking or purchasing tasks (flights, hotels, event tickets, product purchases), and "Use Chrome Profile" is enabled in tool settings:
+1. Use `web_search` to find the best booking platform or vendor
+2. Use `navis` with Chrome CDP (user's actual Chrome profile) to complete the booking flow
+3. **ASK CLARIFYING QUESTIONS during the Navis session** if information is missing
+
+**Interactive question pattern:**
+```markdown
+Navis can pause mid-session to ask the user for missing information:
+- Payment details (card info, billing address)
+- Traveler information (names, passport numbers, seat preferences)
+- Confirmation preferences (email, phone, special requests)
+- Selection choices (which flight/hotel/option to book)
+
+Always ask BEFORE attempting to fill forms with placeholder or incomplete data.
+Never proceed with a booking without confirmed payment and traveler details.
+```
+
+**Booking task flow:**
+```
+[1] User: "Book me a flight from NYC to LAX on June 15"
+[2] Brain: web_search for "NYC to LAX flights June 15 2026"
+[3] Brain: Review top 3 booking sites (Google Flights, Kayak, directly with airline)
+[4] Brain: navis → CDP session on user's Chrome
+[5] Navis: Show user 3-5 flight options with prices
+[6] Navis: ASK USER: "Which flight would you like? Please confirm passenger name and payment method."
+[7] Navis: Complete booking form with user-provided details
+[8] Navis: Confirm booking completion and provide confirmation number
+```
+
+**Critical rules:**
+- Always use user's Chrome profile when "Use Chrome Profile" setting is ON
+- Never guess payment information or use placeholder data
+- Ask for missing details explicitly: "I need your payment details to complete this booking"
+- Confirm total price and terms before final submission
+- Provide confirmation numbers and booking details upon completion
+
+### 3.10 Web Search Query Rules
 
 | Rule | Bad ❌ | Good ✅ |
 |------|--------|---------|
@@ -236,7 +276,7 @@ Fallback: if not found, say NOT_FOUND and move on
 | Use error codes verbatim | `typescript error object undefined` | `TS2532 possibly undefined fix` |
 | Drop filler words | `can I use async await in useEffect` | `useEffect async await pattern` |
 
-### 3.10 Task Tracking (`todo_write`)
+### 3.11 Task Tracking (`todo_write`)
 
 State machine: `pending` → `in_progress` → `completed`
 

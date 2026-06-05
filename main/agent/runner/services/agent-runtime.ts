@@ -628,6 +628,23 @@ export async function runAgentStep(
       const usage = response.usage;
       runner.telemetry.info(`Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}`);
       eventQueue?.push({ type: 'usage', ...response.usage });
+
+      // Record into analytics DB (fire-and-forget — never block the agent)
+      try {
+        const { recordUsage } = await import('../../../store/analytics');
+        const cfg = (runner as any).config;
+        const convId: string | undefined = (state as any).conversationId ?? undefined;
+        const clientProvider = clientConfig?.provider ?? client.provider;
+        const clientModel = clientConfig?.model ?? client.model;
+        
+        recordUsage({
+          conversationId: convId,
+          model: clientModel ?? cfg?.model ?? 'unknown',
+          provider: clientProvider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
+          promptTokens: usage.promptTokens ?? 0,
+          completionTokens: usage.completionTokens ?? 0,
+        }).catch(() => { /* never throw */ });
+      } catch { /* analytics never blocks execution */ }
     }
 
     // Tool Call Parsing & Nudging

@@ -208,6 +208,41 @@ export function registerAgentHandlers() {
     return result;
   });
 
+  ipcMain.handle('agent:get-rollback-changes', async (_event, conversationId: string, timestamp: number) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const manager = getRollbackManager();
+    await manager.initialize();
+    
+    // Fetch files that would be reverted (timestamp >= timestamp)
+    const fileRows = await dbOps.all(
+      `SELECT file_path, operation, timestamp FROM file_snapshots
+       WHERE task_id = ? AND timestamp >= ?
+       ORDER BY timestamp DESC`,
+      [conversationId, timestamp]
+    );
+
+    // Fetch commands that would be reverted (timestamp >= timestamp)
+    const cmdRows = await dbOps.all(
+      `SELECT command, reversible, timestamp FROM command_history
+       WHERE task_id = ? AND timestamp >= ?
+       ORDER BY timestamp DESC`,
+      [conversationId, timestamp]
+    );
+
+    return {
+      files: fileRows.map((r: any) => ({
+        path: r.file_path,
+        operation: r.operation,
+        timestamp: r.timestamp
+      })),
+      commands: cmdRows.map((r: any) => ({
+        command: r.command,
+        reversible: r.reversible,
+        timestamp: r.timestamp
+      }))
+    };
+  });
+
   // NOTE: Must use ipcMain.on (not ipcMain.handle) here because the renderer preload
   // uses ipcRenderer.send (one-way fire-and-forget), not ipcRenderer.invoke.
   // ipcMain.handle only receives messages from ipcRenderer.invoke.

@@ -9,6 +9,7 @@ import { chromium as pwChromium, Browser, BrowserContext, Page } from 'playwrigh
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
@@ -55,6 +56,84 @@ function copyEssentialProfileItem(src: string, dest: string): void {
   } catch (err) {
     console.warn(`[Navis] Warning: failed to copy profile item ${src}:`, err);
   }
+}
+
+/**
+ * Attempts to get the Chrome DevTools Protocol (CDP) endpoint from a running Chrome instance.
+ * Returns the WebSocket URL for remote debugging, or null if not found.
+ */
+async function getChromeDebugEndpoint(): Promise<string | null> {
+  try {
+    // Try default local debugging port
+    const response = await fetch('http://localhost:9222/json/version');
+    if (response.ok) {
+      const data = await response.json();
+      return data.webSocketDebuggerUrl;
+    }
+  } catch (err) {
+    console.log('[Navis] Chrome CDP not available on default port 9222');
+  }
+  return null;
+}
+
+/**
+ * Launches Chrome with remote debugging enabled on a specific port.
+ * Returns the WebSocket debugging URL.
+ */
+function launchChromeWithDebugPort(
+  executablePath: string,
+  userDataDir: string,
+  profileDirectory: string,
+  debugPort: number = 9222
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const args = [
+        `--user-data-dir=${userDataDir}`,
+        `--profile-directory=${profileDirectory}`,
+        `--remote-debugging-port=${debugPort}`,
+        '--no-first-run',
+        '--no-default-browser-check',
+        'about:blank',
+      ];
+
+      console.log(`[Navis] Launching Chrome with remote debugging on port ${debugPort}...`);
+
+      // Launch Chrome in background
+      if (process.platform === 'win32') {
+        spawn(executablePath, args, { detached: true, stdio: 'ignore' });
+      } else {
+        spawn(executablePath, args, { detached: true, stdio: 'ignore' });
+      }
+
+      // Wait a moment for Chrome to start and listen
+      const maxAttempts = 30; // 3 seconds
+      let attempts = 0;
+
+      const checkEndpoint = async () => {
+        try {
+          const response = await fetch(`http://localhost:${debugPort}/json/version`);
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`[Navis] CDP endpoint found: ${data.webSocketDebuggerUrl}`);
+            resolve(data.webSocketDebuggerUrl);
+            return;
+          }
+        } catch {}
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(checkEndpoint, 100);
+        } else {
+          reject(new Error(`Failed to get Chrome CDP endpoint after ${maxAttempts * 100}ms`));
+        }
+      };
+
+      checkEndpoint();
+    } catch (err) {
+      reject(new Error(`Failed to launch Chrome with debug port: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  });
 }
 
 function getChromeProfileLaunchConfig(): ChromeProfileLaunchConfig {
@@ -253,21 +332,120 @@ export class BrowserSession {
         try {
           const chromeProfile = getChromeProfileLaunchConfig();
           const executablePath = chromeProfile.executablePath || findChromiumExecutable() || undefined;
-          if (executablePath) {
-            console.log(`[Navis] Using Chromium executable: ${executablePath}`);
+
+          // TRY 1: Connect to existing Chrome via CDP (non-isolated mode)
+          console.log(`[Navis] 🔌 CDP MODE: Attempting to connect to existing Chrome instance...`);
+          console.log(`[Navis] Looking for Chrome with remote debugging on port 9222...`);
+          let cdpEndpoint = await getChromeDebugEndpoint();
+
+          if (!cdpEndpoint) {
+            console.log(`[Navis] ❌ No Chrome instance found with CDP enabled on port 9222`);
+            console.log(`[Navis] 💡 TIP: To use your real Chrome profile, manually launch Chrome with:`);
+            console.log(`[Navis]    Windows: "${chromeProfile.executablePath}" --remote-debugging-port=9222 --user-data-dir="${chromeProfile.userDataDir}" --profile-directory="${chromeProfile.profileDirectory}"`);
+            console.log(`[Navis] 🚀 Auto-launching Chrome with CDP for you...`);
+
+            try {
+              cdpEndpoint = await launchChromeWithDebugPort(
+                executablePath!,
+                chromeProfile.userDataDir,
+                chromeProfile.profileDirectory,
+                9222
+              );
+            } catch (launchErr: any) {
+              console.warn(`[Navis] ⚠️ Failed to auto-launch Chrome with CDP: ${launchErr.message}`);
+              console.log(`[Navis] This is usually because Chrome is already running. Close all Chrome windows and try again.`);
+              throw launchErr; // Fall through to isolated context fallback
+            }
+          } else {
+            console.log(`[Navis] ✅ Found existing Chrome with CDP at: ${cdpEndpoint}`);
           }
 
-          const profileLaunchArgs = [
-            ...launchArgs,
-            `--profile-directory=${chromeProfile.profileDirectory}`,
-            `--load-extension=${ensureNavisTabGroupExtension()}`,
-          ];
-
-          let finalUserDataDir = chromeProfile.userDataDir;
+          // Connect to Chrome via CDP endpoint
+          try {
+            console.log(`[Navis] 🔗 Connecting to Chrome via CDP WebSocket: ${cdpEndpoint}`);
+            this.browser = await chromium.connectOverCDP(cdpEndpoint);
+            this.context = this.browser.contexts()[0] || await this.browser.newContext({
+              viewport: { width: 1280, height: 1024 },
+              userAgent: realUA,
+              locale: 'en-US',
+              timezoneId: 'America/New_York',
+            });
+            console.log(`[Navis] ✅✅✅ SUCCESS: Connected to your REAL Chrome browser via CDP!`);
+            console.log(`[Navis] You can now see Navis actions in your actual Chrome window.`);
+            this.logger?.browserLaunch(`Connected via CDP to system Chrome (profile: ${chromeProfile.profileDirectory})`);
+          } catch (cdpErr: any) {
+            console.warn(`[Navis] ❌ Failed to connect via CDP: ${cdpErr.message}`);
+            throw cdpErr; // Fall through to isolated context fallback
+          }
+        } catch (chromeProfileErr: any) {
+          // FALLBACK 1: Try launchPersistentContext with isolated profile copy
+          console.warn(`[Navis] ⚠️ CDP connection failed, falling back to isolated browser with profile copy...`);
+          console.log(`[Navis] (This means Navis will run in a separate browser window, not your main Chrome)`);
 
           try {
-            console.log(`[Navis] Attempting to launch with Chrome profile directly...`);
-            this.context = await chromium.launchPersistentContext(finalUserDataDir, {
+            const chromeProfile = getChromeProfileLaunchConfig();
+            const executablePath = chromeProfile.executablePath || findChromiumExecutable() || undefined;
+            // FALLBACK 1: Create temporary copy of the profile to bypass locks
+            const tempUserDataDir = path.join(os.tmpdir(), `everfern-navis-chrome-profile-${Date.now()}`);
+            const srcProfileDir = path.join(chromeProfile.userDataDir, chromeProfile.profileDirectory);
+            const destProfileDir = path.join(tempUserDataDir, chromeProfile.profileDirectory);
+
+            console.log(`[Navis] Copying profile files from ${srcProfileDir} to ${destProfileDir}...`);
+
+            fs.mkdirSync(destProfileDir, { recursive: true });
+
+            // Copy essential session & cookie files/dirs
+            const essentials = [
+              'Preferences',
+              'Secure Preferences',
+              'Login Data',
+              'Cookies',
+              'Network',
+              'Local Storage',
+              'Session Storage',
+            ];
+
+            for (const item of essentials) {
+              const srcPath = path.join(srcProfileDir, item);
+              const destPath = path.join(destProfileDir, item);
+              copyEssentialProfileItem(srcPath, destPath);
+            }
+
+            // Copy Local State from user data dir root to temp user data dir root (crucial for DPAPI decrypting cookies/logins on Windows)
+            const srcLocalState = path.join(chromeProfile.userDataDir, 'Local State');
+            const destLocalState = path.join(tempUserDataDir, 'Local State');
+            if (fs.existsSync(srcLocalState)) {
+              try {
+                fs.copyFileSync(srcLocalState, destLocalState);
+                console.log(`[Navis] Copied Local State file to ${destLocalState}`);
+              } catch (localStateErr) {
+                console.warn(`[Navis] Warning: failed to copy Local State:`, localStateErr);
+              }
+            }
+
+            // Remove any lock files in the destination to ensure clean launch
+            const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile'];
+            for (const lockFile of lockFiles) {
+              const lockPath = path.join(tempUserDataDir, lockFile);
+              if (fs.existsSync(lockPath)) {
+                try { fs.unlinkSync(lockPath); } catch {}
+              }
+              const lockPathProfile = path.join(destProfileDir, lockFile);
+              if (fs.existsSync(lockPathProfile)) {
+                try { fs.unlinkSync(lockPathProfile); } catch {}
+              }
+            }
+
+            this.tempUserDataDir = tempUserDataDir;
+
+            const profileLaunchArgs = [
+              ...launchArgs,
+              `--profile-directory=${chromeProfile.profileDirectory}`,
+              `--load-extension=${ensureNavisTabGroupExtension()}`,
+            ];
+
+            console.log(`[Navis] Launching Playwright with temporary profile: ${tempUserDataDir}`);
+            this.context = await chromium.launchPersistentContext(tempUserDataDir, {
               headless,
               executablePath,
               args: profileLaunchArgs,
@@ -276,95 +454,28 @@ export class BrowserSession {
               locale: 'en-US',
               timezoneId: 'America/New_York',
             });
-          } catch (launchErr: any) {
-            console.warn(`[Navis] Failed to launch with direct Chrome profile (usually because Chrome is running): ${launchErr.message}`);
-            console.log(`[Navis] Falling back to launching with a copied temporary Chrome profile...`);
+            console.log(`[Navis] ✅ Launched with isolated temporary profile copy`);
+            this.logger?.browserLaunch(`Isolated browser with temporary profile copy (fallback mode)`);
+          } catch (fallbackErr: any) {
+            // FALLBACK 2: Fresh Chromium context (last resort)
+            console.warn(`[Navis] Temporary profile copy failed: ${fallbackErr.message}`);
+            console.log(`[Navis] Falling back to fresh Chromium context...`);
 
-            // Create temporary copy of the profile to bypass locks
-            const tempUserDataDir = path.join(os.tmpdir(), `everfern-navis-chrome-profile-${Date.now()}`);
-            const srcProfileDir = path.join(chromeProfile.userDataDir, chromeProfile.profileDirectory);
-            const destProfileDir = path.join(tempUserDataDir, chromeProfile.profileDirectory);
+            this.browser = await chromium.launch({
+              headless: false,
+              executablePath: findChromiumExecutable() || undefined,
+              args: launchArgs,
+            });
 
-            console.log(`[Navis] Copying profile files from ${srcProfileDir} to ${destProfileDir}...`);
-            try {
-              fs.mkdirSync(destProfileDir, { recursive: true });
-              
-              // Copy essential session & cookie files/dirs
-              const essentials = [
-                'Preferences',
-                'Secure Preferences',
-                'Login Data',
-                'Cookies',
-                'Network',
-                'Local Storage',
-                'Session Storage',
-              ];
-
-              for (const item of essentials) {
-                const srcPath = path.join(srcProfileDir, item);
-                const destPath = path.join(destProfileDir, item);
-                copyEssentialProfileItem(srcPath, destPath);
-              }
-
-              // Copy Local State from user data dir root to temp user data dir root (crucial for DPAPI decrypting cookies/logins on Windows)
-              const srcLocalState = path.join(chromeProfile.userDataDir, 'Local State');
-              const destLocalState = path.join(tempUserDataDir, 'Local State');
-              if (fs.existsSync(srcLocalState)) {
-                try {
-                  fs.copyFileSync(srcLocalState, destLocalState);
-                  console.log(`[Navis] Copied Local State file to ${destLocalState}`);
-                } catch (localStateErr) {
-                  console.warn(`[Navis] Warning: failed to copy Local State:`, localStateErr);
-                }
-              }
-
-              // Remove any lock files in the destination to ensure clean launch
-              const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile'];
-              for (const lockFile of lockFiles) {
-                const lockPath = path.join(tempUserDataDir, lockFile);
-                if (fs.existsSync(lockPath)) {
-                  try { fs.unlinkSync(lockPath); } catch {}
-                }
-                const lockPathProfile = path.join(destProfileDir, lockFile);
-                if (fs.existsSync(lockPathProfile)) {
-                  try { fs.unlinkSync(lockPathProfile); } catch {}
-                }
-              }
-
-              finalUserDataDir = tempUserDataDir;
-              this.tempUserDataDir = tempUserDataDir;
-
-              console.log(`[Navis] Launching Playwright with temporary profile: ${finalUserDataDir}`);
-              this.context = await chromium.launchPersistentContext(finalUserDataDir, {
-                headless,
-                executablePath,
-                args: profileLaunchArgs,
-                viewport: { width: 1280, height: 1024 },
-                userAgent: realUA,
-                locale: 'en-US',
-                timezoneId: 'America/New_York',
-              });
-            } catch (copyErr: any) {
-              console.error(`[Navis] Failed to copy temporary profile: ${copyErr.message}`);
-              throw copyErr; // Rethrow to fall back to clean standard Chromium launch below
-            }
+            this.context = await this.browser.newContext({
+              viewport: { width: 1280, height: 1024 },
+              userAgent: realUA,
+              locale: 'en-US',
+              timezoneId: 'America/New_York',
+            });
+            console.log(`[Navis] ✅ Launched with fresh isolated Chromium context`);
+            this.logger?.browserLaunch(`Fresh isolated Chromium browser (last resort fallback)`);
           }
-        } catch (chromeProfileErr: any) {
-          console.warn(`[Navis] Chrome profile setup/launch failed completely: ${chromeProfileErr.message}`);
-          console.log(`[Navis] Falling back to fresh Chromium context...`);
-
-          this.browser = await chromium.launch({
-            headless: false,
-            executablePath: findChromiumExecutable() || undefined,
-            args: launchArgs,
-          });
-
-          this.context = await this.browser.newContext({
-            viewport: { width: 1280, height: 1024 },
-            userAgent: realUA,
-            locale: 'en-US',
-            timezoneId: 'America/New_York',
-          });
         }
 
         if (this.context) {
@@ -388,6 +499,8 @@ export class BrowserSession {
           locale: 'en-US',
           timezoneId: 'America/New_York',
         });
+
+        this.logger?.browserLaunch(`Isolated Playwright Chromium (headless=${headless})`);
       }
 
     // Inject overlay into all future pages in this context
@@ -412,7 +525,10 @@ export class BrowserSession {
       await this.openTab('about:blank');
     }
 
-    this.logger?.browserLaunch(`headless=${useChromeProfile ? false : headless}, 1280x1024, ${useChromeProfile ? 'Chrome profile' : 'real Chrome'}`);
+    // Only log generic message if we haven't already logged a specific one (CDP vs isolated)
+    if (!this.logger) {
+      console.log(`[Navis] Browser ready: headless=${useChromeProfile ? false : headless}, 1280x1024`);
+    }
   }
 
   async openTab(url?: string): Promise<Page> {

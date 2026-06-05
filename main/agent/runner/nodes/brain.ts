@@ -143,6 +143,20 @@ Respond with JSON only:
     console.log(`[Brain] Response length: ${response.content?.length || 0} chars, first 100 chars:`,
       (typeof response.content === 'string' ? response.content : JSON.stringify(response.content)).slice(0, 100));
 
+    if (response.usage) {
+      try {
+        const { recordUsage } = await import('../../../store/analytics');
+        const cfg = (runner as any).config;
+        recordUsage({
+          conversationId: undefined, // Internal brain task
+          model: runner.client.model ?? cfg?.model ?? 'unknown',
+          provider: runner.client.provider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
+          promptTokens: response.usage.promptTokens ?? 0,
+          completionTokens: response.usage.completionTokens ?? 0,
+        }).catch(() => { /* never throw */ });
+      } catch { /* ignore */ }
+    }
+
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
 
     // Strip out <think>...</think> blocks from reasoning models before extracting JSON
@@ -282,6 +296,20 @@ Respond with JSON only:
 
     const duration = Date.now() - startTime;
     console.log(`[Brain] Routing decision response received in ${duration}ms`);
+
+    if (response.usage) {
+      try {
+        const { recordUsage } = await import('../../../store/analytics');
+        const cfg = (runner as any).config;
+        recordUsage({
+          conversationId: state.missionId ?? undefined, // Route tracking
+          model: runner.client.model ?? cfg?.model ?? 'unknown',
+          provider: runner.client.provider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
+          promptTokens: response.usage.promptTokens ?? 0,
+          completionTokens: response.usage.completionTokens ?? 0,
+        }).catch(() => { /* never throw */ });
+      } catch { /* ignore */ }
+    }
 
     // Emit decision analysis
 

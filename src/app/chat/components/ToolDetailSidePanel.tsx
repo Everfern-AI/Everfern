@@ -1203,6 +1203,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
         padding: '18px 20px', background: T.surface,
         border: `1px solid ${T.border}`, borderRadius: T.r12, cursor: 'pointer',
         boxShadow: '0 1px 3px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden',
+        flexShrink: 0,
       }}
       whileHover={{ borderColor: '#b8b8b4', y: -1, boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}
       transition={{ duration: 0.12 }}
@@ -1220,7 +1221,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
 
       {/* Title */}
       <h3 style={{
-        fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 8px',
+        fontSize: 13.5, fontWeight: 600, color: T.text, margin: content ? '0 0 8px' : 0,
         lineHeight: 1.45, letterSpacing: '-0.015em', fontFamily: T.sans,
       }}>
         {finalTitle}
