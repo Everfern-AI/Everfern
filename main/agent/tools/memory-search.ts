@@ -2,6 +2,9 @@ import { AgentTool, ToolResult } from '../runner/types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
+import { dbOps, ensureVectorTable } from '../../lib/db';
+import { getEmbeddingModel, getSystemEmbeddingConfig } from '../../lib/embeddings';
 
 function getMemoryPath(): string {
   return path.join(os.homedir(), '.everfern', 'memory.md');
@@ -59,15 +62,12 @@ function scoreEntry(entry: MemoryEntry, queryWords: string[], query: string): nu
     if (entry.preference.toLowerCase().includes(word)) score += 1;
   }
 
-  // Prefer more recent entries (weight by position since entries are newest-last)
-  // We'll apply a small recency bonus based on array position later
-
   return score;
 }
 
 export const memorySearchTool: AgentTool = {
   name: 'memory_search',
-  description: 'Search local markdown memory file using keyword matching. Use this to recall past context, user facts, or prior files.',
+  description: 'Search local memory using vector similarity and keyword matching. Use this to recall past context, user facts, or preferences.',
   parameters: {
     type: 'object',
     properties: {
@@ -94,45 +94,151 @@ export const memorySearchTool: AgentTool = {
         return { success: true, output: 'No memories found in the memory file.' };
       }
 
-      const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      // Keyword fallback score method
+      const runKeywordSearch = () => {
+        const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        const scored = entries.map((e, i) => ({
+          entry: e,
+          score: scoreEntry(e, queryWords, query) + (i / entries.length) * 0.5,
+        }));
 
-      // Score and rank entries (reverse so newest entries get a bonus)
-      const scored = entries.map((e, i) => ({
-        entry: e,
-        score: scoreEntry(e, queryWords, query) + (i / entries.length) * 0.5,
-      }));
+        const ranked = scored
+          .filter(s => s.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, limit);
 
-      const ranked = scored
-        .filter(s => s.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
-
-      if (ranked.length === 0) {
-        return { success: true, output: 'No relevant memories found.' };
-      }
-
-      const output = ranked.map((r, i) =>
-        `[Result ${i + 1}] (Relevance: ${r.score.toFixed(2)})\nDate: ${r.entry.date}\n${r.entry.content}${r.entry.tags ? `\nTags: ${r.entry.tags}` : ''}${r.entry.preference ? `\nPreference: ${r.entry.preference}` : ''}`
-      ).join('\n\n');
-
-      // Check if any result has a preference tag
-      let hasPreference = false;
-      let preferenceText = '';
-      let preferenceType = '';
-      for (const r of ranked) {
-        if (r.entry.preference) {
-          hasPreference = true;
-          preferenceText = r.entry.content;
-          preferenceType = r.entry.preference;
-          break;
+        if (ranked.length === 0) {
+          return { success: true, output: 'No relevant memories found.' };
         }
-      }
 
-      return {
-        success: true,
-        output,
-        data: { hasPreference, preferenceText, preferenceType, resultCount: ranked.length },
+        const output = ranked.map((r, i) =>
+          `[Result ${i + 1}] (Relevance: ${r.score.toFixed(2)})\nDate: ${r.entry.date}\n${r.entry.content}${r.entry.tags ? `\nTags: ${r.entry.tags}` : ''}${r.entry.preference ? `\nPreference: ${r.entry.preference}` : ''}`
+        ).join('\n\n');
+
+        let hasPreference = false;
+        let preferenceText = '';
+        let preferenceType = '';
+        for (const r of ranked) {
+          if (r.entry.preference) {
+            hasPreference = true;
+            preferenceText = r.entry.content;
+            preferenceType = r.entry.preference;
+            break;
+          }
+        }
+
+        return {
+          success: true,
+          output,
+          data: { hasPreference, preferenceText, preferenceType, resultCount: ranked.length },
+        };
       };
+
+      // Try vector search
+      try {
+        const config = getSystemEmbeddingConfig();
+        const { embeddings, dimensions } = getEmbeddingModel(config);
+        await ensureVectorTable(dimensions);
+
+        // Sync local memory file into memory_chunks database table
+        const rows = await dbOps.all('SELECT id FROM memory_chunks');
+        const existingIds = new Set(rows.map(r => r.id));
+
+        const currentIdsMap = new Map<string, MemoryEntry>();
+        for (const entry of entries) {
+          const id = crypto.createHash('sha256').update(entry.date + '::' + entry.content).digest('hex');
+          currentIdsMap.set(id, entry);
+        }
+
+        // 1. Delete removed memories from DB
+        for (const id of existingIds) {
+          if (!currentIdsMap.has(id)) {
+            await dbOps.run('DELETE FROM memory_chunks WHERE id = ?', [id]);
+            await dbOps.run('DELETE FROM memory_chunks_vec WHERE id = ?', [id]);
+          }
+        }
+
+        // 2. Embed and insert missing memories
+        for (const [id, entry] of currentIdsMap.entries()) {
+          if (!existingIds.has(id)) {
+            const textToEmbed = entry.content + (entry.tags ? ` Tags: ${entry.tags}` : '') + (entry.preference ? ` Preference: ${entry.preference}` : '');
+            const vector = await embeddings.embedQuery(textToEmbed);
+            const vectorBuffer = Buffer.from(new Float32Array(vector).buffer);
+
+            await dbOps.run('BEGIN TRANSACTION');
+            try {
+              await dbOps.run(
+                'INSERT OR REPLACE INTO memory_chunks (id, text_content, metadata) VALUES (?, ?, ?)',
+                [id, entry.content, JSON.stringify({ date: entry.date, tags: entry.tags, preference: entry.preference })]
+              );
+              await dbOps.run(
+                'INSERT OR REPLACE INTO memory_chunks_vec (id, embedding) VALUES (?, ?)',
+                [id, vectorBuffer]
+              );
+              await dbOps.run('COMMIT');
+            } catch (e) {
+              await dbOps.run('ROLLBACK').catch(() => {});
+              throw e;
+            }
+          }
+        }
+
+        // 3. Perform vector similarity query
+        const queryVector = await embeddings.embedQuery(query);
+        const queryVectorBuffer = Buffer.from(new Float32Array(queryVector).buffer);
+
+        const results = await dbOps.all(
+          'SELECT mc.id, mc.text_content as content, mc.metadata, vec_distance_cosine(v.embedding, ?) as distance FROM memory_chunks_vec v JOIN memory_chunks mc ON v.id = mc.id ORDER BY distance ASC LIMIT ?',
+          [queryVectorBuffer, limit]
+        );
+
+        if (!results || results.length === 0) {
+          return runKeywordSearch();
+        }
+
+        const ranked = results.map((r, i) => {
+          let metadata = { date: '', tags: '', preference: '' };
+          try {
+            metadata = JSON.parse(r.metadata);
+          } catch {}
+          const similarity = 1 - r.distance; // cosine distance to cosine similarity
+          return {
+            content: r.content,
+            date: metadata.date,
+            tags: metadata.tags,
+            preference: metadata.preference,
+            similarity
+          };
+        });
+
+        const output = ranked.map((r, i) =>
+          `[Result ${i + 1}] (Relevance: ${r.similarity.toFixed(4)})\nDate: ${r.date}\n${r.content}${r.tags ? `\nTags: ${r.tags}` : ''}${r.preference ? `\nPreference: ${r.preference}` : ''}`
+        ).join('\n\n');
+
+        let hasPreference = false;
+        let preferenceText = '';
+        let preferenceType = '';
+        for (const r of ranked) {
+          if (r.preference) {
+            hasPreference = true;
+            preferenceText = r.content;
+            preferenceType = r.preference;
+            break;
+          }
+        }
+
+        console.log(`[MemorySearch] Vector search completed with ${ranked.length} results`);
+
+        return {
+          success: true,
+          output,
+          data: { hasPreference, preferenceText, preferenceType, resultCount: ranked.length },
+        };
+
+      } catch (vectorErr: any) {
+        console.warn('[MemorySearch] Vector search failed, falling back to keyword search:', vectorErr.message);
+        return runKeywordSearch();
+      }
     } catch (err: any) {
       return { success: false, output: `Failed to search memory: ${err.message}` };
     }

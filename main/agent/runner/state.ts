@@ -3,7 +3,7 @@ import type { MissionTimeline, MissionStep } from './mission-tracker';
 import type { ThinkingDuration } from './duration-tracker';
 
 // Type definitions to fix imports
-export type IntentType = 'unknown' | 'coding' | 'research' | 'task' | 'question' | 'conversation' | 'build' | 'fix' | 'analyze' | 'automate' | 'background_task';
+export type IntentType = 'unknown' | 'coding' | 'research' | 'task' | 'question' | 'conversation' | 'build' | 'fix' | 'analyze' | 'automate' | 'background_task' | 'operator';
 export type TaskPhase = 'triage' | 'planning' | 'routing' | 'specialized_agent' | 'validation' | 'hitl' | 'orchestrating' | 'executing' | 'evaluating' | 'brain';
 
 export interface TaskStep {
@@ -126,7 +126,7 @@ export const GraphState = Annotation.Root({
   } | null>(),
   // Routing decision — brain sets this to route to specialized agents
   routingDecision: Annotation<{
-    decision: 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
+    decision: 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
     explanation: string;
   } | null>(),
   // HITL Approval State
@@ -140,11 +140,15 @@ export const GraphState = Annotation.Root({
   missionTimeline: Annotation<MissionTimeline | null>(),
   missionSteps: Annotation<MissionStep[]>(),
   currentStepId: Annotation<string>(),
+  // Operator Mode State
+  operatorSession: Annotation<any>(),
   // Specialized Agent State
   webExplorerComplete: Annotation<boolean>(),
   webExplorerSelfLoopCount: Annotation<number>(),
   navisInvoked: Annotation<boolean>(),
   searchInvoked: Annotation<boolean>(),
+  detailsGathered: Annotation<boolean>(),
+  isInteractiveTask: Annotation<boolean>(),
   codingComplete: Annotation<boolean>(),
   dataAnalysisComplete: Annotation<boolean>(),
   computerUseComplete: Annotation<boolean>(),

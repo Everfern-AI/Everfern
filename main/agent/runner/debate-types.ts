@@ -12,16 +12,7 @@ export type DebateRole = 'vanguard' | 'phantom' | 'arbiter';
 
 // ── ExecutionProposal (Vanguard Output) ──────────────────────────────────
 
-export interface ExecutionStep {
-  id: string;
-  sequence: number;
-  description: string;
-  action: string;
-  toolsNeeded: string[];
-  dependencies: string[]; // Step IDs this depends on
-  estimatedDurationMs?: number;
-  riskLevel: 'low' | 'medium' | 'high';
-}
+// Removed ExecutionStep and AuditedStep as Vanguard now proposes abstract strategy phases
 
 export interface ExecutionProposal {
   proposerId: string;
@@ -29,7 +20,7 @@ export interface ExecutionProposal {
   timestamp: string;
   taskSummary: string;
   approach: string;
-  steps: ExecutionStep[];
+  phases: string[]; // High-level strategic phases instead of granular steps
   parallelizable: boolean;
   estimatedTotalTimeMs: number;
   requiredTools: string[];
@@ -42,7 +33,7 @@ export interface ExecutionProposal {
 export interface Concern {
   id: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
-  stepId?: string; // Which step this concerns (or undefined for overall)
+  phaseIndex?: number; // Which phase this concerns (or undefined for overall)
   title: string;
   description: string;
   impact: string; // What happens if this concern materializes
@@ -64,18 +55,7 @@ export interface CriticalReview {
 
 // ── FinalExecutionPlan (Arbiter Output) ──────────────────────────────────
 
-export interface AuditedStep {
-  originalStepId: string;
-  sequence: number;
-  description: string;
-  action: string;
-  toolsNeeded: string[];
-  dependencies: string[];
-  estimatedDurationMs?: number;
-  riskLevel: 'low' | 'medium' | 'high';
-  mitigation?: string; // Mitigations added based on Phantom's concerns
-  reviewNotes?: string; // Notes from Arbiter's review
-}
+// Removed AuditedStep
 
 export interface FinalExecutionPlan {
   arbiterId: string;
@@ -86,7 +66,7 @@ export interface FinalExecutionPlan {
   phantomReviewId: string;
 
   // Core plan
-  steps: AuditedStep[];
+  approvedPhases: string[];
   approvedApproach: string;
 
   // Risk management

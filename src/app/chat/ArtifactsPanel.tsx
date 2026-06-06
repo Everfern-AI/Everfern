@@ -9,7 +9,7 @@ import {
     GlobeAltIcon, 
     ArrowTopRightOnSquareIcon,
     TableCellsIcon,
-    PresentationChartBarIcon
+    PresentationChartBarIcon,
 } from '@heroicons/react/24/outline';
 import FileIcon from './FileIcon';
 
@@ -515,6 +515,13 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
     const [artifactPath, setArtifactPath] = useState<string>('');
+    const [realArtifactPath, setRealArtifactPath] = useState<string>('');
+
+    // Open-in-app state
+    const [openApps, setOpenApps] = useState<Array<{ name: string; path: string; icon: string }>>([]);
+    const [openAppsLoading, setOpenAppsLoading] = useState(false);
+    const [showAppDropdown, setShowAppDropdown] = useState(false);
+    const openAppRef = React.useRef<HTMLDivElement>(null);
 
     // Terminal Processes state
     const [processes, setProcesses] = useState<{ id: string; commandLine: string; status: 'running' | 'done'; exitCode?: number | null; bufferSize: number }[]>([]);
@@ -575,11 +582,35 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                 setViewMode('code');
             }
             
-            // Get the artifact path
-            const path = projectPath 
+            // Get the artifact path (display form)
+            const displayPath = projectPath 
                 ? `${projectPath}/.everfern/artifacts/${selectedCode.name}`
                 : `~/.everfern/artifacts/${selectedCode.chatId}/${selectedCode.name}`;
-            setArtifactPath(path);
+            setArtifactPath(displayPath);
+
+            // Resolve actual absolute path for file open operations
+            const homeDir = displayPath.startsWith('~')
+                ? displayPath // OS will expand
+                : displayPath;
+            setRealArtifactPath(homeDir);
+
+            // Reset open-app state when file changes
+            setOpenApps([]);
+            setShowAppDropdown(false);
+
+            // Preload apps in background as soon as a file is selected
+            // We use a slight delay to not block the initial render
+            const extForPreload = selectedCode.name.split('.').pop()?.toLowerCase();
+            if (extForPreload) {
+                setTimeout(() => {
+                    const preloadPath = projectPath
+                        ? `${projectPath}/.everfern/artifacts/${selectedCode.name}`
+                        : `~/.everfern/artifacts/${selectedCode.chatId}/${selectedCode.name}`;
+                    (window as any).electronAPI?.system?.getFileApps?.(preloadPath)
+                        .then((apps: any[]) => { if (apps?.length) setOpenApps(apps); })
+                        .catch(() => {});
+                }, 200);
+            }
         }
     }, [selectedCode]);
 
@@ -701,6 +732,50 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
         document.body.removeChild(element);
     };
 
+    const handleOpenInDefault = async () => {
+        if (!realArtifactPath) return;
+        try {
+            await (window as any).electronAPI?.system?.openFile?.(realArtifactPath);
+        } catch (e) {
+            console.error('[ArtifactsPanel] openFile error:', e);
+        }
+    };
+
+    const handleFetchApps = async () => {
+        if (!realArtifactPath) return;
+        setOpenAppsLoading(true);
+        try {
+            const apps = await (window as any).electronAPI?.system?.getFileApps?.(realArtifactPath);
+            setOpenApps(apps || []);
+        } catch (e) {
+            console.error('[ArtifactsPanel] getFileApps error:', e);
+            setOpenApps([]);
+        } finally {
+            setOpenAppsLoading(false);
+        }
+    };
+
+    const handleOpenInApp = async (appPath: string) => {
+        if (!realArtifactPath) return;
+        setShowAppDropdown(false);
+        try {
+            await (window as any).electronAPI?.system?.openFile?.(realArtifactPath, appPath);
+        } catch (e) {
+            console.error('[ArtifactsPanel] openFile error:', e);
+        }
+    };
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (openAppRef.current && !openAppRef.current.contains(e.target as Node)) {
+                setShowAppDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
     const isPlanFile = selectedCode?.name === 'execution_plan.md';
 
     const timeAgo = (timestamp: number) => {
@@ -797,6 +872,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     </button>
                                 )}
                                 {!isEditing && (
+                                    <>
                                     <button
                                         onClick={handleDownload}
                                         style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
@@ -807,6 +883,115 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         <ArrowDownTrayIcon width={14} height={14} />
                                         Download
                                     </button>
+
+                                    {/* Open In App */}
+                                    <div ref={openAppRef} style={{ position: 'relative', display: 'flex' }}>
+                                        {/* Main open-in-default button */}
+                                        <button
+                                            onClick={handleOpenInDefault}
+                                            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid #e8e6d9", borderRight: "none", color: "#111111", borderRadius: "8px 0 0 8px", padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                                            title="Open in default app"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                                                <path d="M3 13L13 3M13 3H7M13 3V9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                                <rect x="1.5" y="7.5" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" opacity="0.4"/>
+                                            </svg>
+                                            Open
+                                        </button>
+                                        {/* Chevron to show app picker */}
+                                        <button
+                                            onClick={() => {
+                                                const next = !showAppDropdown;
+                                                setShowAppDropdown(next);
+                                                if (next && openApps.length === 0) handleFetchApps();
+                                            }}
+                                            style={{ display: "flex", alignItems: "center", background: "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: "0 8px 8px 0", padding: "6px 8px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                                            title="Choose app to open with"
+                                        >
+                                            {/* Animated caret */}
+                                            <svg
+                                                width="11" height="11"
+                                                viewBox="0 0 12 12"
+                                                fill="none"
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                style={{
+                                                    transition: 'transform 0.2s ease',
+                                                    transform: showAppDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                        </button>
+
+                                        {/* App picker dropdown */}
+                                        <AnimatePresence>
+                                            {showAppDropdown && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                                                    transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        top: 'calc(100% + 6px)',
+                                                        left: 0,
+                                                        zIndex: 9999,
+                                                        backgroundColor: '#fff',
+                                                        border: '1px solid #e8e6d9',
+                                                        borderRadius: 12,
+                                                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                                                        minWidth: 220,
+                                                        overflow: 'hidden',
+                                                        padding: '6px 0',
+                                                    }}
+                                                >
+                                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                                        Open with
+                                                    </div>
+
+                                                    {openAppsLoading ? (
+                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: '#8a8886' }}>Detecting apps…</div>
+                                                    ) : openApps.length === 0 ? (
+                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: '#8a8886' }}>No apps detected</div>
+                                                    ) : openApps.map(app => (
+                                                        <button
+                                                            key={app.path}
+                                                            onClick={() => handleOpenInApp(app.path)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 10,
+                                                                width: '100%',
+                                                                padding: '8px 14px',
+                                                                background: 'transparent',
+                                                                border: 'none',
+                                                                cursor: 'pointer',
+                                                                fontSize: 13,
+                                                                color: '#111111',
+                                                                textAlign: 'left',
+                                                                transition: 'background 0.15s',
+                                                            }}
+                                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'; }}
+                                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                        >
+                                                            {app.icon ? (
+                                                                <img src={app.icon} alt="" width={18} height={18} style={{ borderRadius: 4, flexShrink: 0 }} />
+                                                            ) : (
+                                                                <div style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: '#e8e6d9', flexShrink: 0 }} />
+                                                            )}
+                                                            <span style={{ fontWeight: 500 }}>{app.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                    </>
                                 )}
                                 {isEditing && (
                                     <button

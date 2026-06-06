@@ -12,7 +12,6 @@ import type {
   ExecutionProposal,
   CriticalReview,
   FinalExecutionPlan,
-  AuditedStep,
   Concern,
   DebateContext
 } from './debate-types';
@@ -89,15 +88,15 @@ export class ArbiterAgent {
       .map(c => `[${c.severity.toUpperCase()}] ${c.title}: ${c.description}${c.suggestion ? ' → ' + c.suggestion : ''}`)
       .join('\n');
 
-    const stepsFormatted = proposal.steps
-      .map(s => `Step ${s.sequence}: ${s.description}`)
+    const phasesFormatted = proposal.phases
+      .map((p, i) => `Phase ${i + 1}: ${p}`)
       .join('\n');
 
     return `You are now arbitrating the plan debate. Here's both sides:
 
 VANGUARD'S PROPOSAL (Optimistic):
 ${proposal.approach}
-Steps: ${proposal.steps.length}
+Phases: ${proposal.phases.length}
 Estimated Time: ${proposal.estimatedTotalTimeMs}ms
 
 PHANTOM'S ASSESSMENT: ${review.overallAssessment.toUpperCase()}
@@ -148,18 +147,7 @@ Respond with ONLY the JSON block. No other text.`;
         originTaskSummary: proposal.taskSummary,
         vanguardProposalId: proposal.proposalId,
         phantomReviewId: review.reviewId,
-        steps: proposal.steps.map(s => ({
-          originalStepId: s.id,
-          sequence: s.sequence,
-          description: s.description,
-          action: s.action,
-          toolsNeeded: s.toolsNeeded,
-          dependencies: s.dependencies,
-          estimatedDurationMs: s.estimatedDurationMs,
-          riskLevel: s.riskLevel,
-          mitigation: 'Default mitigation (parsing failed)',
-          reviewNotes: 'Fallback step due to parsing failure',
-        })),
+        approvedPhases: proposal.phases,
         approvedApproach: proposal.approach,
         addressedConcerns: [],
         remainingRisks: review.concerns,
@@ -170,19 +158,10 @@ Respond with ONLY the JSON block. No other text.`;
       };
     }
 
-    // Transform steps
-    const steps: AuditedStep[] = (parsed.steps || []).map((s: any) => ({
-      originalStepId: proposal.steps[s.sequence - 1]?.id || `step-${s.sequence - 1}`,
-      sequence: s.sequence || 0,
-      description: s.description || '',
-      action: s.action || '',
-      toolsNeeded: s.toolsNeeded || [],
-      dependencies: s.dependencies || [],
-      estimatedDurationMs: s.estimatedDurationMs || 5000,
-      riskLevel: s.riskLevel || 'medium',
-      mitigation: s.mitigation,
-      reviewNotes: s.reviewNotes,
-    }));
+    // Extract approved phases
+    const approvedPhases: string[] = Array.isArray(parsed.approvedPhases)
+      ? parsed.approvedPhases.map((p: any) => typeof p === 'string' ? p : (p.description || JSON.stringify(p)))
+      : proposal.phases;
 
     // Categorize concerns
     const addressedConcerns: Concern[] = [];
@@ -208,7 +187,7 @@ Respond with ONLY the JSON block. No other text.`;
       originTaskSummary: proposal.taskSummary,
       vanguardProposalId: proposal.proposalId,
       phantomReviewId: review.reviewId,
-      steps,
+      approvedPhases,
       approvedApproach: parsed.approvedApproach || proposal.approach,
       addressedConcerns,
       remainingRisks,

@@ -697,15 +697,14 @@ async function executeBrowserClick(
   try {
     let { x, y } = args;
 
-    // Apply tars-test.py scaling logic for browser coordinates
+    // Scale coordinates from normalized 0-1000 to actual viewport dimensions
     const viewport = page.viewportSize();
     if (viewport) {
       const SCREEN_WIDTH = viewport.width;
       const SCREEN_HEIGHT = viewport.height;
 
-      // Scale coordinates if they're > viewport dimensions (normalized 0-1000)
-      const rx = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
-      const ry = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+      const rx = Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
+      const ry = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
 
       console.log(`[Navis] Browser Click: input=(${x},${y}) viewport=(${SCREEN_WIDTH}x${SCREEN_HEIGHT}) final=(${rx},${ry})`);
 
@@ -791,8 +790,8 @@ async function executeBrowserDoubleClick(
     if (viewport) {
       const SCREEN_WIDTH = viewport.width;
       const SCREEN_HEIGHT = viewport.height;
-      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
-      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+      x = Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
+      y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
     await session.moveCursor(x, y);
@@ -828,8 +827,8 @@ async function executeBrowserRightClick(
     if (viewport) {
       const SCREEN_WIDTH = viewport.width;
       const SCREEN_HEIGHT = viewport.height;
-      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
-      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+      x = Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
+      y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
     await session.moveCursor(x, y);
@@ -865,8 +864,8 @@ async function executeBrowserHover(
     if (viewport) {
       const SCREEN_WIDTH = viewport.width;
       const SCREEN_HEIGHT = viewport.height;
-      x = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
-      y = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+      x = Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
+      y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
     await session.moveCursor(x, y);

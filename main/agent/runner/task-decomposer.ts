@@ -89,7 +89,7 @@ function extractJSONArray(text: string): string | null {
 
 // ── AI-powered Unified Decomposition ─────────────────────────────────────
 
-async function decomposeWithAIUnified(userInput: string, availableTools: string[], client: AIClient): Promise<{ analysis: TaskAnalysis; steps: TaskStep[] }> {
+async function decomposeWithAIUnified(userInput: string, availableTools: string[], client: AIClient, strategyContext?: string): Promise<{ analysis: TaskAnalysis; steps: TaskStep[] }> {
     const toolList = availableTools.length > 0 ? availableTools.join(', ') : 'web_search, file_read, terminal_execute, computer_use';
 
     const prompt = `Analyze and decompose this task. Respond with ONLY valid JSON in this exact format:
@@ -106,7 +106,7 @@ async function decomposeWithAIUnified(userInput: string, availableTools: string[
 }
 
 Task: "${userInput.slice(0, 500)}"
-Tools: ${toolList}
+Tools: ${toolList}${strategyContext ? strategyContext : ''}
 
 IMPORTANT: If the task requires "computer_use" (like clicking on the OS, opening a physical app, moving mouse, typing globally), DO NOT break it down into multiple steps. Output a SINGLE step using the "computer_use" tool with the full original instructions.
 
@@ -155,14 +155,15 @@ Respond with ONLY the JSON object.`;
 export async function decomposeTaskWithAI(
     userInput: string,
     availableTools: string[],
-    client?: AIClient
+    client?: AIClient,
+    strategyContext?: string
 ): Promise<DecomposedTask> {
     if (!client) {
         throw new Error('TaskDecomposer requires an AI client for task decomposition.');
     }
 
     // Unified call: analysis + steps in ONE round-trip (2x faster than sequential calls)
-    const { analysis, steps } = await decomposeWithAIUnified(userInput, availableTools, client);
+    const { analysis, steps } = await decomposeWithAIUnified(userInput, availableTools, client, strategyContext);
 
     const groups = new Set(
         steps.filter(s => s.parallelGroup !== undefined).map(s => s.parallelGroup)

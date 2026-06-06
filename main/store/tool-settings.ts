@@ -17,6 +17,8 @@ export interface NavisConfig {
   headless: boolean;
   maxSteps: number;
   useChromeProfile: boolean;
+  selectedBrowserId: string;
+  useIsolatedBrowser: boolean;
 }
 
 export interface ToolSettingsConfig {
@@ -31,6 +33,8 @@ export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   headless: false,
   maxSteps: 200,
   useChromeProfile: false,
+  selectedBrowserId: 'chrome',
+  useIsolatedBrowser: true,
 };
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
@@ -74,8 +78,24 @@ export class ToolSettingsStore {
         webSearch: { ...DEFAULT_TOOL_SETTINGS.webSearch, ...(loaded.webSearch || {}) },
         webCrawl: { ...DEFAULT_TOOL_SETTINGS.webCrawl, ...(loaded.webCrawl || {}) },
         browserUse: { ...DEFAULT_TOOL_SETTINGS.browserUse, ...(loaded.browserUse || {}) },
-        navis: { ...DEFAULT_TOOL_SETTINGS.navis, ...(loaded.navis || {}) },
+        navis: { ...DEFAULT_NAVIS_SETTINGS, ...(loaded.navis || {}) },
       };
+
+      // Ensure new Navis fields are populated
+      if (loaded.navis?.selectedBrowserId === undefined) {
+        config.navis.selectedBrowserId = 'chrome';
+      }
+      if (loaded.navis?.useIsolatedBrowser === undefined) {
+        config.navis.useIsolatedBrowser = !config.navis.useChromeProfile;
+      }
+
+      // Check if schema drifted (e.g., loaded stringified length vs config stringified length)
+      // A more robust check is whether any keys were added by the merge
+      const drifted = JSON.stringify(loaded) !== JSON.stringify(config);
+      if (drifted) {
+        console.log('[ToolSettings] Schema drift detected. Auto-updating tool-settings.json to latest schema.');
+        this.writeFile(config);
+      }
 
       return config as ToolSettingsConfig;
     } catch (err) {

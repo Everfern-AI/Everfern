@@ -120,7 +120,9 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
               scrollRef++;
               const sref = `s${scrollRef}`;
               (el as HTMLElement).setAttribute('data-scroll-ref', sref);
-              lines.push(`- scrollable container [ref=${sref}]`);
+              const cx = Math.floor(((rect.x + rect.width / 2) / vWidth) * 1000);
+              const cy = Math.floor(((rect.y + rect.height / 2) / vHeight) * 1000);
+              lines.push(JSON.stringify({ ref: sref, role: 'scrollable', name: 'container', pos: { x: cx, y: cy } }));
             }
           }
         }
@@ -168,20 +170,22 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
 
         // Add visibility hint
         const isVisible = rect.top >= 0 && rect.left >= 0 && rect.bottom <= vHeight && rect.right <= vWidth;
-        const visibilityHint = isVisible ? '' : ' (off-screen)';
+
+        const cx = Math.floor(((rect.x + rect.width / 2) / vWidth) * 1000);
+        const cy = Math.floor(((rect.y + rect.height / 2) / vHeight) * 1000);
 
         if (isInteractive) {
           ref++;
           (el as HTMLElement).setAttribute('data-ref', `e${ref}`);
-          lines.push(`- ${role} "${name}" [ref=e${ref}]${visibilityHint}`);
+          lines.push(JSON.stringify({ ref: `e${ref}`, role, name, visible: isVisible, pos: { x: cx, y: cy } }));
         } else {
           // Contextual heading/text
-          lines.push(`- ${role} "${name}"${visibilityHint}`);
+          lines.push(JSON.stringify({ role, name, visible: isVisible, pos: { x: cx, y: cy } }));
         }
       }
 
       // Optimization: Join array instead of concatenating strings
-      const result = lines.join('\n');
+      const result = `[\n${lines.join(',\n')}\n]`;
       return { snapshot: result, elementCount: ref };
     });
 
@@ -261,6 +265,22 @@ export async function captureInteractiveElements(page: Page): Promise<AriaSnapsh
 
 export function parseRefs(snapshot: string): Map<string, { role: string; name: string }> {
   const refs = new Map<string, { role: string; name: string }>();
+
+  // Attempt JSON parse first
+  try {
+    const parsed = JSON.parse(snapshot);
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item.ref) {
+          refs.set(item.ref, { role: item.role || 'unknown', name: item.name || '' });
+        }
+      }
+      return refs;
+    }
+  } catch (e) {
+    // Fall back to regex
+  }
+
   const refRegex = /\[ref=([^\]]+)\]/g;
   const lines = snapshot.split('\n');
 
@@ -289,6 +309,22 @@ export function parseRefs(snapshot: string): Map<string, { role: string; name: s
  */
 export function parseRefsOptimized(snapshot: string): Map<string, { role: string; name: string }> {
   const refs = new Map<string, { role: string; name: string }>();
+
+  // Attempt JSON parse first
+  try {
+    const parsed = JSON.parse(snapshot);
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item.ref) {
+          refs.set(item.ref, { role: item.role || 'unknown', name: item.name || '' });
+        }
+      }
+      return refs;
+    }
+  } catch (e) {
+    // Fall back to optimized string parsing
+  }
+
   const lines = snapshot.split('\n');
 
   for (const line of lines) {

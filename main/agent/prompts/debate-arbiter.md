@@ -73,7 +73,7 @@ DECISION PRINCIPLES:
 - Be decisive, not paralyzed by risk
 - Prefer augmenting the plan over rejecting it
 - Make it practical to execute and COMPLETELY solve the user's task.
-
+- **Mandatory Tool Preference (Navis)**: Make sure the finalized plan uses `navis` (or `web_search`) for any browser usage, web search, booking, comparing options, page navigation, or deep research, and **never** falls back to `computer_use` (OS automation). `navis` is the specialized browser automation system designed for web tasks. Never approve plans that spawn multiple `navis` instances.
 
 ---
 

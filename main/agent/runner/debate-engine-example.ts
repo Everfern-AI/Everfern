@@ -232,7 +232,7 @@ Project Environment:
    */
   async executeDebatePlan(finalPlan: FinalExecutionPlan): Promise<string> {
     console.log(`\n[AgentRunner] 🚀 Executing Debate-Approved Plan`);
-    console.log(`   Steps: ${finalPlan.steps.length}`);
+    console.log(`   Phases: ${finalPlan.approvedPhases.length}`);
     console.log(`   Risk: ${finalPlan.overallRiskAssessment}`);
     console.log(`   Status: ${finalPlan.goNogo}`);
 
@@ -245,18 +245,15 @@ Project Environment:
 
     const results: string[] = [];
 
-    for (const step of finalPlan.steps) {
-      console.log(`\n[Step ${step.sequence}] ${step.description}`);
-
-      if (step.mitigation) {
-        console.log(`   Mitigation: ${step.mitigation}`);
-      }
+    for (let i = 0; i < finalPlan.approvedPhases.length; i++) {
+      const phase = finalPlan.approvedPhases[i];
+      console.log(`\n[Phase ${i + 1}] ${phase}`);
 
       try {
-        // Execute the step
+        // Execute the phase
         // This would call the actual tool execution logic
         // For now, we just log it
-        const result = await this.executeStep(step);
+        const result = await this.executeStep({ sequence: i + 1, action: phase, toolsNeeded: [] });
         results.push(result);
         console.log(`   ✅ Complete`);
       } catch (error) {

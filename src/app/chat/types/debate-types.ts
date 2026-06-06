@@ -11,7 +11,7 @@ export interface DebateDisplayData {
     taskSummary: string;
     approach: string;
     estimatedTimeMs: number;
-    stepCount: number;
+    phaseCount: number;
     assumptions: string[];
   };
 
@@ -33,7 +33,7 @@ export interface DebateDisplayData {
     id: string;
     goNogo: 'go' | 'proceed-with-caution' | 'no-go';
     riskAssessment: 'low' | 'medium' | 'high' | 'critical';
-    stepCount: number;
+    phaseCount: number;
     addressedConcerns: number;
     remainingRisks: number;
     guidance: string[];

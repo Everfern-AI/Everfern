@@ -77,7 +77,7 @@ export class PeerAgentDebateEngine {
         'Vanguard proposal timed out'
       );
       this.addTranscriptEntry('vanguard', 'proposal', proposal);
-      this.log(`✅ Vanguard proposed ${proposal.steps.length} steps`);
+      this.log(`✅ Vanguard proposed ${proposal.phases.length} phases`);
 
       // Emit vanguard_complete event in real-time
       if (this.config.onPhaseComplete) {
@@ -255,7 +255,7 @@ Task: ${proposal.taskSummary}
 Approach: ${proposal.approach}
 
 VANGUARD'S PROPOSAL
-- Steps: ${proposal.steps.length}
+- Phases: ${proposal.phases.length}
 - Estimated Time: ${proposal.estimatedTotalTimeMs}ms
 - Assumptions: ${proposal.assumptionsAndConstraints.length}
 
@@ -270,7 +270,7 @@ ARBITER'S DECISION
 - Risk Level: ${finalPlan.overallRiskAssessment}
 - Addressed: ${finalPlan.addressedConcerns.length} concerns
 - Remaining Risks: ${finalPlan.remainingRisks.length}
-- Final Steps: ${finalPlan.steps.length}
+- Final Phases: ${finalPlan.approvedPhases.length}
 
 EXECUTION GUIDANCE
 ${finalPlan.executionGuidance.map(g => `- ${g}`).join('\n')}

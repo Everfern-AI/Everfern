@@ -315,20 +315,44 @@ export class AIClient {
         baseURL: this.config.baseUrl,
         timeout: 120000,
         maxRetries: 3,
+        dangerouslyAllowBrowser: true,
         defaultHeaders: headers,
         // Disable keep-alive to avoid Node 22 undici "invalid keep-alive header" errors
         // from NVIDIA NIM and other providers that may send malformed keep-alive responses.
         fetch: (url: RequestInfo | URL, init?: RequestInit) => {
           console.log(`[AIClient Fetch] URL: ${url}, method: ${init?.method || 'GET'}`);
           const safeInit = { ...init, keepalive: false };
+          let plainHeaders: Record<string, string> = {};
           if (safeInit.headers) {
-            const h = safeInit.headers as Record<string, string>;
-            delete h['connection'];
-            delete h['Connection'];
-            delete h['keep-alive'];
-            delete h['Keep-Alive'];
+            if (typeof (safeInit.headers as any).entries === 'function') {
+              for (const [key, value] of (safeInit.headers as any).entries()) {
+                const normKey = key.toLowerCase() === 'authorization' ? 'Authorization' : key;
+                plainHeaders[normKey] = value;
+              }
+            } else if (typeof safeInit.headers === 'object') {
+              for (const [key, value] of Object.entries(safeInit.headers)) {
+                const normKey = key.toLowerCase() === 'authorization' ? 'Authorization' : key;
+                plainHeaders[normKey] = value as string;
+              }
+            }
           }
-          const result = fetch(url, safeInit);
+          delete plainHeaders['connection'];
+          delete plainHeaders['Connection'];
+          delete plainHeaders['keep-alive'];
+          delete plainHeaders['Keep-Alive'];
+          safeInit.headers = plainHeaders;
+
+          const result = Promise.resolve(fetch(url, safeInit)).then((res: any) => {
+            if (res) {
+              if (!res.headers) {
+                res.headers = new Headers();
+              }
+              if (typeof res.json === 'function' && typeof res.text !== 'function') {
+                res.text = () => res.json().then((val: any) => JSON.stringify(val));
+              }
+            }
+            return res;
+          });
           result.then(
             (res) => console.log(`[AIClient Fetch] Response: ${res.status} ${res.statusText} from ${url}`),
             (err) => console.error(`[AIClient Fetch] Error:`, err)

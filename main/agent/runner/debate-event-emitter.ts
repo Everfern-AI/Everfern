@@ -64,7 +64,7 @@ export class DebateEventEmitter {
         taskSummary: debateResult.proposal.taskSummary || '',
         approach: debateResult.proposal.approach || '',
         estimatedTimeMs: debateResult.proposal.estimatedTotalTimeMs || 0,
-        stepCount: debateResult.proposal.steps?.length || 0,
+        phaseCount: debateResult.proposal.phases?.length || 0,
         assumptions: debateResult.proposal.assumptionsAndConstraints || [],
       } : {},
 
@@ -88,7 +88,7 @@ export class DebateEventEmitter {
         id: debateResult.finalPlan.planId || '',
         goNogo: debateResult.finalPlan.goNogo || '',
         riskAssessment: debateResult.finalPlan.overallRiskAssessment || '',
-        stepCount: debateResult.finalPlan.steps?.length || 0,
+        phaseCount: debateResult.finalPlan.approvedPhases?.length || 0,
         addressedConcerns: debateResult.finalPlan.addressedConcerns?.length || 0,
         remainingRisks: debateResult.finalPlan.remainingRisks?.length || 0,
         guidance: debateResult.finalPlan.executionGuidance || '',

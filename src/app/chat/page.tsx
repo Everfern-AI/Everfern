@@ -652,6 +652,7 @@ export default function ChatPage() {
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
+    const answeredToolCallIdsRef = useRef<Set<string>>(new Set());
 
     const stateForBroadcastRef = useRef({ messages, streamingContent, liveToolCalls, streamingThought, activeUserQuestions, showHitlApproval, hitlRequest, missionTimeline, currentNode, isDebating, isLoading });
     useEffect(() => {
@@ -728,9 +729,10 @@ export default function ChatPage() {
     const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
     const [localAlwaysAllowed, setLocalAlwaysAllowed] = useState(false);
 
-    // Reset localAlwaysAllowed when conversationId changes (Task 7.2)
+    // Reset localAlwaysAllowed and answeredToolCallIdsRef when conversationId changes (Task 7.2)
     useEffect(() => {
         setLocalAlwaysAllowed(false);
+        answeredToolCallIdsRef.current.clear();
     }, [activeConversationId]);
 
     // Persistent local execution request listener (survives stream cleanup)
@@ -2265,6 +2267,8 @@ export default function ChatPage() {
                 let accumulated = "";
 
                 api.onToolCall((record: any) => {
+                    const recordTcId = record.id || record.toolCallId;
+
                     // Debug: Log the tool call structure
                     if (record.toolName === 'ask_user_question' || record.toolName === 'approve_actions') {
                         console.log(`[Frontend] 📥 Received ${record.toolName} tool call`);
@@ -2276,6 +2280,11 @@ export default function ChatPage() {
                     // CRITICAL: Handle ask_user_question or approve_actions FIRST, before checking existingId
                     // HITL approval sends tool_call without tool_start, so existingId won't exist
                     if ((record.toolName === 'ask_user_question' || record.toolName === 'approve_actions') && record.result?.success && record.result?.data) {
+                        if (recordTcId && answeredToolCallIdsRef.current.has(recordTcId)) {
+                            console.log(`[Frontend] ⏭️ Skipping already-answered HITL tool call: ${recordTcId}`);
+                            return;
+                        }
+
                         console.log(`[Frontend] ✅ Processing ${record.toolName} (HITL or regular)`);
                         console.log('[Frontend] Result data:', JSON.stringify(record.result.data, null, 2));
 
@@ -2298,6 +2307,7 @@ export default function ChatPage() {
                             const normalized = data.questions.map((q: any) => {
                                 console.log('[Frontend] Normalizing question:', q);
                                 return {
+                                    toolCallId: recordTcId,
                                     question: q.question,
                                     options: normalizeOpts(q.options),
                                     multiSelect: q.multiSelect || false,
@@ -2313,6 +2323,7 @@ export default function ChatPage() {
                         } else if (data.question) {
                             console.log('[Frontend] Found single question:', data.question);
                             const normalized = [{
+                                toolCallId: recordTcId,
                                 question: typeof data.question === 'string' ? data.question : data.question.question,
                                 options: normalizeOpts(data.options),
                                 multiSelect: data.multiSelect || false,
@@ -2337,8 +2348,6 @@ export default function ChatPage() {
                         console.error('[Frontend] ❌ ask_user_question tool_call missing required data');
                         console.error('[Frontend] Record:', JSON.stringify(record, null, 2));
                     }
-
-                    const recordTcId = record.id || record.toolCallId;
 
                     if (record.toolName === 'create_plan' || record.toolName === 'update_plan_step') { if (record.result?.success && record.result?.data) setCurrentPlan(record.result.data); }
                     if (record.toolName === 'todo_write') {
@@ -2787,6 +2796,14 @@ export default function ChatPage() {
         });
         const responseText = `[Form Response]\n${answerLines.join('\n')}`;
 
+        // Populate answeredToolCallIdsRef with any toolCallId from activeUserQuestions (Task 7.2)
+        activeUserQuestions.forEach(q => {
+            if ((q as any).toolCallId) {
+                console.log(`[Frontend] 📝 Marking tool call ID as answered: ${(q as any).toolCallId}`);
+                answeredToolCallIdsRef.current.add((q as any).toolCallId);
+            }
+        });
+
         // Capture pending streaming content BEFORE clearing — the assistant's form
         // message lives in streamingContent, not yet committed to messages.
         // If we clear it and abort the stream, the AI's message is lost.
@@ -2805,7 +2822,9 @@ export default function ChatPage() {
                 role: "assistant",
                 content: pendingContent,
                 thought: pendingThought,
+                reasoning_content: pendingThought,
                 toolCalls: pendingToolCalls.length > 0 ? pendingToolCalls : undefined,
+                missionTimeline: missionTimelineRef.current || undefined,
                 timestamp: new Date(),
             };
 
@@ -2856,7 +2875,7 @@ export default function ChatPage() {
         setTimeout(() => {
             handleSend(responseText, finalHistory);
         }, 50);
-    }, [handleSend]);
+    }, [handleSend, activeUserQuestions]);
 
     // Listen for processed HITL responses from backend
     useEffect(() => {

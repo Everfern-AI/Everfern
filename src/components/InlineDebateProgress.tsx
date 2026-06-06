@@ -6,7 +6,7 @@ import {
   ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import type { DebateDisplayData } from '../types/debate-types';
+import type { DebateDisplayData } from '../app/chat/types/debate-types';
 
 interface InlineDebateProgressProps {
   debate: DebateDisplayData | null;
@@ -226,7 +226,7 @@ export function InlineDebateProgress({
                           <p className="font-semibold text-zinc-800 dark:text-zinc-200 mb-0.5">Proposed Plan:</p>
                           <p className="italic mb-1 text-zinc-700 dark:text-zinc-300 break-words">"{debate.proposal.approach}"</p>
                           <div className="text-[11px] text-zinc-400 font-medium mt-1">
-                            Steps: {debate.proposal.stepCount} | Estimated: {Math.round(debate.proposal.estimatedTimeMs / 1000)}s
+                            Phases: {debate.proposal.phaseCount} | Estimated: {Math.round(debate.proposal.estimatedTimeMs / 1000)}s
                           </div>
                         </div>
                       ) : getActivePhase() === 'vanguard' ? (
@@ -306,7 +306,7 @@ export function InlineDebateProgress({
                           <p className="text-[11px] italic mt-1 text-zinc-500 dark:text-zinc-400 break-words">"{debate.finalPlan.explanation}"</p>
 
                           <div className="mt-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/60 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400 break-words">
-                            <span>Steps: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.stepCount}</strong></span>
+                            <span>Phases: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.phaseCount}</strong></span>
                             <span>Resolved: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.addressedConcerns} concerns</strong></span>
                             {debate.finalPlan.remainingRisks > 0 && (
                               <span>Remaining Risks: <strong className="text-zinc-700 dark:text-zinc-350">{debate.finalPlan.remainingRisks}</strong></span>
@@ -365,10 +365,10 @@ export function InlineDebateProgress({
                         style={{ padding: '10px' }}
                       >
                         <p className="text-[9px] font-semibold text-[#9ca3af] uppercase tracking-wider mb-0.5">
-                          Steps
+                          Phases
                         </p>
                         <p className="text-[13px] font-bold text-[#111827] dark:text-zinc-200">
-                          {debate.finalPlan.stepCount || debate.proposal.stepCount}
+                          {debate.finalPlan.phaseCount || debate.proposal.phaseCount || 'N/A'}
                         </p>
                       </div>
                       <div

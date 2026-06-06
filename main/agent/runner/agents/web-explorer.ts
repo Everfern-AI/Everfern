@@ -37,6 +37,59 @@ function findWebSearchResult(messages: any[]): { content: string; found: boolean
   return { content: '', found: false, reason: 'No web_search tool result found in messages' };
 }
 
+/**
+ * Detect if the user's task requires interactive web interaction (booking, purchasing, registering)
+ * vs. passive research (finding info, comparing, investigating).
+ */
+function isInteractiveTask(messages: any[]): boolean {
+  const userMsg = messages.find((m: any) => m.role === 'user' || m.type === 'human' || m._getType?.() === 'human');
+  if (!userMsg) return false;
+  const content = typeof userMsg.content === 'string' ? userMsg.content : JSON.stringify(userMsg.content);
+  const lower = content.toLowerCase();
+
+  // Booking / travel patterns
+  const bookingPatterns = [
+    /\bbook\b.*\b(flight|trip|hotel|ticket|cab|taxi|bus|train|room|stay|airbnb|hostel)/,
+    /\b(flight|trip|hotel|ticket|cab|taxi|bus|train|room).*\bbook/,
+    /\breserv(e|ation)\b/,
+    /\b(buy|purchase|order|checkout|subscribe|sign\s*up|register)\b/,
+    /\b(from|to)\b.*\b(airport|city|station|terminal)\b/i,
+    /\b[A-Z]{3}\s+(to|from)\s+[A-Z]{3}\b/, // Airport codes like HYD to JFK
+    /\bhyderabad\b.*\bjfk\b|\bjfk\b.*\bhyderabad\b/i,
+    /\b(one[\s-]?way|round[\s-]?trip|return\s+flight)\b/,
+    /\b(check\s*in|check\s*out)\s+date/,
+  ];
+
+  return bookingPatterns.some(pattern => pattern.test(lower) || pattern.test(content));
+}
+
+/**
+ * Extract user-provided details from ask_user_question responses in the message history.
+ */
+function extractUserDetails(messages: any[]): string {
+  const details: string[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const role = m.role || m._getType?.();
+    // Look for tool results from ask_user_question
+    if (role === 'tool' || role === 'function') {
+      const name = m.name || m.tool_name || m.toolName || '';
+      if (name === 'ask_user_question') {
+        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        details.push(content);
+      }
+    }
+    // Also check for user messages that might contain HITL responses
+    if (role === 'user' || role === 'human') {
+      const content = typeof m.content === 'string' ? m.content : '';
+      if (content.includes('[HITL_RESPONSE]') || content.includes('departure') || content.includes('date') || content.includes('passenger')) {
+        details.push(content);
+      }
+    }
+  }
+  return details.length > 0 ? details.join('\n') : 'No specific details gathered from user yet.';
+}
+
 export const createWebExplorerNode = (
   runner: AgentRunner,
   eventQueue?: StreamEvent[],
@@ -63,6 +116,56 @@ export const createWebExplorerNode = (
     }
 
     const loopCount = (state.webExplorerSelfLoopCount || 0) + 1;
+
+    // ─── DETECT INTERACTIVE TASK ──────────────────────────────────────────
+    const interactiveTask = isFreshSession ? isInteractiveTask(messages) : (state.isInteractiveTask || false);
+    let detailsGathered = isFreshSession ? false : (state.detailsGathered || false);
+
+    // ─── PHASE 0: GATHER USER DETAILS (interactive tasks only) ────────────
+    // For booking/purchasing tasks, we MUST gather required details before searching.
+    if (interactiveTask && !detailsGathered && !searchInvoked && !navisInvoked) {
+      console.log('[WebExplorer] Phase 0: Gathering user details for interactive task...');
+      eventQueue?.push({ type: 'thought', content: '\n📋 WEB EXPLORER [Phase 0]: Gathering required details before searching...' });
+
+      const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
+        runner,
+        toolDefs: allTools,
+        eventQueue,
+        nodeName: 'web_explorer',
+        systemPromptOverride: (loadPrompt('web-explorer.md') || '') +
+          '\n\nPHASE: GATHER DETAILS (MANDATORY FIRST STEP).' +
+          '\nThis is a BOOKING / TRANSACTIONAL task that requires user details before you can search.' +
+          '\nYou MUST call `ask_user_question` to gather ALL required information from the user.' +
+          '\n\nFor FLIGHT BOOKING, ask for:' +
+          '\n  1. Departure date (open-ended text, no options)' +
+          '\n  2. Return date / one-way (open-ended text, no options)' +
+          '\n  3. Number of passengers (open-ended text, no options)' +
+          '\n  4. Cabin class preference (options: Economy, Premium Economy, Business, First Class)' +
+          '\n  5. Any airline preference or budget constraints (open-ended text, no options)' +
+          '\n\nFor HOTEL BOOKING, ask for:' +
+          '\n  1. Check-in date' +
+          '\n  2. Check-out date' +
+          '\n  3. Number of guests/rooms' +
+          '\n  4. Budget range' +
+          '\n  5. Any preferences (star rating, amenities, location)' +
+          '\n\nFor OTHER PURCHASES, ask for the relevant details specific to the purchase.' +
+          '\n\nCRITICAL RULES:' +
+          '\n- Use `ask_user_question` tool — do NOT ask in plain text chat' +
+          '\n- For open-ended inputs (dates, names, budget), omit the `options` array to get a text input field' +
+          '\n- For multiple-choice inputs (cabin class, rating), provide `options` array' +
+          '\n- Ask ALL questions in a SINGLE `ask_user_question` call with multiple questions array' +
+          '\n- Do NOT call web_search or navis yet — gather details first'
+      }), 'Web Explorer: Gather Details');
+
+      console.log('[WebExplorer] Phase 0: Details gathering invoked');
+      return {
+        ...result,
+        detailsGathered: true,
+        isInteractiveTask: true,
+        webExplorerSelfLoopCount: loopCount,
+        returningFromSpecialist: 'web_explorer'
+      };
+    }
 
     // ─── DIRECT URL NAVIGATION ───────────────────────────────────────────
     // If the user provided a specific URL (skip research workflow entirely)
@@ -101,10 +204,15 @@ export const createWebExplorerNode = (
         eventQueue,
         nodeName: 'web_explorer',
         systemPromptOverride: (loadPrompt('web-explorer.md') || '') +
-          '\n\nPHASE: SEARCH. Use web_search to find the top 3-5 most relevant and authoritative sources. ' +
-          'Prefer official sites, documentation, established review platforms, and recent content. ' +
-          'Return a structured list of URLs with brief descriptions.' +
-          '\n\nCRITICAL: Use web_search — NOT terminal_execute with curl. Curl cannot render JavaScript pages and will get blocked by captchas. web_search is the only allowed search tool.'
+          (interactiveTask
+            ? '\n\nPHASE: SEARCH. Use web_search to find the best BOOKING PLATFORMS for this task. ' +
+              'Prefer established booking sites (Google Flights, Expedia, MakeMyTrip, Cleartrip, Kayak, Booking.com, Airbnb) over generic results. ' +
+              'The user wants to BOOK/PURCHASE, not just research. Find sites where the user can complete the transaction.' +
+              '\n\nCRITICAL: Use web_search — NOT terminal_execute with curl.'
+            : '\n\nPHASE: SEARCH. Use web_search to find the top 3-5 most relevant and authoritative sources. ' +
+              'Prefer official sites, documentation, established review platforms, and recent content. ' +
+              'Return a structured list of URLs with brief descriptions.' +
+              '\n\nCRITICAL: Use web_search — NOT terminal_execute with curl. Curl cannot render JavaScript pages and will get blocked by captchas. web_search is the only allowed search tool.')
       }), 'Web Explorer: Initial Search');
       console.log('[WebExplorer] Phase 1: Search invoked, returning to web_explorer');
       return {
@@ -139,7 +247,10 @@ export const createWebExplorerNode = (
 
       // Build a detailed, consolidated navis task with ALL URLs
       const urlList = candidates.map((c, i) => `  ${i + 1}. ${c.url}`).join('\n');
-      const navisTask = buildConsolidatedNavisTask(taskText, candidates);
+      // Choose the right navis task template based on task type
+      const navisTask = interactiveTask
+        ? buildInteractiveNavisTask(taskText, candidates, extractUserDetails(messages))
+        : buildConsolidatedNavisTask(taskText, candidates);
 
       console.log(`[WebExplorer] Phase 2: Found ${candidates.length} candidates, calling navis...`);
       eventQueue?.push({
@@ -271,6 +382,57 @@ IMPORTANT RULES:
 - If a page doesn't have what you need, say NOT_FOUND and move on
 - Be efficient — extract what's needed and move to the next URL
 - Do NOT spend more than 5 steps per URL`;
+}
+
+/**
+ * Build a navis task for interactive booking/purchasing workflows.
+ * Unlike the extraction-focused buildConsolidatedNavisTask, this generates
+ * instructions for form-filling, option comparison, and interactive booking.
+ */
+function buildInteractiveNavisTask(
+  userGoal: string,
+  candidates: Array<{ url: string; score: number }>,
+  userDetails: string
+): string {
+  const primaryUrl = candidates[0]?.url || '';
+  const alternateUrls = candidates.slice(1).map((c, i) => `  ${i + 2}. ${c.url}`).join('\n');
+
+  return `BOOKING/INTERACTIVE GOAL: ${userGoal.slice(0, 500)}
+
+USER DETAILS GATHERED:
+${userDetails}
+
+INSTRUCTIONS:
+This is an INTERACTIVE booking task, NOT a passive research task.
+You must actively fill forms, select options, and navigate booking flows.
+
+PRIMARY SITE: ${primaryUrl}
+${alternateUrls ? `FALLBACK SITES (use if primary fails):\n${alternateUrls}` : ''}
+
+STEP-BY-STEP WORKFLOW:
+1. Navigate to the primary booking site using go_to_url
+2. Find the search/booking form on the page
+3. Fill in ALL required fields using input_text:
+   - Origin/departure city or airport
+   - Destination city or airport 
+   - Travel dates
+   - Number of passengers/guests
+   - Cabin class / room type (if applicable)
+4. Submit the search form by clicking the search/submit button
+5. Wait for results to load
+6. Extract ALL available options with COMPLETE details:
+   - For flights: airline, flight number, departure/arrival times, duration, layovers, price, cabin class
+   - For hotels: name, star rating, price per night, amenities, location, reviews
+   - For other: all relevant details
+7. Call done() with a STRUCTURED comparison of all options
+
+IMPORTANT RULES:
+- INTERACT with the page — fill forms, click buttons, select dropdowns
+- Do NOT just extract static content — you must SEARCH for options
+- If a captcha or login wall blocks you, try the next fallback site
+- Extract EVERY option available on the results page
+- If there are filters (price, airline, stops), note them but don't apply unless user specified
+- Do NOT complete the actual purchase/payment — stop after presenting options`;
 }
 
 function extractDirectUrl(messages: any[]): string | null {

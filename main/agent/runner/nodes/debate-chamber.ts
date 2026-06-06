@@ -31,19 +31,20 @@ export const createDebateChamberNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
-    const plan = state.decomposedTask as DecomposedTask | undefined;
-    if (!plan) {
-      logger.info('No plan to debate — skipping');
-      return { debateResult: null };
+    // Determine complexity based on intent instead of step count
+    let complexity: 'simple' | 'moderate' | 'complex' = 'moderate';
+    const intent = state.currentIntent || 'unknown';
+    const complexIntents = ['coding', 'build', 'automate', 'fix', 'task'];
+    const simpleIntents = ['question', 'conversation', 'unknown'];
+
+    if (complexIntents.includes(intent)) {
+      complexity = 'complex';
+    } else if (simpleIntents.includes(intent)) {
+      complexity = 'simple';
     }
 
-    const stepCount = plan.steps?.length || 0;
-    const estimatedModerate = stepCount >= 2 && stepCount <= 4;
-    const estimatedComplex = stepCount > 4;
-    const complexity: 'simple' | 'moderate' | 'complex' = estimatedComplex ? 'complex' : estimatedModerate ? 'moderate' : 'simple';
-
     if (!PeerAgentDebateEngine.shouldDebate(complexity, 'moderate')) {
-      logger.info(`Task complexity "${complexity}" (${stepCount} steps) below threshold — skipping debate`);
+      logger.info(`Task intent "${intent}" (complexity: ${complexity}) below threshold — skipping debate`);
 
       emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: `Complexity: ${complexity}` });
       return { debateResult: null };
@@ -54,30 +55,33 @@ export const createDebateChamberNode = (
       return { debateResult: null };
     }
 
-    runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task (${stepCount} steps)`);
+    runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task`);
 
 
-    const lastUserMsg = state.messages.filter((m: any) => {
+    const lastUserMsg = (state.messages ?? []).filter((m: any) => {
       const role = m.role || m._getType?.();
       return role === 'user' || role === 'human';
     }).pop();
     const userInput = lastUserMsg
-      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content))
+      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content ?? ''))
       : '';
 
-    // Get all available tools from runner (not just plan steps)
-    const allToolNames = runner.tools.map((t: any) => t.name).filter(Boolean);
-    const planToolNames = plan.steps.map((s: any) => s.tool).filter(Boolean);
+    // Get all available tools from runner
+    const allToolNames = (runner.tools ?? []).map((t: any) => t.name).filter(Boolean);
 
     const context: DebateContext = {
-      taskId: plan.id || `task_${Date.now()}`,
-      userInput: userInput.slice(0, 2000),
-      conversationHistory: state.messages.slice(-6).map((m: any) => ({
-        role: (m.role || 'user') as 'system' | 'user' | 'assistant' | 'tool',
-        content: typeof m.content === 'string' ? m.content.slice(0, 500) : JSON.stringify(m.content).slice(0, 500),
-      })),
-      availableTools: [...new Set([...allToolNames, ...planToolNames])] as string[],
-      workspaceContext: `Task: ${plan.title}\nSteps: ${stepCount}\nMode: ${plan.executionMode || 'sequential'}`,
+      taskId: `task_${Date.now()}`,
+      userInput: (userInput ?? '').slice(0, 2000),
+      conversationHistory: (state.messages ?? []).slice(-6).map((m: any) => {
+        const rawContent = m.content ?? '';
+        const strContent = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+        return {
+          role: (m.role || 'user') as 'system' | 'user' | 'assistant' | 'tool',
+          content: strContent.slice(0, 500),
+        };
+      }),
+      availableTools: [...new Set(allToolNames)] as string[],
+      workspaceContext: `Mode: Strategy Planning`,
       constraints: [],
     };
 

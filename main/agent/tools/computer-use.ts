@@ -204,6 +204,7 @@ class ToolResult {
 class ComputerUseTool {
   public lastViewport: Record<string, any> = {};
   public overlay: DesktopOverlay | null = null;
+  public client: AIClient | null = null;
 
   constructor(
     private screenshotDir: string,
@@ -320,9 +321,12 @@ class ComputerUseTool {
       const SCREEN_WIDTH = screenSize.width;
       const SCREEN_HEIGHT = screenSize.height;
 
-      // Scale coordinates if they're > screen dimensions (normalized 0-1000)
-      const rx = Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x;
-      const ry = Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y;
+      const rx = this.client?.provider === "everfern" 
+        ? (Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x)
+        : Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
+      const ry = this.client?.provider === "everfern"
+        ? (Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y)
+        : Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
 
       console.log(`[ComputerUse] Click: input=(${x},${y}) screen=(${SCREEN_WIDTH}x${SCREEN_HEIGHT}) final=(${rx},${ry})`);
 
@@ -1125,6 +1129,10 @@ class ComputerUseAgent {
       try {
         // [Independent TARS] No tools, no models, no system prompt.
         // Just task + screenshot + history.
+        const modelName = this.client.provider === "everfern"
+          ? "everfern-tars-v1"
+          : (this.model || "everfern-tars-v1");
+
         response = await this.client.chat({
           messages: [
             {
@@ -1135,8 +1143,7 @@ class ComputerUseAgent {
               ]
             }
           ],
-          // Special model identifier to trigger Direct TARS mode in API
-          model: "everfern-tars-v1",
+          model: modelName,
           temperature: 0.1
         });
       } catch (err: any) {
@@ -1468,6 +1475,7 @@ export function createComputerUseTool(
     : originalClient;
 
   const model = vlm?.model ?? originalClient.model ?? "unknown";
+  tool.client = client;
 
   return createToolWithClient(client, tool, model);
 }

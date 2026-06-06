@@ -832,6 +832,24 @@ export class AgentRunner {
         removeProgressListener?.();
       }
     } finally {
+      // Check for pending HITL to decide whether to clean up the browser session
+      try {
+        const { listHitlRecords } = await import('../../store/hitl');
+        const records = listHitlRecords(convId);
+        const hasPendingHitl = records.some(r => r.status === 'pending');
+        
+        if (!hasPendingHitl) {
+          console.log('[Runner] No pending HITL, closing browser sessions if any');
+          const { BrowserSession } = await import('../tools/navis/session');
+          const session = new BrowserSession();
+          await session.close(true).catch(() => {});
+        } else {
+          console.log('[Runner] Pending HITL detected, keeping browser session alive');
+        }
+      } catch (err) {
+        console.warn('[Runner] Failed to run final browser session cleanup:', err);
+      }
+
       // Release session lock
       if (AgentRunner.sessionLocks.get(convId) === lockPromise) {
         AgentRunner.sessionLocks.delete(convId);

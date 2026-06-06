@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     broadcastDispatch: (event: string, data: any) => ipcRenderer.invoke('system:broadcast-dispatch', { event, data }),
     ensureAttachmentInVm: (filePath: string) => ipcRenderer.invoke('system:ensure-attachment-in-vm', filePath),
+    openFile: (filePath: string, appPath?: string) => ipcRenderer.invoke('system:open-file', filePath, appPath),
+    getFileApps: (filePath: string) => ipcRenderer.invoke('system:get-file-apps', filePath),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -457,6 +459,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toolSettings: {
     get: () => ipcRenderer.invoke('tool-settings:get'),
     set: (config: ToolSettingsConfig) => ipcRenderer.invoke('tool-settings:set', config),
+    getBrowsers: () => ipcRenderer.invoke('tool-settings:get-browsers'),
     openDebugBrowser: () => ipcRenderer.invoke('debug:open-browser'),
   },
 
@@ -512,6 +515,15 @@ export interface ToolConfig {
   apiKey: string;
 }
 
+export interface BrowserInfo {
+  id: string;
+  name: string;
+  engine: 'chromium' | 'firefox';
+  path: string;
+  logo: string;
+  supportsCDP: boolean;
+}
+
 export interface ToolSettingsConfig {
   webSearch: ToolConfig;
   webCrawl: ToolConfig;
@@ -521,6 +533,8 @@ export interface ToolSettingsConfig {
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
+    selectedBrowserId: string;
+    useIsolatedBrowser: boolean;
   };
 }
 
@@ -563,6 +577,8 @@ export type ElectronAPI = {
     onDispatchCommand: (cb: (command: string, model?: string) => void) => void;
     broadcastDispatch: (event: string, data: any) => Promise<void>;
     ensureAttachmentInVm: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    openFile: (filePath: string, appPath?: string) => Promise<{ success: boolean; error?: string }>;
+    getFileApps: (filePath: string) => Promise<Array<{ name: string; path: string; icon: string }>>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
@@ -747,6 +763,7 @@ export type ElectronAPI = {
   toolSettings: {
     get: () => Promise<ToolSettingsConfig>;
     set: (config: ToolSettingsConfig) => Promise<{ success: boolean }>;
+    getBrowsers: () => Promise<BrowserInfo[]>;
   };
   chat: {
     generateTitle: (conversationId: string, firstMessage: string) => Promise<{ queued: boolean }>;

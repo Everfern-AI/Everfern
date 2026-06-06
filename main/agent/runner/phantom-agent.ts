@@ -67,8 +67,8 @@ export class PhantomAgent {
   }
 
   private buildUserPrompt(proposal: ExecutionProposal, context: DebateContext): string {
-    const stepsFormatted = proposal.steps
-      .map(s => `Step ${s.sequence} [${s.id}]: ${s.description} (tools: ${s.toolsNeeded.join(', ')})`)
+    const phasesFormatted = proposal.phases
+      .map((p, i) => `Phase ${i + 1}: ${p}`)
       .join('\n');
 
     return `You are now reviewing Vanguard's execution plan. Your job is to ATTACK THIS PLAN and find all the ways it could fail.
@@ -78,8 +78,8 @@ Title: ${proposal.taskSummary}
 Approach: ${proposal.approach}
 Estimated Time: ${proposal.estimatedTotalTimeMs}ms
 
-STEPS:
-${stepsFormatted}
+PHASES:
+${phasesFormatted}
 
 ASSUMPTIONS:
 ${proposal.assumptionsAndConstraints.map(a => `- ${a}`).join('\n')}
@@ -127,7 +127,7 @@ Respond with ONLY the JSON block. No other text.`;
         concerns: [{
           id: 'concern-fallback',
           severity: 'medium' as const,
-          stepId: undefined,
+          phaseIndex: undefined,
           title: 'Review parsing failed',
           description: 'Phantom\'s review could not be parsed. The plan should be executed with caution.',
           impact: 'Unable to assess risk formally.',
@@ -144,7 +144,7 @@ Respond with ONLY the JSON block. No other text.`;
     const concerns: Concern[] = (parsed.concerns || []).map((c: any, idx: number) => ({
       id: `concern-${idx}`,
       severity: c.severity || 'medium',
-      stepId: c.stepId || undefined,
+      phaseIndex: typeof c.phaseIndex === 'number' ? c.phaseIndex : undefined,
       title: c.title || '',
       description: c.description || '',
       impact: c.impact || '',

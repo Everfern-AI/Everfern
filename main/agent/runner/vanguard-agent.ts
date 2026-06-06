@@ -7,7 +7,7 @@
 
 import * as crypto from 'crypto';
 import type { AIClient } from '../../lib/ai-client';
-import type { ExecutionProposal, ExecutionStep, DebateContext } from './debate-types';
+import type { ExecutionProposal, DebateContext } from './debate-types';
 import { extractJsonFromLLM } from './json-repair';
 import { loadPrompt } from '../../lib/prompt-sync';
 
@@ -106,16 +106,7 @@ Respond with ONLY the JSON block. No other text.`;
         timestamp: new Date().toISOString(),
         taskSummary: 'Fallback plan due to parsing error',
         approach: 'Execute task steps sequentially with available tools.',
-        steps: [{
-          id: 'step-0',
-          sequence: 1,
-          description: 'Attempt to fulfill the user request directly.',
-          action: context.userInput,
-          toolsNeeded: context.availableTools,
-          dependencies: [],
-          estimatedDurationMs: 10000,
-          riskLevel: 'medium',
-        }],
+        phases: ['Phase 1: Attempt to fulfill the user request directly'],
         parallelizable: false,
         estimatedTotalTimeMs: 10000,
         requiredTools: context.availableTools,
@@ -124,17 +115,10 @@ Respond with ONLY the JSON block. No other text.`;
       };
     }
 
-    // Transform steps to include IDs
-    const steps: ExecutionStep[] = (parsed.steps || []).map((step: any, idx: number) => ({
-      id: `step-${idx}`,
-      sequence: step.sequence || idx + 1,
-      description: step.description || '',
-      action: step.action || '',
-      toolsNeeded: step.toolsNeeded || [],
-      dependencies: this.normalizeStepDependencies(step.dependencies || []),
-      estimatedDurationMs: step.estimatedDurationMs || 5000,
-      riskLevel: step.riskLevel || 'medium',
-    }));
+    // Extract phases from parsed response
+    const phases: string[] = Array.isArray(parsed.phases)
+      ? parsed.phases.map((p: any) => typeof p === 'string' ? p : (p.description || p.title || JSON.stringify(p)))
+      : (parsed.steps || []).map((s: any, idx: number) => `Phase ${idx + 1}: ${s.description || s.action || 'Unknown'}`);
 
     return {
       proposerId: this.agentId,
@@ -142,23 +126,12 @@ Respond with ONLY the JSON block. No other text.`;
       timestamp: new Date().toISOString(),
       taskSummary: parsed.taskSummary || 'Unnamed task',
       approach: parsed.approach || '',
-      steps,
+      phases,
       parallelizable: parsed.parallelizable || false,
       estimatedTotalTimeMs: parsed.estimatedTotalTimeMs || 30000,
       requiredTools: parsed.requiredTools || [],
       assumptionsAndConstraints: parsed.assumptionsAndConstraints || [],
       rationale: parsed.rationale || '',
     };
-  }
-
-  private normalizeStepDependencies(dependencies: any[]): string[] {
-    if (!Array.isArray(dependencies)) return [];
-
-    return dependencies.map(dep => {
-      if (typeof dep === 'number') {
-        return `step-${dep - 1}`; // Convert from sequence number to step ID
-      }
-      return String(dep);
-    }).filter(Boolean);
   }
 }

@@ -268,7 +268,7 @@ Available routing options:
 
 CRITICAL ROUTING RULES:
 1. If user asks to "write code", "fix a bug", "implement a feature", "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app", or perform ANY software development task → ALWAYS use "route_coding"
-2. For ANY web research task (searching, finding information online, looking up websites, finding bots, comparing services), prefer "continue_brain" to use web_search + navis directly. Only use "route_web_explorer" for complex multi-step workflows.
+2. For SIMPLE web research tasks (searching, finding information online, looking up websites, comparing services), prefer "continue_brain" to use web_search + navis directly. For booking, purchasing, or any transactional web task, ALWAYS use "route_web_explorer".
 3. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
 4. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis.
 5. You have web_search and navis available directly — use them for most web research tasks. The two-phase approach (search then extract) handles 90% of web research needs without routing to specialists.
@@ -276,6 +276,7 @@ CRITICAL ROUTING RULES:
 7. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
 8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
 9. IMAGE/FILE ORGANIZATION: For tasks like "organize my images/pictures/photos", "sort files by content", "classify images" → ALWAYS use "continue_brain". Use system_files to list files, analyze_image to classify by content (vision), and system_files to move them. Never route image organization to a specialist. Read the image-viewer skill (SKILL.md) and follow its workflows.
+10. BOOKING/TRANSACTIONAL TASKS: For tasks like "book a flight", "reserve a hotel", "buy tickets", "purchase", "order food", "make a reservation", or any task requiring interactive web form-filling and transactions → ALWAYS use "route_web_explorer". These are multi-step interactive workflows requiring form filling, option selection, and confirmation flows. NEVER use "continue_brain" for booking tasks.
 
 Respond with JSON only:
 {
@@ -462,6 +463,44 @@ export const createBrainNode = (
         brainToolsInFlight: false,
         returningFromSpecialist: 'web_explorer'
       };
+    }
+
+    // ── BOOKING INTENT OVERRIDE ─────────────────────────────────────────────
+    // Even if triage classified the task as 'task' or 'automate', if the user message
+    // contains booking/purchasing keywords, override to web_explorer.
+    // This is a safety net for cases where triage misclassifies booking requests.
+    if (!state.returningFromSpecialist && !state.webExplorerComplete &&
+        state.currentIntent !== 'research' && state.currentIntent !== 'coding' &&
+        state.currentIntent !== 'build' && state.currentIntent !== 'fix') {
+      const allMsgs = state.messages || [];
+      const lastUserMsg = [...allMsgs].reverse().find((m: any) => {
+        const role = m.role || m._getType?.();
+        return role === 'user' || role === 'human';
+      });
+      const userText = lastUserMsg
+        ? (typeof (lastUserMsg as any).content === 'string'
+            ? (lastUserMsg as any).content
+            : JSON.stringify((lastUserMsg as any).content))
+        : '';
+      const lower = userText.toLowerCase();
+
+      const bookingKeywords = /\b(book|reserve|buy|purchase|order|checkout|sign\s*up|register)\b.*\b(flight|trip|hotel|ticket|cab|taxi|bus|train|room|stay|airbnb|hostel|table|appointment)\b|\b(flight|trip|hotel|ticket).*\b(book|reserve|buy|purchase)\b|\b(from|to)\s+\w+.*\b(to|from)\s+\w+.*\b(flight|trip|book)\b|\b[A-Z]{3}\s+(to|from)\s+[A-Z]{3}\b/i;
+
+      if (bookingKeywords.test(userText) || bookingKeywords.test(lower)) {
+        console.log('[Brain] Booking keywords detected in non-research intent → overriding to web-explorer');
+
+        return {
+          pendingToolCalls: [],
+          routingDecision: {
+            decision: 'route_web_explorer',
+            explanation: 'Booking/transactional task detected — delegating to web-explorer for interactive workflow'
+          },
+          completionSignal: null,
+          taskPhase: 'specialized_agent' as const,
+          brainToolsInFlight: false,
+          returningFromSpecialist: 'web_explorer'
+        };
+      }
     }
 
     if ((state.currentIntent === 'coding' || state.currentIntent === 'build' || state.currentIntent === 'fix') && !state.returningFromSpecialist && !state.codingComplete) {

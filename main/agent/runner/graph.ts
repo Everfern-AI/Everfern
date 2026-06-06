@@ -14,6 +14,7 @@ import {
   createWebExplorerNode,
   createDeepResearchNode
 } from './nodes/specialized_agents';
+import { createOperatorCoordinatorNode } from '../operator/coordinator';
 import { AgentRunner } from './runner';
 import type { MissionTracker } from './mission-tracker';
 import { lightweightCheckpointer } from './custom-checkpointer';
@@ -382,8 +383,18 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return node(state);
   };
 
+  const operatorNode = async (state: GraphStateType, config?: any) => {
+    const ctx = getContext(config);
+    if (ctx.shouldAbort?.()) {
+      throw new Error('Execution aborted by user (stop button clicked)');
+    }
+    const node = createOperatorCoordinatorNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, ctx.shouldAbort);
+    return node(state);
+  };
+
   const compiledGraph = new StateGraph(GraphState)
     .addNode('intent_classifier', triageNode)
+    .addNode('operator_coordinator', operatorNode)
     .addNode('task_decomposer', decomposerNode)
     .addNode('global_planner', plannerNode)
     .addNode('debate_chamber', debateChamberNode)
@@ -399,7 +410,35 @@ If a specialized agent failed to complete a step, identify the issue and use you
   // New Brain-Centric Routing Architecture
   compiledGraph
     .addEdge(START, 'intent_classifier')
-    .addEdge('intent_classifier', 'task_decomposer')
+    .addConditionalEdges('intent_classifier', (state) => {
+        const intent = state.currentIntent || 'unknown';
+        if (intent === 'operator') {
+            console.log('[Graph] 🔀 Operator intent detected → operator_coordinator');
+            return 'operator_coordinator';
+        }
+        const complexIntents = ['coding', 'build', 'automate', 'fix', 'task'];
+        if (complexIntents.includes(intent)) {
+            console.log('[Graph] 🔀 Complex intent detected → debate_chamber');
+            return 'debate_chamber';
+        }
+        console.log('[Graph] 🔀 Simple intent detected → task_decomposer');
+        return 'task_decomposer';
+    }, {
+        operator_coordinator: 'operator_coordinator',
+        debate_chamber: 'debate_chamber',
+        task_decomposer: 'task_decomposer'
+    })
+    .addConditionalEdges('debate_chamber', (state) => {
+        const dr = state.debateResult;
+        if (dr?.goNogo === 'no-go') {
+            console.log('[Graph] 🔀 Debate chamber voted NO-GO → proceeding to decomposer anyway (best effort)');
+            return 'task_decomposer';
+        }
+        console.log('[Graph] 🔀 Debate chamber complete → task_decomposer');
+        return 'task_decomposer';
+    }, {
+        task_decomposer: 'task_decomposer'
+    })
     .addConditionalEdges('task_decomposer', (state) => {
         console.log(`[Graph] 🔀 task_decomposer complete`);
         console.log(`[Graph] ➡️ Routing to global_planner`);
@@ -407,19 +446,26 @@ If a specialized agent failed to complete a step, identify the issue and use you
     }, {
         global_planner: 'global_planner'
     })
-    .addEdge('global_planner', 'debate_chamber')
+    .addEdge('global_planner', 'brain')
 
-    // Debate chamber: runs three-agent debate for complex tasks, routes to brain
-    .addConditionalEdges('debate_chamber', (state) => {
-        const dr = state.debateResult;
-        if (dr?.goNogo === 'no-go') {
-            console.log('[Graph] 🔀 Debate chamber voted NO-GO → proceeding to brain anyway (best effort)');
-            return 'brain';
+    .addConditionalEdges('operator_coordinator', (state) => {
+        const routingDecision = state.routingDecision;
+        if (routingDecision) {
+            console.log(`[Graph] 🔀 Operator routing decision: ${routingDecision.decision}`);
+            switch (routingDecision.decision) {
+                case 'route_coding': return 'coding_specialist';
+                case 'route_data_analyst': return 'data_analyst';
+                case 'route_web_explorer': return 'web_explorer';
+                case 'route_deep_research': return 'deep_research';
+            }
         }
-        console.log('[Graph] 🔀 Debate chamber complete → brain');
-        return 'brain';
+        return END;
     }, {
-        brain: 'brain'
+        coding_specialist: 'coding_specialist',
+        data_analyst: 'data_analyst',
+        web_explorer: 'web_explorer',
+        deep_research: 'deep_research',
+        [END]: END
     })
 
     // Brain is the central router - it decides whether to handle tasks itself or route to specialists
@@ -505,12 +551,13 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'coding_specialist';
         }
 
-        console.log('[Graph] 🔀 Coding specialist complete → brain');
-        return 'brain';
+        console.log('[Graph] 🔀 Coding specialist complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         brain: 'brain',
+        operator_coordinator: 'operator_coordinator',
     })
 
     .addConditionalEdges('data_analyst', (state) => {
@@ -527,12 +574,13 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'data_analyst';
         }
 
-        console.log('[Graph] 🔀 Data analyst complete → brain');
-        return 'brain';
+        console.log('[Graph] 🔀 Data analyst complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         data_analyst: 'data_analyst',
         brain: 'brain',
+        operator_coordinator: 'operator_coordinator',
     })
 
 
@@ -544,19 +592,19 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'multi_tool_orchestrator';
         }
 
-        // Sub-task 3.4: Check if web explorer workflow is complete
-        const webExplorerComplete = state.webExplorerComplete;
-        if (webExplorerComplete) {
-            console.log('[Graph] 🔀 Web explorer workflow complete (webExplorerComplete: true) → brain');
-            return 'brain';
-        }
-
         // Bug 5: Iteration limit for web_explorer self-loop
         const loopCount = state.webExplorerSelfLoopCount || 0;
         const MAX_SELF_LOOPS = 3;
         if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to brain`);
-            return 'brain';
+            console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        }
+
+        // Sub-task 3.4: Check if web explorer workflow is complete
+        const webExplorerComplete = state.webExplorerComplete;
+        if (webExplorerComplete) {
+            console.log('[Graph] 🔀 Web explorer workflow complete (webExplorerComplete: true) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
         }
 
         // Sub-task 3.4: If no tools and not complete, continue web explorer workflow
@@ -566,6 +614,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
     }, {
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         brain: 'brain',
+        web_explorer: 'web_explorer',
+        operator_coordinator: 'operator_coordinator',
         [END]: END,
     })
 

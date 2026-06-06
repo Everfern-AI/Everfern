@@ -3,8 +3,8 @@ import type { AgentTool, ToolResult } from '../runner/types';
 export const askUserTool: AgentTool = {
   name: 'ask_user_question',
   description:
-    'Present multiple-choice questions to the user for clarification before starting work. ' +
-    'Surfaces tappable options. Do not use for simple text chat. ' +
+    'Present clarifying questions (either multiple-choice or subjective open-ended text fields) to the user before starting work or booking. ' +
+    'To request free-form text input (e.g., booking details, passenger names, flight dates, custom text), omit the "options" array or leave it empty. ' +
     'If an option requires the user to provide a file (e.g. "Upload a file"), set requiresFileUpload: true on that option — ' +
     'the frontend will automatically show a file picker when the user selects it.',
   parameters: {
@@ -12,11 +12,11 @@ export const askUserTool: AgentTool = {
     properties: {
       questions: {
         type: 'array',
-        description: '1-3 specific clarifying questions.',
+        description: '1-3 specific clarifying questions. You can mix multiple-choice and subjective text input questions.',
         items: {
           type: 'object',
           properties: {
-            question: { type: 'string', description: 'The question text.' },
+            question: { type: 'string', description: 'The question text (e.g. "To book your trip from Hyderabad to JFK, please provide the passenger full name and preferred dates:")' },
             options: {
               type: 'array',
               items: {
@@ -29,11 +29,11 @@ export const askUserTool: AgentTool = {
                 },
                 required: ['label', 'value']
               },
-              description: 'Possible answers for the user to pick from.'
+              description: 'Possible answers for the user to pick from. OMIT this array (or pass an empty array) to show a subjective/open-ended text input box.'
             },
             multiSelect: { type: 'boolean', description: 'Whether multiple options can be chosen.' }
           },
-          required: ['question', 'options']
+          required: ['question']
         }
       },
       previewMarkdown: {
@@ -96,6 +96,34 @@ export const askUserTool: AgentTool = {
       }),
       multiSelect: Boolean(q.multiSelect || false)
     }));
+
+    // Show system notification via Electron
+    try {
+      const { Notification, BrowserWindow } = require('electron');
+      if (Notification.isSupported()) {
+        const isSecurity = formatted.includes('Security Check Required') || formatted.includes('⚠️');
+        const notif = new Notification({
+          title: isSecurity ? 'EverFern Security Authorization' : 'EverFern Clarification Required',
+          body: isSecurity 
+            ? 'A security check is pending. Click to review and authorize.' 
+            : 'The agent has clarification questions for you.',
+          silent: false,
+        });
+
+        notif.on('click', () => {
+          const windows = BrowserWindow.getAllWindows();
+          if (windows.length > 0) {
+            const win = windows[0];
+            if (win.isMinimized()) win.restore();
+            win.focus();
+          }
+        });
+
+        notif.show();
+      }
+    } catch (err) {
+      console.error('[Notification] Failed to show system notification:', err);
+    }
 
     return {
       success: true,

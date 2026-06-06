@@ -56,7 +56,17 @@ export const createDecomposerNode = (
       const { decomposeTaskWithAI } = await import('../task-decomposer');
       const toolDefs = (runner as any)._buildToolDefinitions?.() || [];
       const toolNames = toolDefs.map((t: any) => t.name);
-      const decomposed = await decomposeTaskWithAI(content, toolNames || [], runner.client ?? undefined);
+
+      // Inject Arbiter strategy if debate was run
+      let strategyContext = '';
+      if (state.debateResult && state.debateResult.finalPlan) {
+          const fp = state.debateResult.finalPlan as any;
+          const phases = fp.approvedPhases || [];
+          const guidance = fp.executionGuidance || [];
+          strategyContext = `\n\nSTRATEGY APPROVED BY ARBITER (MUST FOLLOW):\nApproach: ${fp.approvedApproach || 'N/A'}\nPhases:\n${phases.join('\n')}\nExecution Guidance:\n${guidance.join('\n')}`;
+      }
+
+      const decomposed = await decomposeTaskWithAI(content, toolNames || [], runner.client ?? undefined, strategyContext);
 
       // Ensure totalSteps and unique ID are set
       decomposed.totalSteps = decomposed.steps.length;

@@ -1,11 +1,10 @@
 /**
- * Navis — Browser Session Manager
+ * Navis — BrowserSession
  *
- * Handles Playwright browser lifecycle: launch, context, page/tab management, cleanup.
- * Uses pure Playwright automation, with an optional Chrome profile helper extension for tab grouping.
+ * Manages a single Playwright browser lifecycle for the Navis agent.
  */
 
-import { chromium as pwChromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium as pwChromium, firefox as pwFirefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,6 +12,7 @@ import { spawn } from 'child_process';
 import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
+import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
 
 const chromium = pwChromium;
 
@@ -21,6 +21,8 @@ export interface SessionConfig {
   startUrl?: string;
   logger?: NavisLogger;
   useChromeProfile?: boolean;
+  selectedBrowserId?: string;
+  useIsolatedBrowser?: boolean;
 }
 
 export interface TabInfo {
@@ -92,6 +94,7 @@ function launchChromeWithDebugPort(
         `--user-data-dir=${userDataDir}`,
         `--profile-directory=${profileDirectory}`,
         `--remote-debugging-port=${debugPort}`,
+        `--load-extension=${ensureNavisTabGroupExtension()}`,
         '--no-first-run',
         '--no-default-browser-check',
         'about:blank',
@@ -200,17 +203,23 @@ function getLastUsedChromeProfile(userDataDir: string): string {
 }
 
 function ensureNavisTabGroupExtension(): string {
-  const extensionDir = path.join(os.tmpdir(), 'everfern-navis-tab-group-extension');
-  fs.mkdirSync(extensionDir, { recursive: true });
+  const baseExtensionDir = path.join(os.homedir(), '.everfern', 'extensions');
+  const chromeDir = path.join(baseExtensionDir, 'chrome-tab-group');
+  const firefoxDir = path.join(baseExtensionDir, 'firefox-tab-group');
+  
+  fs.mkdirSync(chromeDir, { recursive: true });
+  fs.mkdirSync(firefoxDir, { recursive: true });
 
+  // --- CHROME EXTENSION ---
   fs.writeFileSync(
-    path.join(extensionDir, 'manifest.json'),
+    path.join(chromeDir, 'manifest.json'),
     JSON.stringify(
       {
         manifest_version: 3,
-        name: 'EverFern Navis Tab Group',
+        name: 'EverFern Navis Tab Group (Chrome)',
         version: '1.0.0',
         permissions: ['tabs', 'tabGroups'],
+        host_permissions: ['<all_urls>'],
         background: { service_worker: 'service-worker.js' },
       },
       null,
@@ -219,9 +228,7 @@ function ensureNavisTabGroupExtension(): string {
     'utf-8',
   );
 
-  fs.writeFileSync(
-    path.join(extensionDir, 'service-worker.js'),
-    `
+  const chromeServiceWorker = `
 const NAVIS_GROUP_TITLE = 'Navis Agent';
 let navisGroupId = -1;
 
@@ -230,12 +237,25 @@ async function ensureNavisGroup(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab || tab.windowId < 0) return;
+    
+    // Only group tabs explicitly flagged by Navis to avoid grouping user's personal tabs
+    if (!tab.url || !tab.url.includes('navis=true')) return;
+
+    if (navisGroupId < 0) {
+      const groups = await chrome.tabGroups.query({ title: NAVIS_GROUP_TITLE });
+      if (groups.length > 0) {
+        navisGroupId = groups[0].id;
+      }
+    }
 
     if (typeof tab.groupId === 'number' && tab.groupId >= 0) {
+      if (tab.groupId === navisGroupId) return;
       try {
-        await chrome.tabGroups.update(tab.groupId, { title: NAVIS_GROUP_TITLE, color: 'blue' });
-        navisGroupId = tab.groupId;
-        return;
+        const group = await chrome.tabGroups.get(tab.groupId);
+        if (group.title === NAVIS_GROUP_TITLE) {
+          navisGroupId = group.id;
+          return;
+        }
       } catch {}
     }
 
@@ -255,22 +275,119 @@ async function ensureNavisGroup(tabId) {
   }
 }
 
-chrome.tabs.onCreated.addListener(tab => {
-  ensureNavisGroup(tab.id);
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url && changeInfo.url.includes('navis=true')) {
+    ensureNavisGroup(tabId);
+  } else if (tab.url && tab.url.includes('navis=true')) {
+    ensureNavisGroup(tabId);
+  }
 });
-`.trimStart(),
+`.trimStart();
+
+  fs.writeFileSync(path.join(chromeDir, 'service-worker.js'), chromeServiceWorker, 'utf-8');
+
+  // --- FIREFOX EXTENSION ---
+  fs.writeFileSync(
+    path.join(firefoxDir, 'manifest.json'),
+    JSON.stringify(
+      {
+        manifest_version: 3,
+        name: 'EverFern Navis Tab Group (Firefox)',
+        version: '1.0.0',
+        permissions: ['tabs'],
+        host_permissions: ['<all_urls>'],
+        background: { scripts: ['background.js'] },
+        browser_specific_settings: {
+          gecko: {
+            id: "navis-tab-group@everfern.com",
+            strict_min_version: "138.0"
+          }
+        }
+      },
+      null,
+      2,
+    ),
     'utf-8',
   );
 
-  return extensionDir;
+  const firefoxBackgroundScript = `
+const NAVIS_GROUP_TITLE = 'Navis Agent';
+let navisGroupId = -1;
+
+async function ensureNavisGroup(tabId) {
+  if (!tabId) return;
+  try {
+    const tab = await browser.tabs.get(tabId);
+    if (!tab || tab.windowId < 0) return;
+    
+    // Only group tabs explicitly flagged by Navis
+    if (!tab.url || !tab.url.includes('navis=true')) return;
+
+    if (typeof browser.tabs.group !== 'function') {
+      console.warn('[Navis Tab Group] browser.tabs.group API not supported in this Firefox version.');
+      return;
+    }
+
+    // Since Firefox integrates tab grouping into the tabs API, we can just group it.
+    // If we already have a groupId, we can try to use it, or just group the tab without an ID 
+    // and let Firefox create the group, then we can capture the new groupId.
+    
+    const groupOptions = { tabIds: [tabId] };
+    if (navisGroupId >= 0) {
+      groupOptions.groupId = navisGroupId;
+    }
+    
+    try {
+      navisGroupId = await browser.tabs.group(groupOptions);
+      // In Firefox, setting the title/color is often omitted or done differently,
+      // but we try anyway if there is a way. For now, just grouping is enough.
+    } catch (error) {
+      // If our cached navisGroupId is invalid, try creating a new group
+      navisGroupId = await browser.tabs.group({ tabIds: [tabId] });
+    }
+  } catch (error) {
+    console.warn('[Navis Tab Group] Failed to group tab', error);
+  }
+}
+
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url && changeInfo.url.includes('navis=true')) {
+    ensureNavisGroup(tabId);
+  } else if (tab.url && tab.url.includes('navis=true')) {
+    ensureNavisGroup(tabId);
+  }
+});
+`.trimStart();
+
+  fs.writeFileSync(path.join(firefoxDir, 'background.js'), firefoxBackgroundScript, 'utf-8');
+
+  return chromeDir;
 }
 
 export class BrowserSession {
-  private browser: Browser | null = null;
-  private context: BrowserContext | null = null;
-  private activePage: Page | null = null;
+  private static sharedBrowser: any | null = null;
+  private static sharedContext: any | null = null;
+  private static sharedActivePage: any | null = null;
+  private static sharedTempUserDataDir: string | null = null;
+  private static sharedRecentDownloads: string[] = [];
+
   private logger: NavisLogger | null = null;
-  private tempUserDataDir: string | null = null;
+
+  // Getters/setters to map instance properties to static shared properties
+  private get browser(): any | null { return BrowserSession.sharedBrowser; }
+  private set browser(val: any | null) { BrowserSession.sharedBrowser = val; }
+
+  private get context(): any | null { return BrowserSession.sharedContext; }
+  private set context(val: any | null) { BrowserSession.sharedContext = val; }
+
+  private get activePage(): any | null { return BrowserSession.sharedActivePage; }
+  private set activePage(val: any | null) { BrowserSession.sharedActivePage = val; }
+
+  private get tempUserDataDir(): string | null { return BrowserSession.sharedTempUserDataDir; }
+  private set tempUserDataDir(val: string | null) { BrowserSession.sharedTempUserDataDir = val; }
+
+  public get recentDownloads(): string[] { return BrowserSession.sharedRecentDownloads; }
+  public set recentDownloads(val: string[]) { BrowserSession.sharedRecentDownloads = val; }
 
   setActivePage(page: Page) {
     this.activePage = page;
@@ -291,9 +408,53 @@ export class BrowserSession {
     return this.context.pages();
   }
 
+  async ensureOverlay(page: Page): Promise<void> {
+    try {
+      await page.evaluate((overlayScript) => {
+        if (!(window as any).__navis_controls) {
+          const script = document.createElement('script');
+          script.textContent = overlayScript;
+          document.documentElement.appendChild(script);
+        }
+      }, OVERLAY_SCRIPT).catch(() => {});
+    } catch (err) {
+      console.warn('[Navis] Failed to ensure overlay:', err);
+    }
+  }
+
   async launch(config: SessionConfig = {}): Promise<void> {
-    const { headless = false, startUrl, logger, useChromeProfile = false } = config;
+    const { headless = false, startUrl, logger, useChromeProfile = false, selectedBrowserId = 'chrome', useIsolatedBrowser = true } = config;
     this.logger = logger || null;
+
+    // Resolve browser info from the selectedBrowserId if not using isolated mode
+    let resolvedBrowserInfo: BrowserInfo | undefined;
+    if (!useIsolatedBrowser && selectedBrowserId) {
+      try {
+        const browsers = await getAvailableBrowsers();
+        // 1. Exact match
+        resolvedBrowserInfo = browsers.find(b => b.id === selectedBrowserId);
+        // 2. Fuzzy match: legacy 'chrome' → any google/chrome browser
+        if (!resolvedBrowserInfo && (selectedBrowserId === 'chrome' || selectedBrowserId.startsWith('chrome'))) {
+          resolvedBrowserInfo = browsers.find(b => b.id.includes('google') || b.id.includes('chrome') || b.name.toLowerCase().includes('chrome'));
+        }
+        // 3. Fuzzy match: legacy 'firefox' → any firefox browser
+        if (!resolvedBrowserInfo && (selectedBrowserId === 'firefox' || selectedBrowserId.startsWith('firefox'))) {
+          resolvedBrowserInfo = browsers.find(b => b.engine === 'firefox' || b.name.toLowerCase().includes('firefox'));
+        }
+        // 4. Prefix match: e.g. 'google-chrome-f0dc...' → 'google-chrome'
+        if (!resolvedBrowserInfo) {
+          const prefix = selectedBrowserId.split('-').slice(0, 2).join('-');
+          resolvedBrowserInfo = browsers.find(b => b.id.startsWith(prefix));
+        }
+        if (resolvedBrowserInfo) {
+          console.log(`[Navis] Resolved selected browser: ${resolvedBrowserInfo.name} (${resolvedBrowserInfo.engine}) at ${resolvedBrowserInfo.path}`);
+        } else {
+          console.warn(`[Navis] Selected browser '${selectedBrowserId}' not found, falling back to isolated mode`);
+        }
+      } catch (e) {
+        console.warn(`[Navis] Failed to resolve browser '${selectedBrowserId}':`, e);
+      }
+    }
 
     const realUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -328,10 +489,21 @@ export class BrowserSession {
         '--window-size=1280,1024',
       ];
 
-      if (useChromeProfile) {
+      // Determine if we should use a system browser (via new selection or legacy useChromeProfile)
+      // Note: CDP and profile copying only work for chromium-based browsers.
+      const isChromiumSystem = resolvedBrowserInfo ? resolvedBrowserInfo.engine === 'chromium' : false;
+      const useSystemBrowser = useChromeProfile || (isChromiumSystem && !useIsolatedBrowser);
+
+      if (useSystemBrowser) {
+        // Use the resolved browser path if available, otherwise fall back to Chrome profile detection
+        const systemBrowserPath = resolvedBrowserInfo?.path;
+        const systemBrowserEngine = resolvedBrowserInfo?.engine || 'chromium';
+        console.log(`[Navis] 🌐 System browser mode: ${resolvedBrowserInfo?.name || 'Chrome Profile'} (engine: ${systemBrowserEngine})`);
+
         try {
           const chromeProfile = getChromeProfileLaunchConfig();
-          const executablePath = chromeProfile.executablePath || findChromiumExecutable() || undefined;
+          const executablePath = systemBrowserPath || chromeProfile.executablePath || findChromiumExecutable() || undefined;
+
 
           // TRY 1: Connect to existing Chrome via CDP (non-isolated mode)
           console.log(`[Navis] 🔌 CDP MODE: Attempting to connect to existing Chrome instance...`);
@@ -369,9 +541,12 @@ export class BrowserSession {
               userAgent: realUA,
               locale: 'en-US',
               timezoneId: 'America/New_York',
+              acceptDownloads: true,
             });
             console.log(`[Navis] ✅✅✅ SUCCESS: Connected to your REAL Chrome browser via CDP!`);
             console.log(`[Navis] You can now see Navis actions in your actual Chrome window.`);
+            console.log(`[Navis] 💡 TIP: For Navis tabs to be grouped automatically, manually install the Navis Tab Group extension from:`);
+            console.log(`[Navis]    ~/.everfern/extensions/chrome-tab-group/`);
             this.logger?.browserLaunch(`Connected via CDP to system Chrome (profile: ${chromeProfile.profileDirectory})`);
           } catch (cdpErr: any) {
             console.warn(`[Navis] ❌ Failed to connect via CDP: ${cdpErr.message}`);
@@ -472,6 +647,7 @@ export class BrowserSession {
               userAgent: realUA,
               locale: 'en-US',
               timezoneId: 'America/New_York',
+              acceptDownloads: true,
             });
             console.log(`[Navis] ✅ Launched with fresh isolated Chromium context`);
             this.logger?.browserLaunch(`Fresh isolated Chromium browser (last resort fallback)`);
@@ -482,23 +658,77 @@ export class BrowserSession {
           this.browser = this.context.browser();
         }
       } else {
-        const executablePath = findChromiumExecutable() || undefined;
+        const engine = resolvedBrowserInfo?.engine || 'chromium';
+        const executablePath = resolvedBrowserInfo?.path || findChromiumExecutable() || undefined;
+
+        console.log(`[Navis] 🌐 Isolated browser mode (engine: ${engine})`);
         if (executablePath) {
-          console.log(`[Navis] Using Chromium executable: ${executablePath}`);
+          console.log(`[Navis] Using executable: ${executablePath}`);
         }
 
-        this.browser = await chromium.launch({
-          headless,
-          executablePath,
-          args: launchArgs,
-        });
+        if (engine === 'firefox') {
+          // Build the firefox extension dir and load it via a persistent profile
+          ensureNavisTabGroupExtension(); // ensure extension files are written to disk
+          const firefoxExtDir = path.join(os.homedir(), '.everfern', 'extensions', 'firefox-tab-group');
+          const firefoxProfileDir = path.join(os.homedir(), '.everfern', 'navis-firefox-profile');
+          fs.mkdirSync(firefoxProfileDir, { recursive: true });
 
-        this.context = await this.browser.newContext({
-          viewport: { width: 1280, height: 1024 },
-          userAgent: realUA,
-          locale: 'en-US',
-          timezoneId: 'America/New_York',
-        });
+          try {
+            this.context = await pwFirefox.launchPersistentContext(firefoxProfileDir, {
+              headless,
+              executablePath,
+              args: [
+                '--no-remote',
+                `--load-extension=${firefoxExtDir}`,
+              ],
+              firefoxUserPrefs: {
+                'xpinstall.signatures.required': false,
+                'extensions.autoDisableScopes': 0,
+                'extensions.enableScopes': 15,
+              },
+              viewport: { width: 1280, height: 1024 },
+              userAgent: realUA,
+              locale: 'en-US',
+              timezoneId: 'America/New_York',
+              acceptDownloads: true,
+            });
+            this.browser = this.context.browser();
+            console.log(`[Navis] ✅ Firefox launched with Navis tab group extension`);
+          } catch (firefoxExtErr: any) {
+            console.warn(`[Navis] Firefox with extension failed (${firefoxExtErr.message}), falling back to basic Firefox`);
+            this.browser = await pwFirefox.launch({
+              headless,
+              executablePath,
+              args: ['--no-remote'],
+            });
+            this.context = await this.browser.newContext({
+              viewport: { width: 1280, height: 1024 },
+              userAgent: realUA,
+              locale: 'en-US',
+              timezoneId: 'America/New_York',
+              acceptDownloads: true,
+            });
+          }
+        } else {
+          const extensionPath = ensureNavisTabGroupExtension();
+          const profileLaunchArgs = [
+            ...launchArgs,
+            `--disable-extensions-except=${extensionPath}`,
+            `--load-extension=${extensionPath}`,
+          ];
+
+          this.context = await chromium.launchPersistentContext('', {
+            headless,
+            executablePath,
+            args: profileLaunchArgs,
+            viewport: { width: 1280, height: 1024 },
+            userAgent: realUA,
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
+            acceptDownloads: true,
+          });
+          this.browser = this.context.browser(); // Will be null, which is expected for persistent contexts
+        }
 
         this.logger?.browserLaunch(`Isolated Playwright Chromium (headless=${headless})`);
       }
@@ -509,8 +739,34 @@ export class BrowserSession {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
 
-    console.log('[Navis] Overlay script registered at context level');
+     console.log('[Navis] Overlay script registered at context level');
 
+    // Ensure overlay is running on all already-open pages in this context
+    const existingPages = this.context.pages();
+    for (const page of existingPages) {
+      await this.ensureOverlay(page);
+    }
+
+    // Trigger tab grouping via extension service worker if available
+    try {
+      let sw = this.context.serviceWorkers()[0];
+      if (!sw) {
+        sw = await Promise.race([
+          this.context.waitForEvent('serviceworker'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+        ]).catch(() => null);
+      }
+      if (sw) {
+        console.log('[Navis] Extension service worker detected, triggering initial tab grouping...');
+        await sw.evaluate(() => {
+          if (typeof (globalThis as any).groupAllTabs === 'function') {
+            (globalThis as any).groupAllTabs();
+          }
+        }).catch((e: any) => console.warn('[Navis] Failed to trigger groupAllTabs inside SW:', e.message));
+      }
+    } catch (swErr) {
+      console.warn('[Navis] Extension service worker detection/invocation failed:', swErr);
+    }
 
     } catch (err) {
       if (this.browser) await this.browser.close().catch(() => {});
@@ -536,9 +792,12 @@ export class BrowserSession {
 
     const targetPage = await this.context.newPage();
 
+    // Flag this tab as a Navis tab so the persistent extension knows to group it
+    await targetPage.goto('about:blank?navis=true').catch(() => {});
+
     if (url && url !== 'about:blank') {
       // Use a more robust goto that doesn't hang on domcontentloaded
-      await targetPage.goto(url, { waitUntil: 'load', timeout: 30000 }).catch(async (err) => {
+      await targetPage.goto(url, { waitUntil: 'load', timeout: 30000 }).catch(async (err: any) => {
         console.warn(`[Navis] goto failed, retrying with commit: ${err.message}`);
         return targetPage!.goto(url, { waitUntil: 'commit', timeout: 10000 }).catch(() => {});
       });
@@ -546,26 +805,14 @@ export class BrowserSession {
 
     // Inject overlay script directly into the page after load to ensure it's present
     // This handles cases where addInitScript didn't work or the page loaded too fast
-    try {
-      await targetPage.evaluate((overlayScript) => {
-        // Check if overlay is already initialized
-        if (!(window as any).__navis_controls) {
-          // Inject the overlay script directly
-          const script = document.createElement('script');
-          script.textContent = overlayScript;
-          document.documentElement.appendChild(script);
-        }
-      }, OVERLAY_SCRIPT).catch(() => {});
-    } catch (err) {
-      console.warn('[Navis] Failed to inject overlay into new tab:', err);
-    }
+    await this.ensureOverlay(targetPage);
 
     // Set up navigation listener to re-inject overlay on every page navigation
-    targetPage.on('framenavigated', async (frame) => {
+    targetPage.on('framenavigated', async (frame: any) => {
       if (frame === targetPage.mainFrame()) {
         console.log('[Navis] Page navigated, re-injecting overlay...');
         try {
-          await targetPage.evaluate((overlayScript) => {
+          await targetPage.evaluate((overlayScript: string) => {
             // Check if overlay is already initialized
             if (!(window as any).__navis_controls) {
               // Inject the overlay script directly
@@ -577,6 +824,24 @@ export class BrowserSession {
         } catch (err) {
           console.warn('[Navis] Failed to re-inject overlay after navigation:', err);
         }
+      }
+    });
+
+    // Track downloads
+    targetPage.on('download', async (download: any) => {
+      try {
+        const fileName = download.suggestedFilename() || 'downloaded_file';
+        const downloadsDir = path.join(os.homedir(), '.everfern', 'downloads');
+        fs.mkdirSync(downloadsDir, { recursive: true });
+        
+        const savePath = path.join(downloadsDir, fileName);
+        console.log(`[Navis] ⬇️ Download started: saving to ${savePath}`);
+        
+        await download.saveAs(savePath);
+        this.recentDownloads.push(savePath);
+        console.log(`[Navis] ✅ Download complete: ${savePath}`);
+      } catch (err) {
+        console.warn(`[Navis] ❌ Failed to save download:`, err);
       }
     });
 
@@ -644,9 +909,14 @@ export class BrowserSession {
     }
 
     await this.activePage.bringToFront();
+    await this.ensureOverlay(this.activePage);
   }
 
-  async close(): Promise<void> {
+  async close(force = true): Promise<void> {
+    if (!force) {
+      console.log('[Navis] Keeping browser session open for persistence.');
+      return;
+    }
     const closeStartTime = Date.now();
     console.log('[Navis] 🔴 CLOSURE INITIATED - Starting browser session cleanup');
 
@@ -738,7 +1008,7 @@ export class BrowserSession {
 
   async setOverlayStatus(text: string): Promise<void> {
     if (!this.activePage) return;
-    await this.activePage.evaluate((t) => {
+    await this.activePage.evaluate((t: string) => {
       const controls = (window as any).__navis_controls;
       if (controls) controls.setStatus(t);
     }, text).catch(() => {});
@@ -746,7 +1016,7 @@ export class BrowserSession {
 
   async highlightElement(rect: { x: number; y: number; width: number; height: number }): Promise<void> {
     if (!this.activePage) return;
-    await this.activePage.evaluate((r) => {
+    await this.activePage.evaluate((r: { x: number; y: number; width: number; height: number }) => {
       const controls = (window as any).__navis_controls;
       if (controls) controls.highlight(r);
     }, rect).catch(() => {});
@@ -754,7 +1024,7 @@ export class BrowserSession {
 
   async moveCursor(x: number, y: number, click = false): Promise<void> {
     if (!this.activePage) return;
-    await this.activePage.evaluate(({ x, y, click }) => {
+    await this.activePage.evaluate(({ x, y, click }: { x: number; y: number; click: boolean }) => {
       const controls = (window as any).__navis_controls;
       if (controls) controls.moveCursor(x, y, click);
     }, { x, y, click }).catch(() => {});

@@ -501,11 +501,82 @@ const UserQuestionForm = ({
     const [attachedFiles, setAttachedFiles] = React.useState<Array<{ name: string; content?: string; base64?: string; mimeType?: string }>>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-    const current = questions[currentIndex];
-    const total = questions.length;
+    const [showBottomFade, setShowBottomFade] = React.useState(false);
+    const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+    const checkScroll = () => {
+        const el = scrollContainerRef.current;
+        if (el) {
+            const canScroll = el.scrollHeight > el.clientHeight;
+            const reachedBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 5;
+            setShowBottomFade(canScroll && !reachedBottom);
+        }
+    };
+
+    React.useEffect(() => {
+        const timer = setTimeout(checkScroll, 100);
+        window.addEventListener('resize', checkScroll);
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('resize', checkScroll);
+        };
+    }, [currentIndex]);
+
+    // Filter questions based on conditional visibility
+    const visibleQuestions = React.useMemo(() => {
+        return questions.filter((q, index) => {
+            const depends = (q as any).dependsOn || (q as any).condition;
+            if (!depends) return true;
+            
+            const targetQ = typeof depends.question === 'number' 
+                ? (questions[depends.question]?.question || '')
+                : String(depends.question);
+                
+            const targetVal = depends.value;
+            const answer = answers[targetQ];
+            
+            if (depends.operator === 'not' || depends.operator === '!=' || depends.not) {
+                return !answer || !answer.includes(targetVal);
+            }
+            
+            return answer && answer.includes(targetVal);
+        });
+    }, [questions, answers]);
+
+    // Clamp current index to bounds if visibleQuestions changes dynamically
+    React.useEffect(() => {
+        if (currentIndex >= visibleQuestions.length && visibleQuestions.length > 0) {
+            setCurrentIndex(visibleQuestions.length - 1);
+        }
+    }, [visibleQuestions.length, currentIndex]);
+
+    const current = visibleQuestions[currentIndex];
+    const total = visibleQuestions.length;
     const currentAnswers = answers[current?.question] || [];
     const isAnswered = currentAnswers.length > 0;
-    const allAnswered = questions.every(q => (answers[q.question] || []).length > 0);
+    const allAnswered = visibleQuestions.every(q => (answers[q.question] || []).length > 0);
+
+    // Filter options based on conditional visibility
+    const visibleOptions = React.useMemo(() => {
+        if (!current || !current.options) return [];
+        return current.options.filter((opt: any) => {
+            const depends = opt.dependsOn || opt.condition;
+            if (!depends) return true;
+            
+            const targetQ = typeof depends.question === 'number'
+                ? (questions[depends.question]?.question || '')
+                : String(depends.question);
+                
+            const targetVal = depends.value;
+            const answer = answers[targetQ];
+            
+            if (depends.operator === 'not' || depends.operator === '!=' || depends.not) {
+                return !answer || !answer.includes(targetVal);
+            }
+            
+            return answer && answer.includes(targetVal);
+        });
+    }, [current, questions, answers]);
 
     const handleOptionClick = (value: string, requiresFileUpload?: boolean) => {
         const q = current.question;
@@ -829,63 +900,119 @@ const UserQuestionForm = ({
                     </div>
                 )}
 
+            {/* Subjective input (when no options are provided) */}
+            {current && (!current.options || current.options.length === 0) && (
+                <div style={{ marginBottom: 20 }}>
+                    <textarea
+                        value={currentAnswers[0] || ''}
+                        onChange={(e) => {
+                            const q = current.question;
+                            setAnswers(prev => ({ ...prev, [q]: [e.target.value] }));
+                        }}
+                        placeholder="Type your answer here..."
+                        style={{
+                            width: '100%',
+                            minHeight: 100,
+                            padding: '12px 16px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(0,0,0,0.08)',
+                            backgroundColor: '#ffffff',
+                            color: '#111111',
+                            fontSize: 14,
+                            fontFamily: 'inherit',
+                            resize: 'vertical',
+                            outline: 'none',
+                            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
+                        }}
+                    />
+                </div>
+            )}
+
             {/* Options */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-                {current.options.map((option, idx) => {
-                    const selected = currentAnswers.includes(option.value);
-                    const isFileOption = option.requiresFileUpload;
-                    const fileAttached = isFileOption && attachedFiles.some(() => pendingFileOption === option.value);
-                    return (
-                        <button
-                            key={idx}
-                            onClick={() => handleOptionClick(option.value, option.requiresFileUpload)}
-                            style={{
-                                padding: '14px 16px',
-                                borderRadius: 10,
-                                border: selected ? '1px solid #111111' : '1px solid rgba(0,0,0,0.06)',
-                                backgroundColor: selected ? '#ffffff' : '#fcfcfb',
-                                color: '#111111',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                fontSize: 14,
-                                fontWeight: option.isRecommended ? 600 : 500,
-                                transition: 'all 0.2s ease',
-                                boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
-                            }}
-                            onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
-                            onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#fcfcfb'; }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{
-                                    width: 18, height: 18,
-                                    borderRadius: current.multiSelect ? 4 : '50%',
-                                    border: selected ? 'none' : '1px solid #cbd5e1',
-                                    backgroundColor: selected ? '#111111' : '#ffffff',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                    boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
-                                }}>
-                                    {selected && (
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                            <polyline points="20 6 9 17 4 12" />
-                                        </svg>
+            {current && current.options && current.options.length > 0 && (
+                <div style={{ position: 'relative', marginBottom: 20 }}>
+                    <div 
+                        ref={scrollContainerRef}
+                        onScroll={checkScroll}
+                        style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: 10, 
+                            maxHeight: 280,
+                            overflowY: 'auto',
+                            paddingRight: 4
+                        }}
+                        className="custom-scrollbar"
+                    >
+                        {visibleOptions.map((option, idx) => {
+                        const selected = currentAnswers.includes(option.value);
+                        const isFileOption = option.requiresFileUpload;
+                        const fileAttached = isFileOption && attachedFiles.some(() => pendingFileOption === option.value);
+                        return (
+                            <button
+                                key={idx}
+                                onClick={() => handleOptionClick(option.value, option.requiresFileUpload)}
+                                style={{
+                                    padding: '14px 16px',
+                                    borderRadius: 10,
+                                    border: selected ? '1px solid #111111' : '1px solid rgba(0,0,0,0.06)',
+                                    backgroundColor: selected ? '#ffffff' : '#fcfcfb',
+                                    color: '#111111',
+                                    cursor: 'pointer',
+                                    textAlign: 'left',
+                                    fontSize: 14,
+                                    fontWeight: option.isRecommended ? 600 : 500,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
+                                }}
+                                onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                                onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#fcfcfb'; }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <div style={{
+                                        width: 18, height: 18,
+                                        borderRadius: current.multiSelect ? 4 : '50%',
+                                        border: selected ? 'none' : '1px solid #cbd5e1',
+                                        backgroundColor: selected ? '#111111' : '#ffffff',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                        boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
+                                    }}>
+                                        {selected && (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                <polyline points="20 6 9 17 4 12" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <span style={{ color: '#111111' }}>{option.label}</span>
+                                    {isFileOption && (
+                                        <span style={{ fontSize: 11, color: '#111111', marginLeft: 4, opacity: 0.8 }}>
+                                            📎 {fileAttached ? '✓ File attached' : 'Click to attach file'}
+                                        </span>
+                                    )}
+                                    {option.isRecommended && (
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
+                                            RECOMMENDED
+                                        </span>
                                     )}
                                 </div>
-                                <span style={{ color: '#111111' }}>{option.label}</span>
-                                {isFileOption && (
-                                    <span style={{ fontSize: 11, color: '#111111', marginLeft: 4, opacity: 0.8 }}>
-                                        📎 {fileAttached ? '✓ File attached' : 'Click to attach file'}
-                                    </span>
-                                )}
-                                {option.isRecommended && (
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
-                                        RECOMMENDED
-                                    </span>
-                                )}
-                            </div>
-                        </button>
-                    );
-                })}
-            </div>
+                            </button>
+                        );
+                    })}
+                </div>
+                    {showBottomFade && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 4,
+                            height: 40,
+                            background: 'linear-gradient(to bottom, rgba(236, 236, 234, 0) 0%, rgba(236, 236, 234, 1) 100%)',
+                            pointerEvents: 'none',
+                            borderRadius: '0 0 10px 10px',
+                        }} />
+                    )}
+                </div>
+            )}
 
             {/* Attached files summary */}
             {attachedFiles.length > 0 && (

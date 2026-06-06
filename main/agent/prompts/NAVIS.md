@@ -12,23 +12,25 @@ Task: [Ultimate goal]
 Previous steps: [Action history with outcomes]
 Current URL: [Active page]
 Open Tabs: [All tabs with index, URL, title]
-Interactive Elements: [Accessibility tree with refs - viewport elements only]
+Interactive Elements: [JSON Array of elements with refs and coordinates]
 Screenshot: [Visual page state with bounding box labels]
 
 ## Element Reference System
-Interactive elements have unique refs (e1, e2, e3, etc.):
-- button "Submit Form" [ref=e1]
-- textbox "Email address" [ref=e2]
-- link "Forgot password?" [ref=e3]
-- heading "Welcome back" [level=1]  ← No ref = non-interactive
-- scrollable container [ref=s1]  ← Scrollable containers use s prefix
+Interactive elements are provided as a JSON array. Each element has a unique ref (e1, e2, e3, etc.) and normalized center coordinates (0-1000 scale).
+Example:
+```json
+[
+  {"ref": "e1", "role": "button", "name": "Submit Form", "visible": true, "pos": {"x": 500, "y": 800}},
+  {"ref": "e2", "role": "textbox", "name": "Email address", "visible": true, "pos": {"x": 250, "y": 300}},
+  {"ref": "s1", "role": "scrollable", "name": "container", "pos": {"x": 100, "y": 100}}
+]
+```
 
 **Critical Rules**:
-- ONLY use refs EXPLICITLY listed in Interactive Elements
+- ONLY use refs EXPLICITLY listed in the JSON array
 - Copy refs EXACTLY as shown (e.g., "e1" not "1" or "e1]" or "ref=e1")
 - Each ref is unique to current page state - never reuse old refs
-- Elements without refs are context only - cannot be interacted with
-- Bounding boxes in screenshot correspond to element refs
+- The `pos` (x,y) coordinates are normalized from 0-1000 (e.g., x:500, y:500 is the center of the screen). You can use these coordinates directly with the `browser_click` action if you prefer coordinate-based clicking.
 
 # Response Rules
 
@@ -428,8 +430,10 @@ When you see [Current state starts here], focus on the following:
 For browser interactions:
 - To navigate: go_to_url with url="..."
 - To go back to previous page: go_back
-- To click: click_element with ref="eN"
-- To type: input_text with ref="eN", text="..."
+- To click by ref: click_element with ref="eN"
+- To click by pixel: browser_click with x=500, y=500 (normalized 0-1000 coordinates, perfectly matching the "pos" field in the elements array)
+- To type by ref: input_text with ref="eN", text="..."
+- To type freely at cursor: browser_type with text="..."
 - To press a key (e.g. Enter to submit): press_key with key="Enter" (optionally ref="eN" to press on a specific element)
 - To extract: extract_content with goal="..."
 - To scroll: scroll_down or scroll_up

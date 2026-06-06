@@ -156,6 +156,8 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           startUrl: args.startUrl,
           useVision: navisSettings.useVision,
           useChromeProfile: navisSettings.useChromeProfile,
+          selectedBrowserId: navisSettings.selectedBrowserId,
+          useIsolatedBrowser: navisSettings.useIsolatedBrowser,
         });
 
         const executionTime = Date.now() - toolStartTime;

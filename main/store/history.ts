@@ -43,12 +43,15 @@ export class ChatHistoryStore {
 
         const embedding = await model.embeddings.embedQuery(content);
 
-        // vec0 virtual tables don't support INSERT OR REPLACE — use INSERT OR IGNORE
-        // so re-indexing the same message ID is a silent no-op.
-        await dbOps.run(
-          `INSERT OR IGNORE INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
-          [id, `[${embedding.join(',')}]`]
-        );
+        // vec0 virtual tables often don't support INSERT OR REPLACE or INSERT OR IGNORE properly.
+        // Check if it already exists before inserting to avoid UNIQUE constraint errors.
+        const existing = await dbOps.get('SELECT id FROM chat_messages_vec WHERE id = ?', [id]);
+        if (!existing) {
+          await dbOps.run(
+            `INSERT INTO chat_messages_vec (id, embedding) VALUES (?, ?)`,
+            [id, `[${embedding.join(',')}]`]
+          );
+        }
         return; // Success, exit loop
       } catch (err: any) {
         attempt++;

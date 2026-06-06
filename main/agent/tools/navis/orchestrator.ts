@@ -67,6 +67,8 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
+          { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
+          { properties: { browser_type: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }, required: ['browser_type'], additionalProperties: false },
         ],
       },
       minItems: 1,
@@ -128,6 +130,8 @@ export interface NavisOptions {
   onProgress?: (msg: string) => void;
   useVision?: boolean;
   useChromeProfile?: boolean;
+  selectedBrowserId?: string;
+  useIsolatedBrowser?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,10 +168,27 @@ export class NavisOrchestrator {
   getEventLogger(): NavisLogger { return this.logger; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
-    const { task, maxSteps = 40, maxActionsPerStep = 8, headless = false, startUrl, useVision = false, useChromeProfile = false } = options;
+    const {
+      task,
+      maxSteps = 40,
+      maxActionsPerStep = 8,
+      headless = false,
+      startUrl,
+      useVision = false,
+      useChromeProfile = false,
+      selectedBrowserId = 'chrome',
+      useIsolatedBrowser = true
+    } = options;
 
     const runStart = Date.now();
-    await this.session.launch({ headless, startUrl, logger: this.logger, useChromeProfile });
+    await this.session.launch({
+      headless,
+      startUrl,
+      logger: this.logger,
+      useChromeProfile,
+      selectedBrowserId,
+      useIsolatedBrowser
+    });
     console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
     console.log(`[Navis] Vision mode: ${useVision ? 'ENABLED' : 'disabled'}`);
 
@@ -180,6 +201,7 @@ export class NavisOrchestrator {
     let lastResult = '';
     let snapshot: AriaSnapshotResult | null = null;
     let lastUrl = '';
+    let isDoneAction = false;
 
     // Background snapshot: started after actions change the page, awaited at next step start
     let pendingSnapshot: Promise<AriaSnapshotResult | null> | null = null;
@@ -368,6 +390,7 @@ If you failed to find the info, report that clearly.`;
           lastResult = result.message;
 
           if (actionName === 'done') {
+            isDoneAction = true;
             this.logger.taskComplete(result.success, steps, lastResult);
             return {
               success: (decision.action?.find((a: any) => a.done)?.done?.success) ?? result.success,
@@ -380,6 +403,14 @@ If you failed to find the info, report that clearly.`;
             stateChanged = true;
             break;
           }
+        }
+
+        // Inject download notifications
+        const recentDownloads = this.session.recentDownloads;
+        if (recentDownloads && recentDownloads.length > 0) {
+          const downloadMsg = `\n\n[System Notification: The agent successfully downloaded files to:\n${recentDownloads.map(d => ` - ${d}`).join('\n')}]`;
+          lastResult += downloadMsg;
+          this.session.recentDownloads = []; // Clear after reporting
         }
 
         const t7 = Date.now();
@@ -441,17 +472,21 @@ If you failed to find the info, report that clearly.`;
     } finally {
       // Close the browser when Navis is done
       const finallyStartTime = Date.now();
-      console.log('[Navis] 🔴 FINALLY BLOCK ENTERED - Initiating session closure and return to main agent');
+      console.log('[Navis] 🔴 FINALLY BLOCK ENTERED - Initiating session closure check');
 
       try {
-        console.log('[Navis] 🔴 Calling session.close()...');
-
-        await this.session.close().catch((err) => {
-          console.error('[Navis] ⚠️ session.close() threw error:', err);
-        });
-
-        const closureTime = Date.now() - finallyStartTime;
-        console.log(`[Navis] ✅ Session closure completed (${closureTime}ms)`);
+        const shouldForceClose = globalAbortManager.streamAborted;
+        if (shouldForceClose) {
+          console.log('[Navis] 🔴 Calling session.close(true)...');
+          await this.session.close(true).catch((err) => {
+            console.error('[Navis] ⚠️ session.close(true) threw error:', err);
+          });
+          const closureTime = Date.now() - finallyStartTime;
+          console.log(`[Navis] ✅ Session closure completed (${closureTime}ms)`);
+        } else {
+          console.log('[Navis] 🟢 Keeping browser session open for persistent HITL.');
+          await this.session.close(false).catch(() => {});
+        }
 
       } catch (finallyErr) {
         const closureTime = Date.now() - finallyStartTime;

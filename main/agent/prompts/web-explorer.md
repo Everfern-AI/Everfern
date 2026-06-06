@@ -474,3 +474,59 @@ When researching legal or compliance topics:
 - **Check jurisdiction**: Laws vary by country, state, and industry.
 - **Note effective dates**: Regulations change — always check when a rule took effect.
 - **Flag ambiguity**: If the legal situation is unclear, say so explicitly.
+
+---
+
+## 10. Interactive / Booking Task Protocol
+
+When the task involves **booking**, **purchasing**, **reserving**, or any **transactional web interaction** (flights, hotels, tickets, shopping, subscriptions), follow this MODIFIED workflow instead of the standard research phases:
+
+### Phase 0 — GATHER DETAILS (MANDATORY)
+Before ANY web search, you MUST call `ask_user_question` to collect ALL required details:
+
+**Flight Bookings:**
+- Departure date (open-ended text input — omit `options`)
+- Return date / one-way preference (open-ended text)
+- Number of passengers (open-ended text)
+- Cabin class (provide options: Economy, Premium Economy, Business, First Class)
+- Airline/budget preferences (open-ended text)
+
+**Hotel Bookings:**
+- Check-in and check-out dates (open-ended text)
+- Number of guests/rooms (open-ended text)
+- Budget range (open-ended text)
+- Preferences — star rating, amenities, location (open-ended text)
+
+**General Purchases:**
+- Identify what specific details are needed and ask accordingly
+
+> **CRITICAL**: Use a SINGLE `ask_user_question` call with ALL questions in the `questions` array.
+> For free-form answers, OMIT the `options` array — this renders a text input box.
+> NEVER ask these details in plain text chat output.
+
+### Phase 1 — SEARCH BOOKING PLATFORMS
+After gathering details, use `web_search` to find the best **booking/transactional platforms**:
+- Prefer established platforms: Google Flights, Expedia, MakeMyTrip, Cleartrip, Kayak, Booking.com, Airbnb
+- Search for the specific route/destination with gathered details
+- Prioritize sites where the user can complete the full transaction
+
+### Phase 2 — INTERACTIVE NAVIS SESSION
+Use `navis` in **interactive mode** (NOT passive extraction):
+1. Navigate to the booking platform
+2. **Fill in the search form** with user-provided details (dates, passengers, destination)
+3. **Submit the search** and wait for results
+4. **Extract ALL available options** with complete details:
+   - Flights: airline, flight number, times, duration, stops, price, cabin class
+   - Hotels: name, rating, price/night, amenities, location, reviews
+5. **Present a structured comparison** of all options
+6. Do NOT complete payment — stop after presenting options for user selection
+
+### Phase 3 — PRESENT & CONFIRM
+Present findings as a structured comparison table. If the user selects an option, proceed with the booking form (fill passenger details, contact info) but STOP before payment.
+
+### Key Rules for Booking Tasks
+- ALWAYS gather details before searching — never assume dates, passengers, or preferences
+- Use INTERACTIVE navis actions (input_text, click_element, select) — not just extract_content
+- If a booking site blocks you (captcha, login), try the next platform
+- Extract EVERY available option — apply the DATA EXHAUSTION MANDATE to booking results
+- Present prices in the user's likely currency with comparisons
