@@ -174,10 +174,14 @@ export const createCallModelNode = (
     // ── Vision Grounding ───────────────────────────────────────────────────
     const vlm = (runner as any).config.vlm;
     const lastMsgContent = state.messages[state.messages.length - 1]?.content || '';
+    const shouldUseDesktopVision =
+      state.currentIntent !== 'research' &&
+      (runner as any).shouldCaptureScreenshot(lastMsgContent);
+
     const needsVisionGrounding = iterations === 0 &&
       vlm?.model &&
       vlm?.provider &&
-      (runner as any).shouldCaptureScreenshot(lastMsgContent);
+      shouldUseDesktopVision;
 
     let updatedMessages: ChatMessage[] | null = null;
     if (needsVisionGrounding && vlm) {
@@ -395,7 +399,9 @@ You do not need to use complex execution plans or tools for this interaction.`;
       ? rawContent
       : rawContent.map((c: any) => 'text' in c ? c.text : '').join('\n');
 
-    const scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
+    let scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
+    // Also remove unclosed <think> or <thought> tags at the end of the string
+    scrubbed = scrubbed.replace(/<(?:think|thought)>[\s\S]*$/i, '').trim();
 
     if (scrubbed) {
         const preview = scrubbed.length > 80 ? scrubbed.substring(0, 80) + '...' : scrubbed;

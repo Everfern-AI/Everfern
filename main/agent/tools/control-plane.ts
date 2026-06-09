@@ -1,64 +1,10 @@
 /**
  * EverFern Desktop — Control Plane Tools
  * 
- * Tools for managing workspace permissions, directory access,
- * and high-stakes operations that require user confirmation.
+ * Tools for high-stakes operations that require user confirmation.
  */
 
 import type { AgentTool, ToolResult } from '../runner/types';
-
-/**
- * request_workspace_directory
- * 
- * Requests access to a local directory on the user's COMPUTER.
- * Triggers a native folder picker on the UI.
- */
-export const createWorkspaceRequestTool = (
-  requestPermission?: () => Promise<boolean>
-): AgentTool => ({
-  name: 'request_workspace_directory',
-  description: 'Request access to a directory on the user\'s computer. Use this to work with local files.',
-  parameters: {
-    type: 'object',
-    properties: {
-      path: {
-        type: 'string',
-        description: 'The absolute path to the directory (optional, launches folder picker if omitted)'
-      },
-      reason: {
-        type: 'string',
-        description: 'Brief explanation why you need access to this folder.'
-      }
-    },
-    required: []
-  },
-
-  async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
-    const pathValue = args['path'];
-    const reason = args['reason'] || 'Requesting workspace access.';
-
-    if (requestPermission) {
-      try {
-        const granted = await requestPermission();
-        if (granted) {
-          return {
-            success: true,
-            output: `✔ Folder access granted for: ${pathValue || 'Selected Folder'}\nReason: ${reason}`,
-            data: { path: pathValue, granted: true }
-          };
-        }
-      } catch (err) {
-        return { success: false, output: `Permission request failed: ${err}`, error: 'permission_request_error' };
-      }
-    }
-
-    return {
-      success: false,
-      output: 'Permission request ignored or not supported in this session. Ask the user to click the "Add Folder" button manually.',
-      error: 'permission_denied'
-    };
-  }
-});
 
 /**
  * allow_file_delete

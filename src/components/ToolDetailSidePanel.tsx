@@ -8,7 +8,7 @@ import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
-  BookOpen
+  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
@@ -17,12 +17,14 @@ import { MarkdownViewer } from './FileViewerModal';
    TYPES
    ============================================================ */
 export const ToolType = {
+  MCP_REGISTRY: 'mcp_registry',
   WEB_SEARCH: 'web_search',
   FERN: 'fern',
   TERMINAL: 'terminal',
   SKILL: 'skill',
   FILE_SYSTEM: 'file_system',
   FILE_EDITOR: 'file_editor',
+  TODO_WRITE: 'todo_write',
   LIVE_PREVIEW: 'live_preview',
   GENERIC: 'generic',
 };
@@ -75,10 +77,12 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (!toolName) return ToolType.GENERIC;
   const n = toolName.toLowerCase();
   if (n === 'skill') return ToolType.SKILL;
-  if (n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
+  if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
+  if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
+  if (n === 'todo_write') return ToolType.TODO_WRITE;
   if (n === 'read' || n === 'read_file' || n === 'view_file' || n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
   if (n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   return ToolType.GENERIC;
@@ -100,10 +104,13 @@ export function getFaviconUrl(domain: string): string {
 function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
   if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
+  if (n === 'show_user_url') return { Icon: Globe, label: 'Browser' };
   if (n.includes('preview_live_url')) return { Icon: Globe, label: 'Live Preview' };
+  if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return { Icon: Braces, label: 'MCP Registry' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
+  if (n === 'todo_write') return { Icon: CheckCircle, label: 'Todo List' };
   if (n.includes('system_files')) return { Icon: FolderOpenIcon, label: 'File System', iconSize: 12 };
   return { Icon: Braces, label: 'Generic Tool' };
 }
@@ -148,7 +155,19 @@ function CopyBtn({ text, dark }: { text: string; dark?: boolean }) {
 /* ============================================================
    PANEL HEADER
    ============================================================ */
-function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; toolName?: string; onClose: () => void }) {
+function PanelHeader({
+  agentName,
+  toolName,
+  onClose,
+  showFilePane,
+  onToggleFilePane,
+}: {
+  agentName?: string;
+  toolName?: string;
+  onClose: () => void;
+  showFilePane?: boolean;
+  onToggleFilePane?: () => void;
+}) {
   const { Icon, label, iconSize = 16 } = getToolMeta(toolName);
 
   return (
@@ -197,6 +216,21 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
       {/* Right */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <PulseDot />
+        {onToggleFilePane && (
+          <button
+            onClick={onToggleFilePane}
+            aria-label="Toggle files pane"
+            title="Toggle files pane"
+            style={{
+              width: 32, height: 32, borderRadius: T.r8, border: showFilePane ? '1px solid rgba(20,20,18,0.22)' : '0.5px solid rgba(0,0,0,0.1)',
+              background: showFilePane ? '#deded9' : '#ececea', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+              cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
+            }}
+          >
+            <PanelRightOpen size={15} strokeWidth={1.8} />
+          </button>
+        )}
         <button
           onClick={onClose}
           aria-label="Close"
@@ -980,33 +1014,72 @@ export function TerminalView({
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
     const WIN = {
-      bg:       '#0d1117',
-      border:   'rgba(86,145,227,0.15)',
-      divider:  'rgba(86,145,227,0.08)',
-      textCmd:  'rgba(220,235,255,0.9)',
-      textOut:  'rgba(230,241,255,0.86)',
-      textErr:  '#ff7b72',
-      textDim:  'rgba(220,235,255,0.2)',
-      textMeta: 'rgba(220,235,255,0.3)',
-      psPrefix: '#5691e3',
-      psPath:   '#58a6ff',
-      psChevron:'rgba(220,235,255,0.4)',
+      bg: '#111111',
+      tab: '#202020',
+      tabText: '#f4f4f5',
+      border: 'rgba(255,255,255,0.08)',
+      divider: 'rgba(255,255,255,0.08)',
+      textCmd: '#ffffff',
+      textOut: '#f5f5f5',
+      textErr: '#ff8a8a',
+      textDim: 'rgba(255,255,255,0.36)',
+      textMeta: 'rgba(255,255,255,0.42)',
+      accent: '#d19a3a',
     };
+    const displayCwd = cwd || 'C:\\Users\\srini\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+    const tabTitle = displayCwd.length > 18 ? `${displayCwd.slice(0, 14)}...` : displayCwd;
 
     return (
-      <TerminalChrome title="Windows PowerShell" tint="#58a6ff">
-        <div style={{ display: 'none', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(86,145,227,0.1)', borderBottom: `1px solid ${WIN.border}`, flexShrink: 0 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="#5691e3"><path d="M0 0h11v11H0zm13 0h11v11H13zm0 13h11v11H13zM0 13h11v11H0z"/></svg>
-          <span style={{ fontSize: 11, color: WIN.textCmd, fontFamily: monoStack, fontWeight: 600 }}>Windows PowerShell</span>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 24px', display: 'flex', flexDirection: 'column', background: WIN.bg }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
-              <span style={{ color: WIN.psPrefix }}>PS </span>
-              <span style={{ color: WIN.psPath }}>{cwd || 'C:\\'}</span>
-              <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden',
+        background: WIN.bg,
+        color: WIN.textOut,
+        fontFamily: monoStack,
+      }}>
+        <div style={{
+          height: 42,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 10px',
+          borderBottom: `1px solid ${WIN.border}`,
+          background: '#171717',
+          flexShrink: 0,
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            height: 30,
+            maxWidth: 194,
+            padding: '0 12px',
+            borderRadius: 10,
+            background: WIN.tab,
+            color: WIN.tabText,
+            overflow: 'hidden',
+          }}>
+            <Terminal size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: T.sans }}>
+              {tabTitle}
             </span>
-            <code style={{ fontSize: 13, color: WIN.textCmd, lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+          </div>
+          <button title="New tab" style={{ width: 28, height: 28, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'default' }}>
+            <Plus size={17} strokeWidth={1.6} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 18px 26px', display: 'flex', flexDirection: 'column', background: WIN.bg }}>
+          <div style={{ fontSize: 13, color: WIN.textOut, marginBottom: 22 }}>
+            PowerShell 7.5.5
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: hasOutput ? 18 : 10 }}>
+            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13, color: WIN.textCmd }}>
+              PS {displayCwd}&gt;&nbsp;
+            </span>
+            <code style={{ fontSize: 13, color: WIN.accent, lineHeight: 1.55, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
               {command}
             </code>
           </div>
@@ -1032,15 +1105,13 @@ export function TerminalView({
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 14 }}>
-            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
-              <span style={{ color: WIN.psPrefix }}>PS </span>
-              <span style={{ color: WIN.psPath }}>{cwd || 'C:\\'}</span>
-              <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
+            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13, color: WIN.textCmd }}>
+              PS {displayCwd}&gt;
             </span>
             <BlinkCursor />
           </div>
         </div>
-      </TerminalChrome>
+      </div>
     );
   }
 
@@ -1132,12 +1203,16 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
       role="button" tabIndex={0}
       onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && window.open(url, '_blank')}
       style={{
-        padding: '18px 20px', background: T.surface,
+        padding: '18px 20px',
+        background: T.surface,
+        backgroundColor: T.surface,
+        backgroundImage: 'none',
         border: `1px solid ${T.border}`, borderRadius: T.r12, cursor: 'pointer',
+        color: T.text,
         boxShadow: '0 1px 3px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden',
         flexShrink: 0,
       }}
-      whileHover={{ borderColor: '#b8b8b4', y: -1, boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}
+      whileHover={{ borderColor: '#b8b8b4', y: -1, background: T.surfaceRaised, backgroundColor: T.surfaceRaised, boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}
       transition={{ duration: 0.12 }}
     >
       {/* Domain */}
@@ -1379,6 +1454,88 @@ function WebSearchView({ query, results = [], totalResults = 0 }: { query: strin
   );
 }
 
+type McpRegistryConnector = {
+  name: string;
+  description?: string;
+  status?: string;
+  connectSnippet?: string;
+};
+
+function parseMcpRegistryConnectors(output: string): McpRegistryConnector[] {
+  const text = String(output || '');
+  const connectors: McpRegistryConnector[] = [];
+  const sectionRegex = /^###\s+(.+?)\s*$([\s\S]*?)(?=^###\s+|\s*$)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = sectionRegex.exec(text)) !== null) {
+    const name = match[1]?.trim();
+    const body = match[2] || '';
+    if (!name) continue;
+    const line = (label: string) => {
+      const lineMatch = body.match(new RegExp(`-\\s*\\*\\*${label}\\*\\*:\\s*([^\\n]+)`, 'i'));
+      return lineMatch?.[1]?.trim() || '';
+    };
+    const connect = body.match(/connect_mcp_server\([\s\S]*?\)/)?.[0] || line('To Connect');
+    connectors.push({
+      name,
+      description: line('Description'),
+      status: line('Status'),
+      connectSnippet: connect.replace(/^Use\s+/i, '').trim(),
+    });
+  }
+  return connectors;
+}
+
+function McpRegistryView({ keyword, connectors = [], totalResults = 0, output }: { keyword: string; connectors?: McpRegistryConnector[]; totalResults?: number; output?: string }) {
+  const safe = Array.isArray(connectors) ? connectors : [];
+  const copyText = output || safe.map(connector => `${connector.name}\n${connector.description || ''}\n${connector.connectSnippet || ''}`).join('\n\n');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 24px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '12px 16px' }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, color: T.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>
+            MCP Registry
+          </p>
+          <p style={{ fontSize: 13.5, fontWeight: 500, color: T.text, margin: 0, letterSpacing: '-0.01em', lineHeight: 1.5, fontFamily: T.sans }}>
+            {keyword ? `Searching connectors for "${keyword}"` : 'Searching available connectors'}
+          </p>
+        </div>
+      </div>
+
+      {safe.length === 0 ? (
+        <EmptyState icon={IconSearch} title="No MCP connectors" description={output || "The registry didn't return a connector for this software."} />
+      ) : (
+        <>
+          <SectionLabel right={`${totalResults || safe.length}`}>Connectors</SectionLabel>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {copyText && <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyBtn text={copyText} /></div>}
+            {safe.map((connector, index) => (
+              <div key={`${connector.name}-${index}`} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                  <p style={{ margin: 0, color: T.text, fontFamily: T.sans, fontSize: 13.5, fontWeight: 600 }}>
+                    {connector.name}
+                  </p>
+                  {connector.status && (
+                    <span style={{ color: T.green, border: '1px solid rgba(34,197,94,0.2)', borderRadius: 999, padding: '3px 8px', fontSize: 10.5, lineHeight: 1, fontFamily: T.sans }}>
+                      {connector.status}
+                    </span>
+                  )}
+                </div>
+                {connector.description && <p style={{ margin: 0, color: T.textSecondary, fontFamily: T.sans, fontSize: 12.5, lineHeight: 1.5 }}>{connector.description}</p>}
+                {connector.connectSnippet && (
+                  <code style={{ display: 'block', marginTop: 10, color: T.text, background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.r8, padding: '9px 10px', fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {connector.connectSnippet}
+                  </code>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
    GENERIC TOOL VIEW
    ============================================================ */
@@ -1574,6 +1731,31 @@ export function extractWebSearchData(tc: any) {
   } catch { return null; }
 }
 
+function extractMcpRegistryData(tc: any) {
+  try {
+    const args = tc.args || tc.arguments || {};
+    const data = tc.data || tc.result?.data || tc.result || {};
+    const output = tc.output || tc.result?.output || tc.result?.error || tc.error || '';
+    const keyword = String(args.keyword || args.query || data.keyword || data.query || '').trim();
+    const rawConnectors = data.connectors || data.results || data.items;
+    const connectors = Array.isArray(rawConnectors)
+      ? rawConnectors.map((item: any) => ({
+        name: String(item.name || item.id || item.title || 'Connector'),
+        description: item.description ? String(item.description) : '',
+        status: item.status ? String(item.status) : '',
+        connectSnippet: item.command ? `connect_mcp_server({ name: "${item.name || item.id}", command: "${item.command}" })` : String(item.connectSnippet || item.connect || ''),
+      }))
+      : parseMcpRegistryConnectors(output);
+
+    return {
+      keyword,
+      connectors,
+      totalResults: connectors.length,
+      output,
+    };
+  } catch { return null; }
+}
+
 export function extractNavisData(tc: any, progressEvents: any[] = []) {
   try {
     const screenshots: any[] = [];
@@ -1707,12 +1889,33 @@ function extractTerminalData(tc: any) {
 
 function extractFileSystemData(tc: any) {
   const args = tc.args || tc.arguments || {};
-  return { toolName: tc.toolName, path: args.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || '', args, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+  const data = tc.data || tc.result?.data || {};
+  return {
+    toolName: tc.toolName,
+    path: args.path || data.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || args.target_file || '',
+    args,
+    data,
+    output: tc.output || tc.result?.output || tc.result?.error || tc.error || ''
+  };
 }
 
 function extractGenericData(tc: any) {
   const args = tc.args || tc.arguments || {};
   return { toolName: tc.toolName, args, output: tc.output || tc.result?.output || tc.result?.error || tc.error || '' };
+}
+
+function extractTodoWriteData(tc: any) {
+  const args = tc.args || tc.arguments || {};
+  const data = tc.data || tc.result?.data || {};
+  const rawTasks = Array.isArray(data.tasks) ? data.tasks : Array.isArray(args.tasks) ? args.tasks : [];
+  return {
+    tasks: rawTasks.map((task: any) => ({
+      description: String(task.description || task.content || task.title || ''),
+      status: String(task.status || 'pending'),
+    })).filter((task: any) => task.description),
+    path: data.path || args.planPath || '',
+    output: tc.output || tc.result?.output || '',
+  };
 }
 
 function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
@@ -1895,9 +2098,9 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
   );
 };
 
-function FileEditorView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
+function FileEditorView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
   const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
-  const { isWrite, isMulti, chunks, oldContent, newContent, isRead } = useMemo(() => {
+  const { isWrite, isMulti, chunks, oldContent, newContent, isRead, hasRenderableContent } = useMemo(() => {
     const name = (toolName || '').toLowerCase();
     
     let oldContent = '';
@@ -1909,7 +2112,7 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
 
     if (name.includes('write')) {
       isWrite = true;
-      newContent = args?.CodeContent || args?.code || args?.content || '';
+      newContent = args?.CodeContent || args?.code || args?.content || args?.text || data?.content || '';
     } else if (name === 'read' || name === 'read_file' || name === 'view_file') {
       isRead = true;
       newContent = output || '';
@@ -1923,13 +2126,49 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
           endLine: chunk.EndLine,
         }));
       } else {
-        oldContent = args?.TargetContent || args?.target || '';
-        newContent = args?.ReplacementContent || args?.replacement || '';
+        oldContent =
+          args?.TargetContent ||
+          args?.target ||
+          args?.oldString ||
+          args?.old_string ||
+          args?.oldText ||
+          args?.old_text ||
+          args?.search ||
+          args?.find ||
+          args?.from ||
+          args?.original ||
+          args?.before ||
+          data?.oldString ||
+          data?.old_string ||
+          '';
+        newContent =
+          args?.ReplacementContent ||
+          args?.replacement ||
+          args?.newString ||
+          args?.new_string ||
+          args?.newText ||
+          args?.new_text ||
+          args?.replace ||
+          args?.with ||
+          args?.to ||
+          args?.updated ||
+          args?.after ||
+          data?.newString ||
+          data?.new_string ||
+          '';
       }
     }
 
-    return { isWrite, isMulti, chunks, oldContent, newContent, isRead };
-  }, [toolName, args, output]);
+    return {
+      isWrite,
+      isMulti,
+      chunks,
+      oldContent,
+      newContent,
+      isRead,
+      hasRenderableContent: isMulti ? chunks.length > 0 : Boolean(oldContent || newContent),
+    };
+  }, [toolName, args, output, data]);
 
   // Helper to render diff lines for a target and replacement
   const renderDiffLines = (oldText: string, newText: string, startLine = 1) => {
@@ -2065,7 +2304,30 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
             paddingBottom: 8,
             backgroundColor: EDITOR_COLORS.bg,
           }}>
-            {isMulti ? (
+            {!hasRenderableContent ? (
+              <div style={{ padding: 16 }}>
+                <div style={{
+                  border: `1px solid ${EDITOR_COLORS.border}`,
+                  borderRadius: T.r8,
+                  padding: 14,
+                  background: '#18181b',
+                  color: '#d4d4d8',
+                  fontFamily: T.mono,
+                  fontSize: 12,
+                  lineHeight: 1.7,
+                }}>
+                  <div style={{ color: '#a1a1aa', marginBottom: 10, fontFamily: T.sans, fontSize: 12 }}>
+                    This edit completed, but no before/after diff was included in the tool arguments.
+                  </div>
+                  {output && (
+                    <pre style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{output}</pre>
+                  )}
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#a1a1aa' }}>
+                    {JSON.stringify(args || {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : isMulti ? (
               chunks.map((chunk, idx) => (
                 <div key={idx} style={{ marginBottom: idx < chunks.length - 1 ? 16 : 0 }}>
                   <div style={{
@@ -2093,6 +2355,344 @@ function FileEditorView({ toolName, path, args, output }: { toolName: string; pa
   );
 }
 
+function TodoWriteView({ tasks, path, output }: { tasks: Array<{ description: string; status: string }>; path?: string; output?: string }) {
+  const statusColor = (status: string) => status === 'completed' ? T.green : status === 'in_progress' ? T.blue : T.textMuted;
+  const statusMark = (status: string) => status === 'completed' ? '✓' : status === 'in_progress' ? '•' : '○';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+        <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
+          Todo Write
+        </h3>
+        <p style={{ fontSize: 12, color: T.textMuted, margin: 0, fontFamily: T.sans }}>
+          {tasks.length} tracked tasks
+        </p>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', background: T.bg, padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {path && <code style={{ fontSize: 12, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', marginBottom: 4 }}>{path}</code>}
+        {tasks.map((task, index) => (
+          <div key={`${task.description}-${index}`} style={{ display: 'flex', gap: 10, padding: '11px 12px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10 }}>
+            <span style={{ color: statusColor(task.status), fontWeight: 700, width: 18 }}>{statusMark(task.status)}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, color: T.text, lineHeight: 1.45 }}>{task.description}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 10.5, color: statusColor(task.status), textTransform: 'uppercase', fontWeight: 700 }}>{task.status.replace(/_/g, ' ')}</p>
+            </div>
+          </div>
+        ))}
+        {output && <p style={{ margin: 0, color: T.textMuted, fontSize: 12 }}>{output}</p>}
+      </div>
+    </div>
+  );
+}
+
+type FilePaneItem = {
+  path: string;
+  name: string;
+  kind: 'folder' | 'file';
+  depth: number;
+};
+
+function basenameFromPath(filePath: string) {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
+}
+
+function extensionColor(name: string) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (['ts', 'tsx'].includes(ext)) return '#7dd3fc';
+  if (['js', 'jsx', 'mjs', 'cjs'].includes(ext)) return '#facc15';
+  if (['json'].includes(ext)) return '#f59e0b';
+  if (['md', 'mdx'].includes(ext)) return '#4ade80';
+  if (['css', 'scss', 'sass'].includes(ext)) return '#60a5fa';
+  return '#8a8a8a';
+}
+
+function getFileIconifyVisual(name: string) {
+  const lower = name.toLowerCase();
+  const ext = lower.startsWith('.') && !lower.slice(1).includes('.')
+    ? lower.slice(1)
+    : lower.split('.').pop() || '';
+
+  const exact: Record<string, string> = {
+    'package.json': 'npm',
+    'package-lock.json': 'npm',
+    'pnpm-lock.yaml': 'pnpm',
+    'yarn.lock': 'yarn',
+    'tsconfig.json': 'tsconfig',
+    'jsconfig.json': 'jsconfig',
+    'next.config.ts': 'next',
+    'next.config.js': 'next',
+    'next.config.mjs': 'next',
+    'vite.config.ts': 'vite',
+    'vite.config.js': 'vite',
+    'tailwind.config.ts': 'tailwind',
+    'tailwind.config.js': 'tailwind',
+    'eslint.config.js': 'eslint',
+    'eslint.config.mjs': 'eslint',
+    '.eslintrc': 'eslint',
+    '.eslintrc.js': 'eslint',
+    '.prettierrc': 'prettier',
+    '.gitignore': 'git',
+    '.gitmodules': 'git',
+    '.npmrc': 'npm',
+    'readme.md': 'readme',
+    'license': 'license',
+    'license.txt': 'license',
+  };
+
+  const byExt: Record<string, string> = {
+    env: 'dotenv',
+    gitignore: 'git',
+    log: 'log',
+    ts: 'typescript',
+    tsx: 'reactts',
+    js: 'javascript',
+    jsx: 'reactjs',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    json: 'json',
+    css: 'css',
+    scss: 'sass',
+    sass: 'sass',
+    html: 'html',
+    md: 'markdown',
+    mdx: 'mdx',
+    py: 'python',
+    ps1: 'powershell',
+    bat: 'powershell',
+    yml: 'yaml',
+    yaml: 'yaml',
+    sql: 'database',
+    svg: 'svg',
+    png: 'image',
+    jpg: 'image',
+    jpeg: 'image',
+    gif: 'image',
+    webp: 'image',
+    bmp: 'image',
+    pdf: 'pdf',
+    lock: 'lock',
+    npmrc: 'npm',
+  };
+
+  const icon = lower === '.env' || lower.startsWith('.env.')
+    ? 'dotenv'
+    : exact[lower] || byExt[ext] || 'default-file';
+
+  return {
+    iconUrl: `https://api.iconify.design/vscode-icons:file-type-${icon}.svg`,
+    color: extensionColor(name),
+  };
+}
+
+function buildFilePaneItems(files: string[], filter: string): FilePaneItem[] {
+  const q = filter.trim().toLowerCase();
+  const folderSet = new Set<string>();
+  const filteredFiles = files
+    .filter(file => !q || file.toLowerCase().includes(q))
+    .slice(0, 400);
+
+  for (const file of filteredFiles) {
+    const parts = file.replace(/\\/g, '/').split('/');
+    for (let i = 1; i < parts.length; i++) {
+      folderSet.add(parts.slice(0, i).join('/'));
+    }
+  }
+
+  const folders = Array.from(folderSet)
+    .map(path => ({
+      path,
+      name: basenameFromPath(path),
+      kind: 'folder' as const,
+      depth: Math.max(0, path.split('/').length - 1),
+    }));
+
+  const fileItems = filteredFiles.map(path => ({
+    path,
+    name: basenameFromPath(path),
+    kind: 'file' as const,
+    depth: Math.max(0, path.replace(/\\/g, '/').split('/').length - 1),
+  }));
+
+  return [...folders, ...fileItems].sort((a, b) => {
+    const aParent = a.path.split('/').slice(0, -1).join('/');
+    const bParent = b.path.split('/').slice(0, -1).join('/');
+    if (aParent !== bParent) return aParent.localeCompare(bParent);
+    if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function FileNavigatorPane({
+  projectPath,
+  files,
+  loaded,
+  selectedPath,
+  onSelectFile,
+}: {
+  projectPath: string;
+  files: string[];
+  loaded: boolean;
+  selectedPath?: string;
+  onSelectFile: (filePath: string) => void;
+}) {
+  const [filter, setFilter] = useState('');
+  const items = useMemo(() => buildFilePaneItems(files, filter), [files, filter]);
+
+  return (
+    <aside style={{
+      width: 290,
+      flexShrink: 0,
+      borderLeft: '1px solid #252525',
+      background: '#151515',
+      color: '#f4f4f5',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+      fontFamily: T.sans,
+    }}>
+      <div style={{ padding: 12, borderBottom: '1px solid #252525', flexShrink: 0 }}>
+        <div style={{
+          height: 36,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          borderRadius: 10,
+          background: '#202020',
+          border: '1px solid #303030',
+          color: '#9ca3af',
+          padding: '0 10px',
+        }}>
+          <Search size={15} strokeWidth={1.8} />
+          <input
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            placeholder="Filter files..."
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#f4f4f5',
+              fontSize: 13,
+              fontFamily: T.sans,
+            }}
+          />
+        </div>
+      </div>
+
+      <div style={{ overflowY: 'auto', padding: '8px 6px 16px', flex: 1 }}>
+        {!loaded ? (
+          <div style={{ padding: 16, color: '#777', fontSize: 12 }}>Loading files...</div>
+        ) : items.length === 0 ? (
+          <div style={{ padding: 16, color: '#777', fontSize: 12 }}>No files found.</div>
+        ) : items.map(item => {
+          const active = item.kind === 'file' && selectedPath === item.path;
+          const visual = item.kind === 'file' ? getFileIconifyVisual(item.name) : null;
+          return (
+            <button
+              key={`${item.kind}:${item.path}`}
+              type="button"
+              disabled={item.kind === 'folder'}
+              onClick={() => item.kind === 'file' && onSelectFile(item.path)}
+              title={item.kind === 'file' ? `${projectPath}\\${item.path}` : item.path}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                height: 32,
+                border: 'none',
+                borderRadius: 7,
+                background: active ? '#242424' : 'transparent',
+                color: item.kind === 'folder' ? '#f4f4f5' : '#e7e7e7',
+                cursor: item.kind === 'file' ? 'pointer' : 'default',
+                textAlign: 'left',
+                padding: `0 8px 0 ${8 + Math.min(item.depth, 4) * 14}px`,
+                fontSize: 13,
+                fontWeight: item.kind === 'folder' ? 650 : 450,
+                opacity: item.kind === 'folder' ? 0.95 : 1,
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.045)'; }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+            >
+              {item.kind === 'folder' ? (
+                <Folder size={15} strokeWidth={1.8} color="#a3a3a3" style={{ flexShrink: 0 }} />
+              ) : (
+                <img
+                  src={visual?.iconUrl}
+                  alt=""
+                  style={{ width: 16, height: 16, flexShrink: 0 }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              )}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function FilePreviewOverlay({
+  filePath,
+  content,
+  onClose,
+}: {
+  filePath: string;
+  content: string | null;
+  onClose: () => void;
+}) {
+  const ext = filePath.split('.').pop() || 'text';
+  const lines = (content || '').split('\n');
+  return (
+    <div style={{
+      position: 'absolute',
+      inset: 0,
+      zIndex: 4,
+      background: '#151515',
+      color: '#f4f4f5',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+    }}>
+      <div style={{
+        height: 48,
+        borderBottom: '1px solid #252525',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '0 14px',
+        flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+          <FileIcon size={15} color={extensionColor(filePath)} />
+          <span style={{ fontSize: 13, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {basenameFromPath(filePath)}
+          </span>
+        </div>
+        <button type="button" onClick={onClose} title="Close preview" style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #303030', background: '#202020', color: '#d4d4d4', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <X size={14} />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', fontFamily: T.mono, fontSize: 12.5, lineHeight: '20px', padding: '12px 0' }}>
+        {content == null ? (
+          <div style={{ padding: 18, color: '#7c7c7c' }}>Unable to preview this file.</div>
+        ) : lines.map((line, idx) => (
+          <div key={idx} style={{ display: 'flex', minWidth: 'fit-content' }}>
+            <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: '#6b7280', userSelect: 'none' }}>{idx + 1}</span>
+            <pre style={{ margin: 0, paddingRight: 18, color: '#e5e7eb', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
    MAIN PANEL
    ============================================================ */
@@ -2114,6 +2714,12 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [showFilePane, setShowFilePane] = useState(false);
+  const [filePaneProjectPath, setFilePaneProjectPath] = useState('');
+  const [filePaneFiles, setFilePaneFiles] = useState<string[]>([]);
+  const [filePaneLoaded, setFilePaneLoaded] = useState(false);
+  const [selectedFilePath, setSelectedFilePath] = useState('');
+  const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 1024);
@@ -2133,9 +2739,16 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     try {
       const type = detectToolType(toolCall.toolName);
       setToolType(type);
+      setSelectedFilePath('');
+      setSelectedFileContent(null);
+      setFilePaneProjectPath('');
+      setFilePaneFiles([]);
+      setFilePaneLoaded(false);
 
       let extracted: any;
-      if (type === ToolType.WEB_SEARCH) {
+      if (type === ToolType.MCP_REGISTRY) {
+        extracted = extractMcpRegistryData(toolCall);
+      } else if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
       } else if (type === ToolType.LIVE_PREVIEW) {
         extracted = extractLivePreviewData(toolCall);
@@ -2147,6 +2760,8 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractTerminalData(toolCall);
       } else if (type === ToolType.SKILL) {
         extracted = extractSkillData(toolCall);
+      } else if (type === ToolType.TODO_WRITE) {
+        extracted = extractTodoWriteData(toolCall);
       } else if (type === ToolType.FILE_SYSTEM || type === ToolType.FILE_EDITOR) {
         extracted = extractFileSystemData(toolCall);
       } else {
@@ -2167,6 +2782,87 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
   // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, toolCall?.id, toolCall?.output]);
+
+  useEffect(() => {
+    if (!isOpen || !showFilePane || filePaneLoaded) return;
+    let cancelled = false;
+
+    const inferBasePath = async () => {
+      const api = (window as any).electronAPI;
+      const args = toolCall?.args || toolCall?.arguments || {};
+      const candidateValues = [
+        args.cwd,
+        args.path,
+        args.filePath,
+        args.file,
+        args.TargetFile,
+        args.DirectoryPath,
+        toolData?.cwd,
+        toolData?.path,
+      ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
+
+      let projects: any[] = [];
+      try {
+        projects = await api?.projects?.list?.() || [];
+      } catch { projects = []; }
+
+      const normalized = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      for (const value of candidateValues) {
+        const val = normalized(value);
+        const matched = projects.find(p => p?.path && val.startsWith(normalized(p.path)));
+        if (matched?.path) return matched.path;
+      }
+
+      if (projects[0]?.path) return projects[0].path;
+
+      const first = candidateValues[0];
+      if (!first) return '';
+      if (/[\\/]/.test(first)) {
+        const parts = first.split(/[\\/]/).filter(Boolean);
+        if (/\.[^\\/]+$/.test(first)) parts.pop();
+        return first.match(/^[A-Za-z]:[\\/]/)
+          ? `${first.slice(0, 3)}${parts.slice(1).join('\\')}`
+          : parts.join('\\');
+      }
+      return '';
+    };
+
+    (async () => {
+      const api = (window as any).electronAPI;
+      const projectPath = await inferBasePath();
+      if (!projectPath || cancelled) {
+        if (!cancelled) setFilePaneLoaded(true);
+        return;
+      }
+      try {
+        const res = await api?.projects?.listFiles?.(projectPath);
+        if (!cancelled) {
+          setFilePaneProjectPath(projectPath);
+          setFilePaneFiles(Array.isArray(res?.files) ? res.files : []);
+          setFilePaneLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setFilePaneProjectPath(projectPath);
+          setFilePaneFiles([]);
+          setFilePaneLoaded(true);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, showFilePane, filePaneLoaded, toolCall, toolData]);
+
+  const handleSelectFileFromPane = async (filePath: string) => {
+    setSelectedFilePath(filePath);
+    setSelectedFileContent(null);
+    try {
+      const content = await (window as any).electronAPI?.projects?.readFile?.(filePaneProjectPath, filePath);
+      setSelectedFileContent(content);
+    } catch {
+      setSelectedFileContent(null);
+    }
+  };
 
   // Lightweight secondary effect: ONLY updates screenshots for live FERN/computer_use sessions.
   // Runs when new progress events arrive but skips the loading spinner and full re-parse.
@@ -2301,10 +2997,12 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     );
 
     if (toolType === ToolType.LIVE_PREVIEW) return <LivePreviewView {...toolData} />;
+    if (toolType === ToolType.MCP_REGISTRY) return <McpRegistryView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
     if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
+    if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
     if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     return <GenericView {...toolData} />;
@@ -2341,22 +3039,51 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
               zIndex: 50, overflow: 'hidden', outline: 'none',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
-            animate={isDesktop ? { width: 460, opacity: 1 } : { x: 0 }}
+            animate={isDesktop ? { width: showFilePane ? 750 : 460, opacity: 1 } : { x: 0 }}
             exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 36 }}
           >
             {/* Inner wrapper prevents layout reflow during animation */}
             <div style={{
-              width: isDesktop ? 460 : '100%', height: '100%',
+              width: isDesktop ? (showFilePane ? 750 : 460) : '100%', height: '100%',
               display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
             }}>
-              {toolCall && <PanelHeader agentName={toolCall.agentName} toolName={toolCall.toolName} onClose={onClose} />}
+              {toolCall && (
+                <PanelHeader
+                  agentName={toolCall.agentName}
+                  toolName={toolCall.toolName}
+                  onClose={onClose}
+                  showFilePane={showFilePane}
+                  onToggleFilePane={() => setShowFilePane(v => !v)}
+                />
+              )}
 
               <motion.div
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}
+                style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.07, duration: 0.2 }}
               >
-                {renderContent()}
+                <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {renderContent()}
+                  {selectedFilePath && (
+                    <FilePreviewOverlay
+                      filePath={selectedFilePath}
+                      content={selectedFileContent}
+                      onClose={() => {
+                        setSelectedFilePath('');
+                        setSelectedFileContent(null);
+                      }}
+                    />
+                  )}
+                </div>
+                {showFilePane && (
+                  <FileNavigatorPane
+                    projectPath={filePaneProjectPath}
+                    files={filePaneFiles}
+                    loaded={filePaneLoaded}
+                    selectedPath={selectedFilePath}
+                    onSelectFile={handleSelectFileFromPane}
+                  />
+                )}
               </motion.div>
             </div>
           </motion.div>

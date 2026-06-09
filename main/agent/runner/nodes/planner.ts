@@ -139,7 +139,11 @@ export const createPlannerNode = (runner: AgentRunner, eventQueue?: StreamEvent[
 
 
 
-      const systemMessage = `AS AN AGI ORCHESTRATOR, follow this task decomposition plan strictly:\n\n${planText}\n\n${agiHints}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable.`;
+      const researchRoutingGuard = state.currentIntent === 'research'
+        ? '\n\nRESEARCH/BROWSER ROUTING GUARD: This task is classified as research/browser work. Use `web_search` for discovery and route to `web_explorer`/`navis` for opening pages, forms, listings, booking platforms, and live prices. Ignore any plan step that suggests `computer_use` for websites or browser workflows.'
+        : '';
+
+      const systemMessage = `AS AN AGI ORCHESTRATOR, follow this task decomposition plan strictly:\n\n${planText}\n\n${agiHints}${researchRoutingGuard}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable.`;
 
       logger.info(`Execution pipeline finalized. System ready for task processing.`);
 

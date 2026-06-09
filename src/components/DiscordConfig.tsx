@@ -22,7 +22,7 @@ interface DiscordConfigProps {
         allowedGuilds?: string[];
         allowedUsers?: string[];
     };
-    onSave: (config: DiscordConfigData) => Promise<void>;
+    onSave: (config: DiscordConfigData, closeAfterSave?: boolean) => Promise<void>;
     onTest: () => Promise<boolean>;
     testing: boolean;
 }
@@ -69,7 +69,7 @@ const DiscordConfig: React.FC<DiscordConfigProps> = ({
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
     // Provider and model state
-    const [providers, setProviders] = useState<Array<{ type: string; name: string; enabled?: boolean }>>([]);
+    const [providers, setProviders] = useState<Array<{ type: string; name: string; image?: string; enabled?: boolean }>>([]);
     const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
 
     // Server and user ID filtering state (comma-separated text inputs)
@@ -204,11 +204,12 @@ const DiscordConfig: React.FC<DiscordConfigProps> = ({
 
         setSaveStatus('saving');
         try {
-            await onSave({
+            const configToSave = {
                 ...formData,
                 allowedGuilds,
                 allowedUsers
-            });
+            };
+            await onSave(configToSave, true);
             setSaveStatus('saved');
             setHasChanges(false);
 
@@ -239,6 +240,22 @@ const DiscordConfig: React.FC<DiscordConfigProps> = ({
         setTestResult(null); // Clear previous result
 
         try {
+            const allowedGuilds = guildIdsText
+                .split(',')
+                .map(id => id.trim())
+                .filter(id => id.length > 0);
+            const allowedUsers = userIdsText
+                .split(',')
+                .map(id => id.trim())
+                .filter(id => id.length > 0);
+
+            const configToSave = {
+                ...formData,
+                allowedGuilds,
+                allowedUsers
+            };
+            await onSave(configToSave, false);
+            setHasChanges(false);
             const result = await onTest();
             setTestResult({
                 success: result,
@@ -284,7 +301,12 @@ const DiscordConfig: React.FC<DiscordConfigProps> = ({
         const loadProviders = async () => {
             try {
                 const providerList = await window.electronAPI.providers.getAll();
-                setProviders(providerList.map(p => ({ type: p.type, name: p.name, enabled: p.enabled })));
+                setProviders(providerList.map(p => ({
+                    type: p.type,
+                    name: p.name,
+                    image: p.image,
+                    enabled: p.enabled
+                })));
             } catch (error) {
                 console.error('Failed to load providers:', error);
             }
@@ -300,9 +322,9 @@ const DiscordConfig: React.FC<DiscordConfigProps> = ({
                     const modelList = await window.electronAPI.providers.getModels(formData.provider);
                     setModels(modelList.map(m => ({ id: m.id, name: m.name })));
 
-                    // Clear model selection if current model is not in the new provider's list
-                    if (formData.model && !modelList.some(m => m.id === formData.model)) {
-                        setFormData(prev => ({ ...prev, model: '' }));
+                    // Keep a valid model selected when the provider changes.
+                    if (modelList.length > 0 && (!formData.model || !modelList.some(m => m.id === formData.model))) {
+                        setFormData(prev => ({ ...prev, model: modelList[0].id }));
                         setHasChanges(true);
                     }
                 } catch (error) {

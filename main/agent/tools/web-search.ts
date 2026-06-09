@@ -308,7 +308,7 @@ export const webSearchTool: AgentTool = {
       if (results.length === 0) {
         return {
           success: true,
-          output: `🔍 No results found for "${query}". Try rephrasing with different keywords or use computer_use to open a browser manually.`,
+          output: `🔍 No results found for "${query}". Try rephrasing with different keywords or use navis to open relevant browser pages directly.`,
           data: { query, results: [] },
         };
       }

@@ -593,11 +593,31 @@ const settingsPrimaryProviders = [
 const visionProviders = [
     { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} /> },
     { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'minimax', name: 'MiniMax API', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
     { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} /> },
     { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
     { id: 'anthropic', name: 'Anthropic', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} /> },
     { id: 'nvidia', name: 'NVIDIA NIM', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} /> },
 ];
+
+const getVisionDefaultModel = (provider: string) => {
+    if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+    if (provider === 'minimax') return 'MiniMax-M3';
+    if (provider === 'ollama') return 'qwen3-vl:235b-cloud';
+    if (provider === 'openai') return 'gpt-5.5';
+    if (provider === 'anthropic') return 'claude-opus-4.6';
+    if (provider === 'everfern') return 'fern-1';
+    return 'qwen3-vl:235b-cloud';
+};
+
+const getVisionDefaultBaseUrl = (provider: string) => {
+    if (provider === 'minimax') return 'https://api.minimax.io/v1';
+    if (provider === 'ollama') return 'https://ollama.com';
+    if (provider === 'openai') return 'https://api.openai.com/v1';
+    if (provider === 'anthropic') return 'https://api.anthropic.com';
+    if (provider === 'nvidia') return 'https://integrate.api.nvidia.com/v1';
+    return '';
+};
 
 export default function SettingsPage({
     activeProjectId,
@@ -1159,9 +1179,10 @@ export default function SettingsPage({
                                             onClick={(e: React.MouseEvent<HTMLDivElement>) => {
                                                 e.stopPropagation();
                                                 setSettingsVlmCloudProvider(id);
-                                                // Clear stale baseUrl and apiKey when switching to cloud-only providers
+                                                setSettingsVlmCloudModel(getVisionDefaultModel(id));
+                                                setSettingsVlmCloudUrl(getVisionDefaultBaseUrl(id));
+                                                // Clear stale apiKey when switching to cloud-only providers
                                                 if (id === 'everfern' || id === 'openrouter') {
-                                                    setSettingsVlmCloudUrl('');
                                                     setSettingsVlmCloudKey('');
                                                 }
                                             }}
@@ -1195,14 +1216,14 @@ export default function SettingsPage({
                                     <div style={{ position: 'relative' }}>
                                         {settingsVlmCloudProvider === 'ollama' ? (
                                             <Select value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)}>
-                                                <option value="qwen3-vl:235b-instruct-cloud">Qwen3 VL 235B (Default)</option>
+                                                <option value="qwen3-vl:235b-cloud">Qwen3 VL 235B (Default)</option>
                                                 <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
                                                 <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
                                             </Select>
                                         ) : (
                                             <>
                                                 <CpuChipIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
-                                                <Input type="text" placeholder={settingsVlmCloudProvider === 'openai' ? 'gpt-4o' : 'qwen3-vl:235b-instruct-cloud'} value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
+                                                <Input type="text" placeholder={getVisionDefaultModel(settingsVlmCloudProvider)} value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
                                             </>
                                         )}
                                     </div>

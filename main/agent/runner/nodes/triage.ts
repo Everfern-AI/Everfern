@@ -43,12 +43,21 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
       // Pass entire state.messages for context-aware classification
       let classification: IntentClassification;
       try {
-        classification = await classifyIntent(content, runner.client, state.messages, runner.workspaceDir);
+        classification = await classifyIntent(content, runner.client, state.messages, runner.workspaceDir, !!state.operatorMode);
       } catch (connErr) {
         const msg = connErr instanceof Error ? connErr.message : String(connErr);
         console.warn('[Triage] AI classification failed:', msg);
         classification = { intent: 'task', confidence: 0.5, reasoning: `Classification unavailable: ${msg}` };
       }
+
+      if (classification.intent === 'operator' && !state.operatorMode) {
+        classification = {
+          intent: 'task',
+          confidence: Math.min(classification.confidence, 0.75),
+          reasoning: 'Operator mode requires the user to enable Pursue goal manually.',
+        };
+      }
+
       runner.telemetry.info(`Intent identified: ${classification.intent.toUpperCase()} (${Math.round(classification.confidence * 100)}% confidence)`);
 
 

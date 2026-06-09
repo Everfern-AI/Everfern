@@ -20,6 +20,93 @@ export interface FileApp {
   icon: string;       // base64 data URL icon
 }
 
+const COMMON_FILE_EXTENSIONS = [
+  'txt', 'md', 'json', 'jsonc', 'log', 'csv', 'xml', 'yaml', 'yml',
+  'env', 'gitignore', 'gitmodules', 'npmrc',
+  'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'css', 'scss', 'html',
+  'py', 'rs', 'go', 'java', 'cs', 'c', 'cpp', 'h', 'hpp', 'sql', 'ps1', 'bat',
+  'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'ico',
+  'pdf', 'doc', 'docx', 'rtf', 'xls', 'xlsx', 'ppt', 'pptx',
+  'mp3', 'wav', 'ogg', 'm4a', 'mp4', 'webm', 'mov',
+];
+
+const appsByExt = new Map<string, FileApp[]>();
+const pendingAppsByExt = new Map<string, Promise<FileApp[]>>();
+let preloadPromise: Promise<void> | null = null;
+
+function normalizeExtension(filePathOrExt: string): string {
+  const input = String(filePathOrExt || '').trim();
+  const base = path.basename(input).toLowerCase();
+  if (base === '.gitignore') return 'gitignore';
+  if (base === '.gitmodules') return 'gitmodules';
+  if (base === '.npmrc') return 'npmrc';
+  if (base === '.env' || base.startsWith('.env.')) return 'env';
+
+  const ext = path.extname(base || input).replace('.', '').toLowerCase();
+  if (ext) return ext;
+  return input.replace(/^\./, '').toLowerCase();
+}
+
+async function resolveAppsForExt(ext: string): Promise<FileApp[]> {
+  const normalizedExt = normalizeExtension(ext);
+  if (!normalizedExt) return [];
+  if (appsByExt.has(normalizedExt)) return appsByExt.get(normalizedExt)!;
+  if (pendingAppsByExt.has(normalizedExt)) return pendingAppsByExt.get(normalizedExt)!;
+
+  const loadPromise = (async () => {
+    const platform = os.platform();
+    try {
+      const apps =
+        platform === 'win32' ? await getWindowsApps(normalizedExt) :
+        platform === 'darwin' ? await getMacApps(normalizedExt) :
+        await getLinuxApps(normalizedExt);
+      appsByExt.set(normalizedExt, apps);
+      return apps;
+    } catch (e) {
+      console.warn(`[FileAssociations] Failed to get apps for .${normalizedExt}:`, e);
+      appsByExt.set(normalizedExt, []);
+      return [];
+    } finally {
+      pendingAppsByExt.delete(normalizedExt);
+    }
+  })();
+
+  pendingAppsByExt.set(normalizedExt, loadPromise);
+  return loadPromise;
+}
+
+async function warmExtsInBatches(exts: string[], concurrency = 4): Promise<void> {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, exts.length) }, async () => {
+    while (index < exts.length) {
+      const ext = exts[index++];
+      await resolveAppsForExt(ext);
+    }
+  });
+  await Promise.all(workers);
+}
+
+export function preloadFileAppCache(): Promise<void> {
+  if (preloadPromise) return preloadPromise;
+  preloadPromise = (async () => {
+    await app.whenReady();
+    const uniqueExts = [...new Set(COMMON_FILE_EXTENSIONS.map(normalizeExtension).filter(Boolean))];
+    await warmExtsInBatches(uniqueExts);
+    console.log(`[FileAssociations] Warmed app cache for ${uniqueExts.length} file types`);
+  })().catch((err) => {
+    console.warn('[FileAssociations] Warm cache failed:', err);
+  });
+  return preloadPromise;
+}
+
+export function getFileAppCacheStatus() {
+  return {
+    ready: Boolean(preloadPromise) && pendingAppsByExt.size === 0,
+    cachedExtensions: Array.from(appsByExt.keys()),
+    pendingExtensions: Array.from(pendingAppsByExt.keys()),
+  };
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Open a file with a specific app (or default app if appPath not provided)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -51,6 +138,7 @@ export async function openFileWithApp(filePath: string, appPath?: string): Promi
 // ──────────────────────────────────────────────────────────────────────────────
 async function fetchIcon(targetPath: string): Promise<string> {
   try {
+    await app.whenReady();
     const img = await app.getFileIcon(targetPath, { size: 'normal' });
     return img.toDataURL();
   } catch {
@@ -140,6 +228,10 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
       ],
     },
     {
+      name: 'Paint',
+      paths: [`${process.env.SystemRoot || 'C:\\Windows'}\\System32\\mspaint.exe`],
+    },
+    {
       name: 'Notepad++',
       paths: ['C:\\Program Files\\Notepad++\\notepad++.exe', 'C:\\Program Files (x86)\\Notepad++\\notepad++.exe'],
     },
@@ -164,13 +256,15 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
     },
   ];
 
-  const textExts = ['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xml', 'ts', 'js', 'tsx', 'jsx', 'py', 'rs', 'go'];
+  const textExts = ['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xml', 'ts', 'js', 'tsx', 'jsx', 'py', 'rs', 'go', 'mjs', 'cjs', 'env', 'gitignore', 'gitmodules', 'npmrc', 'svg', 'html', 'css', 'scss'];
   const docExts = ['docx', 'doc', 'rtf'];
   const sheetExts = ['xlsx', 'xls', 'csv'];
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'ico'];
 
   for (const { name, paths: candidates } of knownEditors) {
     if (name === 'Microsoft Word' && !docExts.includes(ext)) continue;
     if (name === 'Microsoft Excel' && !sheetExts.includes(ext)) continue;
+    if (name === 'Paint' && !imageExts.includes(ext)) continue;
     if ((name === 'Notepad' || name === 'Notepad++' || name === 'Sublime Text' || name === 'VS Code') && !textExts.includes(ext)) continue;
 
     for (const candidate of candidates) {
@@ -296,15 +390,6 @@ async function getLinuxApps(ext: string): Promise<FileApp[]> {
 // Main export: get apps for a file extension, cross-platform
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getAppsForFile(filePath: string): Promise<FileApp[]> {
-  const ext = path.extname(filePath).replace('.', '').toLowerCase();
-  const platform = os.platform();
-
-  try {
-    if (platform === 'win32') return await getWindowsApps(ext);
-    if (platform === 'darwin') return await getMacApps(ext);
-    return await getLinuxApps(ext);
-  } catch (e) {
-    console.warn('[FileAssociations] Failed to get apps:', e);
-    return [];
-  }
+  const ext = normalizeExtension(filePath);
+  return resolveAppsForExt(ext);
 }

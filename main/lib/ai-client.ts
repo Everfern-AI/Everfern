@@ -251,11 +251,11 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-3-5-sonnet-20241022',
   deepseek: 'deepseek-v4-pro',
-  minimax: 'minimax-m2.7',
+  minimax: 'MiniMax-M3',
   everfern: 'qwen/qwen3-vl-235b-a22b-instruct',
   gemini: 'gemini-3.1-pro-preview',
   ollama: 'llama3',
-  'ollama-cloud': 'llama3.3',
+  'ollama-cloud': 'qwen3-vl:235b-cloud',
   lmstudio: 'local-model',
   nvidia: 'meta/llama-3.1-8b-instruct',
   openrouter: 'openai/gpt-5.2',
@@ -287,13 +287,17 @@ export class AIClient {
       }
     }
 
-    console.log(`[AIClient] Constructor: provider=${config.provider}, model=${config.model}, baseUrl=${finalBaseUrl}, apiKey=${finalApiKey ? '***' : '(empty)'}`);
+    const normalizedModel = config.provider === 'ollama-cloud' && config.model === 'qwen3-vl:235b-instruct-cloud'
+      ? 'qwen3-vl:235b-cloud'
+      : config.model;
+
+    console.log(`[AIClient] Constructor: provider=${config.provider}, model=${normalizedModel}, baseUrl=${finalBaseUrl}, apiKey=${finalApiKey ? '***' : '(empty)'}`);
 
     this.config = {
       provider: config.provider,
       apiKey: finalApiKey,
       baseUrl: finalBaseUrl,
-      model: config.model ?? DEFAULT_MODELS[config.provider],
+      model: normalizedModel ?? DEFAULT_MODELS[config.provider],
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
       vlm: config.vlm,
@@ -395,6 +399,7 @@ export class AIClient {
   supportsVision(): boolean {
     if (this.config.vlm) return false;
     if (this.config.provider === 'everfern') return true;
+    if (this.config.provider === 'minimax') return true;
     const modelName = this.config.model?.toLowerCase() || '';
     const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
@@ -402,6 +407,14 @@ export class AIClient {
     if (this.config.provider === 'gemini') return true;
     if (this.config.provider === 'openai' && modelName.startsWith('gpt-4')) return true;
     return false;
+  }
+
+  private assertProviderAuthReady(): void {
+    if (this.config.provider === 'minimax' && !this.config.apiKey?.trim()) {
+      throw new Error(
+        'MiniMax API key is missing. Add your MiniMax secret in Settings > Vision Grounding > MiniMax API, then save settings and retry.'
+      );
+    }
   }
 
   private _parseActionsFromContent(content: string): string[] {
@@ -419,6 +432,7 @@ export class AIClient {
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
     console.log(`[AIClient] chat() called: provider=${this.config.provider}, model=${request.model ?? this.config.model}, hasOnStreamChunk=${!!request.onStreamChunk}, messages=${request.messages.length}`);
+    this.assertProviderAuthReady();
     // For EverFern Cloud, route vision requests using direct HTTP (not OpenAI SDK)
     if (this.config.provider === 'everfern') {
       // Check if this is a vision request (has images)
@@ -522,6 +536,7 @@ export class AIClient {
   }
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
+    this.assertProviderAuthReady();
     // For EverFern Cloud, route vision requests to /api/tars/vision
     if (this.config.provider === 'everfern') {
       // Check if this is a vision request (has images)
@@ -1086,6 +1101,12 @@ export class AIClient {
     } catch (err: any) {
       console.error(`[${this.config.provider}] OpenAI SDK Error:`, err);
 
+      if (this.config.provider === 'minimax' && err.status === 401) {
+        throw new Error(
+          'MiniMax authentication failed. Check that the MiniMax API key saved in Settings > Vision Grounding > MiniMax API is correct and active.'
+        );
+      }
+
       // Log detailed error info for debugging
       if (err.status === 500) {
         console.error(`[${this.config.provider}] 500 Error Details:`, {
@@ -1192,6 +1213,11 @@ export class AIClient {
       }
     } catch (err) {
       console.error(`[${this.config.provider}] OpenAI SDK Stream Error:`, err);
+      if (this.config.provider === 'minimax' && (err as any)?.status === 401) {
+        throw new Error(
+          'MiniMax authentication failed. Check that the MiniMax API key saved in Settings > Vision Grounding > MiniMax API is correct and active.'
+        );
+      }
       throw err;
     }
   }
@@ -1489,7 +1515,13 @@ export class AIClient {
         const t = line.trim();
         if (!t || !t.startsWith('data: ')) continue;
         const payload = t.slice(6);
-        if (payload === '[DONE]') break;
+        if (payload === '[DONE]') {
+          if (isReasoning) {
+            if (req.onStreamChunk) req.onStreamChunk('</think>');
+            fullContent += '</think>';
+          }
+          break;
+        }
         try {
           const d = JSON.parse(payload);
           if (d.id) responseId = d.id;
@@ -1533,6 +1565,12 @@ export class AIClient {
           }
         } catch { }
       }
+    }
+
+    // Fallback if stream ends without [DONE] but isReasoning is still true
+    if (isReasoning) {
+      if (req.onStreamChunk) req.onStreamChunk('</think>');
+      fullContent += '</think>';
     }
 
     const toolCalls = Object.values(toolCallsMap).map((tc: any) => {
@@ -1684,7 +1722,11 @@ export class AIClient {
         const t = line.trim();
         if (!t || !t.startsWith('data: ')) continue;
         const payload = t.slice(6);
-        if (payload === '[DONE]') { yield { id, delta: '', done: true }; return; }
+        if (payload === '[DONE]') {
+          if (isReasoning) yield { id, delta: '</think>', done: false };
+          yield { id, delta: '', done: true };
+          return;
+        }
         try {
           const d = JSON.parse(payload);
           const choice = d.choices?.[0];
@@ -1712,6 +1754,10 @@ export class AIClient {
           };
         } catch { /* skip malformed */ }
       }
+    }
+
+    if (isReasoning) {
+      yield { id, delta: '</think>', done: false };
     }
   }
 

@@ -37,7 +37,6 @@ import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
 import { presentFilesTool } from '../tools/present-files';
-import { createWorkspaceRequestTool, allowFileDeleteTool } from '../tools/control-plane';
 import { NavisOrchestrator } from '../tools/navis/orchestrator';
 
 // Lifecycle/Infra
@@ -300,7 +299,7 @@ export class AgentRunner {
 
   public shouldCaptureScreenshot(userInput: string | any[]): boolean {
     const text = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
-    const explicitVisionKeywords = /take.*screenshot|capture.*screen|see.*screen|show.*screen|look.*at.*screen|view.*screen|desktop|click|open.*app|find.*icon|locate.*button|open.*window|minimize|maximize|close.*window|browser|gui automation|computer use/i;
+    const explicitVisionKeywords = /take.*screenshot|capture.*screen|see.*screen|show.*screen|look.*at.*screen|view.*screen|desktop|click|open.*app|find.*icon|locate.*button|open.*window|minimize|maximize|close.*window|gui automation|computer use/i;
     return explicitVisionKeywords.test(text);
   }
 
@@ -382,6 +381,7 @@ export class AgentRunner {
     isSubagent?: boolean,
     assistantMessageId?: string,
     isBackground?: boolean,
+    operatorMode?: boolean,
   ): AsyncGenerator<StreamEvent, void, unknown> {
     // Reset abort state for new execution
     globalAbortManager.reset();
@@ -667,7 +667,7 @@ export class AgentRunner {
                   shouldAbort,
                 }
               },
-              recursionLimit: 100
+              recursionLimit: 250
             };
 
             const currentState = await graph.getState(threadConfig);
@@ -720,6 +720,7 @@ export class AgentRunner {
                 currentStepId: 'step:triage',
                 decompositionAttempts: 0,
                 currentIntent: isBackground ? 'background_task' as any : undefined,
+                operatorMode: !!operatorMode,
               }, threadConfig);
             }
           } catch (err) {
@@ -729,6 +730,10 @@ export class AgentRunner {
             if (err instanceof AbortError || errorMsg.includes('Execution aborted by user')) {
               eventQueue.push({ type: 'chunk', content: '\n\n🛑 Stopped by user.' });
               missionTracker.fail('Execution stopped by user');
+            } else if (/recursion\s+limit|recursionLimit|GraphRecursion/i.test(errorMsg)) {
+              const friendly = 'The agent stopped because the execution graph repeated too many steps without reaching a completion state. I prevented the runaway loop; narrow the target files or ask me to continue from the latest checkpoint.';
+              eventQueue.push({ type: 'chunk', content: `\n\n⚠️ ${friendly}` });
+              missionTracker.fail(friendly);
             } else {
               eventQueue.push({ type: 'chunk', content: `\n\n❌ **Error during execution:** ${errorMsg}` });
               missionTracker.fail(errorMsg);

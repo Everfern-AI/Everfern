@@ -37,11 +37,11 @@ const ContextTokenRing = ({
                 {/* Token count */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                        {used.toLocaleString()}
+                        {used.toLocaleString('en-US')}
                     </span>
                     <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: '#9ca3af', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                        {actualMax.toLocaleString()}
+                        {actualMax.toLocaleString('en-US')}
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
                 </div>

@@ -200,28 +200,135 @@ const RAW_SCRIPT = `
         pointer-events: none; \
       } \
       \
-      /* ── 4-pointed star cursor ── */ \
+      /* ── Actual mouse cursor with Navis magic ── */ \
       #cursor { \
         position: absolute; \
-        width: 36px; \
-        height: 36px; \
-        transition: left 0.4s cubic-bezier(0.25, 0.1, 0.25, 1), \
-                    top  0.4s cubic-bezier(0.25, 0.1, 0.25, 1); \
+        width: 48px; \
+        height: 48px; \
+        --tilt: -8deg; \
+        --sway-x: 0px; \
+        --sway-y: 0px; \
+        --scale: 1; \
+        --trail-x: 15px; \
+        --trail-y: 24px; \
+        --trail-opacity: 0.42; \
+        transition: left 0.42s cubic-bezier(0.16, 1, 0.3, 1), \
+                    top  0.42s cubic-bezier(0.16, 1, 0.3, 1), \
+                    opacity 0.16s ease; \
         opacity: 0; \
         z-index: 2147483647; \
-        filter: drop-shadow(0 2px 10px rgba(0,0,0,0.35)) \
-                drop-shadow(0 0  4px  rgba(255,255,255,0.6)); \
-        margin-left: -18px; \
-        margin-top: -18px; \
+        margin-left: -6px; \
+        margin-top: -4px; \
         pointer-events: none; \
+        will-change: left, top, opacity; \
+      } \
+      .cursor-aura { \
+        position: absolute; \
+        width: 42px; \
+        height: 42px; \
+        left: -11px; \
+        top: -11px; \
+        border-radius: 999px; \
+        background: radial-gradient(circle, rgba(80, 197, 255, 0.36), rgba(151, 107, 255, 0.22) 44%, rgba(255,255,255,0.08) 58%, transparent 74%); \
+        filter: blur(4px); \
+        transform: translate3d(calc(var(--sway-x) * -0.75), calc(var(--sway-y) * -0.75), 0); \
+        animation: cursor-aura 1.85s ease-in-out infinite; \
+        transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1); \
+      } \
+      .cursor-trail { \
+        position: absolute; \
+        width: 7px; \
+        height: 7px; \
+        border-radius: 999px; \
+        background: radial-gradient(circle, rgba(121, 224, 255, 0.88), rgba(99, 102, 241, 0.24) 62%, transparent 72%); \
+        filter: blur(0.8px); \
+        transform: translate3d(var(--trail-x), var(--trail-y), 0); \
+        opacity: var(--trail-opacity); \
+        animation: trail-drift 1.35s ease-in-out infinite; \
+        transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease; \
+      } \
+      .cursor-trail.t2 { \
+        width: 5px; \
+        height: 5px; \
+        transform: translate3d(calc(var(--trail-x) + 9px), calc(var(--trail-y) + 8px), 0); \
+        opacity: calc(var(--trail-opacity) * 0.72); \
+        animation-delay: -0.45s; \
+      } \
+      .cursor-shell { \
+        position: absolute; \
+        left: 0; \
+        top: 0; \
+        width: 34px; \
+        height: 34px; \
+        transform-origin: 6px 5px; \
+        transform: translate3d(var(--sway-x), var(--sway-y), 0) rotate(var(--tilt)) scale(var(--scale)); \
+        transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); \
+        filter: drop-shadow(0 2px 3px rgba(0,0,0,0.38)) \
+                drop-shadow(0 7px 18px rgba(0,0,0,0.26)) \
+                drop-shadow(0 0  8px rgba(82,197,255,0.34)) \
+                drop-shadow(0 0 15px rgba(171,126,255,0.2)); \
+      } \
+      .cursor-sway { \
+        width: 34px; \
+        height: 34px; \
+        transform-origin: 6px 5px; \
+        animation: cursor-idle-sway 1.9s ease-in-out infinite; \
+      } \
+      #cursor.is-moving .cursor-sway { \
+        animation-duration: 1.05s; \
+      } \
+      .cursor-sway svg { \
+        display: block; \
+        overflow: visible; \
+      } \
+      .cursor-body { \
+        fill: rgba(255,255,255,0.98); \
+        stroke: rgba(7,12,24,0.78); \
+        stroke-width: 1.35; \
+        stroke-linejoin: round; \
+      } \
+      .cursor-rim { \
+        fill: none; \
+        stroke: url(#__navis_cursor_rim); \
+        stroke-width: 1.05; \
+        stroke-linejoin: round; \
+        opacity: 0.72; \
+      } \
+      .cursor-sheen { \
+        fill: url(#__navis_cursor_sheen); \
+        opacity: 0.58; \
+      } \
+      @keyframes cursor-idle-sway { \
+        0%   { transform: translate3d(-0.55px, 0.12px, 0) rotate(-0.9deg); } \
+        36%  { transform: translate3d(0.9px, -0.55px, 0) rotate(1.05deg); } \
+        72%  { transform: translate3d(0.18px, 0.82px, 0) rotate(-0.55deg); } \
+        100% { transform: translate3d(-0.55px, 0.12px, 0) rotate(-0.9deg); } \
+      } \
+      @keyframes cursor-aura { \
+        0%, 100% { opacity: 0.54; } \
+        50%      { opacity: 0.96; } \
+      } \
+      @keyframes trail-drift { \
+        0%, 100% { filter: blur(1px); } \
+        50%      { filter: blur(0.35px); } \
       } \
       .click-anim { \
-        animation: click 0.5s ease; \
+        animation: none; \
       } \
-      @keyframes click { \
-        0%   { transform: scale(1);   } \
-        40%  { transform: scale(0.6); } \
-        100% { transform: scale(1);   } \
+      .click-anim .cursor-shell { \
+        animation: shell-click 0.42s ease; \
+      } \
+      .click-anim .cursor-aura { \
+        animation: aura-click 0.42s ease; \
+      } \
+      @keyframes shell-click { \
+        0%   { transform: translate3d(var(--sway-x), var(--sway-y), 0) rotate(var(--tilt)) scale(1); } \
+        42%  { transform: translate3d(calc(var(--sway-x) * 0.55), calc(var(--sway-y) * 0.55), 0) rotate(var(--tilt)) scale(0.82); } \
+        100% { transform: translate3d(var(--sway-x), var(--sway-y), 0) rotate(var(--tilt)) scale(1); } \
+      } \
+      @keyframes aura-click { \
+        0%   { opacity: 0.9; transform: scale(0.75); } \
+        100% { opacity: 0;   transform: scale(1.85); } \
       } \
       \
       /* ── Element highlight ── */ \
@@ -266,18 +373,12 @@ const RAW_SCRIPT = `
 
     const cursor = document.createElement('div');
     cursor.id = 'cursor';
-    cursor.innerHTML = '<svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"> \
-      <path \
-        d="M24 4 Q30 18 44 24 Q30 30 24 44 Q18 30 4 24 Q18 18 24 4Z" \
-        fill="rgba(255,255,255,0.95)" \
-      /> \
-      <path \
-        d="M24 4 Q30 18 44 24 Q30 30 24 44 Q18 30 4 24 Q18 18 24 4Z" \
-        fill="none" \
-        stroke="rgba(0,0,0,0.10)" \
-        stroke-width="0.5" \
-      /> \
-    </svg>';
+    cursor.innerHTML = '<div class="cursor-aura"></div><div class="cursor-trail"></div><div class="cursor-trail t2"></div><div class="cursor-shell"><div class="cursor-sway"><svg width="34" height="34" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"> \
+      <path class="cursor-body" d="M5.55 3.78C5.55 2.82 6.66 2.29 7.41 2.9L26.05 18.14C26.92 18.85 26.47 20.24 25.36 20.34L17.43 21.07L21.47 28.04C21.89 28.76 21.64 29.69 20.92 30.11L18.64 31.43C17.91 31.85 16.98 31.6 16.56 30.87L12.57 23.99L7.29 29.55C6.67 30.2 5.55 29.76 5.55 28.86V3.78Z"/> \
+      <path class="cursor-sheen" d="M8.08 7.02L22.98 19.19L13.65 20.05L17.95 27.46L16.98 28.03L12.32 19.99L8.08 24.45V7.02Z"/> \
+      <path class="cursor-rim" d="M5.55 3.78C5.55 2.82 6.66 2.29 7.41 2.9L26.05 18.14C26.92 18.85 26.47 20.24 25.36 20.34L17.43 21.07L21.47 28.04C21.89 28.76 21.64 29.69 20.92 30.11L18.64 31.43C17.91 31.85 16.98 31.6 16.56 30.87L12.57 23.99L7.29 29.55C6.67 30.2 5.55 29.76 5.55 28.86V3.78Z"/> \
+      <defs><linearGradient id="__navis_cursor_sheen" x1="7" y1="4" x2="23" y2="29" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="0.5" stop-color="#EAF8FF"/><stop offset="1" stop-color="#BDE9FF"/></linearGradient><linearGradient id="__navis_cursor_rim" x1="4" y1="2" x2="25" y2="31" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="0.42" stop-color="#61D5FF"/><stop offset="1" stop-color="#A78BFA"/></linearGradient></defs> \
+    </svg></div></div>';
     shadow.appendChild(cursor);
 
     if (document.body) {
@@ -287,6 +388,10 @@ const RAW_SCRIPT = `
     }
     console.log('[Navis] Overlay successfully created and appended with ID: ' + OVERLAY_ID);
 
+    let lastCursorX = null;
+    let lastCursorY = null;
+    let cursorRestTimer = null;
+
     window.__navis_controls = {
       setStatus: function(t) {
         const el = shadow.getElementById('text');
@@ -295,9 +400,51 @@ const RAW_SCRIPT = `
       moveCursor: function(x, y, click) {
         const c = shadow.getElementById('cursor');
         if (!c) return;
+        let tilt = -8;
+        let swayX = 0;
+        let swayY = 0;
+        let scale = click ? 0.96 : 1;
+        let trailX = 15;
+        let trailY = 24;
+        let trailOpacity = click ? 0.82 : 0.42;
+        if (typeof lastCursorX === 'number' && typeof lastCursorY === 'number') {
+          const dx = x - lastCursorX;
+          const dy = y - lastCursorY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > 1) {
+            tilt = Math.max(-22, Math.min(16, (dx * 0.036) + (dy * 0.014) - 8));
+            swayX = Math.max(-4.5, Math.min(4.5, -dx * 0.024));
+            swayY = Math.max(-3.2, Math.min(3.2, -dy * 0.02));
+            scale = click ? 0.94 : Math.min(1.075, 1 + distance * 0.0008);
+            trailX = Math.max(6, Math.min(28, 15 - dx * 0.035));
+            trailY = Math.max(13, Math.min(34, 24 - dy * 0.03));
+            trailOpacity = Math.min(0.9, 0.38 + distance * 0.004);
+          }
+        }
+        lastCursorX = x;
+        lastCursorY = y;
+        c.classList.add('is-moving');
         c.style.opacity = '1';
         c.style.left = x + 'px';
         c.style.top = y + 'px';
+        c.style.setProperty('--tilt', tilt.toFixed(2) + 'deg');
+        c.style.setProperty('--sway-x', swayX.toFixed(2) + 'px');
+        c.style.setProperty('--sway-y', swayY.toFixed(2) + 'px');
+        c.style.setProperty('--scale', scale.toFixed(3));
+        c.style.setProperty('--trail-x', trailX.toFixed(2) + 'px');
+        c.style.setProperty('--trail-y', trailY.toFixed(2) + 'px');
+        c.style.setProperty('--trail-opacity', trailOpacity.toFixed(2));
+        if (cursorRestTimer) clearTimeout(cursorRestTimer);
+        cursorRestTimer = setTimeout(function() {
+          c.style.setProperty('--tilt', '-8deg');
+          c.style.setProperty('--sway-x', '0px');
+          c.style.setProperty('--sway-y', '0px');
+          c.style.setProperty('--scale', '1');
+          c.style.setProperty('--trail-x', '15px');
+          c.style.setProperty('--trail-y', '24px');
+          c.style.setProperty('--trail-opacity', '0.42');
+          c.classList.remove('is-moving');
+        }, 520);
         if (click) {
           c.classList.remove('click-anim');
           void c.offsetWidth;

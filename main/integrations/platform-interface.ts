@@ -48,6 +48,8 @@ export interface IncomingMessage {
     name: string;
     /** Chat type (private, group, channel) */
     type: 'private' | 'group' | 'channel';
+    /** Optional platform thread ID for threaded conversations */
+    threadId?: string;
   };
   /** Message content */
   content: {
@@ -68,6 +70,14 @@ export interface IncomingMessage {
   timestamp: Date;
   /** Raw platform-specific message data */
   raw: any;
+  /** Normalized routing metadata used by the bot harness */
+  metadata?: {
+    conversationKey?: string;
+    replyTargetId?: string;
+    sourceGuildId?: string;
+    sourceChannelId?: string;
+    sourceThreadId?: string;
+  };
 }
 
 /**

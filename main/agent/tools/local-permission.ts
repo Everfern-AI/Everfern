@@ -1,10 +1,26 @@
 import type { AgentTool, ToolResult } from '../runner/types';
 import { getLocalExecutionResolvers } from './pi-tools';
+import * as os from 'os';
+import * as path from 'path';
+
+function getHostExecutionContext(cwd?: string, shell?: string): string {
+  const home = os.homedir();
+  return [
+    'Host execution context:',
+    `- Platform: ${process.platform} ${os.release()}`,
+    `- Current working directory: ${cwd || process.cwd()}`,
+    `- User profile/home: ${home}`,
+    `- Downloads: ${path.join(home, 'Downloads')}`,
+    `- Desktop: ${path.join(home, 'Desktop')}`,
+    `- Shell: ${shell || 'host default'}`,
+  ].join('\n');
+}
 
 export const localPermissionTool: AgentTool = {
   name: 'local_permission',
   description:
     'Request permission from the user to execute a command on the host machine (outside the Linux VM). ' +
+    `Host machine details: USERPROFILE/Home=${os.homedir()}, Downloads=${path.join(os.homedir(), 'Downloads')}. ` +
     'Use this instead of setting local=true on executePwsh. ' +
     'Required when you need to access Windows-only files, run native executables, or interact with local hardware/GUI. ' +
     'The system will show a permission dialog to the user with your reason.',
@@ -77,13 +93,13 @@ export const localPermissionTool: AgentTool = {
     // Approved — execute the command on the host machine
     onUpdate?.(`🚀 Execution approved. Running command on host machine...`);
 
+    let shell: string | undefined;
     try {
       const { exec } = require('child_process');
       const { promisify } = require('util');
       const execAsync = promisify(exec);
 
       // Select shell based on platform and request
-      let shell: string | undefined;
       if (process.platform === 'win32') {
         if (shellType === 'PowerShell') {
           shell = 'powershell.exe';
@@ -111,8 +127,17 @@ export const localPermissionTool: AgentTool = {
 
       return {
         success: true,
-        output: stripAnsi(output),
-        data: { approved: true, alwaysAllow: response.alwaysAllow, command, shellType }
+        output: stripAnsi(`Success: local command completed\n${getHostExecutionContext(process.cwd(), shell)}\nCommand: ${command}\nOutput:\n${output}`),
+        data: {
+          approved: true,
+          alwaysAllow: response.alwaysAllow,
+          command,
+          shellType,
+          cwd: process.cwd(),
+          homeDir: os.homedir(),
+          downloadsDir: path.join(os.homedir(), 'Downloads'),
+          shell,
+        }
       };
     } catch (execError: any) {
       const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
@@ -121,9 +146,18 @@ export const localPermissionTool: AgentTool = {
 
       return {
         success: false,
-        output: stripAnsi(output),
+        output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd(), shell)}\nCommand: ${command}\nOutput:\n${output}`),
         error: stripAnsi(output),
-        data: { approved: true, alwaysAllow: response.alwaysAllow, command, shellType }
+        data: {
+          approved: true,
+          alwaysAllow: response.alwaysAllow,
+          command,
+          shellType,
+          cwd: process.cwd(),
+          homeDir: os.homedir(),
+          downloadsDir: path.join(os.homedir(), 'Downloads'),
+          shell,
+        }
       };
     }
   }

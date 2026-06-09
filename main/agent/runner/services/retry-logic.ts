@@ -355,7 +355,7 @@ async function executeOnce(
   const result = await tool.execute(
     toolCall.args,
     (update) => {
-      eventQueue?.push({ type: 'tool_update', toolName: toolCall.name, update } as any);
+      eventQueue?.push({ type: 'tool_update', toolName: toolCall.name, toolCallId: toolCall.id, update } as any);
     },
     (event) => {
       eventQueue?.push(event);

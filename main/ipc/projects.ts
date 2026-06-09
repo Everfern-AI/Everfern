@@ -1,6 +1,29 @@
 import { ipcMain } from 'electron';
 import { projectsStore } from '../store/projects/projects';
 
+function mimeFromExt(ext: string): string {
+  const clean = ext.replace(/^\./, '').toLowerCase();
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    avif: 'image/avif',
+    ico: 'image/x-icon',
+    pdf: 'application/pdf',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    m4a: 'audio/mp4',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+  };
+  return map[clean] || 'application/octet-stream';
+}
+
 export function registerProjectsHandlers() {
   ipcMain.handle('projects:list', async () => {
     return projectsStore.list();
@@ -83,6 +106,31 @@ export function registerProjectsHandlers() {
       return fs.readFileSync(fullPath, 'utf-8');
     } catch {
       return null;
+    }
+  });
+
+  ipcMain.handle('projects:readFileDataUrl', async (_event, projectPath: string, filePath: string) => {
+    const fs = require('fs');
+    const path = require('path');
+    const fullPath = path.join(projectPath, filePath);
+    const maxPreviewBytes = 32 * 1024 * 1024;
+    try {
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) return { success: false, error: 'Path is not a file' };
+      if (stat.size > maxPreviewBytes) {
+        return { success: false, error: 'File is too large to preview inline', size: stat.size };
+      }
+      const ext = path.extname(fullPath);
+      const mimeType = mimeFromExt(ext);
+      const base64 = fs.readFileSync(fullPath).toString('base64');
+      return {
+        success: true,
+        mimeType,
+        size: stat.size,
+        dataUrl: `data:${mimeType};base64,${base64}`,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   });
 }

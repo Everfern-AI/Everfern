@@ -24,12 +24,21 @@ interface IntegrationConfig {
         botToken: string;
         webhookUrl?: string;
         connected: boolean;
+        provider?: string;
+        model?: string;
+        requireApproval?: boolean;
+        approvalCode?: string;
+        approvedUsers?: string[];
     };
     discord: {
         enabled: boolean;
         botToken: string;
         applicationId: string;
         connected: boolean;
+        provider?: string;
+        model?: string;
+        allowedGuilds?: string[];
+        allowedUsers?: string[];
     };
 }
 
@@ -438,17 +447,19 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
         setSelectedIntegration(platform);
     };
 
-    const handleTestConnection = async (platform: 'telegram' | 'discord') => {
+    const handleTestConnection = async (platform: 'telegram' | 'discord'): Promise<boolean> => {
         setTesting(prev => ({ ...prev, [platform]: true }));
         setTestResults(prev => ({ ...prev, [platform]: null })); // Clear previous results
 
         try {
             const result = await (window as unknown as { electronAPI?: { integration?: { testConnection?: (platform: string) => Promise<boolean> } } })?.electronAPI?.integration?.testConnection?.(platform);
+            const latestConfig = await (window as unknown as { electronAPI?: { integration?: { getConfig?: () => Promise<IntegrationConfig> } } })?.electronAPI?.integration?.getConfig?.();
+            const baseConfig = latestConfig || config;
 
             const newConfig = {
-                ...config,
+                ...baseConfig,
                 [platform]: {
-                    ...config[platform],
+                    ...baseConfig[platform],
                     connected: result || false,
                 },
             };
@@ -473,6 +484,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                 setTestResults(prev => ({ ...prev, [platform]: null }));
             }, 5000);
 
+            return result || false;
         } catch (error) {
             console.error(`Failed to test ${platform} connection:`, error);
 
@@ -490,6 +502,8 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
             setTimeout(() => {
                 setTestResults(prev => ({ ...prev, [platform]: null }));
             }, 5000);
+
+            return false;
         } finally {
             setTesting(prev => ({ ...prev, [platform]: false }));
         }
@@ -662,21 +676,20 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                             {selectedIntegration === 'telegram' && (
                                                 <TelegramConfig
                                                     config={config.telegram}
-                                                    onSave={async (telegramConfig) => {
+                                                    onSave={async (telegramConfig, closeAfterSave = true) => {
                                                         const newConfig = {
                                                             ...config,
                                                             telegram: {
                                                                 ...config.telegram,
-                                                                ...telegramConfig
+                                                                ...telegramConfig,
                                                             }
                                                         };
                                                         setConfig(newConfig);
                                                         await (window as unknown as { electronAPI?: { integration?: { saveConfig?: (config: IntegrationConfig) => Promise<void> } } })?.electronAPI?.integration?.saveConfig?.(newConfig);
-                                                        setSelectedIntegration(null);
+                                                        if (closeAfterSave) setSelectedIntegration(null);
                                                     }}
                                                     onTest={async () => {
-                                                        await handleTestConnection('telegram');
-                                                        return config.telegram.connected;
+                                                        return handleTestConnection('telegram');
                                                     }}
                                                     testing={testing.telegram || false}
                                                 />
@@ -685,7 +698,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                             {selectedIntegration === 'discord' && (
                                                 <DiscordConfig
                                                     config={config.discord}
-                                                    onSave={async (discordConfig) => {
+                                                    onSave={async (discordConfig, closeAfterSave = true) => {
                                                         const newConfig = {
                                                             ...config,
                                                             discord: {
@@ -695,11 +708,10 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                                         };
                                                         setConfig(newConfig);
                                                         await (window as unknown as { electronAPI?: { integration?: { saveConfig?: (config: IntegrationConfig) => Promise<void> } } })?.electronAPI?.integration?.saveConfig?.(newConfig);
-                                                        setSelectedIntegration(null);
+                                                        if (closeAfterSave) setSelectedIntegration(null);
                                                     }}
                                                     onTest={async () => {
-                                                        await handleTestConnection('discord');
-                                                        return config.discord.connected;
+                                                        return handleTestConnection('discord');
                                                     }}
                                                     testing={testing.discord || false}
                                                 />

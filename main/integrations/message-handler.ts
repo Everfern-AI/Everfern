@@ -106,13 +106,26 @@ export class MessageHandler extends EventEmitter {
   private config: MessageHandlerConfig;
   private activeRunners = new Map<string, AgentRunner>();
   private rateLimiter = new RateLimiter();
-  private activeMessages = new Map<string, { messageId: string; chatId: string; platform: string }>();
-  private pendingHitlRequests = new Map<string, { resolve: (response: string) => void; reject: (error: Error) => void; sessionId: string }>();
+  private activeMessages = new Map<string, { messageId: string; chatId: string; platform: string; replyToMessageId?: string }>();
+  private pendingHitlRequests = new Map<string, {
+    resolve: (response: string) => void;
+    reject: (error: Error) => void;
+    sessionId: string;
+    mode: 'approval' | 'question';
+  }>();
   private processedMessages = new Set<string>(); // Track processed message IDs to prevent duplicates
+  private readonly previewUpdateIntervalMs = 300;
+  private readonly previewMinDeltaChars = 24;
+  private readonly messageReceivedHandler: (context: MessageContext) => void;
 
   constructor(config: MessageHandlerConfig) {
     super();
     this.config = config;
+    this.messageReceivedHandler = (context: MessageContext) => {
+      this.handleMessage(context).catch(error => {
+        console.error('[MessageHandler] Unhandled error in handleMessage:', error);
+      });
+    };
     this.setupEventHandlers();
   }
 
@@ -122,11 +135,7 @@ export class MessageHandler extends EventEmitter {
    */
   private setupEventHandlers(): void {
     // Listen to bot manager message events
-    this.config.botManager.on('messageReceived', (context: MessageContext) => {
-      this.handleMessage(context).catch(error => {
-        console.error('[MessageHandler] Unhandled error in handleMessage:', error);
-      });
-    });
+    this.config.botManager.on('messageReceived', this.messageReceivedHandler);
 
     console.log('[MessageHandler] Event handlers initialized');
   }
@@ -170,12 +179,14 @@ export class MessageHandler extends EventEmitter {
       });
     }
 
-    const sessionId = `${platform}_${message.chat.id}`;
+    const sessionId = context.conversationId || message.metadata?.conversationKey || `${platform}:${message.chat.id}`;
+    const replyToMessageId = context.metadata?.replyTargetId || message.metadata?.replyTargetId || message.id;
 
     // Check if this is a HITL response
-    if (this.pendingHitlRequests.has(sessionId)) {
+    const pendingRequest = this.pendingHitlRequests.get(sessionId);
+    if (pendingRequest) {
       console.log(`[MessageHandler] 🔔 Detected HITL response for session ${sessionId}`);
-      await this.processHitlResponse(sessionId, message.content.text, message.chat.id, platform);
+      await this.processHitlResponse(sessionId, message.content.text, message.chat.id, platform, pendingRequest.mode);
       return; // Don't process as a new message
     }
 
@@ -220,7 +231,6 @@ export class MessageHandler extends EventEmitter {
       }
 
       // Requirement 4.4: Create or reuse agent runner session
-      const sessionId = `${platform}_${message.chat.id}`;
       let runner = this.activeRunners.get(sessionId);
 
       if (!runner) {
@@ -231,10 +241,12 @@ export class MessageHandler extends EventEmitter {
 
         // Configure ACP manager with platform-specific model/provider
         console.log(`[MessageHandler] 🔧 Configuring ACP manager with provider=${platformConfig.provider}, model=${platformConfig.model}`);
+        const existingConfig = this.config.acpManager.getClient()?.getFullConfig?.();
         this.config.acpManager.setProvider({
           provider: platformConfig.provider as any,
           model: platformConfig.model,
           apiKey: apiKey || undefined,
+          vlm: existingConfig?.vlm,
         });
 
         // Create AI client from ACP manager
@@ -263,21 +275,7 @@ export class MessageHandler extends EventEmitter {
         console.log(`[MessageHandler] ♻️ Reusing existing agent runner session: ${sessionId}`);
       }
 
-      // Send initial thinking message
-      await this.rateLimiter.waitForMessageSlot();
-      const thinkingMessageId = await botPlatform!.sendMessage(
-        '🤔 *Thinking...*',
-        { chatId: message.chat.id, parseMode: 'markdown' }
-      );
-
-      // Store the message ID for editing
-      this.activeMessages.set(sessionId, {
-        messageId: thinkingMessageId,
-        chatId: message.chat.id,
-        platform
-      });
-
-      // Prepare message text with file information
+      // Prepare message text with file information and a channel-friendly instruction.
       let messageText = message.content.text;
       if (message.content.files && message.content.files.length > 0) {
         messageText += '\n\n📎 **Attached files:**\n';
@@ -286,6 +284,7 @@ export class MessageHandler extends EventEmitter {
         });
         messageText += '\n*Note: File content analysis is not yet implemented.*';
       }
+      messageText = this.buildConversationalPrompt(messageText, platform);
 
       // Requirement 4.5: Process message through agent runner with streaming
       console.log(`[MessageHandler] 🤖 Processing message through agent runner...`);
@@ -295,17 +294,57 @@ export class MessageHandler extends EventEmitter {
       const stream = runner.runStream(messageText, [], platformConfig.model, sessionId);
       let response = '';
       let lastToolName = '';
+      let liveThought = platform === 'discord' ? 'Reading your message...' : '';
+      let lastPreviewText = '';
+      let lastPreviewAt = 0;
+
+      const maybeUpdatePreview = async (force = false) => {
+        const now = Date.now();
+        const enoughTime = now - lastPreviewAt >= this.previewUpdateIntervalMs;
+        const previewText = this.formatLivePreview(response, liveThought);
+        const minDelta = platform === 'discord' ? 8 : this.previewMinDeltaChars;
+        const enoughText = Math.abs(previewText.length - lastPreviewText.length) >= minDelta;
+        if (!previewText.trim() || (!force && !enoughTime && !enoughText)) return;
+
+        lastPreviewText = previewText;
+        lastPreviewAt = now;
+        if (!this.activeMessages.has(sessionId)) {
+          this.activeMessages.set(sessionId, {
+            messageId: '',
+            chatId: message.chat.id,
+            platform,
+            replyToMessageId
+          });
+        }
+        await this.updateMessage(sessionId, previewText, { preview: true, parseMode: 'markdown' });
+      };
+
+      if (platform === 'discord') {
+        await maybeUpdatePreview(true);
+      }
 
       for await (const event of stream) {
         if (event.type === 'chunk') {
           response += event.content;
+          if (!liveThought && platform === 'discord') {
+            liveThought = 'Writing...';
+          }
+          await maybeUpdatePreview(false);
+        } else if (event.type === 'thought') {
+          liveThought = this.cleanLiveThought(event.content);
+          await maybeUpdatePreview(true);
         } else if (event.type === 'tool_call') {
           // Update message with tool being used
           const toolName = event.toolCall.toolName;
+          if (toolName === 'ask_user_question') {
+            console.log(`[MessageHandler] ❓ ask_user_question received`);
+            await this.sendQuestionRequest(event.toolCall, sessionId, message.chat.id, platform, replyToMessageId);
+            return;
+          }
           if (toolName !== lastToolName) {
             lastToolName = toolName;
-            const emoji = this.getToolEmoji(toolName);
-            await this.updateMessage(sessionId, `${emoji} Using tool: **${toolName}**...`);
+            liveThought = this.formatToolActivity(toolName);
+            await maybeUpdatePreview(true);
           }
         } else if (event.type === 'hitl_request') {
           // Handle HITL request - send to user and wait for their next message
@@ -314,6 +353,9 @@ export class MessageHandler extends EventEmitter {
           // The agent has paused and is waiting for user response
           // The next message from the user will be processed as a HITL response
           return; // Exit this message handler, wait for HITL response
+        } else if (event.type === 'debate_event') {
+          liveThought = this.formatDebateActivity((event as any).debateEvent);
+          await maybeUpdatePreview(true);
         } else if (event.type === 'done') {
           break;
         }
@@ -323,7 +365,8 @@ export class MessageHandler extends EventEmitter {
       console.log(`[MessageHandler] Response length: ${response.length} characters`);
 
       // Send final response by editing the thinking message
-      await this.updateMessage(sessionId, response);
+      await maybeUpdatePreview(true);
+      await this.updateMessage(sessionId, response, { preview: false });
 
       // Clean up
       this.activeMessages.delete(sessionId);
@@ -334,33 +377,41 @@ export class MessageHandler extends EventEmitter {
       console.error('[MessageHandler] ❌ Error processing message:', error);
 
       const errorMsg = error instanceof Error ? error.message : String(error);
+      const activeErrorMessage = this.activeMessages.has(sessionId);
 
       // Handle specific error types
       if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
         // Requirement 6.5: Rate limit error
         console.warn(`[MessageHandler] ⚠️ Rate limit error`);
-        await this.sendErrorMessage(
-          message.chat.id,
-          platform,
-          '⚠️ Rate limit exceeded. Please wait before sending more messages.'
-        );
+        const rateLimitMessage = 'Rate limit exceeded. Please wait before sending more messages.';
+        if (activeErrorMessage) {
+          await this.updateMessage(sessionId, rateLimitMessage, { preview: false, parseMode: 'none' });
+        } else {
+          await this.sendErrorMessage(message.chat.id, platform, rateLimitMessage);
+        }
       } else if (errorMsg.toLowerCase().includes('api key') || errorMsg.toLowerCase().includes('authentication')) {
         // API key error
         console.error(`[MessageHandler] ❌ Authentication error`);
-        await this.sendErrorMessage(
-          message.chat.id,
-          platform,
-          '❌ Bot authentication failed. Please check your API key configuration.'
-        );
+        const authMessage = 'Bot authentication failed. Please check your API key configuration.';
+        if (activeErrorMessage) {
+          await this.updateMessage(sessionId, authMessage, { preview: false, parseMode: 'none' });
+        } else {
+          await this.sendErrorMessage(message.chat.id, platform, authMessage);
+        }
       } else {
         // Requirement 6.4: Generic agent runner failure
         console.error(`[MessageHandler] ❌ Generic error: ${errorMsg}`);
-        await this.sendErrorMessage(
-          message.chat.id,
-          platform,
-          '❌ Failed to process your message. Please try again.'
-        );
+        const failureMessage = errorMsg.toLowerCase().includes('fetch failed') || errorMsg.toLowerCase().includes('network')
+          ? 'I could not reach the configured AI provider. Please check the provider endpoint/API key, then try again.'
+          : 'Failed to process your message. Please try again.';
+        if (activeErrorMessage) {
+          await this.updateMessage(sessionId, failureMessage, { preview: false, parseMode: 'none' });
+        } else {
+          await this.sendErrorMessage(message.chat.id, platform, failureMessage);
+        }
       }
+
+      this.activeMessages.delete(sessionId);
     }
   }
 
@@ -380,35 +431,21 @@ export class MessageHandler extends EventEmitter {
       throw new Error('Bot platform not available');
     }
 
-    // Format the HITL request as a message
-    const questions = request.questions || [];
-    let hitlMessage = '⚠️ **Approval Required**\n\n';
-
-    questions.forEach((q: any, index: number) => {
-      hitlMessage += `**${q.question}**\n\n`;
-      q.options.forEach((opt: any, optIndex: number) => {
-        const emoji = optIndex === 0 ? '✅' : '❌';
-        hitlMessage += `${emoji} ${opt.label}\n`;
-      });
-      if (index < questions.length - 1) {
-        hitlMessage += '\n';
-      }
-    });
-
-    hitlMessage += '\n*Please reply with your choice (e.g., "approve" or "reject")*';
+    const hitlMessage = this.formatQuestionMessage(request, 'approval');
 
     // Send HITL request message
     await this.rateLimiter.waitForMessageSlot();
     await botPlatform.sendMessage(hitlMessage, {
       chatId,
-      parseMode: 'markdown'
+      parseMode: 'none'
     });
 
     // Mark this session as waiting for HITL response
     this.pendingHitlRequests.set(sessionId, {
       resolve: () => {}, // Not used in this implementation
       reject: () => {},
-      sessionId
+      sessionId,
+      mode: 'approval'
     });
 
     console.log(`[MessageHandler] ✅ HITL request sent, waiting for user response`);
@@ -421,23 +458,18 @@ export class MessageHandler extends EventEmitter {
     sessionId: string,
     response: string,
     chatId: string,
-    platform: string
+    platform: string,
+    mode: 'approval' | 'question' = 'approval'
   ): Promise<void> {
     console.log(`[MessageHandler] 📥 Processing HITL response for session ${sessionId}: ${response}`);
 
     // Remove pending HITL request
     this.pendingHitlRequests.delete(sessionId);
 
-    // Determine if approved or rejected
-    const lowerResponse = response.toLowerCase();
-    const approved = lowerResponse.includes('approve') ||
-                     lowerResponse.includes('yes') ||
-                     lowerResponse.includes('✅') ||
-                     lowerResponse.includes('proceed') ||
-                     lowerResponse.includes('continue');
-
-    const formattedResponse = approved ? '[HITL_APPROVED]' : '[HITL_REJECTED]';
-    console.log(`[MessageHandler] 🔔 HITL response interpreted as: ${approved ? 'APPROVED' : 'REJECTED'}`);
+    const formattedResponse = mode === 'approval'
+      ? this.formatApprovalResponse(response)
+      : response.trim();
+    console.log(`[MessageHandler] 🔔 Pending response interpreted as mode=${mode}`);
 
     // Get the runner for this session
     const runner = this.activeRunners.get(sessionId);
@@ -463,40 +495,69 @@ export class MessageHandler extends EventEmitter {
       // Send typing indicator
       await botPlatform.sendTyping(chatId);
 
-      // Send acknowledgment message
-      await this.rateLimiter.waitForMessageSlot();
-      const ackMessageId = await botPlatform.sendMessage(
-        approved ? '✅ *Approved! Continuing...*' : '❌ *Rejected. Stopping...*',
-        { chatId, parseMode: 'markdown' }
-      );
-
-      // Store the message ID for editing
-      this.activeMessages.set(sessionId, {
-        messageId: ackMessageId,
-        chatId,
-        platform
-      });
-
       // Continue the agent with the HITL response
       const stream = runner.runStream(formattedResponse, [], platformConfig.model, sessionId);
       let finalResponse = '';
       let lastToolName = '';
+      let liveThought = platform === 'discord' ? 'Continuing...' : '';
+      let lastPreviewText = '';
+      let lastPreviewAt = 0;
+
+      const maybeUpdatePreview = async (force = false) => {
+        const now = Date.now();
+        const enoughTime = now - lastPreviewAt >= this.previewUpdateIntervalMs;
+        const previewText = this.formatLivePreview(finalResponse, liveThought);
+        const minDelta = platform === 'discord' ? 8 : this.previewMinDeltaChars;
+        const enoughText = Math.abs(previewText.length - lastPreviewText.length) >= minDelta;
+        if (!previewText.trim() || (!force && !enoughTime && !enoughText)) return;
+
+        lastPreviewText = previewText;
+        lastPreviewAt = now;
+        if (!this.activeMessages.has(sessionId)) {
+          this.activeMessages.set(sessionId, {
+            messageId: '',
+            chatId,
+            platform,
+            replyToMessageId: undefined
+          });
+        }
+        await this.updateMessage(sessionId, previewText, { preview: true, parseMode: 'markdown' });
+      };
+
+      if (platform === 'discord') {
+        await maybeUpdatePreview(true);
+      }
 
       for await (const event of stream) {
         if (event.type === 'chunk') {
           finalResponse += event.content;
+          if (!liveThought && platform === 'discord') {
+            liveThought = 'Writing...';
+          }
+          await maybeUpdatePreview(false);
+        } else if (event.type === 'thought') {
+          liveThought = this.cleanLiveThought(event.content);
+          await maybeUpdatePreview(true);
         } else if (event.type === 'tool_call') {
           const toolName = event.toolCall.toolName;
+          if (toolName === 'ask_user_question') {
+            console.log(`[MessageHandler] ❓ ask_user_question received during HITL continuation`);
+            await this.sendQuestionRequest(event.toolCall, sessionId, chatId, platform);
+            return;
+          }
           if (toolName !== lastToolName && toolName !== 'ask_user_question') {
             lastToolName = toolName;
-            const emoji = this.getToolEmoji(toolName);
-            await this.updateMessage(sessionId, `${emoji} Using tool: **${toolName}**...`);
+            liveThought = this.formatToolActivity(toolName);
+            await maybeUpdatePreview(true);
           }
         } else if (event.type === 'hitl_request') {
           // Another HITL request - handle it
           console.log(`[MessageHandler] 🔔 Another HITL request received`);
           await this.sendHitlRequest(event.request, sessionId, chatId, platform);
           return; // Exit and wait for next response
+        } else if (event.type === 'debate_event') {
+          liveThought = this.formatDebateActivity((event as any).debateEvent);
+          await maybeUpdatePreview(true);
         } else if (event.type === 'done') {
           break;
         }
@@ -506,7 +567,8 @@ export class MessageHandler extends EventEmitter {
 
       // Send final response
       if (finalResponse.trim()) {
-        await this.updateMessage(sessionId, finalResponse);
+        await maybeUpdatePreview(true);
+        await this.updateMessage(sessionId, finalResponse, { preview: false });
       }
 
       // Clean up
@@ -524,7 +586,11 @@ export class MessageHandler extends EventEmitter {
   /**
    * Update message with new content (edit existing message)
    */
-  private async updateMessage(sessionId: string, content: string): Promise<void> {
+  private async updateMessage(
+    sessionId: string,
+    content: string,
+    options: { preview?: boolean; parseMode?: 'markdown' | 'none' } = {}
+  ): Promise<void> {
     const messageInfo = this.activeMessages.get(sessionId);
     if (!messageInfo) return;
 
@@ -533,17 +599,231 @@ export class MessageHandler extends EventEmitter {
 
     try {
       await this.rateLimiter.waitForEditSlot();
+      const maxLength = this.getPlatformMessageLimit(messageInfo.platform);
+      const editLimit = options.preview ? Math.min(maxLength, 1400) : maxLength;
+      const chunks = this.splitMessage(content.trim() || '(No response)', editLimit);
+      const firstChunk = chunks.shift() || '';
 
       // Check if platform supports message editing
-      if (typeof (botPlatform as any).editMessage === 'function') {
+      if (messageInfo.messageId && typeof (botPlatform as any).editMessage === 'function') {
         await (botPlatform as any).editMessage(
           messageInfo.chatId,
           messageInfo.messageId,
-          this.truncateForPlatform(content, 2000)
+          firstChunk,
+          options.parseMode || 'markdown'
         );
+      } else {
+        await this.rateLimiter.waitForMessageSlot();
+        const sentMessageId = await botPlatform.sendMessage(firstChunk, {
+          chatId: messageInfo.chatId,
+          parseMode: options.parseMode || 'markdown',
+          replyToMessageId: messageInfo.replyToMessageId
+        });
+        this.activeMessages.set(sessionId, {
+          ...messageInfo,
+          messageId: sentMessageId
+        });
+      }
+
+      if (!options.preview) {
+        for (const chunk of chunks) {
+          await this.rateLimiter.waitForMessageSlot();
+          await botPlatform.sendMessage(chunk, {
+            chatId: messageInfo.chatId,
+            parseMode: 'markdown'
+          });
+        }
       }
     } catch (error) {
       console.error('[MessageHandler] Failed to edit message:', error);
+      if (!options.preview) {
+        const editedPlain = await this.tryPlainEdit(botPlatform, messageInfo.chatId, messageInfo.messageId, content);
+        if (!editedPlain) {
+          await this.sendResponse(botPlatform, messageInfo.chatId, content, messageInfo.replyToMessageId, messageInfo.platform);
+        }
+      }
+    }
+  }
+
+  private async tryPlainEdit(
+    botPlatform: MessagePlatform,
+    chatId: string,
+    messageId: string,
+    content: string
+  ): Promise<boolean> {
+    if (typeof (botPlatform as any).editMessage !== 'function') return false;
+    try {
+      const maxLength = this.getPlatformMessageLimit(botPlatform.getPlatformName());
+      const firstChunk = this.splitMessage(content.trim() || '(No response)', maxLength)[0] || '';
+      await (botPlatform as any).editMessage(chatId, messageId, firstChunk, 'none');
+      return true;
+    } catch (error) {
+      console.error('[MessageHandler] Plain edit fallback failed:', error);
+      return false;
+    }
+  }
+
+  private async sendQuestionRequest(
+    toolCall: any,
+    sessionId: string,
+    chatId: string,
+    platform: string,
+    replyToMessageId?: string
+  ): Promise<void> {
+    const botPlatform = this.config.botManager.getPlatform(platform);
+    if (!botPlatform) {
+      throw new Error('Bot platform not available');
+    }
+
+    const resultData = toolCall?.result?.data || toolCall?.result?.data?.data || {};
+    const request = {
+      questions: resultData.questions || toolCall?.args?.questions || [],
+      previewMarkdown: resultData.preview || toolCall?.args?.previewMarkdown || ''
+    };
+
+    const questionMessage = this.formatQuestionMessage(request, 'question');
+    if (this.activeMessages.has(sessionId)) {
+      await this.updateMessage(sessionId, questionMessage, { preview: false, parseMode: 'none' });
+    } else {
+      await this.rateLimiter.waitForMessageSlot();
+      await botPlatform.sendMessage(questionMessage, { chatId, parseMode: 'none', replyToMessageId });
+    }
+    this.activeMessages.delete(sessionId);
+
+    this.pendingHitlRequests.set(sessionId, {
+      resolve: () => {},
+      reject: () => {},
+      sessionId,
+      mode: 'question'
+    });
+
+    console.log(`[MessageHandler] ✅ Clarifying question sent to ${platform}/${chatId}`);
+  }
+
+  private buildConversationalPrompt(userText: string, platform: string): string {
+    return [
+      `You are replying through ${platform}. Behave like a conversational chat assistant for ${platform}, not like a desktop UI.`,
+      'Use tools when useful, but summarize tool work naturally instead of dumping raw logs.',
+      'If you need clarification, use ask_user_question with 1-3 short questions. For Telegram/Discord, questions should be clear enough for the user to answer in a normal reply.',
+      'If you need approval, ask for approval explicitly and wait. Keep final answers useful, direct, and readable in chat.',
+      '',
+      userText
+    ].join('\n');
+  }
+
+  private formatQuestionMessage(request: any, mode: 'approval' | 'question'): string {
+    const questions = Array.isArray(request?.questions) ? request.questions : [];
+    const preview = request?.previewMarkdown || request?.preview || '';
+    const title = mode === 'approval'
+      ? 'Approval needed'
+      : 'Quick question';
+    let message = `${title}\n\n`;
+
+    if (preview) {
+      message += `${String(preview).trim()}\n\n`;
+    }
+
+    if (questions.length === 0 && request?.message) {
+      message += `${String(request.message).trim()}\n\n`;
+    }
+
+    questions.forEach((q: any, index: number) => {
+      const questionText = String(q.question || q.text || '').trim();
+      if (questionText) {
+        message += questions.length > 1 ? `${index + 1}. ${questionText}\n` : `${questionText}\n`;
+      }
+
+      const options = Array.isArray(q.options) ? q.options : [];
+      options.forEach((opt: any, optIndex: number) => {
+        const label = typeof opt === 'string' ? opt : (opt.label || opt.value || String(opt));
+        const marker = mode === 'approval'
+          ? (optIndex === options.length - 1 ? '❌' : '✅')
+          : `${optIndex + 1}.`;
+        message += `${marker} ${label}\n`;
+      });
+
+      if (q.multiSelect) {
+        message += 'You can reply with more than one option.\n';
+      }
+
+      if (index < questions.length - 1) message += '\n';
+    });
+
+    message += mode === 'approval'
+      ? '\nReply with approve, reject, or the option you want.'
+      : '\nReply here with your answer.';
+
+    return message.trim();
+  }
+
+  private formatApprovalResponse(response: string): string {
+    const lowerResponse = response.toLowerCase();
+    const rejected = lowerResponse.includes('reject') ||
+                     lowerResponse.includes('no') ||
+                     lowerResponse.includes('cancel') ||
+                     lowerResponse.includes('stop') ||
+                     lowerResponse.includes('❌');
+    if (rejected) return '[HITL_REJECTED]';
+
+    const approvedAlways = lowerResponse.includes('allow always') ||
+                           lowerResponse.includes('always allow') ||
+                           lowerResponse.includes('approve always');
+    if (approvedAlways) return '[HITL_APPROVED_ALWAYS]';
+
+    const approvedPrefix = lowerResponse.includes('allow prefix') ||
+                           lowerResponse.includes('approve prefix');
+    if (approvedPrefix) return '[HITL_APPROVED_PREFIX]';
+
+    return '[HITL_APPROVED]';
+  }
+
+  private formatLivePreview(text: string, thought?: string): string {
+    const body = text.trim();
+    const cleanThought = thought?.trim();
+    const thoughtLine = cleanThought ? `*Thinking: ${cleanThought}*` : '';
+    if (!body) return thoughtLine;
+    return thoughtLine ? `${thoughtLine}\n\n${body}` : body;
+  }
+
+  private cleanLiveThought(thought: string): string {
+    return thought
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[-•\s]+/, '')
+      .trim()
+      .slice(0, 180);
+  }
+
+  private formatToolActivity(toolName: string): string {
+    const emoji = this.getToolEmoji(toolName);
+    const label = toolName.replace(/_/g, ' ');
+    return `${emoji} Working with ${label}...`;
+  }
+
+  private formatDebateActivity(debateEvent: any): string {
+    const type = String(debateEvent?.type || '');
+    const data = debateEvent?.data || {};
+    const finalPlan = data.finalPlan || {};
+    const review = data.review || {};
+    const proposal = data.proposal || {};
+
+    switch (type) {
+      case 'debate_start':
+        return 'Debate Chamber opened: Vanguard, Phantom, and Arbiter are reviewing the plan...';
+      case 'vanguard_complete':
+        return `Debate Chamber: Vanguard proposed ${proposal.phaseCount || finalPlan.phaseCount || 'a'} phase plan.`;
+      case 'phantom_complete':
+        return `Debate Chamber: Phantom reviewed risks (${review.concernCount ?? 0} concerns).`;
+      case 'arbiter_complete':
+        return `Debate Chamber: Arbiter decided ${String(finalPlan.goNogo || 'review complete').toUpperCase()}.`;
+      case 'debate_complete':
+        return `Debate Chamber complete: ${String(finalPlan.goNogo || 'done').toUpperCase()}${finalPlan.riskAssessment ? `, risk ${finalPlan.riskAssessment}` : ''}.`;
+      case 'debate_skipped':
+        return `Debate Chamber skipped: ${data.reason || 'not needed for this task'}.`;
+      case 'debate_error':
+        return `Debate Chamber error: ${debateEvent?.error || 'continuing without debate'}.`;
+      default:
+        return 'Debate Chamber updated...';
     }
   }
 
@@ -570,11 +850,10 @@ export class MessageHandler extends EventEmitter {
   /**
    * Truncate text for platform limits
    */
-  private truncateForPlatform(text: string, maxLength: number): string {
-    if (text.length <= maxLength) {
-      return text;
-    }
-    return text.substring(0, maxLength - 3) + '...';
+  private getPlatformMessageLimit(platform: string): number {
+    if (platform === 'telegram') return 3900;
+    if (platform === 'discord') return 1900;
+    return 2000;
   }
 
   /**
@@ -584,15 +863,17 @@ export class MessageHandler extends EventEmitter {
   private async sendResponse(
     platform: MessagePlatform,
     chatId: string,
-    response: string
+    response: string,
+    replyToMessageId?: string,
+    platformName = platform.getPlatformName()
   ): Promise<void> {
     // Requirement 5.4: Check if response exceeds platform limits
-    const maxLength = 2000; // Discord limit
+    const maxLength = this.getPlatformMessageLimit(platformName);
 
     if (response.length <= maxLength) {
       // Send directly if within limit
       await this.rateLimiter.waitForMessageSlot();
-      await platform.sendMessage(response, { chatId });
+      await platform.sendMessage(response, { chatId, parseMode: 'markdown', replyToMessageId });
     } else {
       // Requirement 5.4: Split into chunks
       const chunks = this.splitMessage(response, maxLength);
@@ -600,7 +881,8 @@ export class MessageHandler extends EventEmitter {
 
       for (const chunk of chunks) {
         await this.rateLimiter.waitForMessageSlot();
-        await platform.sendMessage(chunk, { chatId });
+        await platform.sendMessage(chunk, { chatId, parseMode: 'markdown', replyToMessageId });
+        replyToMessageId = undefined;
       }
     }
   }
@@ -694,6 +976,8 @@ export class MessageHandler extends EventEmitter {
    */
   public async shutdown(): Promise<void> {
     console.log('[MessageHandler] Shutting down...');
+
+    this.config.botManager.off('messageReceived', this.messageReceivedHandler);
 
     // Clean up active runners
     for (const [sessionId, runner] of this.activeRunners.entries()) {

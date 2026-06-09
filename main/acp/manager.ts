@@ -12,6 +12,7 @@ import * as os from 'os';
 
 import { AIClient } from '../lib/ai-client';
 import type { AIClientConfig, ProviderType } from '../lib/ai-client';
+import { hydrateConfigWithIsolatedKeys, hydrateVlmApiKey } from '../lib/vlm-config';
 import type { ACPStoredConfig, ProviderInfo } from './types';
 import { PROVIDER_REGISTRY } from '../lib/providers';
 
@@ -30,60 +31,15 @@ export class ACPManager {
       const configPath = path.join(os.homedir(), '.everfern', 'config.json');
       if (!fs.existsSync(configPath)) return;
 
-      const raw    = fs.readFileSync(configPath, 'utf-8');
-      const stored = JSON.parse(raw) as ACPStoredConfig;
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const stored = hydrateConfigWithIsolatedKeys(JSON.parse(raw) as any) as ACPStoredConfig;
 
       if (stored.provider) {
-        let actualApiKey = stored.apiKey;
-        const keyPath = path.join(os.homedir(), '.everfern', 'keys', `${stored.provider}.key`);
-        if (fs.existsSync(keyPath)) {
-          actualApiKey = fs.readFileSync(keyPath, 'utf-8').trim();
-        }
-
-        // Load VLM API key from isolated key file (vlm-<provider>.key)
-        let vlmConfig = stored.vlm;
-        if (vlmConfig?.provider) {
-          const vlmKeyPath = path.join(os.homedir(), '.everfern', 'keys', `vlm-${vlmConfig.provider}.key`);
-          const providerKeyPath = path.join(os.homedir(), '.everfern', 'keys', `${vlmConfig.provider}.key`);
-          
-          let vlmKey = '';
-          if (fs.existsSync(vlmKeyPath)) {
-            vlmKey = fs.readFileSync(vlmKeyPath, 'utf-8').trim();
-          }
-
-          // Always prioritize/fallback to the main everfern.key (raw JWT) if VLM is everfern
-          if (vlmConfig.provider === 'everfern') {
-            const everfernKeyPath = path.join(os.homedir(), '.everfern', 'keys', 'everfern.key');
-            if (fs.existsSync(everfernKeyPath)) {
-              const efKey = fs.readFileSync(everfernKeyPath, 'utf-8').trim();
-              // If main key is a JWT, use it as priority or fallback
-              if (efKey.startsWith('eyJ')) {
-                if (!vlmKey.startsWith('eyJ') || vlmKey === '') {
-                  vlmKey = efKey;
-                }
-              }
-            }
-          }
-
-          if (vlmKey) {
-            vlmConfig = { ...vlmConfig, apiKey: vlmKey };
-          } else if (fs.existsSync(providerKeyPath)) {
-            vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(providerKeyPath, 'utf-8').trim() };
-          } else if (vlmConfig.provider === stored.provider) {
-            vlmConfig = { ...vlmConfig, apiKey: actualApiKey };
-          }
-        }
-
-        // Fallback: if main provider key is empty but VLM has a key for the same provider, use VLM key
-        if (!actualApiKey && vlmConfig?.apiKey && vlmConfig.provider === stored.provider) {
-          actualApiKey = vlmConfig.apiKey;
-        }
-
         this.setProvider({
           provider: stored.provider as ProviderType,
-          apiKey:   actualApiKey,
+          apiKey:   stored.apiKey,
           model:    stored.model,
-          vlm:      vlmConfig,
+          vlm:      stored.vlm,
           baseUrl:  stored.baseUrl,
         });
       }
@@ -107,20 +63,34 @@ export class ACPManager {
       }
 
       let vlmConfig = config.vlm;
+      const defaultVlmModelForProvider = (provider: string) => {
+        if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+        if (provider === 'minimax') return 'MiniMax-M3';
+        if (provider === 'ollama' || provider === 'ollama-cloud') return 'qwen3-vl:235b-cloud';
+        if (provider === 'openai') return 'gpt-5.5';
+        if (provider === 'anthropic') return 'claude-opus-4.6';
+        if (provider === 'everfern') return 'fern-1';
+        return 'qwen3-vl:235b-cloud';
+      };
+      if (vlmConfig?.model === 'qwen3-vl:235b-instruct-cloud') {
+        vlmConfig = { ...vlmConfig, model: 'qwen3-vl:235b-cloud' };
+      }
+      if (vlmConfig?.engine === 'cloud' && vlmConfig.provider === 'ollama' && !vlmConfig.model) {
+        vlmConfig = { ...vlmConfig, model: 'qwen3-vl:235b-cloud' };
+      }
+      if (vlmConfig?.engine === 'cloud' && !vlmConfig.model) {
+        vlmConfig = { ...vlmConfig, model: defaultVlmModelForProvider(vlmConfig.provider) };
+      }
+      if (
+        vlmConfig?.engine === 'cloud' &&
+        vlmConfig.provider === 'minimax' &&
+        (!vlmConfig.baseUrl || String(vlmConfig.baseUrl).includes('ollama.com'))
+      ) {
+        vlmConfig = { ...vlmConfig, baseUrl: 'https://api.minimax.io/v1' };
+      }
       if (vlmConfig && !vlmConfig.apiKey) {
-        if (vlmConfig.provider === config.provider) {
-          vlmConfig = { ...vlmConfig, apiKey: config.apiKey };
-        } else {
-          // Attempt to load from disk if different from main provider
-          const providerKeyPath = path.join(os.homedir(), '.everfern', 'keys', `${vlmConfig.provider}.key`);
-          const vlmKeyPath = path.join(os.homedir(), '.everfern', 'keys', `vlm-${vlmConfig.provider}.key`);
-          
-          if (fs.existsSync(vlmKeyPath)) {
-            vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(vlmKeyPath, 'utf-8').trim() };
-          } else if (fs.existsSync(providerKeyPath)) {
-            vlmConfig = { ...vlmConfig, apiKey: fs.readFileSync(providerKeyPath, 'utf-8').trim() };
-          }
-        }
+        const hydrated = hydrateVlmApiKey({ ...config, vlm: vlmConfig } as any);
+        vlmConfig = hydrated.vlm as typeof vlmConfig;
       }
 
       // Clean up stale baseUrl for cloud-only providers

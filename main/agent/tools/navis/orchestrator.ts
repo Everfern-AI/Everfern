@@ -7,7 +7,13 @@
 
 import type { AIClient } from '../../../lib/ai-client';
 import { BrowserSession } from './session';
-import { captureInteractiveElements, formatElementsForPrompt, AriaSnapshotResult } from './element-capture';
+import {
+  captureHtmlDomParserContext,
+  captureInteractiveElements,
+  formatElementsForPrompt,
+  AriaSnapshotResult,
+  type HtmlDomParserContext,
+} from './element-capture';
 import { executeAction, ActionName } from './actions';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { NavisLogger } from './logger';
@@ -54,7 +60,10 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { go_to_url: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false } }, required: ['go_to_url'], additionalProperties: false },
           { properties: { go_back: { type: 'object', additionalProperties: false } }, required: ['go_back'], additionalProperties: false },
           { properties: { click_element: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'], additionalProperties: false } }, required: ['click_element'], additionalProperties: false },
+          { properties: { click_text: { type: 'object', properties: { text: { type: 'string' }, target: { type: 'string' }, role: { type: 'string' }, href: { type: 'string' } }, additionalProperties: false } }, required: ['click_text'], additionalProperties: false },
+          { properties: { smart_click: { type: 'object', properties: { ref: { type: 'string' }, target: { type: 'string' }, text: { type: 'string' }, role: { type: 'string' }, href: { type: 'string' }, url: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } }, additionalProperties: false } }, required: ['smart_click'], additionalProperties: false },
           { properties: { input_text: { type: 'object', properties: { ref: { type: 'string' }, text: { type: 'string' } }, required: ['ref', 'text'], additionalProperties: false } }, required: ['input_text'], additionalProperties: false },
+          { properties: { smart_type: { type: 'object', properties: { ref: { type: 'string' }, target: { type: 'string' }, text: { type: 'string' }, submit: { type: 'boolean' } }, required: ['text'], additionalProperties: false } }, required: ['smart_type'], additionalProperties: false },
           { properties: { hold_element: { type: 'object', properties: { ref: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, holdTimeMs: { type: 'number' } }, additionalProperties: false } }, required: ['hold_element'], additionalProperties: false },
           { properties: { drag_element: { type: 'object', properties: { sourceRef: { type: 'string' }, targetRef: { type: 'string' }, targetX: { type: 'number' }, targetY: { type: 'number' } }, required: ['sourceRef'], additionalProperties: false } }, required: ['drag_element'], additionalProperties: false },
           { properties: { press_key: { type: 'object', properties: { ref: { type: 'string' }, key: { type: 'string' } }, required: ['key'], additionalProperties: false } }, required: ['press_key'], additionalProperties: false },
@@ -65,6 +74,7 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { open_tab: { type: 'object', properties: { url: { type: 'string' } }, additionalProperties: false } }, required: ['open_tab'], additionalProperties: false },
           { properties: { switch_tab: { type: 'object', properties: { index: { type: 'number' }, target: { type: 'string' } }, additionalProperties: false } }, required: ['switch_tab'], additionalProperties: false },
           { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
+          { properties: { wait_for_navigation: { type: 'object', properties: { timeoutMs: { type: 'number' }, urlContains: { type: 'string' } }, additionalProperties: false } }, required: ['wait_for_navigation'], additionalProperties: false },
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
           { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
@@ -109,13 +119,165 @@ const { systemPrompt: NAVIS_SYSTEM_PROMPT, nextStepPrompt: NEXT_STEP_PROMPT } = 
 const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
 Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
 Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
-Actions: go_to_url, go_back, click_element, input_text, scroll_down, scroll_up, wait, extract_content, open_tab, switch_tab, close_tab, done.`;
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, open_tab, switch_tab, close_tab, done.`;
 
 const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
 Current URL: {url_placeholder}
 Tabs: {tabs_placeholder}
 Interactive elements with [index].
 Results: {results_placeholder}`;
+
+function clampText(value: unknown, max = 220): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function parseDomItems(raw: string): any[] | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function compactDomItem(item: any): Record<string, unknown> {
+  const compact: Record<string, unknown> = {};
+  for (const key of [
+    'ref',
+    'role',
+    'tag',
+    'name',
+    'label',
+    'type',
+    'placeholder',
+    'href',
+    'value',
+    'visible',
+    'inViewport',
+    'viewport',
+    'pos',
+    'bbox',
+    'selector',
+    'actions',
+    'priority',
+    'key',
+    'nearbyText',
+    'section',
+    'form',
+    'id',
+    'testId',
+    'nameAttr',
+    'disabled',
+    'checked',
+    'expanded',
+    'selected'
+  ]) {
+    if (item?.[key] == null || item[key] === '') continue;
+    compact[key] = typeof item[key] === 'string'
+      ? clampText(item[key], key === 'href' || key === 'selector' || key === 'nearbyText' ? 260 : 160)
+      : item[key];
+  }
+  return compact;
+}
+
+function buildSemanticDomContext(
+  snapshot: AriaSnapshotResult | null,
+  url: string,
+  title: string,
+  htmlDomParserContext?: HtmlDomParserContext | null,
+): string {
+  const raw = snapshot?.raw || '';
+  const items = parseDomItems(raw);
+
+  if (!items) {
+    const trimmed = raw.length > 12000 ? `${raw.slice(0, 12000)}\n...[truncated]` : raw;
+    return JSON.stringify({
+      page: { url, title, elementCount: snapshot?.elementCount ?? 0, format: 'ariaSnapshot' },
+      ariaSnapshot: trimmed,
+      htmlDomParser: htmlDomParserContext || undefined,
+    }, null, 2);
+  }
+
+  const byPriority = (a: any, b: any) => Number(b?.priority || 0) - Number(a?.priority || 0);
+  const interactive = items.filter(item => item?.ref).sort(byPriority);
+  const visibleInteractive = interactive
+    .filter(item => item.visible !== false && item.inViewport !== false)
+    .slice(0, 90)
+    .map(compactDomItem);
+  const offscreenInteractive = interactive
+    .filter(item => item.visible === false || item.inViewport === false)
+    .slice(0, 45)
+    .map(compactDomItem);
+  const headings = items
+    .filter(item => !item?.ref && /^(h[1-6]|heading)$/i.test(String(item?.role || item?.tag || '')) && item?.name)
+    .slice(0, 40)
+    .map(compactDomItem);
+  const contextText = items
+    .filter(item => !item?.ref && !/^(h[1-6]|heading)$/i.test(String(item?.role || item?.tag || '')) && item?.name)
+    .slice(0, 35)
+    .map(compactDomItem);
+  const formControls = interactive
+    .filter(item => /input|textarea|select|textbox|combobox|checkbox|radio|searchbox/i.test(`${item?.role || ''} ${item?.tag || ''} ${item?.type || ''}`))
+    .sort(byPriority)
+    .slice(0, 60)
+    .map(compactDomItem);
+
+  const context = JSON.stringify({
+    page: {
+      url,
+      title,
+      elementCount: snapshot?.elementCount ?? interactive.length,
+      captureTimeMs: snapshot?.captureTimeMs,
+      refsAvailable: interactive.length,
+      viewportRefs: visibleInteractive.length,
+      offscreenRefs: offscreenInteractive.length,
+    },
+    visibleInteractive,
+    formControls,
+    headings,
+    contextText,
+    offscreenInteractive,
+    htmlDomParser: htmlDomParserContext || undefined,
+  }, null, 2);
+
+  return context.length > 14000 ? `${context.slice(0, 14000)}\n...[truncated]` : context;
+}
+
+function isDomContextWeak(snapshot: AriaSnapshotResult | null, semanticDomContext: string): boolean {
+  if (!snapshot || snapshot.elementCount === 0) return true;
+  if (!semanticDomContext || semanticDomContext.length < 300) return true;
+
+  const items = parseDomItems(snapshot.raw);
+  if (!items) return snapshot.raw.length < 500;
+
+  const interactive = items.filter(item => item?.ref);
+  if (interactive.length === 0) return true;
+
+  const namedInteractive = interactive.filter(item => clampText(item?.name || item?.label || item?.placeholder || item?.href || item?.nearbyText));
+  return namedInteractive.length < Math.min(3, interactive.length);
+}
+
+function formatExtractionReportsForOutput(
+  reports: Array<{ reportPath: string; summary?: string; title?: string; sourceUrl?: string }>
+): string {
+  if (!reports.length) return '';
+
+  const unique = new Map<string, { reportPath: string; summary?: string; title?: string; sourceUrl?: string }>();
+  for (const report of reports) {
+    unique.set(report.reportPath, report);
+  }
+
+  const lines = Array.from(unique.values()).map((report, index) => {
+    const label = report.title || report.sourceUrl || `Report ${index + 1}`;
+    const summary = report.summary ? ` — ${report.summary.slice(0, 240)}` : '';
+    return `- ${label}: ${report.reportPath}${summary}`;
+  });
+
+  return `\n\nNavis temporary extraction report(s):\n${lines.join('\n')}`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -129,6 +291,7 @@ export interface NavisOptions {
   startUrl?: string;
   onProgress?: (msg: string) => void;
   useVision?: boolean;
+  forceVision?: boolean;
   useChromeProfile?: boolean;
   selectedBrowserId?: string;
   useIsolatedBrowser?: boolean;
@@ -166,19 +329,29 @@ export class NavisOrchestrator {
   }
 
   getEventLogger(): NavisLogger { return this.logger; }
+  getAIClient(): AIClient { return this.aiClient; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
     const {
-      task,
+      task: rawTask,
       maxSteps = 40,
       maxActionsPerStep = 8,
       headless = false,
       startUrl,
       useVision = false,
+      forceVision = false,
       useChromeProfile = false,
       selectedBrowserId = 'chrome',
       useIsolatedBrowser = true
-    } = options;
+    } = options || ({} as NavisOptions);
+
+    const task = typeof rawTask === 'string' ? rawTask.trim() : '';
+    if (!task) {
+      const message = 'Navis requires a non-empty task string. The tool call did not include one.';
+      console.warn(`[Navis] ${message}`);
+      this.logger.error(message);
+      return { success: false, output: message, steps: 0 };
+    }
 
     const runStart = Date.now();
     await this.session.launch({
@@ -190,7 +363,7 @@ export class NavisOrchestrator {
       useIsolatedBrowser
     });
     console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
-    console.log(`[Navis] Vision mode: ${useVision ? 'ENABLED' : 'disabled'}`);
+    console.log(`[Navis] Vision setting: ${useVision ? 'available' : 'disabled'}; decision mode: DOM-first${forceVision ? ' with forced vision fallback' : ''}`);
 
     await this.session.page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     console.log(`[Navis] ⏱ initial page load: ${Date.now() - runStart}ms`);
@@ -200,18 +373,20 @@ export class NavisOrchestrator {
     let history: string[] = [];
     let lastResult = '';
     let snapshot: AriaSnapshotResult | null = null;
-    let lastUrl = '';
     let isDoneAction = false;
+    const extractionReports: Array<{ reportPath: string; summary?: string; title?: string; sourceUrl?: string }> = [];
 
     // Background snapshot: started after actions change the page, awaited at next step start
     let pendingSnapshot: Promise<AriaSnapshotResult | null> | null = null;
+    let pendingSnapshotUrl = '';
 
     try {
       let aiRetries = 0;
       const maxAiRetries = 3;
       let lastGoal = '';
       let goalRepeatCount = 0;
-      let forceNextVision = false;
+      let forceNextVision = forceVision;
+      let initialVisionPending = Boolean(forceVision);
 
       // Allow one extra step for a "force finish" synthesis if limit reached
       while (steps <= maxSteps) {
@@ -235,28 +410,55 @@ export class NavisOrchestrator {
           ? pages.map((p, i) => ` Tab ${i}: ${p.url()}`).join('\n')
           : `1 tab open: ${url}`;
 
-        // ── HYBRID CAPTURE: Always capture DOM, capture vision on-demand ──
+        // ── DOM-FIRST CAPTURE: always capture DOM; screenshots are UI progress only unless explicitly forced.
         let screenshotB64: string | null = null;
         let elementsFormatted = '';
         let semanticDomJson = '';
 
         const t2 = Date.now();
         
-        // Capture elements (DOM) always
-        snapshot = await captureInteractiveElements(page);
+        // Capture elements (DOM) always. Prefer a pre-captured snapshot from
+        // the previous step if it is ready for this same active page URL.
+        let snapshotSource = 'sync';
+        let htmlDomParserContext: HtmlDomParserContext | null = null;
+        if (pendingSnapshot) {
+          const pending = pendingSnapshot;
+          const pendingUrl = pendingSnapshotUrl;
+          pendingSnapshot = null;
+          pendingSnapshotUrl = '';
+
+          const prefetched = await Promise.race([
+            pending,
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 80)),
+          ]);
+
+          if (prefetched && (!pendingUrl || pendingUrl === url)) {
+            snapshot = prefetched;
+            snapshotSource = 'prefetch';
+          } else {
+            snapshot = await captureInteractiveElements(page);
+          }
+        } else {
+          snapshot = await captureInteractiveElements(page);
+        }
         elementsFormatted = formatElementsForPrompt(snapshot.raw);
         
-        // Semantic DOM is a lighter JSON representation of the page structure
-        semanticDomJson = JSON.stringify(snapshot.raw); // Or a specialized formatter
+        // Semantic DOM is a compact, model-friendly page structure summary.
+        // html-dom-parser adds a Node-side HTML parse so Navis can still reason
+        // over forms, nav, headings, links, and content when live refs are thin.
+        htmlDomParserContext = await captureHtmlDomParserContext(page);
+        semanticDomJson = buildSemanticDomContext(snapshot, url, title, htmlDomParserContext);
 
-        // Vision is triggered by: 
-        // 1. Orchestrator-level 'useVision' flag (global)
-        // 2. AI request 'request_vision' (step-by-step)
-        // 3. Form interaction detection
-        const shouldCaptureVision = useVision || forceNextVision;
+        // DOM is the primary browser grounding source. Vision is available on-demand
+        // when the DOM is weak, the user explicitly forced it, or the model asks for it.
+        const visionAvailable = Boolean(useVision || forceVision);
+        const domWeak = isDomContextWeak(snapshot, semanticDomJson);
+        const pageHasRenderedContent = url !== '' && !url.includes('about:blank');
+        const shouldCaptureVision = visionAvailable && pageHasRenderedContent && (initialVisionPending || forceNextVision || domWeak);
 
         if (shouldCaptureVision) {
           try {
+            initialVisionPending = false;
             await this.session.annotateElements();
             await page.evaluate(() => {
               const controls = (window as any).__navis_controls;
@@ -317,6 +519,9 @@ If you failed to find the info, report that clearly.`;
           `Open Tabs (${tabCount}):\n${tabsStr}`,
           `Elements:`,
           elementsFormatted,
+          `DOM Grounding Context:`,
+          semanticDomJson,
+          `Vision Grounding: ${visionAvailable ? 'available on request; use current_state.request_vision=true only when DOM/refs are insufficient or visual layout matters' : 'disabled; rely on DOM refs and extraction'}`,
           lastResult ? `Last: ${lastResult}${stuckWarning}` : '',
           finalTurnPrompt,
         ].filter(Boolean).join('\n');
@@ -331,9 +536,8 @@ If you failed to find the info, report that clearly.`;
           .replace(/\{content_below_placeholder\}/g, '');
 
         const t4 = Date.now();
-        // When vision mode is enabled, ALWAYS use vision AI (no fallback to text-only)
-        // When vision mode is disabled, use text-only AI
-        const decision: any = useVision || forceNextVision
+        // DOM/text AI is the default. Vision AI is an on-demand grounding assist.
+        const decision: any = shouldCaptureVision
           ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64, history, elementsFormatted, semanticDomJson)
           : await this.callAI(systemPrompt, inputContext, nextPrompt);
         const t5 = Date.now();
@@ -360,10 +564,10 @@ If you failed to find the info, report that clearly.`;
           goalRepeatCount = 0;
         }
 
-        // Handle on-demand vision requests for the NEXT step
-        forceNextVision = decision.current_state?.request_vision || decision.current_state?.is_form_interaction || false;
+        // Handle on-demand vision requests for the NEXT step only when a vision provider is enabled.
+        forceNextVision = visionAvailable && Boolean(decision.current_state?.request_vision);
         if (forceNextVision) {
-          console.log(`[Navis] AI requested vision/form mode for next step: ${decision.current_state?.request_vision ? 'vision_requested' : 'form_mode'}`);
+          console.log('[Navis] AI requested visual grounding for next step');
         }
 
         this.logger.aiDecision(steps, maxSteps, currentGoal);
@@ -385,16 +589,30 @@ If you failed to find the info, report that clearly.`;
             this.logger,
             steps,
             maxSteps,
+            this.aiClient,
           );
 
           lastResult = result.message;
 
+          if (actionName === 'extract_content' && result.data && typeof result.data === 'object') {
+            const data = result.data as any;
+            if (typeof data.reportPath === 'string') {
+              extractionReports.push({
+                reportPath: data.reportPath,
+                summary: typeof data.summary === 'string' ? data.summary : undefined,
+                title: typeof data.title === 'string' ? data.title : undefined,
+                sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : undefined,
+              });
+            }
+          }
+
           if (actionName === 'done') {
             isDoneAction = true;
+            const doneText = result.message + formatExtractionReportsForOutput(extractionReports);
             this.logger.taskComplete(result.success, steps, lastResult);
             return {
               success: (decision.action?.find((a: any) => a.done)?.done?.success) ?? result.success,
-              output: result.message,
+              output: doneText,
               steps,
             };
           }
@@ -417,25 +635,25 @@ If you failed to find the info, report that clearly.`;
         let captureLabel = 'sync';
 
         if (stateChanged) {
-          const currentUrl = page.url();
-          if (currentUrl !== lastUrl) {
-            // Start capturing next page's elements in background — hidden behind next AI call
-            const captureUrl = currentUrl;
-            pendingSnapshot = page.waitForLoadState('domcontentloaded', { timeout: 1000 })
-              .then(() => captureInteractiveElements(page))
-              .then(r => { console.log(`[Navis] BG capture ready (${captureUrl})`); return r; })
-              .catch(() => { console.log(`[Navis] BG capture failed`); return null; });
-            captureLabel = 'bg';
-          } else {
-            await new Promise((r) => setTimeout(r, 20));
-          }
+          // Start capturing the active page's next DOM in the background.
+          // This is useful after clicks/navigation/tab switches and is consumed
+          // at the start of the next loop if ready.
+          const activePage = this.session.page;
+          const captureUrl = activePage.url();
+          pendingSnapshotUrl = captureUrl;
+          pendingSnapshot = activePage.waitForLoadState('domcontentloaded', { timeout: 800 })
+            .catch(() => null)
+            .then(() => captureInteractiveElements(activePage))
+            .then(r => { console.log(`[Navis] BG capture ready (${captureUrl})`); return r; })
+            .catch(() => { console.log(`[Navis] BG capture failed`); return null; });
+          captureLabel = 'bg';
         }
 
         const t8 = Date.now();
         const stepMs = t8 - t1;
         const wallClock = Date.now() - runStart;
         const visionTag = screenshotB64 ? ' [VISION]' : '';
-        console.log(`[Navis Step ${steps}${visionTag}] pageInfo=${t2-t1}ms capture=${t3-t2}ms build=${t4-t3}ms AI=${t5-t4}ms actions=${t6-t5}ms wait=${t8-t7}ms(${captureLabel}) STEP=${stepMs}ms WALL=${wallClock}ms`);
+        console.log(`[Navis Step ${steps}${visionTag}] pageInfo=${t2-t1}ms capture=${t3-t2}ms(${snapshotSource}) build=${t4-t3}ms AI=${t5-t4}ms actions=${t6-t5}ms wait=${t8-t7}ms(${captureLabel}) STEP=${stepMs}ms WALL=${wallClock}ms`);
 
         this.logger.stepComplete(steps, maxSteps, lastResult);
         history.push(`${decision.current_state?.next_goal} → ${lastResult}`);
@@ -463,7 +681,7 @@ If you failed to find the info, report that clearly.`;
 
       return {
         success: false,
-        output: `Reached maximum ${maxSteps} steps. MISSION INTERRUPTED - Partial Findings Summary:\n\n${partialSummary}`,
+        output: `Reached maximum ${maxSteps} steps. MISSION INTERRUPTED - Partial Findings Summary:\n\n${partialSummary}${formatExtractionReportsForOutput(extractionReports)}`,
         steps,
       };
     } catch (err: any) {
@@ -591,21 +809,32 @@ Provide the report now.`;
       const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
       return this.extractJson(raw);
     } catch (err: any) {
+      const lowerMessage = String(err.message || '').toLowerCase();
       const errMsg = err.message?.slice(0, 120) || 'unknown error';
       this.logger.error(`AI call failed: ${errMsg}`);
 
       // Check for rate limit or monthly limit errors
-      const isRateLimit = err.message?.toLowerCase().includes('429') ||
-                          err.message?.toLowerCase().includes('rate limit') ||
-                          err.message?.toLowerCase().includes('monthly limit') ||
-                          err.message?.toLowerCase().includes('quota exceeded') ||
-                          err.message?.toLowerCase().includes('insufficient quota');
+      const isRateLimit = lowerMessage.includes('429') ||
+                          lowerMessage.includes('rate limit') ||
+                          lowerMessage.includes('monthly limit') ||
+                          lowerMessage.includes('quota exceeded') ||
+                          lowerMessage.includes('insufficient quota');
+      const isRetriable = lowerMessage.includes('fetch failed') ||
+                          lowerMessage.includes('timeout') ||
+                          lowerMessage.includes('aborted') ||
+                          lowerMessage.includes('econnreset') ||
+                          lowerMessage.includes('temporarily unavailable') ||
+                          lowerMessage.includes('503') ||
+                          lowerMessage.includes('502') ||
+                          lowerMessage.includes('500');
 
       if (isRateLimit) {
         const rateLimitMsg = `[Navis] Vision grounding provider rate limit or monthly limit cap reached. Please check your provider's dashboard to upgrade or wait for quota reset.`;
         console.warn(`[Navis] ${rateLimitMsg}`);
         // Note: The user will see this in the chat context through the error message
         // The error is propagated to stop execution
+      } else if (isRetriable) {
+        console.warn('[Navis] Retriable AI call failure detected; continuing with the next recovery path.');
       }
 
       return null;
@@ -618,7 +847,7 @@ Provide the report now.`;
    * vision grounding model (visionClient). Includes a specialized vision prompt that
    * teaches the AI spatial reasoning and visual page understanding.
    *
-   * For EverFern Cloud provider, routes to BRAIN + HAND models for vision grounding.
+   * Vision is only a last-resort fallback for visual-only pages.
    */
   private async callAIVision(
     systemPrompt: string,
@@ -636,7 +865,7 @@ Provide the report now.`;
     try {
       // Check if using EverFern Cloud provider
       if (client.provider === 'everfern') {
-        console.log('[Navis] Using EverFern Cloud vision grounding (BRAIN + HAND)');
+        console.log('[Navis] Using EverFern Cloud visual fallback');
         return await this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client, history, semanticDomJson || domContext);
       }
 
@@ -648,22 +877,24 @@ Provide the report now.`;
       const detail = imgSizeKB > 200 ? 'high' : 'low';
 
       const visionInstructions = `
-VISION MODE ACTIVE — You are seeing a screenshot of the browser page.
+VISION GROUNDING ACTIVE — You are seeing a screenshot plus DOM context for the browser page.
 
 VISUAL ANALYSIS INSTRUCTIONS:
-1. LAYOUT: Identify the page structure — header/nav, main content, sidebar, footer.
+1. DOM FIRST: Use refs, labels, hrefs, input types, and form metadata from the DOM context as the action source.
+   Use the screenshot to disambiguate visual layout, overlays, missing refs, and canvas/custom UI.
+2. LAYOUT: Identify the page structure — header/nav, main content, sidebar, footer.
    Look for the primary content area and focus your actions there.
-2. INTERACTIVE ELEMENTS: The element list ([ref=eN]) maps to clickable/typeable items.
+3. INTERACTIVE ELEMENTS: The element list ([ref=eN]) maps to clickable/typeable items.
    Match visual elements you see in the screenshot to their ref IDs for precise actions.
-3. POPUPS & OVERLAYS: If you see cookie banners, modals, login popups, or consent dialogs
+4. POPUPS & OVERLAYS: If you see cookie banners, modals, login popups, or consent dialogs
    overlaying the content — dismiss them FIRST (click accept/close/X) before proceeding.
-4. LOADING STATES: If the page appears to be loading (spinners, skeleton screens),
+5. LOADING STATES: If the page appears to be loading (spinners, skeleton screens),
    use the wait action before trying to interact.
-5. CAPTCHAS: If you see a CAPTCHA challenge (checkboxes, puzzles, "verify you're human"),
+6. CAPTCHAS: If you see a CAPTCHA challenge (checkboxes, puzzles, "verify you're human"),
    use solve_captcha immediately.
-6. SCROLL INDICATORS: If you can see that content continues below (e.g. partial text,
+7. SCROLL INDICATORS: If you can see that content continues below (e.g. partial text,
    scrollbar visible), use scroll_down to reveal more content.
-7. SEARCH BOXES: When you see a search input, type SHORT keywords (1-2 words maximum).
+8. SEARCH BOXES: When you see a search input, type SHORT keywords (1-2 words maximum).
    Long queries rarely work well on website search.
 
 Use the [ref=eN] identifiers from the Elements list to perform actions.
@@ -754,7 +985,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
   }
 
   /**
-   * EverFern Cloud vision grounding: sends screenshot to BRAIN + HAND models
+   * EverFern Cloud visual fallback: sends screenshot plus DOM context.
    * Returns browser actions that can be executed by NAVIS
    */
   private async callEverFernCloudVision(
@@ -779,7 +1010,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
       const currentUrl = currentUrlMatch ? currentUrlMatch[1] : '';
 
       // If we're on about:blank or no URL, fall back to text-only AI for initial navigation.
-      // Vision grounding (BRAIN+HAND) needs a rendered page to analyze.
+      // Vision grounding needs a rendered page to analyze.
       if (currentUrl.includes('about:blank') || currentUrl === '') {
         console.log('[Navis] At about:blank, falling back to text-only AI for initial navigation.');
         // We throw a special error here that will be caught by callAIVision
@@ -787,12 +1018,11 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
         throw new Error('FALLBACK_TO_TEXT_ONLY');
       }
 
-      console.log('[Navis] Sending to EverFern Cloud vision grounding (BRAIN + HAND)...');
+      console.log('[Navis] Sending to EverFern Cloud visual fallback...');
       console.log('[Navis] Current URL:', currentUrl);
       console.log('[Navis] Objective:', objective.substring(0, 100));
 
       // Call EverFern Cloud API directly using the specialized NAVIS vision endpoint
-      // This routes to Reasoner (BRAIN) and then Action (HAND) models with DOM context
       const baseUrl = client.getFullConfig().baseUrl || 'https://api.everfern.app/api';
       
       // Call /api/navis/vision instead of /api/tars/vision to include DOM context

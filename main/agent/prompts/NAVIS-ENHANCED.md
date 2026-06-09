@@ -95,9 +95,21 @@ Screenshot: [Visual representation with bounding boxes]
   ```json
   {"click_element": {"ref": "e1"}}
   ```
+- `click_text`: Click visible text/label/href/role when the ref is uncertain
+  ```json
+  {"click_text": {"text": "Login", "role": "button"}}
+  ```
+- `smart_click`: Browser-agent click by ref, target/text, href, URL, or coordinates. Use this instead of repeating failed ref clicks.
+  ```json
+  {"smart_click": {"target": "Next"}}
+  ```
 - `input_text`: Type into text field
   ```json
   {"input_text": {"ref": "e2", "text": "search query"}}
+  ```
+- `smart_type`: Type into a field by label/placeholder/name; use submit=true for search/forms
+  ```json
+  {"smart_type": {"target": "Search", "text": "Boston homes", "submit": true}}
   ```
 - `press_key`: Press keyboard key (Enter, Tab, Escape, etc.)
   ```json
@@ -141,6 +153,10 @@ Screenshot: [Visual representation with bounding boxes]
 - `wait`: Pause execution
   ```json
   {"wait": {"ms": 1000}}
+  ```
+- `wait_for_navigation`: Wait for SPA route changes, redirects, or submit/login transitions
+  ```json
+  {"wait_for_navigation": {"timeoutMs": 4000}}
   ```
 - `solve_captcha`: Attempt to solve captcha
   ```json

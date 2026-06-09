@@ -44,6 +44,8 @@ export function useDebateStream() {
         setState(prev => ({
           ...prev,
           isDebating: false,
+          lastDebateId: event.debateId || prev.lastDebateId,
+          currentDebate: null,
         }));
         break;
 
@@ -88,6 +90,17 @@ export function useDebateStream() {
     }
   }, []);
 
+  const skipDebate = useCallback(async (debateId?: string | null) => {
+    const id = debateId || state.lastDebateId;
+    if (!id) return { success: false };
+
+    const api = (window as any).electronAPI?.acp;
+    if (!api?.skipDebate) return { success: false };
+
+    setState(prev => ({ ...prev, isDebating: false, currentDebate: null }));
+    return api.skipDebate(id);
+  }, [state.lastDebateId]);
+
   useEffect(() => {
     // Prevent double-registration
     if (listenerRef.current) return;
@@ -108,6 +121,8 @@ export function useDebateStream() {
   return {
     debate: state.currentDebate,
     isDebating: state.isDebating,
+    lastDebateId: state.lastDebateId,
+    skipDebate,
   };
 }
 

@@ -81,7 +81,8 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
             }
 
             const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            const engine = (id.includes('firefox') || exePath.toLowerCase().includes('firefox')) ? 'firefox' : 'chromium';
+            const isFirefoxBased = id.includes('firefox') || exePath.toLowerCase().includes('firefox') || id.includes('zen') || exePath.toLowerCase().includes('zen');
+            const engine = isFirefoxBased ? 'firefox' : 'chromium';
             
             // Generate icon
             let logo = '';
@@ -127,9 +128,20 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
       'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
       '%LocalAppData%\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'
     ]},
+    { id: 'zen', name: 'Zen Browser', engine: 'firefox' as const, paths: [
+      'C:\\Program Files\\Zen Browser\\zen.exe',
+      '%LocalAppData%\\Programs\\Zen Browser\\zen.exe',
+      '%LocalAppData%\\Zen\\zen.exe'
+    ]},
     { id: 'opera', name: 'Opera', engine: 'chromium' as const, paths: [
       'C:\\Program Files\\Opera\\launcher.exe',
       '%LocalAppData%\\Programs\\Opera\\launcher.exe'
+    ]},
+    { id: 'arc', name: 'Arc', engine: 'chromium' as const, paths: [
+      '%LocalAppData%\\Microsoft\\Arc\\Arc.exe'
+    ]},
+    { id: 'shift', name: 'Shift', engine: 'chromium' as const, paths: [
+      '%LocalAppData%\\Shift\\chromium\\shift.exe'
     ]}
   ];
 

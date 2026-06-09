@@ -1,26 +1,24 @@
 /**
- * EverFern Coding Assistant - Multi-Agent System
+ * EverFern Coding Assistant - Internal Harness Lanes
  *
- * Implements a sophisticated multi-agent coding system where the main Coding Specialist
- * spawns specialized subagents for different development phases:
+ * The live Coding Specialist now runs as a single PI-backed coding agent.
+ * These modules are retained as internal lane helpers/reference types only; coding
+ * requests should not be routed to separate external subagents.
  *
  * 1. Exploration Agent: Read-only codebase scanner and analyzer
  * 2. Planning Agent: Strategy and architecture planner
  * 3. Worker/Implementation Agent: Code writing and bug fixing
- * 4. Code Reviewer: Security and quality checker
- * 5. Test Runner Agent: TDD red/green/refactor specialist
+ * 4. Test Runner Agent: validation helper
  */
 
 export { createExplorationAgent } from './exploration-agent';
 export { createPlanningAgent } from './planning-agent';
 export { createWorkerAgent } from './worker-agent';
-export { createCodeReviewerAgent } from './code-reviewer-agent';
 export { createTestRunnerAgent } from './test-runner-agent';
 
 export type { ExplorationContext, CodebaseMap } from './exploration-agent';
 export type { PlanningContext, DevelopmentPlan } from './planning-agent';
 export type { WorkerContext, ImplementationTask } from './worker-agent';
-export type { ReviewContext, CodeReviewResult } from './code-reviewer-agent';
 export type { TestContext, TestResult } from './test-runner-agent';
 
 /**

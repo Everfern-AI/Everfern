@@ -21,7 +21,10 @@ describe('Navis - JSON Schema', { timeout: 30000 }, () => {
     expect(actionNames).toContain('go_to_url');
     expect(actionNames).toContain('go_back');
     expect(actionNames).toContain('click_element');
+    expect(actionNames).toContain('click_text');
+    expect(actionNames).toContain('smart_click');
     expect(actionNames).toContain('input_text');
+    expect(actionNames).toContain('smart_type');
     expect(actionNames).toContain('press_key');
     expect(actionNames).toContain('scroll_down');
     expect(actionNames).toContain('scroll_up');
@@ -30,9 +33,10 @@ describe('Navis - JSON Schema', { timeout: 30000 }, () => {
     expect(actionNames).toContain('open_tab');
     expect(actionNames).toContain('switch_tab');
     expect(actionNames).toContain('close_tab');
+    expect(actionNames).toContain('wait_for_navigation');
     expect(actionNames).toContain('solve_captcha');
     expect(actionNames).toContain('done');
-    expect(actionNames.length).toBeGreaterThanOrEqual(14);
+    expect(actionNames.length).toBeGreaterThanOrEqual(18);
   });
 });
 

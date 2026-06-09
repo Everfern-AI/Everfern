@@ -17,14 +17,14 @@ import type {
 export class MiniMaxProvider implements ACPProvider {
   private apiKey = '';
   private baseUrl = 'https://api.minimax.io/v1';
-  private model = 'minimax-m2.7';
+  private model = 'MiniMax-M3';
 
   readonly info: ProviderInfo = {
     type: 'minimax',
     name: 'MiniMax',
-    description: 'MiniMax M2.5 and M2.7 via API',
+    description: 'MiniMax 3, M2.7 and M2.5 via API',
     requiresApiKey: true,
-    defaultModel: 'minimax-m2.7',
+    defaultModel: 'MiniMax-M3',
     isLocal: false,
   };
 

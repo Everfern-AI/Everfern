@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 interface LocalExecutionPermissionCardProps {
@@ -30,6 +30,15 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
   onAllowOnce,
 }) => {
   const denyButtonRef = useRef<HTMLButtonElement>(null);
+  const respondedRef = useRef(false);
+  const [responded, setResponded] = useState(false);
+
+  const handleResponse = (handler: () => void) => {
+    if (respondedRef.current) return;
+    respondedRef.current = true;
+    setResponded(true);
+    handler();
+  };
 
   // Auto-focus the deny button for safety-first accessibility
   useEffect(() => {
@@ -209,18 +218,16 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span style={{ fontStyle: "italic", color: "#a16207" }}>Waiting for your reply…</span>
+            <span style={{ fontStyle: "italic", color: "#a16207" }}>{responded ? "Response sent…" : "Waiting for your reply…"}</span>
           </div>
 
           {/* Deny */}
           <button
             ref={denyButtonRef}
-            onClick={() => {
-              console.log("[LocalExecutionPermissionCard] Clicked Deny");
-              onDeny();
-            }}
+            onClick={() => handleResponse(onDeny)}
             onKeyDown={handleKeyDown}
             aria-label="Deny local execution"
+            disabled={responded}
             style={{
               padding: "7px 16px",
               borderRadius: 10,
@@ -229,16 +236,19 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               color: "#4a4846",
               fontSize: 13,
               fontWeight: 500,
-              cursor: "pointer",
+              cursor: responded ? "default" : "pointer",
+              opacity: responded ? 0.55 : 1,
               fontFamily: "var(--font-sans)",
               transition: "all 0.15s ease",
               whiteSpace: "nowrap",
             }}
             onMouseEnter={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f4f0";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#d0cec8";
             }}
             onMouseLeave={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ffffff";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#e8e6d9";
             }}
@@ -248,12 +258,10 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
 
           {/* Always Allow */}
           <button
-            onClick={() => {
-              console.log("[LocalExecutionPermissionCard] Clicked Always Allow");
-              onAlwaysAllow();
-            }}
+            onClick={() => handleResponse(onAlwaysAllow)}
             onKeyDown={handleKeyDown}
             aria-label="Always allow local execution"
+            disabled={responded}
             style={{
               padding: "7px 16px",
               borderRadius: 10,
@@ -262,16 +270,19 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               color: "#4a4846",
               fontSize: 13,
               fontWeight: 500,
-              cursor: "pointer",
+              cursor: responded ? "default" : "pointer",
+              opacity: responded ? 0.55 : 1,
               fontFamily: "var(--font-sans)",
               transition: "all 0.15s ease",
               whiteSpace: "nowrap",
             }}
             onMouseEnter={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f4f0";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#d0cec8";
             }}
             onMouseLeave={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ffffff";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#e8e6d9";
             }}
@@ -281,12 +292,10 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
 
           {/* Allow Once — primary CTA */}
           <button
-            onClick={() => {
-              console.log("[LocalExecutionPermissionCard] Clicked Allow Once");
-              onAllowOnce();
-            }}
+            onClick={() => handleResponse(onAllowOnce)}
             onKeyDown={handleKeyDown}
             aria-label="Allow local execution once"
+            disabled={responded}
             style={{
               padding: "7px 18px",
               borderRadius: 10,
@@ -295,16 +304,19 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               color: "#ffffff",
               fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: responded ? "default" : "pointer",
+              opacity: responded ? 0.55 : 1,
               fontFamily: "var(--font-sans)",
               transition: "all 0.15s ease",
               whiteSpace: "nowrap",
             }}
             onMouseEnter={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#111111";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#111111";
             }}
             onMouseLeave={e => {
+              if (responded) return;
               (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#201e24";
               (e.currentTarget as HTMLButtonElement).style.borderColor = "#201e24";
             }}

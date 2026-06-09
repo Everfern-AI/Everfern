@@ -5,6 +5,33 @@ import * as path from 'path';
 import * as os from 'os';
 
 describe('BrowserSession - Chrome Profile Fallback & Cleanup', { timeout: 30000 }, () => {
+  it('should use CDP-compatible profile strategy without copying the default Chrome profile', () => {
+    const sessionSource = fs.readFileSync(path.join(__dirname, '..', 'session.ts'), 'utf-8');
+
+    expect(sessionSource).toContain('navis-cdp-profiles');
+    expect(sessionSource).toContain('--disable-features=DevToolsDebuggingRestrictions');
+    expect(sessionSource).toContain('export async function openNavisDebugBrowser');
+    expect(sessionSource).not.toContain('function copyEssentialProfileItem');
+    expect(sessionSource).not.toContain('Creating safe fallback profile copy');
+  });
+
+  it('should expose the Navis CDP preparation handler to the renderer', () => {
+    const ipcSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'ipc', 'tool-settings-handlers.ts'), 'utf-8');
+    const preloadSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', '..', 'preload', 'preload.ts'), 'utf-8');
+
+    expect(ipcSource).toContain("ipcMain.handle('debug:open-browser'");
+    expect(ipcSource).toContain('openNavisDebugBrowser');
+    expect(preloadSource).toContain("openDebugBrowser: () => ipcRenderer.invoke('debug:open-browser')");
+  });
+
+  it('should only accept browser-level CDP endpoints for Playwright connectOverCDP', () => {
+    const sessionSource = fs.readFileSync(path.join(__dirname, '..', 'session.ts'), 'utf-8');
+
+    expect(sessionSource).toContain("version.webSocketDebuggerUrl.includes('/devtools/browser/')");
+    expect(sessionSource).toContain("item.webSocketDebuggerUrl.includes('/devtools/browser/')");
+    expect(sessionSource).not.toContain('const target = list.find((item: any) => item?.webSocketDebuggerUrl)');
+  });
+
   it('should fall back gracefully to a standard Chromium instance when useChromeProfile is true but Chrome is not configured/installed', async () => {
     const session = new BrowserSession();
     

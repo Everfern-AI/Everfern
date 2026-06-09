@@ -1,7 +1,7 @@
 /**
  * Desktop Overlay — Apple-style desktop UI indicator for computer-use
  * Uses native desktop rendering with gradient effects and status indicator.
- * Displays cursor position, status, and visual feedback for actions.
+ * Displays status and visual feedback for actions.
  */
 
 import { screen, BrowserWindow } from 'electron';
@@ -9,8 +9,6 @@ import { screen, BrowserWindow } from 'electron';
 export class DesktopOverlay {
   private overlayWindow: BrowserWindow | null = null;
   private statusText: string = 'Computer Use Active';
-  private cursorX: number = 0;
-  private cursorY: number = 0;
   private isVisible: boolean = false;
 
   constructor() {
@@ -127,22 +125,6 @@ export class DesktopOverlay {
             100% { transform: rotate(360deg); }
           }
 
-          /* ── 4-pointed star cursor ── */
-          #cursor {
-            position: fixed;
-            width: 36px;
-            height: 36px;
-            transition: left 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
-                        top  0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
-            opacity: 0;
-            z-index: 2147483647;
-            filter: drop-shadow(0 2px 10px rgba(0,0,0,0.35))
-                    drop-shadow(0 0  4px  rgba(255,255,255,0.6));
-            margin-left: -18px;
-            margin-top: -18px;
-            pointer-events: none;
-          }
-
           .click-anim {
             animation: click 0.5s ease;
           }
@@ -169,20 +151,6 @@ export class DesktopOverlay {
       <body>
         <div class="border-glow"></div>
         <div id="highlight"></div>
-        <div id="cursor">
-          <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M24 4 Q30 18 44 24 Q30 30 24 44 Q18 30 4 24 Q18 18 24 4Z"
-              fill="rgba(255,255,255,0.95)"
-            />
-            <path
-              d="M24 4 Q30 18 44 24 Q30 30 24 44 Q18 30 4 24 Q18 18 24 4Z"
-              fill="none"
-              stroke="rgba(0,0,0,0.10)"
-              stroke-width="0.5"
-            />
-          </svg>
-        </div>
 
         <script>
           // IPC communication with main process
@@ -194,16 +162,7 @@ export class DesktopOverlay {
               if (el) el.textContent = text;
             },
             moveCursor: (x, y, click) => {
-              const c = document.getElementById('cursor');
-              if (!c) return;
-              c.style.opacity = '1';
-              c.style.left = x + 'px';
-              c.style.top = y + 'px';
-              if (click) {
-                c.classList.remove('click-anim');
-                void c.offsetWidth;
-                c.classList.add('click-anim');
-              }
+              // The real OS cursor is moved by robotjs. Do not draw a fake/magic cursor here.
             },
             highlight: (r) => {
               const h = document.getElementById('highlight');
@@ -213,7 +172,6 @@ export class DesktopOverlay {
               h.style.width = r.width + 'px';
               h.style.height = r.height + 'px';
               h.style.opacity = '1';
-              window.desktopOverlayAPI.moveCursor(r.x + r.width / 2, r.y + r.height / 2, true);
               setTimeout(() => { h.style.opacity = '0'; }, 1500);
             }
           };
@@ -255,8 +213,6 @@ export class DesktopOverlay {
   }
 
   moveCursor(x: number, y: number, click: boolean = false): void {
-    this.cursorX = x;
-    this.cursorY = y;
     if (this.overlayWindow) {
       this.overlayWindow.webContents.send('overlay-update', { cursor: { x, y, click } });
     }

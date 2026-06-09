@@ -13,6 +13,7 @@ import {
     Cog6ToothIcon,
     Cog8ToothIcon,
     FolderOpenIcon,
+    PresentationChartBarIcon,
 } from "@heroicons/react/24/outline";
 import type { ToolCallDisplay, LiveToolCall } from '../app/chat/types/index';
 import { MarkdownRenderer } from './MarkdownComponents';
@@ -295,6 +296,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const isPermission = tc.toolName === 'local_permission' || tc.toolName?.includes('permission');
     const isFileSystem = tc.toolName === 'system_files';
     const isSkill = tc.toolName === 'skill' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill';
+    const isPresentation = tc.toolName === 'pptx_generator';
     const skillName = tc.args?.name as string | undefined;
  
      let iconToDisplay = tc.icon;
@@ -323,6 +325,8 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                 </svg>
             );
+        } else if (isPresentation) {
+            iconToDisplay = <PresentationChartBarIcon width={16} height={16} className="opacity-75" />;
         } else {
             iconToDisplay = <img src="/assets/tool-generic.svg" className="w-4 h-4 opacity-75" alt="Generic" />;
         }

@@ -6,6 +6,7 @@ import { DebateEventEmitter } from '../debate-event-emitter';
 import { createMissionIntegrator } from '../mission-integrator';
 import type { MissionTracker } from '../mission-tracker';
 import { nodeLifecycle } from '../services/node-utils';
+import { clearDebateSkip, waitForDebateSkip } from '../debate-skip';
 
 export const createDebateChamberNode = (
   runner: AgentRunner,
@@ -31,22 +32,19 @@ export const createDebateChamberNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
-    // Determine complexity based on intent instead of step count
-    let complexity: 'simple' | 'moderate' | 'complex' = 'moderate';
     const intent = state.currentIntent || 'unknown';
-    const complexIntents = ['coding', 'build', 'automate', 'fix', 'task'];
-    const simpleIntents = ['question', 'conversation', 'unknown'];
+    const lastUserMsg = (state.messages ?? []).filter((m: any) => {
+      const role = m.role || m._getType?.();
+      return role === 'user' || role === 'human';
+    }).pop();
+    const userInput = lastUserMsg
+      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content ?? ''))
+      : '';
 
-    if (complexIntents.includes(intent)) {
-      complexity = 'complex';
-    } else if (simpleIntents.includes(intent)) {
-      complexity = 'simple';
-    }
-
-    if (!PeerAgentDebateEngine.shouldDebate(complexity, 'moderate')) {
-      logger.info(`Task intent "${intent}" (complexity: ${complexity}) below threshold — skipping debate`);
-
-      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: `Complexity: ${complexity}` });
+    const debateDecision = shouldUseDebateChamber(intent, userInput);
+    if (!debateDecision.shouldDebate) {
+      logger.info(`Task intent "${intent}" skipped debate chamber — ${debateDecision.reason}`);
+      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: debateDecision.reason });
       return { debateResult: null };
     }
 
@@ -55,16 +53,7 @@ export const createDebateChamberNode = (
       return { debateResult: null };
     }
 
-    runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${complexity} task`);
-
-
-    const lastUserMsg = (state.messages ?? []).filter((m: any) => {
-      const role = m.role || m._getType?.();
-      return role === 'user' || role === 'human';
-    }).pop();
-    const userInput = lastUserMsg
-      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content ?? ''))
-      : '';
+    runner.telemetry.info(`[DebateChamber] 🎭 STARTING debate for ${debateDecision.reason}`);
 
     // Get all available tools from runner
     const allToolNames = (runner.tools ?? []).map((t: any) => t.name).filter(Boolean);
@@ -86,10 +75,13 @@ export const createDebateChamberNode = (
     };
 
     const debateId = `debate-${Date.now()}`;
+    let debateSkipped = false;
     emitDebateEvent('debate_start', debateId);
 
     // Create callback to emit phase completion events to frontend
     const onPhaseComplete = async (phase: 'vanguard' | 'phantom' | 'arbiter', proposal?: any, review?: any, finalPlan?: any) => {
+      if (debateSkipped) return;
+
       const frontendData = DebateEventEmitter.formatDebateResultForFrontend({
         debateId,
         timestamp: new Date().toISOString(),
@@ -120,7 +112,21 @@ export const createDebateChamberNode = (
     });
 
     try {
-      const debateResult: DebateResult = await engine.debate(context);
+      const outcome = await Promise.race([
+        engine.debate(context).then(result => ({ type: 'result' as const, result })),
+        waitForDebateSkip(debateId).then(() => ({ type: 'skip' as const })),
+      ]);
+
+      if (outcome.type === 'skip') {
+        debateSkipped = true;
+        logger.info(`[DebateChamber] Debate ${debateId} skipped by user`);
+        emitDebateEvent('debate_skipped', debateId, { reason: 'Skipped by user' });
+        clearDebateSkip(debateId);
+        return { debateResult: null };
+      }
+
+      clearDebateSkip(debateId);
+      const debateResult: DebateResult = outcome.result;
 
       const frontendData = DebateEventEmitter.formatDebateResultForFrontend(debateResult);
 
@@ -148,6 +154,7 @@ export const createDebateChamberNode = (
         shouldContinueIteration: undefined,
       };
     } catch (err: any) {
+      clearDebateSkip(debateId);
       console.error(`[DebateChamber] Debate failed: ${err.message}`);
       emitDebateEvent('debate_error', debateId, undefined, err.message.slice(0, 200));
 
@@ -155,3 +162,33 @@ export const createDebateChamberNode = (
     }
   };
 };
+
+function shouldUseDebateChamber(intent: string, userInput: string): { shouldDebate: boolean; reason: string } {
+  const text = userInput.toLowerCase();
+
+  if (['automate', 'question', 'conversation', 'research', 'analyze', 'background_task'].includes(intent)) {
+    return { shouldDebate: false, reason: `Intent ${intent} does not need debate` };
+  }
+
+  const documentOnlyPattern = /\b(write|draft|create|make|update|edit|summari[sz]e)\b[\s\S]{0,80}\b(spec|specs|document|documentation|docs|readme|prd|proposal|report|essay|outline|brief|notes|requirements|changelog)\b/;
+  if (documentOnlyPattern.test(text) && !/\b(implement|code|scaffold|bug|crash|error|security|production)\b/.test(text)) {
+    return { shouldDebate: false, reason: 'Writing specs or documents should not use Debate Chamber' };
+  }
+
+  const criticalBug = /\b(critical|severe|production|prod|security|vulnerability|exploit|data loss|corrupt|crash|outage|payment|auth|permission|privacy|leak|broken deploy|release blocker)\b/.test(text);
+  if (intent === 'fix' && criticalBug) {
+    return { shouldDebate: true, reason: 'critical bug or high-risk fix' };
+  }
+
+  const bigProject = /\b(full|complete|entire|from scratch|scaffold|scafold|new app|new project|whole|large|big|multi[- ]?feature|multi[- ]?agent|dashboard|platform|website|next\.?js|electron|api|backend|frontend|database|auth|payments?)\b/.test(text);
+  if ((intent === 'build' || intent === 'coding') && bigProject) {
+    return { shouldDebate: true, reason: 'large coding/build project' };
+  }
+
+  const complexCoding = /\b(complex|architecture|harness|orchestrat|migration|refactor|multi[- ]?system|distributed|concurrent|race condition|state machine|subagent|manager|cross[- ]?module|end[- ]?to[- ]?end|integration)\b/.test(text);
+  if (['coding', 'build', 'fix', 'task'].includes(intent) && complexCoding) {
+    return { shouldDebate: true, reason: 'complex high-risk engineering task' };
+  }
+
+  return { shouldDebate: false, reason: 'Task is not large, critical, or complex enough for Debate Chamber' };
+}

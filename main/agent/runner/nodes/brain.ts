@@ -14,6 +14,41 @@ import { loadSoul, loadAgents } from '../../personality-manager';
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
 
+export function buildUserInputQuestion(explanation: string, responseContent: string, originalRequest: string): string {
+  const cleanExplanation = explanation.replace(/\s+/g, ' ').trim();
+  const cleanResponse = responseContent.replace(/\s+/g, ' ').trim();
+
+  if (cleanExplanation) {
+    return `I need a little more information before I can continue: ${cleanExplanation}\n\nPlease provide the missing details here.`;
+  }
+
+  if (cleanResponse && cleanResponse.length < 600) {
+    return `${cleanResponse}\n\nPlease provide the missing details here.`;
+  }
+
+  return `Please provide the missing details I need to continue with: ${originalRequest.slice(0, 220)}`;
+}
+
+export function buildAskUserQuestionToolCall(
+  signal: { reason: CompletionReason; explanation: string },
+  responseContent: string,
+  originalRequest: string
+) {
+  return {
+    id: `ask_user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name: 'ask_user_question',
+    arguments: {
+      questions: [
+        {
+          question: buildUserInputQuestion(signal.explanation, responseContent, originalRequest),
+          options: [],
+          multiSelect: false,
+        },
+      ],
+    },
+  };
+}
+
 /**
  * Create a checkpoint for the current agent state.
  *
@@ -804,6 +839,43 @@ export const createBrainNode = (
     if (signal) {
       runner.telemetry.info(`Brain completion signal: ${signal.reason} — ${signal.explanation}`);
 
+      if (signal.reason === 'waiting_for_user_input') {
+        const askTool = buildAskUserQuestionToolCall(signal, responseContent, originalRequest);
+        runner.telemetry.info('[Brain] Converting waiting_for_user_input signal into ask_user_question form');
+        eventQueue?.push({
+          type: 'thought',
+          content: 'I need one more detail from you before I can continue.'
+        });
+
+        const questionState = {
+          ...result,
+          pendingToolCalls: [askTool],
+          completionSignal: null,
+          routingDecision: null,
+          brainToolsInFlight: true,
+          returningFromSpecialist: null,
+          webExplorerComplete: state.webExplorerComplete
+        };
+
+        await createAgentCheckpoint(
+          { ...state, ...questionState },
+          runner,
+          'Brain converted waiting_for_user_input to ask_user_question'
+        );
+
+        return questionState;
+      }
+
+      if (signal.reason === 'cannot_proceed' && signal.explanation) {
+        const existingResponse = responseContent.trim().toLowerCase();
+        const explanation = signal.explanation.trim();
+        if (!existingResponse || !existingResponse.includes(explanation.toLowerCase().slice(0, 80))) {
+          eventQueue?.push({
+            type: 'chunk',
+            content: `I can't proceed with that request: ${explanation}`,
+          });
+        }
+      }
     } else {
       runner.telemetry.warn('Brain completion signal failed');
 

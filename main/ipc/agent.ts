@@ -3,6 +3,7 @@ import { AgentRunner } from '../agent/runner/runner';
 import { globalAbortManager } from '../agent/runner/abort-manager';
 import { acpManager } from '../acp/manager';
 import { AIClient } from '../lib/ai-client';
+import { hydrateConfigWithIsolatedKeys } from '../lib/vlm-config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -10,27 +11,15 @@ import { dbOps } from '../lib/db';
 
 let agentPermissionResolver: ((granted: boolean) => void) | null = null;
 let localExecutionResponseResolver: ((response: { approved: boolean; alwaysAllow: boolean }) => void) | null = null;
+const handledLocalExecutionResponses = new Set<string>();
 
 function loadConfigSync() {
   try {
-    const configPath = path.join(os.homedir(), '.everfern', 'config.json');
+    const configDir = path.join(os.homedir(), '.everfern');
+    const configPath = path.join(configDir, 'config.json');
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-      // Load API keys from ~/.everfern/keys/
-      config.keys = {};
-      const keysDir = path.join(os.homedir(), '.everfern', 'keys');
-      if (fs.existsSync(keysDir)) {
-        const files = fs.readdirSync(keysDir);
-        for (const file of files) {
-          if (file.endsWith('.key')) {
-            const baseName = file.replace('.key', '');
-            const key = fs.readFileSync(path.join(keysDir, file), 'utf-8').trim();
-            config.keys[baseName] = key;
-          }
-        }
-      }
-      return config;
+      return hydrateConfigWithIsolatedKeys(config, configDir);
     }
   } catch (err) {
     console.error('[Config] Error loading config:', err);
@@ -40,6 +29,7 @@ function loadConfigSync() {
 
 import { reflectAndRemember } from '../store/memory-manager';
 import { getAllModelsFlat, FlatModelEntry, PROVIDER_REGISTRY } from '../lib/providers';
+import { requestDebateSkip } from '../agent/runner/debate-skip';
 
 export function registerAgentHandlers() {
   // Event-based channels (one-way communication via sender.send):
@@ -193,6 +183,10 @@ export function registerAgentHandlers() {
     return { success: true };
   });
 
+  ipcMain.handle('debate:skip', (_event, debateId: string) => {
+    return { success: requestDebateSkip(debateId) };
+  });
+
   ipcMain.handle('agent:permission-response', (_event, granted: boolean) => {
     if (agentPermissionResolver) {
       agentPermissionResolver(granted);
@@ -248,6 +242,15 @@ export function registerAgentHandlers() {
   // ipcMain.handle only receives messages from ipcRenderer.invoke.
   ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
     console.log('[local-execution-response] Received IPC response:', JSON.stringify(response));
+    if (!response?.requestId) {
+      console.warn('[local-execution-response] Missing requestId');
+      return;
+    }
+    if (handledLocalExecutionResponses.has(response.requestId)) {
+      console.log('[local-execution-response] Duplicate response ignored for requestId:', response.requestId);
+      return;
+    }
+
     // Import here to avoid circular dependencies
     const { getLocalExecutionResolvers } = require('../agent/tools/pi-tools');
     const resolvers = getLocalExecutionResolvers();
@@ -258,6 +261,9 @@ export function registerAgentHandlers() {
     const resolver = resolvers.get(response.requestId);
     if (resolver) {
       console.log(`[local-execution-response] ✅ Found and executing resolver for requestId: ${response.requestId}`);
+      handledLocalExecutionResponses.add(response.requestId);
+      setTimeout(() => handledLocalExecutionResponses.delete(response.requestId), 10 * 60 * 1000);
+      resolvers.delete(response.requestId);
       resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow });
     } else {
       console.warn('[local-execution-response] ❌ No resolver found for requestId:', response?.requestId);
@@ -269,7 +275,7 @@ export function registerAgentHandlers() {
     const registry = CommandRegistry.getInstance();
     const info = registry.listCommands().find((c: any) => c.id === id);
     if (!info) return { success: false, error: 'Command not found' };
-    return { success: true, status: info.status, output: info.output, exitCode: info.exitCode };
+    return { success: true, status: info.status, output: info.output, exitCode: info.exitCode, cwd: info.cwd };
   });
 
   // ACP Chat Handler (Non-streaming)
@@ -317,7 +323,8 @@ export function registerAgentHandlers() {
     projectId?: string,
     providerType?: string,
     apiKey?: string,
-    assistantMessageId?: string
+    assistantMessageId?: string,
+    operatorMode?: boolean
   }) => {
     const streamSender = event.sender;
     const config = loadConfigSync();
@@ -446,7 +453,7 @@ export function registerAgentHandlers() {
       // ── End draft setup ──────────────────────────────────────────────────
 
       let fullResponse = '';
-      for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId, false, request.assistantMessageId)) {
+      for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode)) {
         if (globalAbortManager.streamAborted) {
           flushBuffers();
           try {
@@ -490,6 +497,12 @@ export function registerAgentHandlers() {
               draftToolCalls.push(tc);
             }
           }
+        } else if (streamEvent.type === 'tool_update') {
+          safeSend('acp:tool-update', {
+            toolName: (streamEvent as any).toolName,
+            toolCallId: (streamEvent as any).toolCallId,
+            update: (streamEvent as any).update,
+          });
         } else if (streamEvent.type === 'tool_call_start') {
           safeSend('acp:tool-call-start', { index: streamEvent.index, toolName: streamEvent.toolName });
         } else if (streamEvent.type === 'tool_call_chunk') {

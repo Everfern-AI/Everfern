@@ -57,7 +57,7 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   ],
   ollama: [], // populated dynamically at runtime
   'ollama-cloud': [
-    'qwen3-vl:235b-instruct-cloud',
+    'qwen3-vl:235b-cloud',
     'kimi-k2.6:cloud',
     'glm-5.1:cloud',
     'gemma4:31b-cloud',
@@ -92,6 +92,7 @@ export interface ProviderMeta {
   type: ProviderType;
   name: string;
   description: string;
+  image: string;
   requiresApiKey: boolean;
   isLocal: boolean;
   defaultModel: string;
@@ -105,6 +106,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'openai',
     name: 'OpenAI',
     description: 'GPT-4o, o1, o3 and more via OpenAI API',
+    image: '/images/ai-providers/openai.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'gpt-4o',
@@ -115,6 +117,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'anthropic',
     name: 'Anthropic',
     description: 'Claude 4 Sonnet, Opus, Haiku via Anthropic API',
+    image: '/images/ai-providers/claude.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'claude-sonnet-4-20250514',
@@ -125,6 +128,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'deepseek',
     name: 'DeepSeek',
     description: 'DeepSeek-V4-Flash and DeepSeek-V4-Pro',
+    image: '/images/ai-providers/deepseek.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'deepseek-v4-pro',
@@ -134,10 +138,11 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
   minimax: {
     type: 'minimax',
     name: 'MiniMax',
-    description: 'MiniMax M2.5 and M2.7 via API',
+    description: 'MiniMax 3, M2.7 and M2.5 via API',
+    image: '/images/ai-providers/minimax.svg',
     requiresApiKey: true,
     isLocal: false,
-    defaultModel: 'minimax-m2.7',
+    defaultModel: 'MiniMax-M3',
     engine: 'online',
     baseUrl: 'https://api.minimax.io/v1',
   },
@@ -145,6 +150,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'gemini',
     name: 'Google Gemini',
     description: 'Gemini 3.1 and 2.5 via Google API',
+    image: '/images/ai-providers/gemini.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'gemini-3.1-pro-preview',
@@ -155,6 +161,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'ollama',
     name: 'Ollama',
     description: 'Run open-source models locally via Ollama',
+    image: '/images/ai-providers/ollama.svg',
     requiresApiKey: false,
     isLocal: true,
     defaultModel: 'llama3',
@@ -165,6 +172,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'ollama-cloud',
     name: 'Ollama Cloud',
     description: 'Cloud-hosted open-source models via Ollama Cloud',
+    image: '/images/ai-providers/ollama.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'llama3.3',
@@ -175,6 +183,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'lmstudio',
     name: 'LM Studio',
     description: 'Local models via LM Studio OpenAI-compatible server',
+    image: '/images/ai-providers/lm-studio.png',
     requiresApiKey: false,
     isLocal: true,
     defaultModel: 'local-model',
@@ -185,6 +194,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'everfern',
     name: 'EverFern Cloud',
     description: 'Managed frontier models optimized for EverFern',
+    image: '/images/logos/black-logo-withoutbg.png',
     requiresApiKey: false,
     isLocal: false,
     defaultModel: 'fern-1',
@@ -195,6 +205,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'openrouter',
     name: 'OpenRouter',
     description: 'A unified API to access dozens of top open and closed source models',
+    image: '/images/ai-providers/openrouter.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'openai/gpt-oss-120b',
@@ -205,6 +216,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     type: 'nvidia',
     name: 'Nvidia NIM',
     description: 'High-performance inference microservices via Nvidia API',
+    image: '/images/ai-providers/nvidia.svg',
     requiresApiKey: true,
     isLocal: false,
     defaultModel: 'google/gemma-4-31b-it',
@@ -325,7 +337,7 @@ export function formatModelName(id: string): string {
     'meta/llama-3.3-70b-instruct': 'Llama 3.3 70B (NIM)',
     'meta/llama-3.2-90b-vision-instruct': 'Llama 3.2 90B Vision (NIM)',
     'google/gemma-4-31b-it': 'Gemma 4 31B (NIM)',
-    'qwen3-vl:235b-instruct-cloud': 'Qwen3 VL 235B (Cloud)',
+    'qwen3-vl:235b-cloud': 'Qwen3 VL 235B (Cloud)',
     'kimi-k2.6:cloud': 'Kimi K2.6 (Cloud)',
     'glm-5.1:cloud': 'GLM 5.1 (Cloud)',
     'gemma4:31b-cloud': 'Gemma 4 31B (Cloud)',

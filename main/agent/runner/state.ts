@@ -141,6 +141,7 @@ export const GraphState = Annotation.Root({
   missionSteps: Annotation<MissionStep[]>(),
   currentStepId: Annotation<string>(),
   // Operator Mode State
+  operatorMode: Annotation<boolean>(),
   operatorSession: Annotation<any>(),
   // Specialized Agent State
   webExplorerComplete: Annotation<boolean>(),
@@ -150,7 +151,9 @@ export const GraphState = Annotation.Root({
   detailsGathered: Annotation<boolean>(),
   isInteractiveTask: Annotation<boolean>(),
   codingComplete: Annotation<boolean>(),
+  codingSpecialistSelfLoopCount: Annotation<number>(),
   dataAnalysisComplete: Annotation<boolean>(),
+  dataAnalysisSelfLoopCount: Annotation<number>(),
   computerUseComplete: Annotation<boolean>(),
   deepResearchComplete: Annotation<boolean>(),
   deepResearchSelfLoopCount: Annotation<number>(),

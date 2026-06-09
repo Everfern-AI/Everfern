@@ -162,6 +162,7 @@ function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateTyp
     navisInvoked: state.navisInvoked ?? false,
     searchInvoked: state.searchInvoked ?? false,
     codingComplete: state.codingComplete ?? false,
+    codingSpecialistSelfLoopCount: state.codingSpecialistSelfLoopCount ?? 0,
     missionId: state.missionId ?? '',
     missionTimeline: state.missionTimeline ?? null,
     missionSteps: state.missionSteps ?? [],
@@ -176,6 +177,7 @@ function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateTyp
     currentStepId: state.currentStepId ?? '',
     webExplorerSelfLoopCount: state.webExplorerSelfLoopCount ?? 0,
     dataAnalysisComplete: state.dataAnalysisComplete ?? false,
+    dataAnalysisSelfLoopCount: state.dataAnalysisSelfLoopCount ?? 0,
     computerUseComplete: state.computerUseComplete ?? false,
     deepResearchComplete: state.deepResearchComplete ?? false,
     deepResearchSelfLoopCount: state.deepResearchSelfLoopCount ?? 0,
@@ -356,7 +358,12 @@ export async function runAgentStep(
       isVisionNative = false;
     }
 
-    if (iterations === 0 && vlm?.model && runner.shouldCaptureScreenshot(lastMsgContent)) {
+    const shouldUseDesktopVision =
+      nodeName !== 'web_explorer' &&
+      state.currentIntent !== 'research' &&
+      runner.shouldCaptureScreenshot(lastMsgContent);
+
+    if (iterations === 0 && vlm?.model && shouldUseDesktopVision) {
       // If native vision exists, keep main client but capture screenshot
       // If not, switch to VLM client
       if (!isVisionNative) {
@@ -589,13 +596,13 @@ export async function runAgentStep(
 
         const agentToolHint =
           nodeName === 'web_explorer' ? `'web_search' or 'navis'` :
-          nodeName === 'coding_specialist' ? `your coding tools (read_file, write_file, terminal_execute, etc.)` :
+          nodeName === 'coding_specialist' ? `your PI coding tools (read, write, edit, grep, find, ls, executePwsh, spawn_agent when coordinating independent coding lanes)` :
           nodeName === 'data_analyst' ? `your data analysis tools (python_executor, read_file, etc.)` :
           `'computer_use'`;
 
         const nudgeMsg: ChatMessage = {
           role: 'system',
-          content: `SYSTEM REMINDER: You are the ${nodeName}. You are specifically designed to use your specialized tools. YOU HAVE ALL NECESSARY PERMISSIONS. Do not explain why you cannot do something. Do not talk about the task. Use ${agentToolHint} NOW to execute the next step of the plan. Output a tool call immediately.`
+          content: `SYSTEM REMINDER: You are the ${nodeName}. You are specifically designed to use your specialized tools. YOU HAVE ALL NECESSARY PERMISSIONS. Do not explain why you cannot do something. Use ${agentToolHint} NOW to execute the next step of the plan. First emit one short user-visible activity sentence about the immediate action, then output the tool call. Do not reveal hidden reasoning, raw JSON, or tool call IDs.`
         };
 
         const nudgeMessages = [...limitedMessages, nudgeMsg];
@@ -653,7 +660,9 @@ export async function runAgentStep(
       textContent = response.content.map((c: any) => 'text' in c ? c.text : '').join('\n');
     }
 
-    const scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
+    let scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
+    // Also remove unclosed <think> or <thought> tags at the end of the string
+    scrubbed = scrubbed.replace(/<(?:think|thought)>[\s\S]*$/i, '').trim();
 
     // If model didn't provide tool calls but intent requires them, parse or nudge
     if (!response.toolCalls || response.toolCalls.length === 0) {

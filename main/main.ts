@@ -37,12 +37,15 @@ import { scheduledTasksManager } from './scheduled-tasks';
 import { AgentRunner } from './agent/runner/runner';
 import { ensureShowUIServer, killShowUIServer } from './agent/runner/showui-server';
 import { AIClient } from './lib/ai-client';
+import { hydrateConfigWithIsolatedKeys } from './lib/vlm-config';
 import { getAllModelsFlat, FlatModelEntry, PROVIDER_REGISTRY, getModelsForProvider, formatModelName } from './lib/providers';
 import { toggleDebugWindow, setupLogging } from './lib/debug';
 import { systemTrayManager } from './lib/system-tray-manager';
 import { autoStartManager } from './lib/auto-start-manager';
 import { integrationService } from './integrations/integration-service';
 import { MessageHandler } from './integrations/message-handler';
+import { DiscordPlatform } from './integrations/discord-platform';
+import { TelegramPlatform } from './integrations/telegram-platform';
 
 // ── Initialize Logging ──────────────────────────────────────────────
 setupLogging();
@@ -427,7 +430,6 @@ async function autoStartEnabledBots(): Promise<void> {
         const discordPlatform = botManager.getPlatform?.('discord');
         if (!discordPlatform) {
           // Platform needs to be configured and registered
-          const { DiscordPlatform } = await import('./integrations/discord-platform');
           const platform = new DiscordPlatform({
             enabled: true,
             config: {
@@ -473,15 +475,7 @@ async function autoStartEnabledBots(): Promise<void> {
         const telegramPlatform = botManager.getPlatform?.('telegram');
         if (!telegramPlatform) {
           // Platform needs to be configured and registered
-          const { TelegramPlatform } = await import('./integrations/telegram-platform');
-          const platform = new TelegramPlatform({
-            enabled: true,
-            config: {
-              botToken: integrationConfig.telegram.botToken,
-              respondToGroups: true,
-              groupMentionOnly: true
-            }
-          });
+          const platform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
           await platform.initialize();
           botManager.registerPlatform('telegram', platform);
 
@@ -772,9 +766,9 @@ Your goal is to be the ultimate workplace companion.
     if (botManager) {
       // Check if at least one bot has model/provider configured
       const hasConfiguredBot =
-        (integrationConfig.discord.enabled && integrationConfig.discord.connected &&
+        (integrationConfig.discord.enabled && integrationConfig.discord.botToken &&
          integrationConfig.discord.model && integrationConfig.discord.provider) ||
-        (integrationConfig.telegram.enabled && integrationConfig.telegram.connected &&
+        (integrationConfig.telegram.enabled && integrationConfig.telegram.botToken &&
          integrationConfig.telegram.model && integrationConfig.telegram.provider);
 
       if (hasConfiguredBot) {
@@ -1023,8 +1017,54 @@ ipcMain.handle('audio:play-sound', async (_event, soundPath: string) => {
 
 // ── IPC: Config ─────────────────────────────────────────────────────
 
+function normalizeVlmConfig(config: any) {
+  if (!config?.vlm) return config;
+  const vlm = { ...config.vlm };
+  const defaultModelForProvider = (provider: string) => {
+    if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+    if (provider === 'minimax') return 'MiniMax-M3';
+    if (provider === 'ollama' || provider === 'ollama-cloud') return 'qwen3-vl:235b-cloud';
+    if (provider === 'openai') return 'gpt-5.5';
+    if (provider === 'anthropic') return 'claude-opus-4.6';
+    if (provider === 'everfern') return 'fern-1';
+    return 'qwen3-vl:235b-cloud';
+  };
+
+  if (
+    vlm.model === 'qwen3-vl:235b-instruct-cloud' ||
+    (vlm.engine === 'cloud' && vlm.provider === 'ollama' && !vlm.model)
+  ) {
+    vlm.model = 'qwen3-vl:235b-cloud';
+  }
+
+  if (vlm.provider === 'ollama-cloud') {
+    vlm.engine = 'cloud';
+    vlm.provider = 'ollama';
+  }
+
+  if (vlm.engine === 'cloud' && vlm.provider === 'ollama') {
+    vlm.model = vlm.model || defaultModelForProvider(vlm.provider);
+    vlm.baseUrl = vlm.baseUrl || 'https://ollama.com';
+  }
+
+  if (vlm.engine === 'cloud' && !vlm.model) {
+    vlm.model = defaultModelForProvider(vlm.provider);
+  }
+
+  if (
+    vlm.engine === 'cloud' &&
+    vlm.provider === 'minimax' &&
+    (!vlm.baseUrl || String(vlm.baseUrl).includes('ollama.com'))
+  ) {
+    vlm.baseUrl = 'https://api.minimax.io/v1';
+  }
+
+  return { ...config, vlm };
+}
+
 ipcMain.handle('save-config', async (_event, config) => {
   try {
+    config = normalizeVlmConfig(config);
     const configDir  = path.join(os.homedir(), '.everfern');
     const configPath = path.join(configDir, 'config.json');
 
@@ -1087,6 +1127,8 @@ function loadConfigSync() {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
       const config = JSON.parse(data);
+      const normalizedConfig = normalizeVlmConfig(config);
+      Object.assign(config, normalizedConfig);
 
       // Auto-migrate hf.co/Qwen/Qwen3-VL-2B-Thinking-GGUF -> qwen3-vl:2b
       if (config.vlm?.model?.includes('hf.co/Qwen/Qwen3-VL-2B-Thinking-GGUF')) {
@@ -1099,35 +1141,7 @@ function loadConfigSync() {
         delete config.vlm.baseUrl;
       }
 
-      config.keys = {};
-
-      const keysDir = path.join(configDir, 'keys');
-      if (fs.existsSync(keysDir)) {
-        const files = fs.readdirSync(keysDir);
-        for (const file of files) {
-          if (file.endsWith('.key')) {
-            const baseName = file.replace('.key', '');
-            const key = fs.readFileSync(path.join(keysDir, file), 'utf-8').trim();
-
-            if (baseName.startsWith('vlm-')) {
-              const vlmProvider = baseName.replace('vlm-', '');
-              if (config.vlm && config.vlm.provider === vlmProvider) {
-                config.vlm.apiKey = key;
-              }
-            } else {
-              config.keys[baseName] = key;
-              if (config.provider === baseName) {
-                config.apiKey = key;
-              }
-            }
-          }
-        }
-      }
-      if (config.vlm && !config.vlm.apiKey) {
-        if (config.vlm.provider === 'everfern' || config.vlm.provider === config.provider) {
-          config.vlm.apiKey = config.apiKey || config.keys?.[config.vlm.provider];
-        }
-      }
+      hydrateConfigWithIsolatedKeys(config, configDir);
       return config;
     }
     return null;
@@ -1545,6 +1559,10 @@ interface IntegrationConfig {
     connected: boolean;
     model?: string;
     provider?: string;
+    requireApproval?: boolean;
+    approvalCode?: string;
+    approvedUsers?: string[];
+    botUsername?: string;
   };
   discord: {
     enabled: boolean;
@@ -1564,6 +1582,9 @@ let integrationConfig: IntegrationConfig = {
     enabled: false,
     botToken: '',
     connected: false,
+    requireApproval: true,
+    approvalCode: '',
+    approvedUsers: [],
   },
   discord: {
     enabled: false,
@@ -1613,6 +1634,27 @@ const saveIntegrationConfig = (config: IntegrationConfig): void => {
     throw error;
   }
 };
+
+const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['telegram']) => ({
+  enabled: true,
+  config: {
+    botToken: telegramConfig.botToken,
+    botUsername: telegramConfig.botUsername,
+    respondToGroups: true,
+    groupMentionOnly: false,
+    requireApproval: telegramConfig.requireApproval !== false,
+    approvalCode: telegramConfig.approvalCode || '',
+    approvedUsers: telegramConfig.approvedUsers || [],
+    onApproveUser: (user: { id: string; name: string; approvedAt: string }) => {
+      const approvedUsers = integrationConfig.telegram.approvedUsers || [];
+      if (!approvedUsers.includes(user.id)) {
+        integrationConfig.telegram.approvedUsers = [...approvedUsers, user.id];
+      }
+      saveIntegrationConfig(integrationConfig);
+      console.log('[Integration] Telegram user approved:', user);
+    }
+  }
+});
 
 // Test Telegram bot connection
 const testTelegramConnection = async (botToken: string): Promise<boolean> => {
@@ -1690,7 +1732,19 @@ ipcMain.handle('integration:get-config', (): Promise<IntegrationConfig> => {
 
 ipcMain.handle('integration:save-config', async (_event, config: IntegrationConfig): Promise<void> => {
   try {
-    integrationConfig = { ...config };
+    integrationConfig = {
+      telegram: {
+        ...integrationConfig.telegram,
+        ...config.telegram,
+        requireApproval: config.telegram?.requireApproval ?? integrationConfig.telegram.requireApproval ?? true,
+        approvalCode: config.telegram?.approvalCode ?? integrationConfig.telegram.approvalCode ?? '',
+        approvedUsers: config.telegram?.approvedUsers ?? integrationConfig.telegram.approvedUsers ?? [],
+      },
+      discord: {
+        ...integrationConfig.discord,
+        ...config.discord,
+      },
+    };
     saveIntegrationConfig(integrationConfig);
     console.log('[Integration] Configuration saved successfully');
 
@@ -1699,9 +1753,9 @@ ipcMain.handle('integration:save-config', async (_event, config: IntegrationConf
     if (botManager) {
       // Check if at least one bot has model/provider configured
       const hasConfiguredBot =
-        (integrationConfig.discord.enabled && integrationConfig.discord.connected &&
+        (integrationConfig.discord.enabled && integrationConfig.discord.botToken &&
          integrationConfig.discord.model && integrationConfig.discord.provider) ||
-        (integrationConfig.telegram.enabled && integrationConfig.telegram.connected &&
+        (integrationConfig.telegram.enabled && integrationConfig.telegram.botToken &&
          integrationConfig.telegram.model && integrationConfig.telegram.provider);
 
       if (hasConfiguredBot) {
@@ -1732,7 +1786,6 @@ ipcMain.handle('integration:save-config', async (_event, config: IntegrationConf
         console.log('[Integration] Updating Discord platform configuration...');
         // Disconnect and reconnect with new config
         await discordPlatform.disconnect();
-        const { DiscordPlatform } = await import('./integrations/discord-platform');
         const newPlatform = new DiscordPlatform({
           enabled: true,
           config: {
@@ -1748,6 +1801,17 @@ ipcMain.handle('integration:save-config', async (_event, config: IntegrationConf
         await newPlatform.initialize();
         botManager.registerPlatform('discord', newPlatform);
         console.log('[Integration] Discord platform updated with new config');
+      }
+
+      // Update Telegram platform config if it's running
+      const telegramPlatform = botManager.getPlatform?.('telegram');
+      if (telegramPlatform && integrationConfig.telegram.enabled) {
+        console.log('[Integration] Updating Telegram platform configuration...');
+        await telegramPlatform.disconnect();
+        const newPlatform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
+        await newPlatform.initialize();
+        botManager.registerPlatform('telegram', newPlatform);
+        console.log('[Integration] Telegram platform updated with new config');
       }
     }
   } catch (error) {
@@ -1798,7 +1862,6 @@ ipcMain.handle('integration:test-connection', async (_event, platform: string): 
             const existingPlatform = botManager.getPlatform?.('discord');
             if (!existingPlatform) {
               console.log('[Integration] Starting Discord bot after successful test...');
-              const { DiscordPlatform } = await import('./integrations/discord-platform');
               const discordPlatform = new DiscordPlatform({
                 enabled: true,
                 config: {
@@ -1822,15 +1885,7 @@ ipcMain.handle('integration:test-connection', async (_event, platform: string): 
             const existingPlatform = botManager.getPlatform?.('telegram');
             if (!existingPlatform) {
               console.log('[Integration] Starting Telegram bot after successful test...');
-              const { TelegramPlatform } = await import('./integrations/telegram-platform');
-              const telegramPlatform = new TelegramPlatform({
-                enabled: true,
-                config: {
-                  botToken: integrationConfig.telegram.botToken,
-                  respondToGroups: true,
-                  groupMentionOnly: false
-                }
-              });
+              const telegramPlatform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
               await telegramPlatform.initialize();
               botManager.registerPlatform('telegram', telegramPlatform);
               console.log('[Integration] Telegram bot started and registered');

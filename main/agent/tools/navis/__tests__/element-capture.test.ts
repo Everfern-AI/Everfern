@@ -11,6 +11,7 @@ import {
   captureFastSnapshot,
   parseRefs,
   parseRefsOptimized,
+  parseHtmlDomParserContext,
   clearElementCache,
   getCacheStats,
   AriaSnapshotResult,
@@ -30,6 +31,38 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
     if (page) await page.close();
     if (browser) await browser.close();
     clearElementCache();
+  });
+
+  describe('html-dom-parser context', () => {
+    test('should extract page structure from raw HTML', () => {
+      const context = parseHtmlDomParserContext(`
+        <html>
+          <head><title>Booking Flow</title></head>
+          <body>
+            <nav aria-label="Primary navigation">
+              <a href="/homes">Homes</a>
+              <a href="/book">Book</a>
+            </nav>
+            <main>
+              <h1>Find a stay</h1>
+              <form action="/search" method="post">
+                <label for="where">Where</label>
+                <input id="where" name="where" placeholder="City or address" />
+                <button type="submit">Search</button>
+              </form>
+              <p>Choose verified listings with flexible booking windows.</p>
+            </main>
+          </body>
+        </html>
+      `);
+
+      expect(context.parser).toBe('html-dom-parser');
+      expect(context.title).toBe('Booking Flow');
+      expect(context.headings.some(item => item.text === 'Find a stay')).toBe(true);
+      expect(context.forms.some(item => item.action === '/search')).toBe(true);
+      expect(context.controls.some(item => item.placeholder === 'City or address')).toBe(true);
+      expect(context.links.some(item => item.href === '/book')).toBe(true);
+    });
   });
 
   describe('Viewport-Aware Filtering (Req 1.5)', () => {

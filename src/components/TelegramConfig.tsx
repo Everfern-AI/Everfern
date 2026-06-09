@@ -18,8 +18,11 @@ interface TelegramConfigProps {
         connected: boolean;
         provider?: string;
         model?: string;
+        requireApproval?: boolean;
+        approvalCode?: string;
+        approvedUsers?: string[];
     };
-    onSave: (config: TelegramConfigData) => Promise<void>;
+    onSave: (config: TelegramConfigData, closeAfterSave?: boolean) => Promise<void>;
     onTest: () => Promise<boolean>;
     testing: boolean;
 }
@@ -28,6 +31,9 @@ interface TelegramConfigData {
     botToken: string;
     provider: string;
     model: string;
+    requireApproval: boolean;
+    approvalCode: string;
+    approvedUsers: string[];
 }
 
 interface ValidationResult {
@@ -44,7 +50,10 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
     const [formData, setFormData] = useState<TelegramConfigData>({
         botToken: config.botToken || '',
         provider: config.provider || '',
-        model: config.model || ''
+        model: config.model || '',
+        requireApproval: config.requireApproval !== false,
+        approvalCode: config.approvalCode || '',
+        approvedUsers: config.approvedUsers || []
     });
 
     const [validation, setValidation] = useState<{
@@ -58,7 +67,7 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
     // Provider and model state
-    const [providers, setProviders] = useState<Array<{ type: string; name: string; enabled?: boolean }>>([]);
+    const [providers, setProviders] = useState<Array<{ type: string; name: string; image?: string; enabled?: boolean }>>([]);
     const [models, setModels] = useState<Array<{ id: string; name: string }>>([]);
 
     const colors = {
@@ -106,14 +115,14 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
     };
 
     // Handle input changes with validation
-    const handleInputChange = (field: keyof TelegramConfigData, value: string) => {
+    const handleInputChange = (field: keyof TelegramConfigData, value: string | boolean | string[]) => {
         const newFormData = { ...formData, [field]: value };
         setFormData(newFormData);
 
         // Validate the changed field
         let fieldValidation: ValidationResult;
         if (field === 'botToken') {
-            fieldValidation = validateBotToken(value);
+            fieldValidation = validateBotToken(String(value));
         } else {
             fieldValidation = { isValid: true };
         }
@@ -128,7 +137,10 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         // Check if there are changes
         const hasFormChanges = newFormData.botToken !== config.botToken ||
                               newFormData.provider !== (config.provider || '') ||
-                              newFormData.model !== (config.model || '');
+                              newFormData.model !== (config.model || '') ||
+                              newFormData.requireApproval !== (config.requireApproval !== false) ||
+                              newFormData.approvalCode !== (config.approvalCode || '') ||
+                              JSON.stringify(newFormData.approvedUsers) !== JSON.stringify(config.approvedUsers || []);
         setHasChanges(hasFormChanges);
 
         if (saveStatus === 'saved') {
@@ -154,7 +166,7 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
 
         setSaveStatus('saving');
         try {
-            await onSave(formData);
+            await onSave(formData, false);
             setSaveStatus('saved');
             setHasChanges(false);
 
@@ -162,6 +174,25 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (error) {
             console.error('Failed to save Telegram configuration:', error);
+            setSaveStatus('error');
+            setTimeout(() => setSaveStatus('idle'), 3000);
+        }
+    };
+
+    const generateApprovalCode = async () => {
+        const code = `fern-${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 6)}`;
+        const nextFormData = { ...formData, approvalCode: code, requireApproval: true };
+        setFormData(nextFormData);
+        setHasChanges(true);
+
+        setSaveStatus('saving');
+        try {
+            await onSave(nextFormData, false);
+            setSaveStatus('saved');
+            setHasChanges(false);
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (error) {
+            console.error('Failed to save Telegram approval code:', error);
             setSaveStatus('error');
             setTimeout(() => setSaveStatus('idle'), 3000);
         }
@@ -179,6 +210,8 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         setTestResult(null); // Clear previous result
 
         try {
+            await onSave(formData, true);
+            setHasChanges(false);
             const result = await onTest();
             setTestResult({
                 success: result,
@@ -209,7 +242,10 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         setFormData({
             botToken: config.botToken || '',
             provider: config.provider || '',
-            model: config.model || ''
+            model: config.model || '',
+            requireApproval: config.requireApproval !== false,
+            approvalCode: config.approvalCode || '',
+            approvedUsers: config.approvedUsers || []
         });
         setHasChanges(false);
     }, [config]);
@@ -219,7 +255,12 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         const loadProviders = async () => {
             try {
                 const providerList = await window.electronAPI.providers.getAll();
-                setProviders(providerList.map(p => ({ type: p.type, name: p.name, enabled: p.enabled })));
+                setProviders(providerList.map(p => ({
+                    type: p.type,
+                    name: p.name,
+                    image: p.image,
+                    enabled: p.enabled
+                })));
             } catch (error) {
                 console.error('Failed to load providers:', error);
             }
@@ -235,9 +276,9 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
                     const modelList = await window.electronAPI.providers.getModels(formData.provider);
                     setModels(modelList.map(m => ({ id: m.id, name: m.name })));
 
-                    // Clear model selection if current model is not in the new provider's list
-                    if (formData.model && !modelList.some(m => m.id === formData.model)) {
-                        setFormData(prev => ({ ...prev, model: '' }));
+                    // Keep a valid model selected when the provider changes.
+                    if (modelList.length > 0 && (!formData.model || !modelList.some(m => m.id === formData.model))) {
+                        setFormData(prev => ({ ...prev, model: modelList[0].id }));
                         setHasChanges(true);
                     }
                 } catch (error) {
@@ -491,6 +532,85 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
                             lineHeight: 1.4
                         }}>
                             Choose which AI model your Telegram bot should use to generate responses.
+                        </p>
+                    </div>
+
+                    {/* Approval Settings */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <label style={{
+                            fontSize: 14,
+                            fontWeight: 500,
+                            color: colors.textPrimary,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6
+                        }}>
+                            User Approval
+                            <CustomTooltip content="Require Telegram users to approve themselves before chatting. The code is generated here and must be sent from Telegram as: fern approve &lt;code&gt;">
+                                <InformationCircleIcon
+                                    width={16}
+                                    height={16}
+                                    style={{ color: colors.textMuted, cursor: "help" }}
+                                />
+                            </CustomTooltip>
+                        </label>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, requireApproval: !prev.requireApproval }))}
+                                style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 8,
+                                    border: `1px solid ${colors.border}`,
+                                    backgroundColor: formData.requireApproval ? colors.primaryButton : colors.buttonBg,
+                                    color: formData.requireApproval ? colors.primaryButtonText : colors.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer"
+                                }}
+                            >
+                                {formData.requireApproval ? "Approval required" : "Approval off"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={generateApprovalCode}
+                                style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 8,
+                                    border: `1px solid ${colors.border}`,
+                                    backgroundColor: colors.buttonBg,
+                                    color: colors.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Generate / Rotate Code
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            readOnly
+                            value={formData.approvalCode}
+                            placeholder="Generate an approval code"
+                            style={{
+                                padding: "12px 16px",
+                                borderRadius: 8,
+                                border: `1px solid ${colors.border}`,
+                                backgroundColor: "#fafafa",
+                                color: colors.textPrimary,
+                                fontSize: 14,
+                                outline: "none",
+                                fontFamily: "monospace"
+                            }}
+                        />
+                        <p style={{
+                            fontSize: 12,
+                            color: colors.textMuted,
+                            margin: 0,
+                            lineHeight: 1.4
+                        }}>
+                            Approved users: {formData.approvedUsers.length}
                         </p>
                     </div>
 

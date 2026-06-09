@@ -119,6 +119,7 @@
     "discord.js": "^14.14.1",
     "electron-squirrel-startup": "^1.0.1",
     "framer-motion": "^12.38.0",
+    "html-dom-parser": "^8.0.0",
     "ibm-cloud-sdk-core": "^5.4.11",
     "js-beautify": "^1.15.4",
     "livekit-client": "^2.18.1",

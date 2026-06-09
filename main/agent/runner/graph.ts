@@ -45,6 +45,23 @@ const getContext = (config: any): ExecutionContext => {
   return ctx;
 };
 
+const getLatestUserText = (state: GraphStateType): string => {
+  const messages = state.messages || [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as any;
+    const role = msg.role || msg.type || msg._getType?.();
+    if (role === 'user' || role === 'human') {
+      return typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '');
+    }
+  }
+  return '';
+};
+
+const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
+  const text = getLatestUserText(state).toLowerCase();
+  return /\b(project|app|website|site|dashboard|clone|scaffold|create[- ]next[- ]app|next\.?js|react app|full[- ]stack|frontend|backend|multi[- ]file|folder|directory|downloads|desktop|feature(?:s)?|build (?:a|an|the)|make (?:a|an|the)|create (?:a|an|the))\b/.test(text);
+};
+
 export const buildGraph = (
   runner: AgentRunner,
   toolDefs: any[],
@@ -416,6 +433,18 @@ If a specialized agent failed to complete a step, identify the issue and use you
             console.log('[Graph] 🔀 Operator intent detected → operator_coordinator');
             return 'operator_coordinator';
         }
+        if (['coding', 'build', 'fix'].includes(intent) && isProjectScaleCodingRequest(state)) {
+            console.log('[Graph] 🔀 Project-scale coding intent detected → task_decomposer');
+            return 'task_decomposer';
+        }
+        if (['coding', 'build', 'fix'].includes(intent)) {
+            console.log('[Graph] 🔀 Direct coding intent detected → coding_specialist');
+            return 'coding_specialist';
+        }
+        if (intent === 'research') {
+            console.log('[Graph] 🔀 Research/browser intent detected → web_explorer');
+            return 'web_explorer';
+        }
         const complexIntents = ['coding', 'build', 'automate', 'fix', 'task'];
         if (complexIntents.includes(intent)) {
             console.log('[Graph] 🔀 Complex intent detected → debate_chamber');
@@ -426,6 +455,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
     }, {
         operator_coordinator: 'operator_coordinator',
         debate_chamber: 'debate_chamber',
+        coding_specialist: 'coding_specialist',
+        web_explorer: 'web_explorer',
         task_decomposer: 'task_decomposer'
     })
     .addConditionalEdges('debate_chamber', (state) => {
@@ -441,9 +472,19 @@ If a specialized agent failed to complete a step, identify the issue and use you
     })
     .addConditionalEdges('task_decomposer', (state) => {
         console.log(`[Graph] 🔀 task_decomposer complete`);
+        if (['coding', 'build', 'fix'].includes(state.currentIntent || '')) {
+            console.log(`[Graph] ➡️ Decomposed coding project → coding_specialist`);
+            return 'coding_specialist';
+        }
+        if (state.currentIntent === 'research') {
+            console.log(`[Graph] ➡️ Decomposed research/browser task → web_explorer`);
+            return 'web_explorer';
+        }
         console.log(`[Graph] ➡️ Routing to global_planner`);
         return 'global_planner';
     }, {
+        coding_specialist: 'coding_specialist',
+        web_explorer: 'web_explorer',
         global_planner: 'global_planner'
     })
     .addEdge('global_planner', 'brain')
@@ -453,7 +494,13 @@ If a specialized agent failed to complete a step, identify the issue and use you
         if (routingDecision) {
             console.log(`[Graph] 🔀 Operator routing decision: ${routingDecision.decision}`);
             switch (routingDecision.decision) {
-                case 'route_coding': return 'coding_specialist';
+                case 'route_coding':
+                    if (isProjectScaleCodingRequest(state)) {
+                        console.log('[Graph] 🔀 Operator project-scale coding route → task_decomposer');
+                        return 'task_decomposer';
+                    }
+                    console.log('[Graph] 🔀 Operator coding route → coding_specialist');
+                    return 'coding_specialist';
                 case 'route_data_analyst': return 'data_analyst';
                 case 'route_web_explorer': return 'web_explorer';
                 case 'route_deep_research': return 'deep_research';
@@ -461,6 +508,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         }
         return END;
     }, {
+        task_decomposer: 'task_decomposer',
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
         web_explorer: 'web_explorer',

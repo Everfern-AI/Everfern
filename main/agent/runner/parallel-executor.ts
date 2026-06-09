@@ -224,7 +224,7 @@ export async function executeSynchronizedParallelGroup(
             const result = await tool.execute(
                 tc.args,
                 (update) => {
-                    eventQueue?.push({ type: 'tool_update', toolName: tc.name, update });
+                    eventQueue?.push({ type: 'tool_update', toolName: tc.name, toolCallId: tc.id, update });
                 },
                 (event) => {
                     eventQueue?.push(event);

@@ -1,5 +1,6 @@
 export type NavisEventType =
   | 'browser_launch'
+  | 'thinking'
   | 'page_navigate'
   | 'element_click'
   | 'element_input'
@@ -24,6 +25,7 @@ export interface NavisEvent {
   url?: string;
   detail?: string;
   base64?: string;
+  metadata?: Record<string, unknown>;
   timestamp: number;
 }
 
@@ -48,6 +50,9 @@ export class NavisLogger {
     switch (event.type) {
       case 'browser_launch':
         parts.push(`Browser launched → ${event.detail || ''}`);
+        break;
+      case 'thinking':
+        parts.push(`Thinking → ${event.detail || event.action || ''}`);
         break;
       case 'page_navigate':
         parts.push(`Navigating to ${event.url || event.action || '...'}`);
@@ -95,6 +100,7 @@ export class NavisLogger {
   }
 
   browserLaunch(detail?: string): void { this.emit({ type: 'browser_launch', detail }); }
+  thinking(step?: number, maxSteps?: number, detail?: string, metadata?: Record<string, unknown>): void { this.emit({ type: 'thinking', step, maxSteps, detail, metadata }); }
   pageNavigate(step?: number, maxSteps?: number, url?: string): void { this.emit({ type: 'page_navigate', step, maxSteps, url }); }
   elementClick(step?: number, maxSteps?: number, target?: string, selector?: string, position?: { x: number; y: number }): void { this.emit({ type: 'element_click', step, maxSteps, target, selector, position }); }
   elementInput(step?: number, maxSteps?: number, target?: string, text?: string, position?: { x: number; y: number }): void { this.emit({ type: 'element_input', step, maxSteps, target, action: text, position }); }

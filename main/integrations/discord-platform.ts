@@ -790,6 +790,16 @@ export class DiscordPlatform extends MessagePlatform {
     console.log(`[Discord] 🔄 Converting message to platform-agnostic format...`);
 
     // Convert to platform-agnostic format
+    const sourceThreadId = 'isThread' in message.channel && typeof message.channel.isThread === 'function' && message.channel.isThread()
+      ? message.channel.id
+      : undefined;
+    const sourceChannelId = sourceThreadId && 'parentId' in message.channel
+      ? message.channel.parentId || message.channel.id
+      : message.channel.id;
+    const conversationKey = sourceThreadId
+      ? `discord:${sourceChannelId}:thread:${sourceThreadId}`
+      : `discord:${message.channel.id}`;
+
     const incomingMessage: IncomingMessage = {
       id: message.id,
       platform: 'discord',
@@ -801,7 +811,8 @@ export class DiscordPlatform extends MessagePlatform {
       chat: {
         id: message.channel.id,
         name: this.getChannelDisplayName(message),
-        type: this.mapChannelType(message.channel.type)
+        type: this.mapChannelType(message.channel.type),
+        threadId: sourceThreadId
       },
       content: {
         text: this.sanitizeInput(message.content),
@@ -814,7 +825,14 @@ export class DiscordPlatform extends MessagePlatform {
         } : undefined
       },
       timestamp: message.createdAt,
-      raw: message
+      raw: message,
+      metadata: {
+        conversationKey,
+        replyTargetId: message.id,
+        sourceGuildId: message.guild?.id,
+        sourceChannelId,
+        sourceThreadId
+      }
     };
 
     console.log(`[Discord] ✅ Message converted successfully`);

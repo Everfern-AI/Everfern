@@ -328,7 +328,7 @@ export default function SetupPage() {
     const [apiKey, setApiKey] = useState("");
     const [vlmMode, setVlmMode] = useState<"local" | "cloud" | "everfern">("local");
     const [vlmCloudProvider, setVlmCloudProvider] = useState("ollama");
-    const [vlmCloudModel, setVlmCloudModel] = useState("qwen3-vl:235b-instruct-cloud");
+    const [vlmCloudModel, setVlmCloudModel] = useState("qwen3-vl:235b-cloud");
     const [vlmCloudUrl, setVlmCloudUrl] = useState("https://ollama.com");
     const [vlmCloudKey, setVlmCloudKey] = useState("");
     const [showuiUrl, setShowuiUrl] = useState("http://127.0.0.1:7860");
@@ -468,7 +468,7 @@ export default function SetupPage() {
             config.vlm = {
                 engine: "cloud",
                 provider: vlmCloudProvider,
-                model: vlmCloudModel.trim() || 'qwen3-vl:235b-instruct-cloud',
+                model: vlmCloudModel.trim() || getVisionDefaultModel(vlmCloudProvider),
                 baseUrl: vlmCloudUrl.trim() || undefined,
                 apiKey: finalCloudKey
             };
@@ -1119,10 +1119,17 @@ export default function SetupPage() {
                                     <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
                                         <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                             <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Provider</label>
-                                            <select value={vlmCloudProvider} onChange={(e) => setVlmCloudProvider(e.target.value)}
+                                            <select value={vlmCloudProvider} onChange={(e) => {
+                                                const provider = e.target.value;
+                                                setVlmCloudProvider(provider);
+                                                setVlmCloudModel(getVisionDefaultModel(provider));
+                                                setVlmCloudUrl(getVisionDefaultBaseUrl(provider));
+                                            }}
                                                 style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                 <option value="ollama" style={{ background: "#f5f4f0" }}>Ollama Compatible Endpoint</option>
                                                 <option value="everfern" style={{ background: "#f5f4f0" }}>EverFern Cloud</option>
+                                                <option value="openrouter" style={{ background: "#f5f4f0" }}>OpenRouter</option>
+                                                <option value="minimax" style={{ background: "#f5f4f0" }}>MiniMax API</option>
                                                 <option value="openai" style={{ background: "#f5f4f0" }}>OpenAI</option>
                                                 <option value="anthropic" style={{ background: "#f5f4f0" }}>Anthropic</option>
                                                 <option value="nvidia" style={{ background: "#f5f4f0" }}>Nvidia NIM</option>
@@ -1134,7 +1141,7 @@ export default function SetupPage() {
                                                 {vlmCloudProvider === 'ollama' ? (
                                                     <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
                                                         style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
-                                                        <option value="qwen3-vl:235b-instruct-cloud">Qwen3 VL 235B (Default)</option>
+                                                        <option value="qwen3-vl:235b-cloud">Qwen3 VL 235B (Default)</option>
                                                         <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
                                                         <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
                                                     </select>
@@ -1145,7 +1152,7 @@ export default function SetupPage() {
                                                     </select>
                                                 ) : (
                                                     <>
-                                                        <input type="text" placeholder={vlmCloudProvider === 'openai' ? "gpt-4o" : "qwen3-vl:235b-instruct-cloud"} value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
+                                                        <input type="text" placeholder={getVisionDefaultModel(vlmCloudProvider)} value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
                                                             style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                             onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                             onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
@@ -1296,3 +1303,21 @@ function ProviderRow({ p, onClick }: { p: { id: string; name: string; logo: any 
         </button>
     );
 }
+    const getVisionDefaultModel = (provider: string) => {
+        if (provider === "openrouter") return "qwen/qwen3-vl-235b-a22b-instruct";
+        if (provider === "minimax") return "MiniMax-M3";
+        if (provider === "ollama") return "qwen3-vl:235b-cloud";
+        if (provider === "openai") return "gpt-5.5";
+        if (provider === "anthropic") return "claude-opus-4.6";
+        if (provider === "everfern") return "fern-1";
+        return "qwen3-vl:235b-cloud";
+    };
+
+    const getVisionDefaultBaseUrl = (provider: string) => {
+        if (provider === "minimax") return "https://api.minimax.io/v1";
+        if (provider === "ollama") return "https://ollama.com";
+        if (provider === "openai") return "https://api.openai.com/v1";
+        if (provider === "anthropic") return "https://api.anthropic.com";
+        if (provider === "nvidia") return "https://integrate.api.nvidia.com/v1";
+        return "";
+    };

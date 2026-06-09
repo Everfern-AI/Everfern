@@ -20,15 +20,19 @@ import {
   executeRightClick,
 } from './form-interactions';
 import { VisionGroundingHybrid } from './hybrid-click';
-import { captureForVision } from './element-capture';
+import { captureForVision, getRefMetadata, invalidateElementSnapshotCache, type RefMetadata } from './element-capture';
 import { loadConfig } from './config';
 import { AIClient } from '../../../lib/ai-client';
+import { createNavisExtractionReport } from './content-extraction-report';
 
 export type ActionName =
   | 'go_to_url'
   | 'go_back'
   | 'click_element'
+  | 'click_text'
+  | 'smart_click'
   | 'input_text'
+  | 'smart_type'
   | 'hold_element'
   | 'drag_element'
   | 'press_key'
@@ -39,6 +43,7 @@ export type ActionName =
   | 'open_tab'
   | 'switch_tab'
   | 'close_tab'
+  | 'wait_for_navigation'
   | 'solve_captcha'
   | 'done'
   // Phase 2: Advanced Form Interactions
@@ -64,42 +69,194 @@ export interface ActionResult {
   data?: unknown;
 }
 
+const PLAYWRIGHT_ROLES = new Set([
+  'alert',
+  'alertdialog',
+  'application',
+  'article',
+  'banner',
+  'blockquote',
+  'button',
+  'caption',
+  'cell',
+  'checkbox',
+  'code',
+  'columnheader',
+  'combobox',
+  'complementary',
+  'contentinfo',
+  'definition',
+  'deletion',
+  'dialog',
+  'directory',
+  'document',
+  'emphasis',
+  'feed',
+  'figure',
+  'form',
+  'generic',
+  'grid',
+  'gridcell',
+  'group',
+  'heading',
+  'img',
+  'insertion',
+  'link',
+  'list',
+  'listbox',
+  'listitem',
+  'log',
+  'main',
+  'marquee',
+  'math',
+  'meter',
+  'menu',
+  'menubar',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'navigation',
+  'none',
+  'note',
+  'option',
+  'paragraph',
+  'presentation',
+  'progressbar',
+  'radio',
+  'radiogroup',
+  'region',
+  'row',
+  'rowgroup',
+  'rowheader',
+  'scrollbar',
+  'search',
+  'searchbox',
+  'separator',
+  'slider',
+  'spinbutton',
+  'status',
+  'strong',
+  'subscript',
+  'superscript',
+  'switch',
+  'tab',
+  'table',
+  'tablist',
+  'tabpanel',
+  'term',
+  'textbox',
+  'time',
+  'timer',
+  'toolbar',
+  'tooltip',
+  'tree',
+  'treegrid',
+  'treeitem',
+]);
+
+function cssAttr(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function existingLocator(locator: any, method: string): Promise<{ locator: any; method: string } | null> {
+  const first = locator.first();
+  if (await first.count().catch(() => 0) > 0) {
+    return { locator: first, method };
+  }
+  return null;
+}
+
+function metadataLabel(meta: RefMetadata | null, ref: string): string {
+  return meta?.name || meta?.label || meta?.placeholder || meta?.nearbyText || meta?.href || ref;
+}
+
 // ── Multi-Strategy Element Finder ───────────────────────────────
 async function findElement(page: Page, ref: string, logger?: NavisLogger): Promise<{ locator: any; name: string }> {
+  const meta = getRefMetadata(page, ref);
+
   const strategies: Array<() => Promise<{ locator: any; method: string } | null>> = [
     // Strategy 1: data-ref (set by our capture script)
     async () => {
       const loc = page.locator(`[data-ref="${ref}"], [data-scroll-ref="${ref}"]`);
-      if (await loc.count() > 0) return { locator: loc, method: 'data-ref' };
-      return null;
+      return existingLocator(loc, 'data-ref');
     },
     // Strategy 2: aria-ref
     async () => {
       const loc = page.locator(`[aria-ref="${ref}"], aria-ref=${ref}`);
-      if (await loc.count() > 0) return { locator: loc, method: 'aria-ref' };
-      return null;
+      return existingLocator(loc, 'aria-ref');
     },
-    // Strategy 3: Parse ref number, try nth-of-type (fallback for complex SPAs)
+    // Strategy 3: Stable selector captured from the DOM JSON
     async () => {
-      const match = ref.match(/e(\d+)/);
-      if (match) {
-        const index = parseInt(match[1]) - 1;
-        // Search in all interactive types
-        const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"], [data-scroll-ref]').nth(index);
-        if (await loc.count() > 0 && await loc.isVisible()) return { locator: loc, method: 'nth-index' };
+      if (!meta?.selector) return null;
+      try {
+        return await existingLocator(page.locator(meta.selector), 'metadata-selector');
+      } catch {
+        return null;
+      }
+    },
+    // Strategy 4: Attribute selectors that usually survive React/Vue rerenders
+    async () => {
+      if (!meta) return null;
+      const locators: any[] = [];
+      if (meta.id) locators.push(page.locator(`[id="${cssAttr(meta.id)}"]`));
+      if (meta.testId) {
+        const value = cssAttr(meta.testId);
+        locators.push(page.locator(`[data-testid="${value}"], [data-test="${value}"], [data-cy="${value}"]`));
+      }
+      if (meta.nameAttr) {
+        const tag = meta.tag && /^[a-z][a-z0-9-]*$/i.test(meta.tag) ? meta.tag : '';
+        locators.push(page.locator(`${tag}[name="${cssAttr(meta.nameAttr)}"]`));
+      }
+      for (const loc of locators) {
+        const found = await existingLocator(loc, 'metadata-attribute');
+        if (found) return found;
       }
       return null;
     },
-    // Strategy 4: Try text content matching
+    // Strategy 5: Accessibility role/name. Good after SPA rerenders.
     async () => {
+      const role = meta?.role;
+      const name = meta?.name || meta?.label || meta?.placeholder;
+      if (!role || !name || !PLAYWRIGHT_ROLES.has(role)) return null;
       try {
-        const text = await page.getAttribute(`[data-ref="${ref}"]`, 'aria-label').catch(() => '') ||
-                       await page.textContent(`[data-ref="${ref}"]`).catch(() => '');
-        if (text && text.trim().length > 2) {
-          const loc = page.getByText(text.trim().slice(0, 50), { exact: false }).first();
-          if (await loc.count() > 0) return { locator: loc, method: 'text-match' };
-        }
+        return await existingLocator((page as any).getByRole(role, { name, exact: false }), 'role-name');
+      } catch {
+        return null;
+      }
+    },
+    // Strategy 6: Input-specific selectors
+    async () => {
+      const label = meta?.label || meta?.name;
+      if (label) {
+        const found = await existingLocator(page.getByLabel(label, { exact: false }), 'label');
+        if (found) return found;
+      }
+      if (meta?.placeholder) {
+        const found = await existingLocator(page.getByPlaceholder(meta.placeholder, { exact: false }), 'placeholder');
+        if (found) return found;
+      }
+      return null;
+    },
+    // Strategy 7: Try text content from metadata or live data-ref
+    async () => {
+      let text = meta?.name || meta?.label || meta?.nearbyText || '';
+      try {
+        text ||= await page.getAttribute(`[data-ref="${ref}"]`, 'aria-label').catch(() => '') ||
+          await page.textContent(`[data-ref="${ref}"]`).catch(() => '') ||
+          '';
       } catch {}
+      if (text && text.trim().length > 2) {
+        return existingLocator(page.getByText(text.trim().slice(0, 50), { exact: false }), 'text-match');
+      }
+      return null;
+    },
+    // Strategy 8: Parse ref number, try nth-of-type as the last resort.
+    async () => {
+      const match = ref.match(/e(\d+)/);
+      if (!match) return null;
+      const index = parseInt(match[1], 10) - 1;
+      const loc = page.locator('button, a, input, select, textarea, [role="button"], [role="link"], [data-scroll-ref]').nth(index);
+      if (await loc.count() > 0 && await loc.isVisible()) return { locator: loc, method: 'nth-index' };
       return null;
     },
   ];
@@ -109,7 +266,7 @@ async function findElement(page: Page, ref: string, logger?: NavisLogger): Promi
     if (result) {
       const name = await result.locator.getAttribute('aria-label').catch(() => '') ||
                      await result.locator.textContent().catch(() => '') ||
-                     ref;
+                     metadataLabel(meta, ref);
       console.log(`[Navis] Element found using ${result.method}: ${name.slice(0, 30)}`);
       return { locator: result.locator, name: name || ref };
     }
@@ -118,17 +275,730 @@ async function findElement(page: Page, ref: string, logger?: NavisLogger): Promi
   throw new Error(`Element with ref=${ref} not found after trying ${strategies.length} strategies`);
 }
 
+async function scrollIntoViewForAction(locator: any): Promise<void> {
+  await locator.scrollIntoViewIfNeeded({ timeout: 700 }).catch(() => {});
+}
+
+async function waitForFastPageSettle(page: Page): Promise<void> {
+  await Promise.race([
+    page.waitForLoadState('domcontentloaded', { timeout: 900 }).catch(() => null),
+    new Promise(resolve => setTimeout(resolve, 180)),
+  ]);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function normalizeNavUrl(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  if (/^(https?:|file:|data:|about:)/i.test(trimmed)) return trimmed;
+  const host = trimmed.split('/')[0].replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  const isLocal =
+    host === 'localhost' ||
+    host.startsWith('localhost:') ||
+    host === '127.0.0.1' ||
+    host.startsWith('127.0.0.1:') ||
+    host === '0.0.0.0' ||
+    host.startsWith('0.0.0.0:') ||
+    host === '::1' ||
+    host.startsWith('::1:');
+  return `${isLocal ? 'http' : 'https'}://${trimmed}`;
+}
+
+function toRole(value?: string): string | undefined {
+  const role = String(value || '').toLowerCase().trim();
+  return PLAYWRIGHT_ROLES.has(role) ? role : undefined;
+}
+
+function normalizeTypedText(value: unknown): string {
+  return String(value ?? '').replace(/\r\n/g, '\n');
+}
+
+async function existingVisibleLocator(
+  locator: any,
+  method: string,
+  target = '',
+  opts: { inputOnly?: boolean; href?: string } = {},
+): Promise<{ locator: any; method: string } | null> {
+  const count = Math.min(await locator.count().catch(() => 0), 30);
+  if (count <= 0) return null;
+
+  const scores = await locator.evaluateAll((nodes: Element[], scoring: { target: string; href: string; inputOnly: boolean }) => {
+    const normalize = (value: string | null | undefined) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const wanted = normalize(scoring.target);
+    const wantedHref = normalize(scoring.href);
+    const inputOnly = Boolean(scoring.inputOnly);
+    const inputTags = new Set(['input', 'textarea', 'select']);
+    const clickTags = new Set(['button', 'a', 'summary']);
+    const inputRoles = new Set(['textbox', 'searchbox', 'combobox']);
+    const clickRoles = new Set(['button', 'link', 'tab', 'menuitem', 'option', 'checkbox', 'radio', 'switch']);
+
+    const labelFor = (el: Element) => {
+      const id = (el as HTMLElement).id;
+      const direct = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent || '' : '';
+      const wrapping = el.closest('label')?.textContent || '';
+      const labelledBy = (el.getAttribute('aria-labelledby') || '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(idPart => document.getElementById(idPart)?.textContent || '')
+        .join(' ');
+      return normalize(direct || wrapping || labelledBy);
+    };
+
+    return nodes.slice(0, 30).map((node, index) => {
+      const el = node as HTMLElement;
+      const tag = el.tagName.toLowerCase();
+      const role = normalize(el.getAttribute('role'));
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      const visible = rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        Number(style.opacity || '1') > 0;
+      const disabled = (el as HTMLInputElement).disabled || el.getAttribute('aria-disabled') === 'true';
+      const inViewport = rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
+      const aria = normalize(el.getAttribute('aria-label'));
+      const placeholder = normalize(el.getAttribute('placeholder'));
+      const title = normalize(el.getAttribute('title'));
+      const name = normalize(el.getAttribute('name'));
+      const id = normalize(el.getAttribute('id'));
+      const value = normalize((el as HTMLInputElement).value);
+      const href = normalize((el as HTMLAnchorElement).href || el.getAttribute('href'));
+      const text = normalize(el.textContent);
+      const label = labelFor(el);
+      const haystacks = [aria, placeholder, title, label, value, text, name, id].filter(Boolean);
+
+      let score = 0;
+      if (visible) score += 100;
+      else score -= 220;
+      if (!disabled) score += 20;
+      else score -= 120;
+      if (inViewport) score += 25;
+
+      const isInput = inputTags.has(tag) || inputRoles.has(role) || el.isContentEditable;
+      const isClick = clickTags.has(tag) || clickRoles.has(role) || el.hasAttribute('onclick') || (el as HTMLElement).tabIndex >= 0;
+      if (inputOnly) {
+        score += isInput ? 70 : -90;
+      } else {
+        score += isClick ? 45 : 0;
+        if (tag === 'button' || role === 'button') score += 24;
+        if (tag === 'a' || role === 'link') score += 18;
+      }
+
+      if (wanted) {
+        let bestTextScore = -20;
+        for (const item of haystacks) {
+          if (item === wanted) bestTextScore = Math.max(bestTextScore, 100);
+          else if (item.startsWith(wanted)) bestTextScore = Math.max(bestTextScore, 72);
+          else if (item.includes(wanted)) bestTextScore = Math.max(bestTextScore, 45);
+          else if (wanted.includes(item) && item.length > 2) bestTextScore = Math.max(bestTextScore, 24);
+        }
+        score += bestTextScore;
+        if (text.length > wanted.length * 8 && text.length > 120) score -= 35;
+      }
+
+      if (wantedHref && href.includes(wantedHref)) score += 90;
+      const area = rect.width * rect.height;
+      if (area > window.innerWidth * window.innerHeight * 0.6) score -= 45;
+      if (area < 8) score -= 20;
+
+      return { index, score };
+    });
+  }, { target, href: opts.href || '', inputOnly: Boolean(opts.inputOnly) }).catch(() => []);
+
+  const best = scores
+    .filter((item: { index: number; score: number }) => Number.isFinite(item.score))
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score)[0];
+
+  if (best) return { locator: locator.nth(best.index), method };
+  return { locator: locator.first(), method };
+}
+
+type BrowserChangeWatcher = {
+  beforeUrl: string;
+  popup: Promise<Page | null>;
+  urlChanged: Promise<boolean>;
+  domChanged: Promise<boolean>;
+};
+
+function startBrowserChangeWatch(page: Page, timeout = 2200): BrowserChangeWatcher {
+  const beforeUrl = page.url();
+  return {
+    beforeUrl,
+    popup: page.context().waitForEvent('page', { timeout }).catch(() => null),
+    urlChanged: page.waitForURL(url => url.toString() !== beforeUrl, { timeout }).then(() => true).catch(() => false),
+    domChanged: page.evaluate((watchMs) => new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (changed: boolean) => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        resolve(changed);
+      };
+
+      const isNavisMutation = (mutation: MutationRecord) => {
+        const target = mutation.target as Element | null;
+        if (!target || target.nodeType !== Node.ELEMENT_NODE) return false;
+        const el = target as Element;
+        if (el.closest?.('[data-navis-overlay], .navis-overlay, #navis-overlay')) return true;
+        if (mutation.type === 'attributes') {
+          const name = mutation.attributeName || '';
+          return name.startsWith('data-navis') || name === 'aria-ref';
+        }
+        return false;
+      };
+
+      const observer = new MutationObserver((mutations) => {
+        if (mutations.some(mutation => !isNavisMutation(mutation))) finish(true);
+      });
+      observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+      setTimeout(() => finish(false), Math.max(150, Number(watchMs) || 1200));
+    }), Math.min(timeout, 1600)).catch(() => false),
+  };
+}
+
+async function finishBrowserChangeWatch(
+  watcher: BrowserChangeWatcher,
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<{ changed: boolean; newPage?: Page; message?: string }> {
+  const outcome = await Promise.race([
+    watcher.popup.then(popup => popup ? ({ type: 'popup' as const, popup }) : null),
+    watcher.urlChanged.then(changed => changed ? ({ type: 'url' as const }) : null),
+    watcher.domChanged.then(changed => changed ? ({ type: 'dom' as const }) : null),
+    sleep(550).then(() => null),
+  ]);
+
+  if (outcome?.type === 'popup') {
+    const popup = outcome.popup;
+    await popup.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await popup.bringToFront().catch(() => {});
+    session.setActivePage(popup);
+    invalidateElementSnapshotCache(popup);
+    logger?.tabChange(step, maxSteps, `switched to new tab: ${popup.url()}`);
+    return { changed: true, newPage: popup, message: `Opened new tab: ${popup.url()}` };
+  }
+
+  if (outcome?.type === 'url' || page.url() !== watcher.beforeUrl) {
+    await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 800 }).catch(() => {});
+    invalidateElementSnapshotCache(page);
+    return { changed: true, message: `Page changed to ${page.url()}` };
+  }
+
+  if (outcome?.type === 'dom') {
+    await waitForFastPageSettle(page);
+    invalidateElementSnapshotCache(page);
+    return { changed: true, message: 'Page DOM changed' };
+  }
+
+  await waitForFastPageSettle(page);
+  invalidateElementSnapshotCache(page);
+  return { changed: false };
+}
+
+async function findHumanTarget(
+  page: Page,
+  target: string,
+  opts: { role?: string; href?: string; inputOnly?: boolean } = {},
+): Promise<{ locator: any; name: string; method: string }> {
+  const text = String(target || '').replace(/\s+/g, ' ').trim();
+  if (!text && !opts.href) throw new Error('Missing target text');
+
+  const candidates: Array<() => Promise<{ locator: any; method: string } | null>> = [];
+  const preferredRoles = opts.inputOnly
+    ? ['textbox', 'searchbox', 'combobox']
+    : [toRole(opts.role), 'button', 'link', 'tab', 'menuitem', 'option', 'checkbox', 'radio', 'switch']
+        .filter(Boolean) as string[];
+
+  for (const role of preferredRoles) {
+    candidates.push(async () => {
+      if (!text) return null;
+      try {
+        return await existingVisibleLocator((page as any).getByRole(role, { name: text, exact: false }), `role:${role}`, text, opts);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  if (opts.href) {
+    candidates.push(async () => {
+      try {
+        return await existingVisibleLocator(page.locator(`a[href*="${cssAttr(opts.href || '')}"]`), 'href', text, opts);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  if (text) {
+    candidates.push(
+      async () => existingVisibleLocator(page.getByLabel(text, { exact: false }), 'label', text, opts),
+      async () => existingVisibleLocator(page.getByPlaceholder(text, { exact: false }), 'placeholder', text, opts),
+      async () => existingVisibleLocator(page.getByTitle(text, { exact: false }), 'title', text, opts),
+      async () => {
+        const selector = opts.inputOnly
+          ? 'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="combobox"]'
+          : 'button, a, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [tabindex]:not([tabindex="-1"])';
+        return existingVisibleLocator(page.locator(selector).filter({ hasText: text }), 'filtered-text', text, opts);
+      },
+      async () => existingVisibleLocator(page.getByText(text, { exact: false }), 'page-text', text, opts),
+    );
+  }
+
+  for (const candidate of candidates) {
+    const found = await candidate().catch(() => null);
+    if (found) {
+      const name = await found.locator.getAttribute('aria-label').catch(() => '') ||
+        await found.locator.getAttribute('placeholder').catch(() => '') ||
+        await found.locator.textContent().catch(() => '') ||
+        text ||
+        opts.href ||
+        'element';
+      return { locator: found.locator, name: String(name).replace(/\s+/g, ' ').trim(), method: found.method };
+    }
+  }
+
+  const marker = `navis-smart-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const marked = await page.evaluate(({ text: needle, inputOnly, marker }) => {
+    const normalize = (value: string | null | undefined) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const wanted = normalize(needle);
+    if (!wanted) return false;
+    const selector = inputOnly
+      ? 'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="combobox"]'
+      : 'button, a, input, select, textarea, summary, [role], [onclick], [tabindex]:not([tabindex="-1"])';
+    const associatedLabel = (el: Element) => {
+      const id = (el as HTMLElement).id;
+      const direct = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent || '' : '';
+      const wrapping = el.closest('label')?.textContent || '';
+      const labelledBy = (el.getAttribute('aria-labelledby') || '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(idPart => document.getElementById(idPart)?.textContent || '')
+        .join(' ');
+      return [direct, wrapping, labelledBy].filter(Boolean).join(' ');
+    };
+    for (const el of Array.from(document.querySelectorAll(selector))) {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      const style = window.getComputedStyle(el as HTMLElement);
+      if (rect.width < 1 || rect.height < 1 || style.display === 'none' || style.visibility === 'hidden') continue;
+      const labels = [
+        el.getAttribute('aria-label'),
+        associatedLabel(el),
+        el.getAttribute('placeholder'),
+        el.getAttribute('title'),
+        el.textContent,
+        el.getAttribute('value'),
+        el.getAttribute('name'),
+        el.getAttribute('id'),
+      ].map(value => normalize(value)).filter(Boolean);
+      const label = labels.join(' | ');
+      if (label.includes(wanted)) {
+        el.setAttribute('data-navis-smart-target', marker);
+        return true;
+      }
+    }
+    return false;
+  }, { text, inputOnly: Boolean(opts.inputOnly), marker }).catch(() => false);
+
+  if (marked) {
+    return { locator: page.locator(`[data-navis-smart-target="${marker}"]`).first(), name: text || opts.href || 'element', method: 'dom-fuzzy' };
+  }
+
+  throw new Error(`Could not find browser target "${text || opts.href}"`);
+}
+
+async function dispatchDomClick(locator: any): Promise<boolean> {
+  return Boolean(await locator.evaluate((el: HTMLElement) => {
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as ScrollBehavior });
+      el.focus?.({ preventScroll: true });
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const eventBase = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+        screenX: window.screenX + x,
+        screenY: window.screenY + y,
+        button: 0,
+        buttons: 1,
+      };
+      const PointerEventCtor = (window as any).PointerEvent;
+      if (PointerEventCtor) {
+        el.dispatchEvent(new PointerEventCtor('pointerover', { ...eventBase, pointerId: 1, pointerType: 'mouse' }));
+        el.dispatchEvent(new PointerEventCtor('pointerenter', { ...eventBase, pointerId: 1, pointerType: 'mouse' }));
+        el.dispatchEvent(new PointerEventCtor('pointerdown', { ...eventBase, pointerId: 1, pointerType: 'mouse' }));
+      }
+      el.dispatchEvent(new MouseEvent('mouseover', eventBase));
+      el.dispatchEvent(new MouseEvent('mouseenter', eventBase));
+      el.dispatchEvent(new MouseEvent('mousedown', eventBase));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...eventBase, buttons: 0 }));
+      if (PointerEventCtor) {
+        el.dispatchEvent(new PointerEventCtor('pointerup', { ...eventBase, buttons: 0, pointerId: 1, pointerType: 'mouse' }));
+      }
+      if (typeof (el as HTMLButtonElement | HTMLAnchorElement).click === 'function') {
+        (el as HTMLButtonElement | HTMLAnchorElement).click();
+      } else {
+        el.dispatchEvent(new MouseEvent('click', { ...eventBase, buttons: 0 }));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }).catch(() => false));
+}
+
+async function clickAtLocatorCenter(page: Page, locator: any): Promise<boolean> {
+  const box = await locator.boundingBox().catch(() => null);
+  if (!box) return false;
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  await page.mouse.move(centerX, centerY).catch(() => {});
+  await page.mouse.down().catch(() => {});
+  await sleep(20);
+  await page.mouse.up().catch(() => {});
+  return true;
+}
+
+async function installLocatorClickProbe(locator: any): Promise<string | null> {
+  const token = `navis-click-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const installed = await locator.evaluate((el: HTMLElement, probeToken: string) => {
+    try {
+      const w = window as any;
+      w.__navisElementClickProbe ||= {};
+      w.__navisElementClickProbe[probeToken] = false;
+      el.addEventListener('click', () => {
+        w.__navisElementClickProbe[probeToken] = true;
+      }, { capture: true, once: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }, token).catch(() => false);
+  return installed ? token : null;
+}
+
+async function locatorClickProbeFired(locator: any, token: string | null): Promise<boolean> {
+  if (!token) return true;
+  return Boolean(await locator.evaluate((_el: HTMLElement, probeToken: string) => {
+    return Boolean((window as any).__navisElementClickProbe?.[probeToken]);
+  }, token).catch(() => true));
+}
+
+async function performReliableClick(page: Page, locator: any): Promise<{ ok: boolean; method: string }> {
+  const attempts: Array<{ method: string; run: () => Promise<boolean> }> = [
+    {
+      method: 'playwright',
+      run: async () => locator.click({ timeout: 1100, force: false }).then(() => true),
+    },
+    {
+      method: 'playwright-force',
+      run: async () => locator.click({ timeout: 900, force: true }).then(() => true),
+    },
+    {
+      method: 'mouse-center',
+      run: async () => clickAtLocatorCenter(page, locator),
+    },
+    {
+      method: 'dom-events',
+      run: async () => dispatchDomClick(locator),
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const probe = await installLocatorClickProbe(locator);
+    const ok = await attempt.run().catch(() => false);
+    if (ok && await locatorClickProbeFired(locator, probe)) return { ok: true, method: attempt.method };
+  }
+
+  return { ok: false, method: 'none' };
+}
+
+async function readLocatorEditableValue(locator: any): Promise<string | null> {
+  const value = await locator.evaluate((el: HTMLElement) => {
+    const node = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
+    if ('value' in node) return String(node.value ?? '');
+    if (el.isContentEditable) return el.textContent || '';
+    return el.getAttribute('value') || el.textContent || '';
+  }).catch(() => null);
+  return value == null ? null : normalizeTypedText(value);
+}
+
+async function isEditableLocator(locator: any): Promise<boolean> {
+  return Boolean(await locator.evaluate((el: HTMLElement) => {
+    const tag = el.tagName.toLowerCase();
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    return el.isContentEditable ||
+      ['input', 'textarea', 'select'].includes(tag) ||
+      ['textbox', 'searchbox', 'combobox'].includes(role) ||
+      el.getAttribute('contenteditable') === 'true';
+  }).catch(() => false));
+}
+
+async function domSetEditableValue(locator: any, text: string): Promise<boolean> {
+  return Boolean(await locator.evaluate((el: HTMLElement, nextValue: string) => {
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' as ScrollBehavior });
+      el.focus?.({ preventScroll: true });
+
+      const protoInput = window.HTMLInputElement?.prototype;
+      const protoTextArea = window.HTMLTextAreaElement?.prototype;
+      const protoSelect = window.HTMLSelectElement?.prototype;
+      const node = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
+
+      const setNativeValue = (target: any, value: string) => {
+        const proto =
+          target instanceof HTMLInputElement ? protoInput :
+          target instanceof HTMLTextAreaElement ? protoTextArea :
+          target instanceof HTMLSelectElement ? protoSelect :
+          null;
+        const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+        if (descriptor?.set) descriptor.set.call(target, value);
+        else target.value = value;
+      };
+
+      if (el.isContentEditable) {
+        el.textContent = nextValue;
+      } else if ('value' in node) {
+        setNativeValue(node, nextValue);
+      } else {
+        el.setAttribute('value', nextValue);
+        el.textContent = nextValue;
+      }
+
+      const inputType = el.isContentEditable ? 'insertText' : 'insertReplacementText';
+      const InputEventCtor = (window as any).InputEvent;
+      if (InputEventCtor) {
+        el.dispatchEvent(new InputEventCtor('beforeinput', { bubbles: true, cancelable: true, inputType, data: nextValue }));
+        el.dispatchEvent(new InputEventCtor('input', { bubbles: true, inputType, data: nextValue }));
+      } else {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, text).catch(() => false));
+}
+
+async function performReliableType(page: Page, locator: any, text: string): Promise<{ ok: boolean; method: string; value?: string | null }> {
+  const expected = normalizeTypedText(text);
+  const verify = async (method: string) => {
+    const value = await readLocatorEditableValue(locator);
+    return {
+      ok: value === expected,
+      method,
+      value,
+    };
+  };
+
+  const attempts: Array<{ method: string; run: () => Promise<void> }> = [
+    {
+      method: 'fill',
+      run: async () => { await locator.fill(text, { timeout: 1200 }); },
+    },
+    {
+      method: 'click-keyboard',
+      run: async () => {
+        await locator.click({ timeout: 800, force: true }).catch(() => clickAtLocatorCenter(page, locator));
+        await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A').catch(() => {});
+        await page.keyboard.type(text, { delay: 0 });
+      },
+    },
+    {
+      method: 'dom-value',
+      run: async () => {
+        const ok = await domSetEditableValue(locator, text);
+        if (!ok) throw new Error('DOM value assignment failed');
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    await attempt.run().catch(() => {});
+    const result = await verify(attempt.method);
+    if (result.ok) return result;
+  }
+
+  const final = await verify('failed');
+  return { ok: false, method: final.method, value: final.value };
+}
+
+async function dispatchDomClickAtPoint(page: Page, x: number, y: number): Promise<boolean> {
+  return Boolean(await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    if (!el) return false;
+    try {
+      el.focus?.({ preventScroll: true });
+      const eventBase = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+        screenX: window.screenX + x,
+        screenY: window.screenY + y,
+        button: 0,
+        buttons: 1,
+      };
+      const PointerEventCtor = (window as any).PointerEvent;
+      if (PointerEventCtor) {
+        el.dispatchEvent(new PointerEventCtor('pointerdown', { ...eventBase, pointerId: 1, pointerType: 'mouse' }));
+      }
+      el.dispatchEvent(new MouseEvent('mousedown', eventBase));
+      el.dispatchEvent(new MouseEvent('mouseup', { ...eventBase, buttons: 0 }));
+      if (PointerEventCtor) {
+        el.dispatchEvent(new PointerEventCtor('pointerup', { ...eventBase, buttons: 0, pointerId: 1, pointerType: 'mouse' }));
+      }
+      if (typeof (el as HTMLButtonElement | HTMLAnchorElement).click === 'function') {
+        (el as HTMLButtonElement | HTMLAnchorElement).click();
+      } else {
+        el.dispatchEvent(new MouseEvent('click', { ...eventBase, buttons: 0 }));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, { x, y }).catch(() => false));
+}
+
+async function clickLocator(
+  locator: any,
+  name: string,
+  selectorLabel: string,
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  await scrollIntoViewForAction(locator);
+
+  const validation = await validateElement(locator, 'click', logger);
+  if (validation !== null) {
+    return {
+      success: false,
+      message: `Target "${truncate(String(name), 40)}" ${validation}. Try waiting, scrolling, or a different target.`,
+      stateChanged: false,
+    };
+  }
+
+  const box = await locator.boundingBox().catch(() => null);
+  let position: { x: number; y: number } | undefined;
+  const watcher = startBrowserChangeWatch(page);
+
+  if (box) {
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+    position = { x: centerX, y: centerY };
+    session.moveCursor(centerX, centerY).catch(() => {});
+    session.highlightElement(box).catch(() => {});
+  }
+
+  const clickResult = await performReliableClick(page, locator);
+  if (!clickResult.ok) {
+    return {
+      success: false,
+      message: `Click failed: target "${truncate(String(name), 40)}" did not accept Playwright, mouse, or DOM click attempts.`,
+      stateChanged: false,
+    };
+  }
+
+  const change = await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
+  logger?.elementClick(step, maxSteps, truncate(String(name), 40), `${selectorLabel}:${clickResult.method}`, position);
+  await session.setOverlayStatus(`Clicked "${truncate(String(name), 20)}"`);
+
+  return {
+    success: true,
+    message: change.message ? `Clicked "${name}" via ${clickResult.method}. ${change.message}` : `Clicked "${name}" via ${clickResult.method}`,
+    stateChanged: true,
+  };
+}
+
+async function typeIntoLocator(
+  locator: any,
+  name: string,
+  text: string,
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+  submit = false,
+): Promise<ActionResult> {
+  await scrollIntoViewForAction(locator);
+
+  const validation = await validateElement(locator, 'input', logger);
+  if (validation !== null) {
+    return {
+      success: false,
+      message: `Target "${truncate(String(name), 40)}" ${validation}. Try waiting, scrolling, or a different input.`,
+      stateChanged: false,
+    };
+  }
+
+  const box = await locator.boundingBox().catch(() => null);
+  let position: { x: number; y: number } | undefined;
+  if (box) {
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+    position = { x: centerX, y: centerY };
+    session.moveCursor(centerX, centerY).catch(() => {});
+    session.highlightElement(box).catch(() => {});
+  }
+
+  const typed = await performReliableType(page, locator, text);
+  if (!typed.ok) {
+    return {
+      success: false,
+      message: `Typing failed: target "${truncate(String(name), 40)}" value is ${JSON.stringify(typed.value ?? '')} after ${typed.method}; expected ${JSON.stringify(text)}.`,
+      stateChanged: false,
+    };
+  }
+  invalidateElementSnapshotCache(page);
+
+  if (submit) {
+    const watcher = startBrowserChangeWatch(page);
+    await locator.press('Enter', { timeout: 1000 }).catch(() => page.keyboard.press('Enter'));
+    await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
+  }
+
+  logger?.elementInput(step, maxSteps, truncate(String(name), 30), text, position);
+  await session.setOverlayStatus(`Typed "${truncate(text, 20)}"`);
+  return { success: true, message: `Entered text into ${name} via ${typed.method}`, stateChanged: Boolean(submit) };
+}
+
 // ── Element Validation ─────────────────────────────────────────
 // Returns null if element is valid (visible + enabled), or a string explaining why it's not.
 async function validateElement(locator: any, action: string, logger?: NavisLogger): Promise<string | null> {
   try {
-    const isVisible = await locator.isVisible({ timeout: 1000 }).catch(() => false);
+    const isVisible = await locator.isVisible({ timeout: 300 }).catch(() => false);
     if (!isVisible) {
       console.warn(`[Navis] Element not visible for ${action}`);
       return 'not visible (hidden, offscreen, or covered by another element)';
     }
 
-    const isEnabled = await locator.isEnabled({ timeout: 1000 }).catch(() => true);
+    const isEnabled = await locator.isEnabled({ timeout: 300 }).catch(() => true);
     if (!isEnabled) {
       console.warn(`[Navis] Element disabled for ${action}`);
       return 'disabled (readonly or grayed out)';
@@ -148,6 +1018,7 @@ export async function executeAction(
   logger?: NavisLogger,
   step?: number,
   maxSteps?: number,
+  aiClient?: AIClient,
 ): Promise<ActionResult> {
   try {
     switch (actionName) {
@@ -160,8 +1031,17 @@ export async function executeAction(
       case 'click_element':
         return await executeClickElement(args as { ref: string }, page, session, logger, step, maxSteps);
 
+      case 'click_text':
+        return await executeClickText(args as { text?: string; target?: string; role?: string; href?: string }, page, session, logger, step, maxSteps);
+
+      case 'smart_click':
+        return await executeSmartClick(args as { ref?: string; target?: string; text?: string; role?: string; href?: string; url?: string; x?: number; y?: number }, page, session, logger, step, maxSteps);
+
       case 'input_text':
         return await executeInputText(args as { ref: string; text: string }, page, session, logger, step, maxSteps);
+
+      case 'smart_type':
+        return await executeSmartType(args as { ref?: string; target?: string; text: string; submit?: boolean }, page, session, logger, step, maxSteps);
 
       case 'hold_element':
         return await executeHoldElement(args as { ref?: string; x?: number; y?: number; holdTimeMs?: number }, page, session, logger, step, maxSteps);
@@ -182,7 +1062,7 @@ export async function executeAction(
         return await executeWait(args as { ms?: number }, logger, step, maxSteps);
 
       case 'extract_content':
-        return await executeExtractContent(args as { goal?: string }, page, logger, step, maxSteps);
+        return await executeExtractContent(args as { goal?: string }, page, logger, step, maxSteps, aiClient);
 
       case 'open_tab':
         return await executeOpenTab(args as { url?: string }, session, logger, step, maxSteps);
@@ -192,6 +1072,9 @@ export async function executeAction(
 
       case 'close_tab':
         return await executeCloseTab(page, session, logger, step, maxSteps);
+
+      case 'wait_for_navigation':
+        return await executeWaitForNavigation(args as { timeoutMs?: number; urlContains?: string }, page, logger, step, maxSteps);
 
       case 'solve_captcha':
         return await executeSolveCaptcha(page, session, logger, step, maxSteps);
@@ -247,24 +1130,30 @@ export async function executeAction(
 async function executeGoToUrl(args: { url: string }, page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
   if (!args.url) return { success: false, message: 'Missing url parameter', stateChanged: false };
 
-  logger?.pageNavigate(step, maxSteps, args.url);
+  const url = normalizeNavUrl(args.url);
+  logger?.pageNavigate(step, maxSteps, url);
+  invalidateElementSnapshotCache(page);
 
   // Use a more robust goto that doesn't hang on domcontentloaded
   try {
-    await page.goto(args.url, { waitUntil: 'load', timeout: 20000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 12000 });
   } catch (err: any) {
     console.warn(`[Navis] goto(load) failed, retrying with commit: ${err.message}`);
-    await page.goto(args.url, { waitUntil: 'commit', timeout: 10000 }).catch(() => {});
+    await page.goto(url, { waitUntil: 'commit', timeout: 5000 }).catch(() => {});
   }
 
   await page.bringToFront();
-  return { success: true, message: `Navigated to ${args.url}`, stateChanged: true };
+  await page.waitForLoadState('networkidle', { timeout: 1200 }).catch(() => {});
+  invalidateElementSnapshotCache(page);
+  return { success: true, message: `Navigated to ${url}`, stateChanged: true };
 }
 
 async function executeGoBack(page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
   try {
     logger?.pageNavigate(step, maxSteps, 'go_back');
+    invalidateElementSnapshotCache(page);
     await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10000 });
+    invalidateElementSnapshotCache(page);
     return { success: true, message: 'Navigated back to previous page', stateChanged: true };
   } catch (err: any) {
     return { success: false, message: `Go back failed: ${err.message}`, stateChanged: false };
@@ -283,60 +1172,45 @@ async function executeClickElement(
 
   try {
     const { locator, name } = await findElement(page, args.ref, logger);
-
-    const validation = await validateElement(locator, 'click', logger);
-    if (validation !== null) {
-      return {
-        success: false,
-        message: `Element ${args.ref} ("${truncate(String(name), 40)}") ${validation}. Try scrolling to it, waiting for the page to load, or choosing a different element.`,
-        stateChanged: false,
-      };
-    }
-
-    const box = await locator.boundingBox().catch(() => null);
-    let position: { x: number; y: number } | undefined = undefined;
-    if (box) {
-      const centerX = box.x + box.width / 2;
-      const centerY = box.y + box.height / 2;
-      position = { x: centerX, y: centerY };
-
-      // Move magical cursor first
-      await session.moveCursor(centerX, centerY);
-      await new Promise(r => setTimeout(r, 600)); // Wait for transition
-
-      await session.highlightElement(box);
-
-      // Listen for new pages (popups) being opened by this click
-      const popupPromise = page.context().waitForEvent('page', { timeout: 3000 }).catch(() => null);
-
-      const clicked = await locator.click({
-        timeout: 3000,
-        force: false,
-      }).then(() => true).catch(() => false);
-
-      // Fallback: use mouse.click
-      if (!clicked && box) {
-        await page.mouse.click(centerX, centerY);
-      }
-
-      // Check if a new tab was opened
-      const newPage = await popupPromise;
-      if (newPage) {
-        await newPage.bringToFront();
-        session.setActivePage(newPage);
-        logger?.tabChange(step, maxSteps, `switched to new tab: ${newPage.url()}`);
-        return { success: true, message: `Clicked and switched to new tab: ${newPage.url()}`, stateChanged: true };
-      }
-    } else {
-      await locator.click({ timeout: 2000 });
-    }
-
-    logger?.elementClick(step, maxSteps, truncate(String(name), 40), `aria-ref=${args.ref}`, position);
-    await session.setOverlayStatus(`Clicked "${truncate(String(name), 20)}"`);
-    return { success: true, message: `Clicked: ${name}`, stateChanged: true };
+    return await clickLocator(locator, name, `ref=${args.ref}`, page, session, logger, step, maxSteps);
   } catch (err: any) {
     return { success: false, message: `Click failed: ${err.message}`, stateChanged: false };
   }
+}
+
+async function executeClickText(
+  args: { text?: string; target?: string; role?: string; href?: string },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  const target = String(args.text || args.target || args.href || '').trim();
+  if (!target) return { success: false, message: 'Missing text/target parameter', stateChanged: false };
+  try {
+    const found = await findHumanTarget(page, target, { role: args.role, href: args.href });
+    return await clickLocator(found.locator, found.name || target, `click_text:${found.method}`, page, session, logger, step, maxSteps);
+  } catch (err: any) {
+    return { success: false, message: `Click by text failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeSmartClick(
+  args: { ref?: string; target?: string; text?: string; role?: string; href?: string; url?: string; x?: number; y?: number },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (args.url) return executeGoToUrl({ url: args.url }, page, logger, step, maxSteps);
+  if (args.ref) return executeClickElement({ ref: args.ref }, page, session, logger, step, maxSteps);
+  if (args.x !== undefined && args.y !== undefined) return executeBrowserClick({ x: args.x, y: args.y }, page, session, logger, step, maxSteps);
+
+  const target = String(args.target || args.text || args.href || '').trim();
+  if (!target) return { success: false, message: 'smart_click requires ref, target/text, href, url, or coordinates', stateChanged: false };
+  return executeClickText({ text: target, role: args.role, href: args.href }, page, session, logger, step, maxSteps);
 }
 
 async function executeInputText(
@@ -352,36 +1226,31 @@ async function executeInputText(
 
   try {
     const { locator, name } = await findElement(page, args.ref, logger);
-
-    const validation = await validateElement(locator, 'input', logger);
-    if (validation !== null) {
-      return {
-        success: false,
-        message: `Element ${args.ref} ("${truncate(String(name), 40)}") ${validation}. Try scrolling to it, waiting for the page to load, or choosing a different input.`,
-        stateChanged: false,
-      };
-    }
-
-    const box = await locator.boundingBox().catch(() => null);
-    let position: { x: number; y: number } | undefined = undefined;
-    if (box) {
-      const centerX = box.x + box.width / 2;
-      const centerY = box.y + box.height / 2;
-      position = { x: centerX, y: centerY };
-      await session.moveCursor(centerX, centerY);
-      await new Promise(r => setTimeout(r, 600));
-      await session.highlightElement(box);
-    }
-
-    // Use fill() for speed (instant vs 2ms/char with pressSequentially)
-    await locator.fill('');  // Clear first
-    await locator.fill(args.text, { timeout: 3000 });
-
-    logger?.elementInput(step, maxSteps, truncate(String(name), 30), args.text, position);
-    await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
-    return { success: true, message: `Entered text: ${name}`, stateChanged: false };
+    return await typeIntoLocator(locator, name, args.text, page, session, logger, step, maxSteps);
   } catch (err: any) {
     return { success: false, message: `Input failed: ${err.message}`, stateChanged: false };
+  }
+}
+
+async function executeSmartType(
+  args: { ref?: string; target?: string; text: string; submit?: boolean },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  if (!args.text) return { success: false, message: 'Missing text parameter', stateChanged: false };
+  try {
+    if (args.ref) {
+      const { locator, name } = await findElement(page, args.ref, logger);
+      return await typeIntoLocator(locator, name, args.text, page, session, logger, step, maxSteps, Boolean(args.submit));
+    }
+    const target = String(args.target || 'text input').trim();
+    const found = await findHumanTarget(page, target, { inputOnly: true });
+    return await typeIntoLocator(found.locator, found.name || target, args.text, page, session, logger, step, maxSteps, Boolean(args.submit));
+  } catch (err: any) {
+    return { success: false, message: `Smart type failed: ${err.message}`, stateChanged: false };
   }
 }
 
@@ -398,20 +1267,32 @@ async function executePressKey(
   try {
     if (args.ref) {
       const { locator } = await findElement(page, args.ref, logger);
+      await scrollIntoViewForAction(locator);
 
       const box = await locator.boundingBox().catch(() => null);
       if (box) {
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
-        await session.moveCursor(centerX, centerY);
-        await new Promise(r => setTimeout(r, 600));
-        await session.highlightElement(box);
+        session.moveCursor(centerX, centerY).catch(() => {});
+        session.highlightElement(box).catch(() => {});
       }
 
-      await locator.press(args.key, { timeout: 3000 });
+      const watcher = startBrowserChangeWatch(page);
+      await locator.press(args.key, { timeout: 1200 });
+      if (/^(Enter|NumpadEnter)$/i.test(args.key)) {
+        await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
+      } else {
+        invalidateElementSnapshotCache(page);
+      }
       logger?.elementInput(step, maxSteps, `key:${args.key}`, args.ref);
     } else {
+      const watcher = startBrowserChangeWatch(page);
       await page.keyboard.press(args.key);
+      if (/^(Enter|NumpadEnter)$/i.test(args.key)) {
+        await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
+      } else {
+        invalidateElementSnapshotCache(page);
+      }
       logger?.elementInput(step, maxSteps, `key:${args.key}`, '(global)');
     }
     await session.setOverlayStatus(`Pressed "${args.key}"`);
@@ -425,14 +1306,16 @@ async function executeScrollDown(page: Page, logger?: NavisLogger, step?: number
   if (args?.ref) {
     try {
       const { locator, name } = await findElement(page, args.ref, logger);
-      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' }));
+      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'auto' }));
+      invalidateElementSnapshotCache(page);
       logger?.scroll(step, maxSteps, `down on ${name}`);
       return { success: true, message: `Scrolled down on ${name}`, stateChanged: false };
     } catch (err: any) {
       return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
     }
   }
-  await page.evaluate(() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' }));
+  await page.evaluate(() => window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'auto' }));
+  invalidateElementSnapshotCache(page);
   logger?.scroll(step, maxSteps, 'down');
   return { success: true, message: 'Scrolled down one page', stateChanged: false };
 }
@@ -441,26 +1324,93 @@ async function executeScrollUp(page: Page, logger?: NavisLogger, step?: number, 
   if (args?.ref) {
     try {
       const { locator, name } = await findElement(page, args.ref, logger);
-      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: -el.clientHeight * 0.8, behavior: 'smooth' }));
+      await locator.evaluate((el: HTMLElement) => el.scrollBy({ top: -el.clientHeight * 0.8, behavior: 'auto' }));
+      invalidateElementSnapshotCache(page);
       logger?.scroll(step, maxSteps, `up on ${name}`);
       return { success: true, message: `Scrolled up on ${name}`, stateChanged: false };
     } catch (err: any) {
       return { success: false, message: `Scroll failed: ${err.message}`, stateChanged: false };
     }
   }
-  await page.evaluate(() => window.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'smooth' }));
+  await page.evaluate(() => window.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'auto' }));
+  invalidateElementSnapshotCache(page);
   logger?.scroll(step, maxSteps, 'up');
   return { success: true, message: 'Scrolled up one page', stateChanged: false };
 }
 
 async function executeWait(args: { ms?: number }, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
-  const ms = Math.min(args.ms ?? 500, 10000);
+  const ms = Math.min(args.ms ?? 300, 3000);
   await new Promise((resolve) => setTimeout(resolve, ms));
   logger?.wait(step, maxSteps, `${ms}ms`);
   return { success: true, message: `Waited ${ms}ms`, stateChanged: false };
 }
 
-async function executeExtractContent(args: { goal?: string }, page: Page, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
+async function executeWaitForNavigation(
+  args: { timeoutMs?: number; urlContains?: string },
+  page: Page,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  const timeoutMs = Math.min(Math.max(Number(args.timeoutMs || 4000), 500), 15000);
+  const beforeUrl = page.url();
+  logger?.wait(step, maxSteps, args.urlContains ? `navigation containing "${args.urlContains}"` : 'navigation');
+
+  if (args.urlContains) {
+    await page.waitForURL(url => url.toString().includes(String(args.urlContains)), { timeout: timeoutMs }).catch(() => null);
+  } else {
+    await Promise.race([
+      page.waitForURL(url => url.toString() !== beforeUrl, { timeout: timeoutMs }).catch(() => null),
+      page.waitForLoadState('domcontentloaded', { timeout: timeoutMs }).catch(() => null),
+      sleep(timeoutMs),
+    ]);
+  }
+
+  await page.waitForLoadState('networkidle', { timeout: 900 }).catch(() => {});
+  invalidateElementSnapshotCache(page);
+  const afterUrl = page.url();
+  return {
+    success: true,
+    message: afterUrl !== beforeUrl ? `Navigation settled at ${afterUrl}` : `Navigation wait finished at ${afterUrl}`,
+    stateChanged: afterUrl !== beforeUrl,
+  };
+}
+
+async function executeExtractContent(
+  args: { goal?: string },
+  page: Page,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+  aiClient?: AIClient,
+): Promise<ActionResult> {
+  const goal = args.goal || 'Extract the relevant page content.';
+
+  try {
+    const report = await createNavisExtractionReport(page, goal, aiClient);
+    logger?.extract(step, maxSteps, `report saved: ${report.reportPath}`);
+
+    return {
+      success: true,
+      message: [
+        `Extracted page content with the DOM parser${report.usedAI ? ' AI' : ''}.`,
+        `Temporary Markdown report: ${report.reportPath}`,
+        report.summary ? `Report summary: ${report.summary}` : '',
+      ].filter(Boolean).join('\n'),
+      stateChanged: false,
+      data: {
+        reportPath: report.reportPath,
+        markdown: report.markdown,
+        summary: report.summary,
+        usedAI: report.usedAI,
+        sourceUrl: report.sourceUrl,
+        title: report.title,
+      },
+    };
+  } catch (reportErr) {
+    console.warn('[Navis Extract] Report pipeline failed, falling back to cleaned text extraction:', reportErr);
+  }
+
   const content = await page.evaluate(() => {
     // Try to find main content
     const main = document.querySelector('main, [role="main"], article, #content, .content, .main');
@@ -509,20 +1459,24 @@ async function executeOpenTab(
   step?: number,
   maxSteps?: number,
 ): Promise<ActionResult> {
-  const newPage = await session.openTab(args.url);
+  const url = args.url ? normalizeNavUrl(args.url) : undefined;
+  const newPage = await session.openTab(url);
   await newPage.bringToFront();
-  logger?.tabChange(step, maxSteps, args.url ? `opened: ${args.url}` : 'new tab');
-  return { success: true, message: `Opened new tab${args.url ? ': ' + args.url : ''}`, stateChanged: true };
+  invalidateElementSnapshotCache(newPage);
+  logger?.tabChange(step, maxSteps, url ? `opened: ${url}` : 'new tab');
+  return { success: true, message: `Opened new tab${url ? ': ' + url : ''}`, stateChanged: true };
 }
 
 async function executeSwitchTab(args: { index?: number; target?: string }, session: BrowserSession, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
   if (args.target) {
     await session.switchToTab(args.target);
+    invalidateElementSnapshotCache(session.page);
     logger?.tabChange(step, maxSteps, `switched to tab matching "${args.target}"`);
     return { success: true, message: `Switched to tab matching "${args.target}"`, stateChanged: true };
   }
   if (args.index !== undefined) {
     await session.switchToTab(args.index);
+    invalidateElementSnapshotCache(session.page);
     logger?.tabChange(step, maxSteps, `switched to tab ${args.index}`);
     return { success: true, message: `Switched to tab ${args.index}`, stateChanged: true };
   }
@@ -534,6 +1488,7 @@ async function executeCloseTab(page: Page, session: BrowserSession, logger?: Nav
     return { success: false, message: 'Cannot close the last tab', stateChanged: false };
   }
   await session.closeTab(page);
+  invalidateElementSnapshotCache(session.page);
   logger?.tabChange(step, maxSteps, 'tab closed');
   return { success: true, message: 'Tab closed', stateChanged: true };
 }
@@ -590,6 +1545,7 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
 
   if (solved) {
     await new Promise(resolve => setTimeout(resolve, 2000));
+    invalidateElementSnapshotCache(page);
     logger?.tabChange(step, maxSteps, 'captcha solved, waiting for redirect...');
     return { success: true, message: 'Captcha solved, waiting for page to proceed', stateChanged: true };
   }
@@ -714,20 +1670,44 @@ async function executeBrowserClick(
 
     // Move cursor and highlight the click area
     await session.moveCursor(x, y);
-    await new Promise(r => setTimeout(r, 600)); // Wait for transition
+    await new Promise(r => setTimeout(r, 60)); // tiny delay so the visual marker can paint
 
     // Highlight the click area
     await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
 
-    // Perform the click using Playwright's mouse
+    const clickProbe = `navis-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await page.evaluate((token) => {
+      const w = window as any;
+      w.__navisClickProbe ||= {};
+      w.__navisClickProbe[token] = false;
+      document.addEventListener('click', () => {
+        w.__navisClickProbe[token] = true;
+      }, { capture: true, once: true });
+    }, clickProbe).catch(() => {});
+
+    // Perform the click using Playwright's mouse.
+    const watcher = startBrowserChangeWatch(page);
     await page.mouse.click(x, y);
+    let change = await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
+    let method = 'mouse';
+
+    const clickFired = await page.evaluate((token) => Boolean((window as any).__navisClickProbe?.[token]), clickProbe).catch(() => true);
+    if (!clickFired) {
+      const fallbackWatcher = startBrowserChangeWatch(page);
+      const domClicked = await dispatchDomClickAtPoint(page, x, y);
+      const fallbackChange = await finishBrowserChangeWatch(fallbackWatcher, page, session, logger, step, maxSteps);
+      if (domClicked) {
+        method = 'dom-at-point';
+        change = fallbackChange.changed || fallbackChange.message ? fallbackChange : change;
+      }
+    }
 
     logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_click', { x, y });
     await session.setOverlayStatus(`Clicked at (${x}, ${y})`);
 
     return {
       success: true,
-      message: `Clicked at coordinates (${x}, ${y})`,
+      message: change.message ? `Clicked at coordinates (${x}, ${y}) via ${method}. ${change.message}` : `Clicked at coordinates (${x}, ${y}) via ${method}`,
       stateChanged: true
     };
   } catch (err: any) {
@@ -752,8 +1732,24 @@ async function executeBrowserType(
   }
 
   try {
-    // Type the text using Playwright's keyboard
+    const focused = page.locator(':focus').first();
+    if (await focused.count().catch(() => 0) > 0 && await isEditableLocator(focused)) {
+      const typed = await performReliableType(page, focused, args.text);
+      if (typed.ok) {
+        invalidateElementSnapshotCache(page);
+        logger?.elementInput(step, maxSteps, 'focused-input', args.text);
+        await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
+        return {
+          success: true,
+          message: `Typed into focused input via ${typed.method}`,
+          stateChanged: false
+        };
+      }
+    }
+
+    // Type freely using Playwright's keyboard when no editable element is focused.
     await page.keyboard.type(args.text);
+    invalidateElementSnapshotCache(page);
 
     logger?.elementInput(step, maxSteps, 'keyboard', args.text);
     await session.setOverlayStatus(`Typed "${truncate(args.text, 20)}"`);
@@ -794,16 +1790,17 @@ async function executeBrowserDoubleClick(
       y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
-    await session.moveCursor(x, y);
-    await new Promise(r => setTimeout(r, 600));
-    await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
+    session.moveCursor(x, y).catch(() => {});
+    session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 }).catch(() => {});
 
+    const watcher = startBrowserChangeWatch(page);
     await page.mouse.click(x, y, { clickCount: 2 });
+    const change = await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
 
     logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_double_click', { x, y });
     await session.setOverlayStatus(`Double-clicked at (${x}, ${y})`);
 
-    return { success: true, message: `Double-clicked at (${x}, ${y})`, stateChanged: true };
+    return { success: true, message: change.message ? `Double-clicked at (${x}, ${y}). ${change.message}` : `Double-clicked at (${x}, ${y})`, stateChanged: true };
   } catch (err: any) {
     return { success: false, message: `Double-click failed: ${err.message}`, stateChanged: false };
   }
@@ -831,11 +1828,12 @@ async function executeBrowserRightClick(
       y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
-    await session.moveCursor(x, y);
-    await new Promise(r => setTimeout(r, 600));
-    await session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 });
+    session.moveCursor(x, y).catch(() => {});
+    session.highlightElement({ x: x - 10, y: y - 10, width: 20, height: 20 }).catch(() => {});
 
+    const watcher = startBrowserChangeWatch(page);
     await page.mouse.click(x, y, { button: 'right' });
+    await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
 
     logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_right_click', { x, y });
     await session.setOverlayStatus(`Right-clicked at (${x}, ${y})`);
@@ -868,10 +1866,10 @@ async function executeBrowserHover(
       y = Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
     }
 
-    await session.moveCursor(x, y);
-    await new Promise(r => setTimeout(r, 600));
+    session.moveCursor(x, y).catch(() => {});
 
     await page.mouse.move(x, y);
+    invalidateElementSnapshotCache(page);
 
     logger?.elementClick(step, maxSteps, `(${x},${y})`, 'browser_hover', { x, y });
     await session.setOverlayStatus(`Hovered at (${x}, ${y})`);
@@ -897,6 +1895,7 @@ async function executeHoldElement(
 
     if (args.ref) {
       const { locator, name: foundName } = await findElement(page, args.ref, logger);
+      await scrollIntoViewForAction(locator);
       name = foundName;
       const box = await locator.boundingBox();
       if (box) {
@@ -906,8 +1905,7 @@ async function executeHoldElement(
     }
 
     if (targetX !== undefined && targetY !== undefined) {
-      await session.moveCursor(targetX, targetY);
-      await new Promise(r => setTimeout(r, 600));
+      session.moveCursor(targetX, targetY).catch(() => {});
       await page.mouse.move(targetX, targetY);
       await page.mouse.down();
       
@@ -915,10 +1913,12 @@ async function executeHoldElement(
       if (holdTime > 0) {
         await new Promise(r => setTimeout(r, holdTime));
         await page.mouse.up();
+        invalidateElementSnapshotCache(page);
         logger?.elementClick(step, maxSteps, name, `hold_element (${holdTime}ms)`, { x: targetX, y: targetY });
         return { success: true, message: `Held ${name} for ${holdTime}ms`, stateChanged: true };
       }
       
+      invalidateElementSnapshotCache(page);
       logger?.elementClick(step, maxSteps, name, 'hold_element (down)', { x: targetX, y: targetY });
       return { success: true, message: `Holding ${name} down`, stateChanged: true };
     }
@@ -939,6 +1939,7 @@ async function executeDragElement(
 ): Promise<ActionResult> {
   try {
     const { locator: sourceLocator, name: sourceName } = await findElement(page, args.sourceRef, logger);
+    await scrollIntoViewForAction(sourceLocator);
     const sourceBox = await sourceLocator.boundingBox();
     if (!sourceBox) throw new Error('Could not find source element bounding box');
 
@@ -951,6 +1952,7 @@ async function executeDragElement(
 
     if (args.targetRef) {
       const { locator: targetLocator, name: foundTargetName } = await findElement(page, args.targetRef, logger);
+      await scrollIntoViewForAction(targetLocator);
       targetName = foundTargetName;
       const targetBox = await targetLocator.boundingBox();
       if (targetBox) {
@@ -960,15 +1962,15 @@ async function executeDragElement(
     }
 
     if (tx !== undefined && ty !== undefined) {
-      await session.moveCursor(sx, sy);
-      await new Promise(r => setTimeout(r, 600));
+      session.moveCursor(sx, sy).catch(() => {});
       await page.mouse.move(sx, sy);
       await page.mouse.down();
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 40));
       
-      await session.moveCursor(tx, ty);
+      session.moveCursor(tx, ty).catch(() => {});
       await page.mouse.move(tx, ty, { steps: 10 });
       await page.mouse.up();
+      invalidateElementSnapshotCache(page);
 
       logger?.elementClick(step, maxSteps, sourceName, `drag to ${targetName}`, { x: tx, y: ty });
       return { success: true, message: `Dragged ${sourceName} to ${targetName}`, stateChanged: true };

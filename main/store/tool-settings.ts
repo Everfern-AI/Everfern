@@ -19,6 +19,7 @@ export interface NavisConfig {
   useChromeProfile: boolean;
   selectedBrowserId: string;
   useIsolatedBrowser: boolean;
+  automationMode: 'extension-first' | 'playwright';
 }
 
 export interface ToolSettingsConfig {
@@ -35,6 +36,7 @@ export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   useChromeProfile: false,
   selectedBrowserId: 'chrome',
   useIsolatedBrowser: true,
+  automationMode: 'extension-first',
 };
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
@@ -87,6 +89,11 @@ export class ToolSettingsStore {
       }
       if (loaded.navis?.useIsolatedBrowser === undefined) {
         config.navis.useIsolatedBrowser = !config.navis.useChromeProfile;
+      }
+      if (loaded.navis?.automationMode === undefined) {
+        config.navis.automationMode = config.navis.useChromeProfile && !config.navis.useIsolatedBrowser
+          ? 'extension-first'
+          : 'playwright';
       }
 
       // Check if schema drifted (e.g., loaded stringified length vs config stringified length)

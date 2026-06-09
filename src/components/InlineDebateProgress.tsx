@@ -11,12 +11,16 @@ import type { DebateDisplayData } from '../app/chat/types/debate-types';
 interface InlineDebateProgressProps {
   debate: DebateDisplayData | null;
   isDebating: boolean;
+  debateId?: string | null;
+  onSkipDebate?: (debateId: string) => void;
   onViewFullDebate?: () => void;
 }
 
 export function InlineDebateProgress({
   debate,
   isDebating,
+  debateId,
+  onSkipDebate,
   onViewFullDebate,
 }: InlineDebateProgressProps) {
   const [phase, setPhase] = useState<'proposal' | 'review' | 'arbitration' | null>(null);
@@ -120,6 +124,7 @@ export function InlineDebateProgress({
   };
 
   const canExpand = !!(debate || isDebating);
+  const activeDebateId = debate?.debateId || debateId;
 
   const getActivePhase = (): 'vanguard' | 'phantom' | 'arbiter' | 'done' => {
     if (!isDebating) return 'done';
@@ -169,6 +174,19 @@ export function InlineDebateProgress({
             )}
           </div>
 
+          {isDebating && !expanded && activeDebateId && onSkipDebate && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkipDebate(activeDebateId);
+              }}
+              className="ml-2 mr-1 shrink-0 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-850"
+            >
+              Skip
+            </button>
+          )}
+
           {/* Chevron for debates */}
           {canExpand && (
             <motion.span
@@ -198,10 +216,24 @@ export function InlineDebateProgress({
                     <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
                       Live Debate Chamber Feed
                     </span>
-                    <span className="flex items-center text-[13px] text-zinc-600 font-semibold bg-zinc-100 rounded-full dark:bg-zinc-800 dark:text-zinc-300" style={{ gap: '8px', paddingLeft: '12px', paddingRight: '14px', paddingTop: '6px', paddingBottom: '6px' }}>
-                      <span className="w-2 h-2 rounded-full bg-zinc-500 animate-ping" />
-                      Active Debate
-                    </span>
+                    <div className="ml-4 flex shrink-0 items-center gap-2">
+                      {activeDebateId && onSkipDebate && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSkipDebate(activeDebateId);
+                          }}
+                          className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-4 text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-850"
+                        >
+                          Skip
+                        </button>
+                      )}
+                      <span className="flex items-center text-[13px] text-zinc-600 font-semibold bg-zinc-100 rounded-full dark:bg-zinc-800 dark:text-zinc-300" style={{ gap: '8px', paddingLeft: '12px', paddingRight: '14px', paddingTop: '6px', paddingBottom: '6px' }}>
+                        <span className="w-2 h-2 rounded-full bg-zinc-500 animate-ping" />
+                        Active Debate
+                      </span>
+                    </div>
                   </div>
 
                   {/* Vanguard Stage */}

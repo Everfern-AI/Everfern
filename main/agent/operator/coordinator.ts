@@ -55,21 +55,6 @@ export const createOperatorCoordinatorNode = (
             startTime: Date.now()
         };
 
-        // Notify UI about the objective plan
-        eventQueue?.push({
-          type: 'plan_created',
-          plan: {
-            id: session.sessionId,
-            title: `Objective: ${session.goal.description}`,
-            steps: plan.tasks.map(t => ({
-              id: t.taskId,
-              title: t.description,
-              description: `Metrics: ${t.successCriteria.join(', ')}`,
-              tool: t.executorType
-            }))
-          }
-        });
-
         // Add to mission tracker
         if (missionTracker) {
             plan.tasks.forEach(t => {
@@ -87,11 +72,42 @@ export const createOperatorCoordinatorNode = (
         taskGraph.deserialize(session.graphState);
       }
 
+      // Notify UI about the objective plan
+      const generatePlanPayload = () => ({
+        id: session.sessionId,
+        title: `Objective: ${session.goal.description}`,
+        steps: session.currentPlan!.tasks.map(t => {
+          // adjacencyList maps dependency -> dependents
+          const deps = (Array.from((taskGraph as any).adjacencyList.entries()) as Array<[string, string[]]>)
+            .filter(([_, dependents]: [string, string[]]) => dependents.includes(t.taskId))
+            .map(([depId]) => depId);
+
+          return {
+            id: t.taskId,
+            title: t.description,
+            description: `Metrics: ${t.successCriteria.join(', ')}`,
+            tool: t.executorType,
+            status: taskGraph.getTaskState(t.taskId)?.status || 'pending',
+            dependencies: deps
+          };
+        })
+      });
+
+      // If this is a new session, push the initial plan
+      if (!state.operatorSession) {
+        eventQueue?.push({
+          type: 'plan_created',
+          plan: generatePlanPayload()
+        });
+      }
+
       // Check if any task just completed/failed by checking state signals (for phase 2 evaluation)
       // If we are returning from a sub-agent, mark the in-progress task as complete for now
       const statesEntries = Array.from((taskGraph as any).states.entries()) as [string, any][];
       const inProgressTasks = statesEntries.filter(([id, s]) => s.status === 'in_progress');
       
+      let stateChanged = false;
+
       if (inProgressTasks.length > 0) {
           const { EvaluationEngine } = await import('./evaluation-engine');
           const { replanObjective } = await import('./planning-engine');
@@ -112,6 +128,7 @@ export const createOperatorCoordinatorNode = (
                   session.evaluationHistory.push(evaluation);
 
                   taskGraph.updateTaskState(id, { status: evaluation.progressScore >= 0.5 ? 'completed' : 'failed' });
+                  stateChanged = true;
                   if (missionTracker) missionTracker.completeStep(id);
 
                   if (evalEngine.shouldReplan(session.evaluationHistory)) {
@@ -131,6 +148,9 @@ export const createOperatorCoordinatorNode = (
           session.endTime = Date.now();
           session.graphState = taskGraph.serialize();
           integrator.completeNode('operator_coordinator', 'Objective complete');
+          
+          eventQueue?.push({ type: 'plan_created', plan: generatePlanPayload() });
+
           return {
               operatorSession: session,
               taskPhase: 'evaluating' as const,
@@ -147,6 +167,9 @@ export const createOperatorCoordinatorNode = (
           session.status = 'failed';
           session.graphState = taskGraph.serialize();
           integrator.failNode('operator_coordinator', 'No ready tasks available. Task graph is blocked.');
+          
+          eventQueue?.push({ type: 'plan_created', plan: generatePlanPayload() });
+
           return {
               operatorSession: session,
               completionSignal: {
@@ -159,6 +182,8 @@ export const createOperatorCoordinatorNode = (
       const currentTask = readyTasks[0];
       taskGraph.updateTaskState(currentTask.taskId, { status: 'in_progress', startTime: Date.now() });
       session.graphState = taskGraph.serialize();
+      
+      eventQueue?.push({ type: 'plan_created', plan: generatePlanPayload() });
 
       runner.telemetry.info(`[Operator] Dispatching task: ${currentTask.description} to ${currentTask.executorType}`);
       if (missionTracker) missionTracker.startStep(currentTask.taskId);

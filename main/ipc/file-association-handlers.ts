@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
-import { getAppsForFile, openFileWithApp } from '../lib/file-associations';
+import { getAppsForFile, getFileAppCacheStatus, openFileWithApp, preloadFileAppCache } from '../lib/file-associations';
 
 function expandTilde(p: string): string {
   if (p.startsWith('~/') || p === '~') {
@@ -11,6 +11,8 @@ function expandTilde(p: string): string {
 }
 
 export function registerFileAssociationHandlers(): void {
+  void preloadFileAppCache();
+
   // Get all apps that can open a given file path (returns FileApp[])
   ipcMain.handle('system:get-file-apps', async (_e, filePath: string) => {
     try {
@@ -31,5 +33,8 @@ export function registerFileAssociationHandlers(): void {
       return { success: false, error: err.message };
     }
   });
-}
 
+  ipcMain.handle('system:get-file-app-cache-status', async () => {
+    return getFileAppCacheStatus();
+  });
+}

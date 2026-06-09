@@ -19,7 +19,9 @@ export const terminalTool: AgentTool = {
       command: { type: 'string', description: 'The command to execute' },
       cwd: { type: 'string', description: 'Working directory (defaults to ~/.everfern)' },
       id: { type: 'string', description: 'Optional unique ID for this command session' },
-      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000)' },
+      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000). Use 180000-300000 for builds, installs, typechecks, and slow commands.' },
+      timeout: { type: 'number', description: 'Optional timeout. Values <= 10000 are treated as seconds; larger values are milliseconds.' },
+      timeoutSeconds: { type: 'number', description: 'Optional timeout in seconds.' },
       target: { type: 'string', enum: ['main', 'vm'], description: "Environment target: 'main' (host system, requires permission) or 'vm' (Linux VM, no permission needed). Defaults to 'main'." }
     },
     required: ['command']
@@ -29,7 +31,15 @@ export const terminalTool: AgentTool = {
     const command = args.command as string;
     const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
     const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
-    const timeoutMs = args.timeoutMs as number | undefined;
+    const normalizeTimeoutMs = (value: unknown): number | undefined => {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return undefined;
+      return n <= 10000 ? n * 1000 : n;
+    };
+    const timeoutMs =
+      normalizeTimeoutMs(args.timeoutMs) ??
+      normalizeTimeoutMs(args.timeout) ??
+      normalizeTimeoutMs(args.timeoutSeconds);
     const target = (args.target as 'main' | 'vm') || 'main';
 
     // Safety check: block command if target is main and it tries to kill node processes

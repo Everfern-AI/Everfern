@@ -15,6 +15,7 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import type { AIClient } from '../../../lib/ai-client';
 import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
+import { redirectComputerUseCallsToNavis } from '../tool-routing';
 
 /**
  * Determine if an error should trigger automatic retry with correction
@@ -174,10 +175,22 @@ export const createExecuteToolsNode = (
     try {
       runner.telemetry.transition('execute_tools');
 
-      const calls = state.pendingToolCalls;
-    if (!calls || calls.length === 0) {
+      const rawCalls = state.pendingToolCalls;
+    if (!rawCalls || rawCalls.length === 0) {
       runner.telemetry.warn('Execute tools node reached but no pending calls found.');
       return { pendingToolCalls: [], iterations: (state.iterations || 0) + 1 };
+    }
+
+    const routing = redirectComputerUseCallsToNavis(rawCalls, state);
+    const calls = routing.calls;
+    if (routing.redirected > 0) {
+      const msg = `[ExecuteTools] Redirected ${routing.redirected} web/booking computer_use call(s) to Navis`;
+      console.warn(msg);
+      runner.telemetry.info(msg);
+      eventQueue?.push({
+        type: 'thought',
+        content: 'Routing this browser/booking workflow through Navis instead of OS-level computer use.'
+      });
     }
 
     runner.telemetry.info(`Orchestrating ${calls.length} system operations...`);
@@ -190,9 +203,9 @@ export const createExecuteToolsNode = (
     const homedirNorm = os.homedir().replace(/\\/g, '/');
     const safeConvId = conversationId || 'current';
 
-    const analysis = analyzeToolDependencies(state.pendingToolCalls.map(tc => ({
+    const analysis = analyzeToolDependencies(calls.map(tc => ({
       name: tc.name,
-      args: validateAndCorrectToolArgs(tc.name, tc.arguments, homedirNorm, safeConvId),
+      args: validateAndCorrectToolArgs(tc.name, tc.arguments || {}, homedirNorm, safeConvId),
       id: tc.id
     })));
 

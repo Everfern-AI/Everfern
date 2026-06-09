@@ -5,12 +5,33 @@ description: "Use this skill any time a .pptx file (PowerPoint presentation) is 
 
 # PPTX Skill for EverFern
 
+## Adaptive Deck Standard
+
+When creating a new presentation, use the built-in `pptx_generator` tool with `designMode: "adaptive"`. This tool is backed by **PptxGenJS** and should be the default path for generating editable PowerPoint decks. Do not hand-build new decks with `python-pptx` unless the user specifically asks for low-level Python generation.
+
+Every deck request should include:
+
+* `deckGoal`: what the deck should accomplish.
+* `audience`: who will see it.
+* `visualDirection`: a custom art direction derived from the topic, brand, mood, or user wording.
+* varied slide `intent` values such as `hero`, `sectionBreak`, `bigNumber`, `timeline`, `diagram`, `comparison`, `gallery`, `dataCallout`, `storyboard`, and `closing`.
+* `visualIdea` and `speakerNotes` for most slides.
+
+Anti-boring rules:
+
+* Do not create repeated title-and-bullets slides.
+* Do not use the same slide intent twice in a row unless the user explicitly asks for a simple report.
+* Keep visible slide text short. Put dense explanation in `speakerNotes`.
+* Every slide must have a visual role: a metric, contrast, sequence, diagram, image-led moment, quote, or story beat.
+* If the user asks for something unique, create a custom visual direction instead of choosing a static template.
+
 ## Quick Reference
 
 | Task | Guide |
 |------|-------|
 | Read/analyze content | Python `python-pptx` |
-| Create from scratch | Python `python-pptx` |
+| Create from scratch | `pptx_generator` adaptive mode backed by PptxGenJS |
+| Low-level inspection/editing | Python `python-pptx` |
 
 ---
 
@@ -39,7 +60,7 @@ for i, slide in enumerate(prs.slides, 1):
 
 ## Creating from Scratch
 
-Use `python-pptx` to programmatically build presentations on Windows.
+Use `pptx_generator` for new decks because it is backed by PptxGenJS, produces adaptive editorial layouts, and keeps the PPTX editable. Use `python-pptx` only when you need low-level inspection, small edits, or compatibility work on an existing file.
 
 ### Basic Presentation
 

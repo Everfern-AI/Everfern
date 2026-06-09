@@ -8,6 +8,7 @@ import Image from "next/image";
 interface Provider {
     type: string;
     name: string;
+    image?: string;
     enabled?: boolean;
 }
 
@@ -25,21 +26,6 @@ interface ProviderDropdownProps {
         buttonHover: string;
     };
 }
-
-// Provider logo mapping
-const providerLogos: Record<string, string> = {
-    openai: "/images/ai-providers/openai.svg",
-    anthropic: "/images/ai-providers/claude.svg",
-    deepseek: "/images/ai-providers/deepseek.svg",
-    gemini: "/images/ai-providers/gemini.svg",
-    nvidia: "/images/ai-providers/nvidia.svg",
-    ollama: "/images/ai-providers/ollama.svg",
-    "ollama-cloud": "/images/ai-providers/ollama.svg",
-    lmstudio: "/images/ai-providers/lm-studio.png",
-    openrouter: "/images/ai-providers/openrouter.svg",
-    everfern: "/images/logos/black-logo-withoutbg.png",
-    huggingface: "/images/ai-providers/hf-logo.svg"
-};
 
 const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
     providers,
@@ -89,9 +75,9 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
                     {selectedProviderData ? (
                         <>
-                            {providerLogos[selectedProviderData.type] && (
+                            {selectedProviderData.image && (
                                 <Image
-                                    src={providerLogos[selectedProviderData.type]}
+                                    src={selectedProviderData.image}
                                     alt={selectedProviderData.name}
                                     width={20}
                                     height={20}
@@ -171,9 +157,9 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                                         e.currentTarget.style.backgroundColor = isSelected ? "#f4f4f4" : "#ffffff";
                                     }}
                                 >
-                                    {providerLogos[provider.type] && (
+                                    {provider.image && (
                                         <Image
-                                            src={providerLogos[provider.type]}
+                                            src={provider.image}
                                             alt={provider.name}
                                             width={20}
                                             height={20}

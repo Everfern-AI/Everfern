@@ -5,186 +5,61 @@ import { runAgentStep } from '../services/agent-runtime';
 import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { loadPrompt } from '../../../lib/prompt-sync';
-import { getDependencyManager } from '../dependency-manager';
-import { getSmartRefactorer } from '../smart-refactorer';
+import { getPiCodingTools } from '../../tools/pi-tools';
 
-// Import specialized coding subagents
-import {
-  createExplorationAgent,
-  createPlanningAgent,
-  createWorkerAgent,
-  createCodeReviewerAgent,
-  createTestRunnerAgent,
-  type SubagentCoordination,
-  type ExplorationContext,
-  type PlanningContext,
-  type WorkerContext,
-  type ReviewContext,
-  type TestContext
-} from './coding-assistant/subagents';
+const buildCodingHandoff = (state: GraphStateType): string => {
+  const plan = state.decomposedTask;
+  if (!plan || !Array.isArray(plan.steps) || plan.steps.length === 0) {
+    return 'No decomposer handoff was provided. Resolve the task directly with the fast coding loop.';
+  }
 
-/**
- * Enhanced AI Coding Specialist - Multi-Agent Orchestrator
- *
- * An intelligent coding assistant that orchestrates specialized subagents for different
- * development phases, similar to how Claude Code handles complex coding tasks.
- *
- * Subagent Architecture:
- * 1. Exploration Agent: Read-only codebase scanner and analyzer
- * 2. Planning Agent: Strategy and architecture planner
- * 3. Worker Agent: Code writing and bug fixing specialist
- * 4. Code Reviewer: Security and quality checker
- * 5. Test Runner: TDD red/green/refactor specialist
- *
- * Key Features:
- * - Multi-phase development workflow with specialized agents
- * - Comprehensive codebase analysis before making changes
- * - Strategic planning with risk assessment
- * - Quality-focused implementation with continuous validation
- * - Automated code review for security and maintainability
- * - TDD-driven testing with comprehensive coverage
- */
-
-interface CodeContext {
-  currentFile?: string;
-  selectedText?: string;
-  cursorPosition?: { line: number; column: number };
-  openFiles: string[];
-  recentChanges: Array<{
-    file: string;
-    type: 'create' | 'modify' | 'delete';
-    timestamp: number;
-  }>;
-  projectStructure: {
-    framework?: string;
-    language: string;
-    dependencies: string[];
-    testFramework?: string;
-  };
-}
-
-interface CodeSuggestion {
-  type: 'completion' | 'refactor' | 'fix' | 'optimize' | 'test';
-  description: string;
-  code?: string;
-  file?: string;
-  confidence: number;
-  reasoning: string;
-}
-
-/**
- * Analyze the current codebase context to provide intelligent suggestions
- */
-function analyzeCodeContext(state: GraphStateType): CodeContext {
-  const dependencyManager = getDependencyManager();
-  const allFiles = dependencyManager.getAllFiles();
-
-  // Extract project information from actual codebase analysis
-  // No hardcoded patterns - AI learns from actual code structure
-  const projectStructure = {
-    language: 'unknown', // Will be detected by AI from actual code
-    dependencies: [],
-    framework: undefined, // Will be detected by AI from actual code
-    testFramework: undefined // Will be detected by AI from actual code
-  };
-
-  return {
-    openFiles: allFiles.slice(0, 10), // Limit for performance
-    recentChanges: [], // Would be populated from file system events
-    projectStructure
-  };
-}
-
-/**
- * Generate intelligent code suggestions based on context
- */
-function generateCodeSuggestions(
-  userInput: string,
-  context: CodeContext
-): CodeSuggestion[] {
-  const suggestions: CodeSuggestion[] = [];
-  const dependencyManager = getDependencyManager();
-  const refactorer = getSmartRefactorer();
-
-  // Analyze for potential improvements in open files
-  for (const file of context.openFiles.slice(0, 5)) {
-    // Check for refactoring opportunities
-    const refactorOps = refactorer.analyzeCodeArchitecture([file]);
-    for (const op of refactorOps) {
-      suggestions.push({
-        type: 'refactor',
-        description: op.description,
-        file: op.file,
-        confidence: op.impact === 'high' ? 0.9 : op.impact === 'medium' ? 0.7 : 0.5,
-        reasoning: op.suggestion
-      });
-    }
-
-    // Check for naming convention issues
-    const namingIssues = refactorer.improveNamingConventions(file);
-    for (const issue of namingIssues.slice(0, 3)) { // Limit suggestions
-      suggestions.push({
-        type: 'refactor',
-        description: `Improve naming: ${issue.currentName} → ${issue.suggestedName}`,
-        file: issue.file,
-        confidence: 0.8,
-        reasoning: issue.reason
-      });
+  const parallelGroups = new Map<string, typeof plan.steps>();
+  for (const step of plan.steps) {
+    if (step.canParallelize && step.parallelGroup !== undefined) {
+      const key = String(step.parallelGroup);
+      parallelGroups.set(key, [...(parallelGroups.get(key) || []), step]);
     }
   }
 
-  // Detect circular dependencies
-  const circularDeps = dependencyManager.detectCircularDependencies();
-  for (const cycle of circularDeps.slice(0, 2)) {
-    suggestions.push({
-      type: 'fix',
-      description: `Fix circular dependency: ${cycle.cycle.join(' → ')}`,
-      confidence: cycle.severity === 'error' ? 0.95 : 0.8,
-      reasoning: cycle.suggestion
-    });
-  }
+  const stepLines = plan.steps.map((step, index) => {
+    const deps = step.dependsOn?.length ? step.dependsOn.join(', ') : 'none';
+    const lane = step.canParallelize
+      ? `parallel group ${step.parallelGroup ?? 'unassigned'}`
+      : 'sequential';
+    return [
+      `${index + 1}. ${step.id}: ${step.title || step.description}`,
+      `   Tool hint: ${step.tool}`,
+      `   Depends on: ${deps}`,
+      `   Lane: ${lane}`,
+      step.agentPrompt ? `   Specialist guidance: ${step.agentPrompt}` : `   Specialist guidance: ${step.description}`,
+    ].join('\n');
+  }).join('\n');
 
-  // Suggest tests if none exist
-  const hasTests = context.openFiles.some(f =>
-    f.includes('.test.') || f.includes('.spec.') || f.includes('__tests__')
-  );
+  const parallelSummary = Array.from(parallelGroups.entries())
+    .filter(([, steps]) => steps.length > 1)
+    .map(([group, steps]) => `- Group ${group}: ${steps.map(step => `${step.id} ${step.title || step.description}`).join(' | ')}`)
+    .join('\n') || '- No independent parallel groups detected. Implement sequentially unless inspection reveals safe lanes.';
 
-  if (!hasTests) {
-    suggestions.push({
-      type: 'test',
-      description: 'Add unit tests for the implemented functionality',
-      confidence: 0.9,
-      reasoning: 'No test files detected. Adding tests will improve code reliability and maintainability.'
-    });
-  }
+  return `DECOMPOSER → CODING SPECIALIST HANDOFF
+Title: ${plan.title}
+Execution mode: ${plan.executionMode}
+Total steps: ${plan.totalSteps}
+Can parallelize: ${plan.canParallelize ? 'yes' : 'no'}
 
-  // Sort by confidence and return top suggestions
-  return suggestions
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 5);
-}
+Steps:
+${stepLines}
+
+Parallel lane guidance:
+${parallelSummary}`;
+};
 
 /**
- * Provide intelligent context-aware assistance
+ * Enhanced AI Coding Specialist - PI Manager Harness
+ *
+ * The parent coding specialist acts as a manager: it can implement directly with
+ * PI tools, or spawn coding-specialist workers for independent feature lanes.
+ * Spawned workers are still PI-backed, but cannot recursively spawn more agents.
  */
-function provideIntelligentAssistance(
-  userInput: string,
-  context: CodeContext,
-  suggestions: CodeSuggestion[]
-): string {
-  let assistance = '';
-
-  // Proactive suggestions based on confidence
-  const highConfidenceSuggestions = suggestions.filter(s => s.confidence > 0.8);
-  if (highConfidenceSuggestions.length > 0) {
-    assistance += '💡 **Proactive suggestions based on your codebase:**\n';
-    for (const suggestion of highConfidenceSuggestions.slice(0, 2)) {
-      assistance += `• ${suggestion.description}\n  *${suggestion.reasoning}*\n\n`;
-    }
-  }
-
-  return assistance;
-}
 
 export const createCodingSpecialistNode = (
   runner: AgentRunner,
@@ -195,7 +70,26 @@ export const createCodingSpecialistNode = (
   const integrator = createMissionIntegrator(missionTracker);
 
   return async (state: GraphStateType): Promise<Partial<GraphStateType>> => {
-    const tools = toolDefs || (runner as any)._buildToolDefinitions();
+    const loopCount = (state.codingSpecialistSelfLoopCount || 0) + 1;
+    const MAX_CODING_SPECIALIST_PASSES = 30;
+    if (loopCount > MAX_CODING_SPECIALIST_PASSES) {
+      const message = `Coding specialist stopped after ${MAX_CODING_SPECIALIST_PASSES} passes to avoid an infinite tool loop. I gathered context and ran tools, but the task did not reach a clean completion signal. Please narrow the target files or ask me to continue from the current checkpoint.`;
+      console.warn(`[CodingSpecialist] ${message}`);
+      eventQueue?.push({ type: 'thought', content: `⚠️ ${message}` });
+      return {
+        messages: [{ role: 'assistant', content: message } as any],
+        pendingToolCalls: [],
+        returningFromSpecialist: null,
+        codingComplete: true,
+        codingSpecialistSelfLoopCount: loopCount,
+        completionSignal: {
+          reason: 'cannot_proceed',
+          explanation: message,
+        },
+      };
+    }
+
+    const fallbackTools = toolDefs || (runner as any)._buildToolDefinitions();
 
     // Extract user request and determine current phase
     const messages = state.messages || [];
@@ -209,238 +103,85 @@ export const createCodingSpecialistNode = (
           : JSON.stringify((firstUserMsg as any).content))
       : '';
 
-    // Initialize subagent coordination context
-    const coordination: SubagentCoordination = state.subagentCoordination || {
-      phase: 'exploration',
-      currentAgent: 'coding_specialist',
-      completedPhases: [],
-      sharedContext: {}
-    };
-
-    console.log(`[CodingSpecialist] Current phase: ${coordination.phase}, Completed: [${coordination.completedPhases.join(', ')}]`);
-
-    eventQueue?.push({
-      type: 'thought',
-      content: `💻 Coding Specialist: Orchestrating ${coordination.phase} phase...`
-    });
-
     try {
-      // Phase 1: Exploration - Understand the codebase
-      if (coordination.phase === 'exploration' && !coordination.completedPhases.includes('exploration')) {
-        console.log('[CodingSpecialist] Starting Exploration Phase...');
+      const piTools = await getPiCodingTools();
+      const isWorkerSubagent = Boolean((runner as any).currentAgentSessionKey);
+      const spawnTool = !isWorkerSubagent
+        ? ((runner as any).tools || []).find((tool: any) => tool.name === 'spawn_agent')
+        : undefined;
+      const managerTools = spawnTool
+        ? [...piTools, spawnTool]
+        : piTools;
+      const basePrompt = loadPrompt('coding-specialist.md') || '';
+      const codingHandoff = buildCodingHandoff(state);
+      const systemPrompt = `${basePrompt}
 
-        const explorationContext: ExplorationContext = {
-          targetDirectory: process.cwd(),
-          scanDepth: 3,
-          includeTests: true,
-          includeDocs: true,
-          excludePatterns: ['node_modules', '.git', 'dist', 'build'],
-          focusAreas: extractFocusAreas(userInput)
-        };
+PI CODING ${isWorkerSubagent ? 'WORKER' : 'MANAGER'} MODE:
+- ${isWorkerSubagent ? 'You are a coding worker spawned for one specific lane. Complete only your assigned lane and do not spawn agents.' : 'You are the manager for this coding request.'}
+- Use PI coding tools directly for small or tightly coupled changes.
+- ${isWorkerSubagent ? 'Do not use spawn_agent. Report back exact files changed, commands run, and any blockers.' : 'For independent feature lanes, spawn coding-specialist workers with spawn_agent.'}
+- ${isWorkerSubagent ? 'Stay inside the assigned feature/file ownership boundaries from the manager.' : 'Example: if the user asks for two independent features, spawn one worker per feature with the same target root and clear ownership boundaries.'}
+- Do not spawn for tiny single-file changes, tightly coupled edits, or work that needs strict serial ordering.
+- Never let workers use different host target roots for the same project.
+- ${isWorkerSubagent ? 'When finished, return a concise report with exact changed paths and validation evidence.' : 'After workers finish, inspect/verify their outputs, resolve conflicts, and run final validation yourself.'}
+- You have PI coding tools available: read, write, edit, find, grep, ls, and executePwsh.
+- ${isWorkerSubagent ? 'spawn_agent is intentionally unavailable in worker mode.' : 'You may use spawn_agent for coding-specialist workers when independent work can proceed in parallel.'}
+- For scaffolding/build work, execute commands with executePwsh on the main Windows host.
+- If the user asks to create a project in Downloads/Desktop/Documents/C:\\..., resolve that exact host path and create files there.
+- For multiple new files, either use repeated write calls or executePwsh with a safe script that writes files on the host.
+- Treat tool receipts as authoritative: "Success: wrote file", "Success: edited file", and "Success: command completed" mean that step succeeded.
+- After every meaningful write batch, verify with executePwsh from the target root and repair any failures before finalizing.
+- If a package scaffold command fails or is unavailable, manually create a minimal working project and verify it.
+- Never refuse a build/scaffold request because you only have review tools; this mode has file and process tools.
 
-        const explorationAgent = createExplorationAgent(runner, explorationContext, eventQueue);
-        const explorationResult = await explorationAgent(state);
+${codingHandoff}
 
-        coordination.sharedContext.codebaseMap = explorationResult.codebaseMap;
-        coordination.completedPhases.push('exploration');
-        coordination.phase = 'planning';
+HANDOFF RULES:
+- Treat the decomposer handoff as the implementation brief.
+- First mirror the handoff into todo_write unless this is a tiny single-step edit.
+- Execute steps in dependency order.
+- Use spawn_agent only for independent parallel groups or clearly separable feature lanes.
+- If inspection proves the handoff is wrong, adapt it, but keep the same user goal and target root.
+- Validation/repair steps are mandatory before final success.
 
-        return {
-          ...state,
-          subagentCoordination: coordination,
-          returningFromSpecialist: 'coding_specialist',
-          codingComplete: false
-        };
-      }
+USER REQUEST:
+${userInput}`;
 
-      // Phase 2: Planning - Develop strategy and plan
-      if (coordination.phase === 'planning' && !coordination.completedPhases.includes('planning')) {
-        console.log('[CodingSpecialist] Starting Planning Phase...');
+      const result = await integrator.wrapNode(
+        'coding_specialist',
+        () => runAgentStep(state, {
+          runner,
+          toolDefs: managerTools as any,
+          eventQueue,
+          nodeName: 'coding_specialist',
+          systemPromptOverride: systemPrompt,
+        }),
+        'Writing code'
+      );
 
-        const planningContext: PlanningContext = {
-          userRequest: userInput,
-          codebaseMap: coordination.sharedContext.codebaseMap,
-          constraints: {
-            timeframe: 'standard',
-            compatibility: ['cross-browser', 'backwards-compatible']
-          },
-          preferences: {
-            testingApproach: 'tdd',
-            documentationLevel: 'standard'
-          }
-        };
-
-        const planningAgent = createPlanningAgent(runner, planningContext, eventQueue);
-        const planningResult = await planningAgent(state);
-
-        coordination.sharedContext.developmentPlan = planningResult.plan;
-        coordination.completedPhases.push('planning');
-
-        // Check if plan needs approval
-        const needsApproval = planningResult.plan.overview.estimatedComplexity === 'high' ||
-                             planningResult.plan.risks.some(r => r.impact === 'high');
-
-        if (needsApproval) {
-          eventQueue?.push({
-            type: 'thought',
-            content: '📋 Development plan ready - requesting user approval before implementation...'
-          });
-
-          // Present plan for approval
-          const planSummary = `## Development Plan\n\n${planningResult.planDocument}\n\nApprove this plan to proceed with implementation?`;
-
-          return {
-            ...state,
-            subagentCoordination: coordination,
-            returningFromSpecialist: 'coding_specialist',
-            codingComplete: false,
-            pendingApproval: {
-              type: 'development_plan',
-              content: planSummary,
-              nextPhase: 'implementation'
-            }
-          };
-        } else {
-          coordination.phase = 'implementation';
-        }
-      }
-
-      // Phase 3: Implementation - Write the code
-      if (coordination.phase === 'implementation' && !coordination.completedPhases.includes('implementation')) {
-        console.log('[CodingSpecialist] Starting Implementation Phase...');
-
-        const plan = coordination.sharedContext.developmentPlan;
-        const currentPhase = plan?.phases[0]?.id || 'main';
-
-        const workerContext: WorkerContext = {
-          plan: coordination.sharedContext.developmentPlan,
-          currentPhase,
-          currentTask: 'implement_features',
-          workingDirectory: process.cwd(),
-          buildCommand: detectBuildCommand(),
-          testCommand: detectTestCommand()
-        };
-
-        const workerAgent = createWorkerAgent(runner, workerContext, eventQueue);
-        const workerResult = await workerAgent(state);
-
-        coordination.sharedContext.implementationResults = workerResult.result;
-        coordination.completedPhases.push('implementation');
-        coordination.phase = 'review';
-      }
-
-      // Phase 4: Code Review - Quality and security check
-      if (coordination.phase === 'review' && !coordination.completedPhases.includes('review')) {
-        console.log('[CodingSpecialist] Starting Code Review Phase...');
-
-        const reviewContext: ReviewContext = {
-          implementationResult: coordination.sharedContext.implementationResults,
-          reviewCriteria: {
-            security: true,
-            performance: true,
-            maintainability: true,
-            testCoverage: true,
-            documentation: true,
-            codeStyle: true
-          },
-          strictnessLevel: 'standard'
-        };
-
-        const reviewerAgent = createCodeReviewerAgent(runner, reviewContext, eventQueue);
-        const reviewResult = await reviewerAgent(state);
-
-        coordination.sharedContext.reviewResults = reviewResult.review;
-        coordination.completedPhases.push('review');
-
-        // Check if critical issues were found
-        const criticalIssues = reviewResult.review.issues.filter(i => i.severity === 'critical');
-        if (criticalIssues.length > 0) {
-          eventQueue?.push({
-            type: 'thought',
-            content: `⚠️ Code review found ${criticalIssues.length} critical issues - returning to implementation phase`
-          });
-
-          coordination.phase = 'implementation';
-          coordination.completedPhases = coordination.completedPhases.filter(p => p !== 'implementation');
-
-          return {
-            ...state,
-            subagentCoordination: coordination,
-            returningFromSpecialist: 'coding_specialist',
-            codingComplete: false
-          };
-        } else {
-          coordination.phase = 'testing';
-        }
-      }
-
-      // Phase 5: Testing - TDD and comprehensive validation
-      if (coordination.phase === 'testing' && !coordination.completedPhases.includes('testing')) {
-        console.log('[CodingSpecialist] Starting Testing Phase...');
-
-        const testContext: TestContext = {
-          reviewResult: coordination.sharedContext.reviewResults,
-          testStrategy: 'tdd',
-          testFramework: detectTestFramework(),
-          coverageTarget: 80,
-          testDirectory: './tests',
-          srcDirectory: './src'
-        };
-
-        const testRunnerAgent = createTestRunnerAgent(runner, testContext, eventQueue);
-        const testResult = await testRunnerAgent(state);
-
-        coordination.sharedContext.testResults = testResult.testResult;
-        coordination.completedPhases.push('testing');
-        coordination.phase = 'complete';
-      }
-
-      // All phases complete
-      if (coordination.phase === 'complete') {
-        console.log('[CodingSpecialist] All phases completed successfully');
-
-        eventQueue?.push({
-          type: 'thought',
-          content: '✅ Coding Specialist: All development phases completed successfully!'
-        });
-
-        // Generate final summary
-        const summary = generateCompletionSummary(coordination.sharedContext);
-
-        return {
-          ...state,
-          subagentCoordination: coordination,
-          returningFromSpecialist: null,
-          codingComplete: true,
-          completionSummary: summary
-        };
-      }
-
-      // Continue with current phase
       return {
-        ...state,
-        subagentCoordination: coordination,
-        returningFromSpecialist: 'coding_specialist',
-        codingComplete: false
+        ...result,
+        subagentCoordination: undefined,
+        returningFromSpecialist: null,
+        codingComplete: true,
+        codingSpecialistSelfLoopCount: loopCount,
       };
-
     } catch (error) {
-      console.error(`[CodingSpecialist] Error in ${coordination.phase} phase:`, error);
+      console.error('[CodingSpecialist] Error in coding specialist:', error);
 
       eventQueue?.push({
         type: 'thought',
-        content: `❌ Error in ${coordination.phase} phase: ${error instanceof Error ? error.message : String(error)}`
+        content: `❌ Error in coding specialist: ${error instanceof Error ? error.message : String(error)}`
       });
 
-      // Fallback to basic coding specialist behavior
       const systemPrompt = (loadPrompt('coding-specialist.md') || '') +
-        `\n\nERROR RECOVERY: Multi-agent system encountered an error. Proceeding with direct implementation.`;
+        `\n\nERROR RECOVERY: PI coding tools could not be loaded. Continue as a single coding agent with the available file and terminal tools. Do not route to review-only subagents.`;
 
       const result = await integrator.wrapNode(
         'coding_specialist_fallback',
         () => runAgentStep(state, {
           runner,
-          toolDefs: tools,
+          toolDefs: fallbackTools,
           eventQueue,
           nodeName: 'coding_specialist',
           systemPromptOverride: systemPrompt,
@@ -451,77 +192,9 @@ export const createCodingSpecialistNode = (
       return {
         ...result,
         returningFromSpecialist: null,
-        codingComplete: true
+        codingComplete: true,
+        codingSpecialistSelfLoopCount: loopCount,
       };
     }
   };
 };
-
-/**
- * Helper functions for the multi-agent system
- */
-
-function extractFocusAreas(userInput: string): string[] {
-  const areas: string[] = [];
-  const keywords = {
-    'auth': ['auth', 'login', 'authentication', 'security', 'user'],
-    'database': ['database', 'db', 'sql', 'query', 'data'],
-    'api': ['api', 'endpoint', 'rest', 'graphql', 'service'],
-    'ui': ['ui', 'interface', 'component', 'frontend', 'react'],
-    'testing': ['test', 'spec', 'coverage', 'tdd', 'unit'],
-    'performance': ['performance', 'optimization', 'speed', 'cache']
-  };
-
-  const lowerInput = userInput.toLowerCase();
-  for (const [area, terms] of Object.entries(keywords)) {
-    if (terms.some(term => lowerInput.includes(term))) {
-      areas.push(area);
-    }
-  }
-
-  return areas.length > 0 ? areas : ['general'];
-}
-
-function detectBuildCommand(): string {
-  // Simple detection logic - in production, this would check package.json, etc.
-  return 'npm run build';
-}
-
-function detectTestCommand(): string {
-  // Simple detection logic - in production, this would check package.json, etc.
-  return 'npm test';
-}
-
-function detectTestFramework(): string {
-  // Simple detection logic - in production, this would check dependencies
-  return 'jest';
-}
-
-function generateCompletionSummary(sharedContext: any): string {
-  const { codebaseMap, developmentPlan, implementationResults, reviewResults, testResults } = sharedContext;
-
-  return `
-## Development Summary
-
-### Codebase Analysis
-- Files analyzed: ${codebaseMap?.complexity?.totalFiles || 0}
-- Architecture patterns: ${codebaseMap?.architecture?.patterns?.join(', ') || 'N/A'}
-
-### Implementation
-- Files created: ${implementationResults?.createdFiles?.length || 0}
-- Files modified: ${implementationResults?.modifiedFiles?.length || 0}
-- Build status: ${implementationResults?.buildResult?.success ? '✅ Success' : '❌ Failed'}
-
-### Code Review
-- Overall rating: ${reviewResults?.overallRating || 'N/A'}
-- Security score: ${reviewResults?.metrics?.security?.score || 0}/100
-- Issues found: ${reviewResults?.issues?.length || 0}
-
-### Testing
-- Test coverage: ${testResults?.coverage?.percentage || 0}%
-- Tests passed: ${testResults?.testSuite?.passed || 0}
-- Tests failed: ${testResults?.testSuite?.failed || 0}
-
-All development phases completed successfully with quality assurance checks.
-  `.trim();
-}

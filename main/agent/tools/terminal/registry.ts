@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -51,6 +51,20 @@ export class CommandRegistry {
 
   private constructor() {}
 
+  private resolvePowerShellExecutable(): string {
+    if (process.platform !== 'win32') return 'bash';
+    try {
+      execSync('where pwsh.exe', { stdio: 'ignore', timeout: 3000 });
+      return 'pwsh.exe';
+    } catch {
+      return 'powershell.exe';
+    }
+  }
+
+  private psSingleQuote(value: string): string {
+    return `'${String(value).replace(/'/g, "''")}'`;
+  }
+
   public static getInstance(): CommandRegistry {
     if (!CommandRegistry.instance) {
       CommandRegistry.instance = new CommandRegistry();
@@ -92,7 +106,7 @@ export class CommandRegistry {
         this.wslAvailable = true;
         console.log(`[CommandRegistry] checkWslAvailable: ${this.wslCmdName} OK (via ensureWSLSetup)`);
       } catch (err2: any) {
-        console.warn(`[CommandRegistry] wsl.exe not found or not working, falling back to cmd... Error: ${err2.message || err2}`);
+        console.warn(`[CommandRegistry] wsl.exe not found or not working. Error: ${err2.message || err2}`);
         this.wslAvailable = false;
       }
     }
@@ -139,8 +153,8 @@ export class CommandRegistry {
         args = ['--exec', 'bash'];
         spawnOptions.env = { ...process.env, WSL_UTF8: '1', WSLENV: '' };
       } else {
-        executable = 'cmd.exe';
-        args = ['/q'];
+        executable = this.resolvePowerShellExecutable();
+        args = ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass'];
       }
     } else {
       executable = 'bash';
@@ -161,7 +175,9 @@ export class CommandRegistry {
     this.shells.set(target, newShell);
 
     if (isWin && target === 'main') {
-      proc.stdin?.write('@echo off\n');
+      proc.stdin?.write('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n');
+      proc.stdin?.write('$OutputEncoding = [System.Text.Encoding]::UTF8\n');
+      proc.stdin?.write('$ProgressPreference = "SilentlyContinue"\n');
     } else {
       proc.stdin?.write('export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin"\n');
     }
@@ -344,21 +360,33 @@ export class CommandRegistry {
     }, timeoutMs);
 
     const isWin = process.platform === 'win32';
-    const isCmd = target === 'main' && isWin;
+    const isPowerShell = target === 'main' && isWin;
 
-    const needCd = req.cwd !== shell.lastRequestedCwd;
+    const needCd = req.cwd !== shell.currentCwd;
     if (needCd) {
       shell.lastRequestedCwd = req.cwd;
     }
 
-    if (isCmd) {
-      shell.proc.stdin?.write(`@set "EF_M=${marker}"\n`);
+    if (isPowerShell) {
+      shell.proc.stdin?.write(`$global:EF_M = ${this.psSingleQuote(marker)}\n`);
+      shell.proc.stdin?.write('$global:EF_EXIT = 0\n');
       if (needCd) {
-        shell.proc.stdin?.write(`cd /d "${req.cwd}"\n`);
+        shell.proc.stdin?.write(`Set-Location -LiteralPath ${this.psSingleQuote(req.cwd)}\n`);
       }
+      shell.proc.stdin?.write('try {\n');
+      shell.proc.stdin?.write('  & {\n');
+      shell.proc.stdin?.write('    $global:LASTEXITCODE = $null\n');
       shell.proc.stdin?.write(`${req.command}\n`);
-      shell.proc.stdin?.write(`@echo %EF_M% %errorlevel%\n`);
-      shell.proc.stdin?.write(`@cd\n`);
+      shell.proc.stdin?.write('  }\n');
+      shell.proc.stdin?.write('  if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $global:EF_EXIT = $LASTEXITCODE }\n');
+      shell.proc.stdin?.write('  elseif (-not $?) { $global:EF_EXIT = 1 }\n');
+      shell.proc.stdin?.write('  else { $global:EF_EXIT = 0 }\n');
+      shell.proc.stdin?.write('} catch {\n');
+      shell.proc.stdin?.write('  Write-Error $_\n');
+      shell.proc.stdin?.write('  $global:EF_EXIT = 1\n');
+      shell.proc.stdin?.write('}\n');
+      shell.proc.stdin?.write('Write-Output "$global:EF_M $global:EF_EXIT"\n');
+      shell.proc.stdin?.write('Write-Output (Get-Location).Path\n');
     } else {
       const { translateWindowsPathToLinux } = require('../linux-vm-executor');
       const linuxCwd = isWin ? translateWindowsPathToLinux(req.cwd) : req.cwd;

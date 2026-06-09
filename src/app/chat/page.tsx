@@ -192,6 +192,7 @@ export default function ChatPage() {
         completionPricing: number;
     } | null>(null);
     const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+    const [pursueGoalMode, setPursueGoalMode] = useState(false);
     const [folderContexts, setFolderContexts] = useState<FolderContext[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const bypassLoadingRef = useRef(false);
@@ -231,7 +232,7 @@ export default function ChatPage() {
     const [showRevertModal, setShowRevertModal] = useState(false);
     const [revertTarget, setRevertTarget] = useState<{ conversationId: string; timestamp: number; msgIndex: number } | null>(null);
 
-    const { debate: debateData, isDebating } = useDebateStream();
+    const { debate: debateData, isDebating, lastDebateId, skipDebate } = useDebateStream();
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
         try {
             await (window as any).electronAPI.scheduledTasks.save({
@@ -286,6 +287,8 @@ export default function ChatPage() {
     // Tool Detail Side Panel State
     const [selectedToolCall, setSelectedToolCall] = useState<any | null>(null);
     const [isToolDetailOpen, setIsToolDetailOpen] = useState(false);
+    const [toolDetailTabs, setToolDetailTabs] = useState<any[]>([]);
+    const [activeToolDetailTabId, setActiveToolDetailTabId] = useState<string | null>(null);
 
     // Subagent Panel State
     const [showSubagentPanel, setShowSubagentPanel] = useState(false);
@@ -300,7 +303,7 @@ export default function ChatPage() {
         prevIsToolDetailOpen.current = isToolDetailOpen;
     }, [isToolDetailOpen]);
 
-    const handlePillClick = (tc: ToolCallDisplay) => {
+    const mapToolCallForDetail = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
         const progressEvents = subAgentProgressRef.current.get(tc.id) || [];
         const progressScreenshots = progressEvents
@@ -330,7 +333,7 @@ export default function ChatPage() {
         const finalScreenshots = screenshotData.slice(-12);
 
         // Construct toolCall structure expected by ToolDetailSidePanel
-        const mappedToolCall = {
+        return {
             id: tc.id,
             toolName: tc.toolName,
             args: tc.args || {},
@@ -345,9 +348,56 @@ export default function ChatPage() {
             },
             agentName: tc.displayName || 'Fern',
         };
+    };
+
+    const openToolDetailTab = (mappedToolCall: any) => {
         setSelectedToolCall(mappedToolCall);
+        setActiveToolDetailTabId(mappedToolCall.id);
+        setToolDetailTabs(prev => {
+            const existingIndex = prev.findIndex(tab => tab.id === mappedToolCall.id);
+            if (existingIndex !== -1) {
+                const next = [...prev];
+                next[existingIndex] = { ...next[existingIndex], ...mappedToolCall };
+                return next;
+            }
+            return [...prev, mappedToolCall].slice(-8);
+        });
         setIsToolDetailOpen(true);
         setIsComputerPaneOpen(false); // Close computer pane to avoid overlap
+    };
+
+    const handlePillClick = (tc: ToolCallDisplay) => {
+        openToolDetailTab(mapToolCallForDetail(tc));
+    };
+
+    const maybeOpenUserUrlTool = (tc: ToolCallDisplay) => {
+        if (tc.toolName !== 'show_user_url') return;
+        const url = typeof tc.args?.url === 'string' ? tc.args.url.trim() : '';
+        if (!url) return;
+        openToolDetailTab(mapToolCallForDetail(tc));
+    };
+
+    const handleSelectToolDetailTab = (tabId: string) => {
+        const tab = toolDetailTabs.find(t => t.id === tabId);
+        if (!tab) return;
+        setSelectedToolCall(tab);
+        setActiveToolDetailTabId(tabId);
+        setIsToolDetailOpen(true);
+    };
+
+    const handleCloseToolDetailTab = (tabId: string) => {
+        setToolDetailTabs(prev => {
+            const idx = prev.findIndex(tab => tab.id === tabId);
+            if (idx === -1) return prev;
+            const next = prev.filter(tab => tab.id !== tabId);
+            if (activeToolDetailTabId === tabId) {
+                const fallback = next[idx] || next[idx - 1] || next[0] || null;
+                setSelectedToolCall(fallback);
+                setActiveToolDetailTabId(fallback?.id || null);
+                if (!fallback) setIsToolDetailOpen(false);
+            }
+            return next;
+        });
     };
 
     const loadingMessages = ["marinating...", "schlepping...", "concocting...", "honking..."];
@@ -603,7 +653,7 @@ export default function ChatPage() {
     const [settingsShowuiUrl, setSettingsShowuiUrl] = useState("http://127.0.0.1:7860");
     const [settingsVlmMode, setSettingsVlmMode] = useState<"local" | "cloud">("local");
     const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
-    const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-instruct-cloud");
+    const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-cloud");
     const [settingsVlmCloudUrl, setSettingsVlmCloudUrl] = useState("https://ollama.com");
     const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
 
@@ -728,18 +778,57 @@ export default function ChatPage() {
     // Local Execution Permission State (Task 7.1 & 7.2)
     const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
     const [localAlwaysAllowed, setLocalAlwaysAllowed] = useState(false);
+    const localAlwaysAllowedRef = useRef(false);
+    const answeredLocalExecutionRequestIdsRef = useRef<Set<string>>(new Set());
 
     // Reset localAlwaysAllowed and answeredToolCallIdsRef when conversationId changes (Task 7.2)
     useEffect(() => {
         setLocalAlwaysAllowed(false);
+        localAlwaysAllowedRef.current = false;
         answeredToolCallIdsRef.current.clear();
+        answeredLocalExecutionRequestIdsRef.current.clear();
     }, [activeConversationId]);
+
+    const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean) => {
+        if (!request?.requestId || answeredLocalExecutionRequestIdsRef.current.has(request.requestId)) {
+            return;
+        }
+
+        answeredLocalExecutionRequestIdsRef.current.add(request.requestId);
+        if (alwaysAllow) {
+            localAlwaysAllowedRef.current = true;
+            setLocalAlwaysAllowed(true);
+        }
+
+        const acpApi = (window as any).electronAPI?.acp;
+        acpApi?.sendLocalExecutionResponse?.({ requestId: request.requestId, approved, alwaysAllow });
+
+        setLocalExecutionRequest(current => current?.requestId === request.requestId ? null : current);
+        const updatedToolCalls = liveToolCallsRef.current.map(tc => (
+            tc.id === request.requestId
+                ? {
+                    ...tc,
+                    status: approved ? "done" as const : "error" as const,
+                    output: approved
+                        ? 'Permission approved. Running local command...'
+                        : `Permission denied.\n\n${request.command}`,
+                    data: { ...(tc.data || {}), approved, alwaysAllow },
+                  }
+                : tc
+        ));
+        liveToolCallsRef.current = updatedToolCalls;
+        setLiveToolCalls(updatedToolCalls);
+    }, []);
 
     // Persistent local execution request listener (survives stream cleanup)
     useEffect(() => {
         const acpApi = (window as any).electronAPI?.acp;
         if (!acpApi?.onLocalExecutionRequest) return;
         acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
+            if (localAlwaysAllowedRef.current) {
+                respondToLocalExecutionRequest(request, true, true);
+                return;
+            }
             setLocalExecutionRequest(request);
         });
         return () => {
@@ -758,45 +847,11 @@ export default function ChatPage() {
             const updatedTc = msg.toolCalls?.find(tc => tc.id === current.id);
             if (updatedTc) {
                 if (updatedTc.status !== current.status || updatedTc.output !== current.output) {
-                    const progressEvents = subAgentProgressRef.current.get(updatedTc.id) || [];
-                    const progressScreenshots = progressEvents
-                        .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
-                        .map(e => (e.screenshot?.base64 || e.content) as string);
-
-                    const screenshotData: string[] = [];
-                    if (progressScreenshots.length > 0) {
-                        screenshotData.push(...progressScreenshots);
-                    }
-
-                    const staticScreenshot = updatedTc.base64Image || updatedTc.data?.screenshot || updatedTc.data?.base64Image;
-                    if (staticScreenshot && typeof staticScreenshot === 'string' && !screenshotData.includes(staticScreenshot)) {
-                        screenshotData.push(staticScreenshot);
-                    } else if (Array.isArray(staticScreenshot)) {
-                        staticScreenshot.forEach((img: any) => {
-                            if (typeof img === 'string' && !screenshotData.includes(img)) {
-                                screenshotData.push(img);
-                            }
-                        });
-                    }
-
-                    const finalScreenshots = screenshotData.slice(-12);
-
-                    const mappedToolCall = {
-                        id: updatedTc.id,
-                        toolName: updatedTc.toolName,
-                        args: updatedTc.args || {},
-                        output: updatedTc.output || '',
-                        duration: updatedTc.durationMs,
-                        status: updatedTc.status,
-                        data: {
-                            ...updatedTc.data,
-                            screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,
-                            base64Image: updatedTc.base64Image || updatedTc.data?.base64Image,
-                            results: updatedTc.data?.results,
-                        },
-                        agentName: updatedTc.displayName || 'Fern',
-                    };
+                    const mappedToolCall = mapToolCallForDetail(updatedTc);
                     setSelectedToolCall(mappedToolCall);
+                    setToolDetailTabs(prev => prev.map(tab => (
+                        tab.id === mappedToolCall.id ? { ...tab, ...mappedToolCall } : tab
+                    )));
                 }
                 break;
             }
@@ -935,6 +990,7 @@ export default function ChatPage() {
 
     const liveToolCallsRef = useRef<ToolCallDisplay[]>([]);
     const activeConversationIdRef = useRef<string | null>(null);
+    const conversationSwitchSeqRef = useRef(0);
     const streamingToolCallsRef = useRef<LiveToolCall[]>([]);
     const streamingContentRef = useRef("");
     const pendingNarrativeRef = useRef<string>("");
@@ -952,9 +1008,166 @@ export default function ChatPage() {
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
 
+    const applyLiveToolUpdate = useCallback((data: { toolName: string; toolCallId?: string; update: string }) => {
+        const update = String(data.update || '').trim();
+        if (!update) return;
+
+        const key = data.toolCallId || `${data.toolName}_running`;
+        let existingId = toolCallMap.current.get(key);
+        if (!existingId && data.toolCallId) {
+            existingId = data.toolCallId;
+        }
+
+        let index = existingId ? liveToolCallsRef.current.findIndex(tc => tc.id === existingId) : -1;
+        if (index < 0) {
+            for (let i = liveToolCallsRef.current.length - 1; i >= 0; i -= 1) {
+                const tc = liveToolCallsRef.current[i];
+                if (tc.toolName === data.toolName && tc.status === 'running') {
+                    index = i;
+                    break;
+                }
+            }
+        }
+        if (index < 0) return;
+
+        const current = liveToolCallsRef.current[index];
+        const nextLines = `${current.output || ''}\n${update}`
+            .split(/\r?\n/)
+            .map(line => line.trimEnd())
+            .filter(Boolean)
+            .slice(-24);
+        const updated = [...liveToolCallsRef.current];
+        updated[index] = {
+            ...current,
+            output: nextLines.join('\n'),
+            description: update,
+            data: {
+                ...(current.data || {}),
+                liveUpdate: update,
+            },
+        };
+        liveToolCallsRef.current = updated;
+        setLiveToolCalls(updated);
+    }, []);
+
+    const resetConversationUiState = (nextConversationId: string | null, options?: { clearInput?: boolean; clearAttachments?: boolean }) => {
+        messagesRef.current = [];
+        setMessages([]);
+        activeConversationIdRef.current = nextConversationId;
+        setActiveConversationId(nextConversationId);
+
+        if (options?.clearInput) setInputValue("");
+        if (options?.clearAttachments) setAttachments([]);
+
+        setIsLoading(false);
+        setStreamingContent("");
+        setStreamingThought("");
+        streamingContentRef.current = "";
+        streamingThoughtRef.current = "";
+        pendingNarrativeRef.current = "";
+
+        liveToolCallsRef.current = [];
+        setLiveToolCalls([]);
+        setStreamingToolCalls([]);
+        streamingToolCallsRef.current = [];
+        toolCallMap.current.clear();
+        subAgentProgressRef.current.clear();
+        setSubAgentProgressVersion(0);
+
+        assistantMessageIdRef.current = null;
+        isMessageCommittedRef.current = false;
+        isHandlingPlanRef.current = false;
+        hasReceivedUsageData.current = false;
+        missionTimelineRef.current = null;
+
+        setCurrentPlan(null);
+        setContextItems([]);
+        setExecutionPlan(null);
+        setIsExecutionPlanPaneOpen(false);
+        setActivePlan(null);
+        setCurrentSites([]);
+        setCurrentPhase(undefined);
+        setCurrentNode("");
+        setMissionTimeline(null);
+        setMissionComplete(false);
+        setActivePlanSteps(null);
+        setActivePlanTitle(null);
+        setPanelTasks([]);
+        setShowTasksPanel(false);
+        setTasksFilePath(undefined);
+        setInstructions("");
+        setActiveUserQuestions([]);
+        activeUserQuestionRef.current = false;
+        setShowHitlApproval(false);
+        setHitlRequest(null);
+        setLocalExecutionRequest(null);
+        setSelectedToolCall(null);
+        setToolDetailTabs([]);
+        setActiveToolDetailTabId(null);
+        setIsToolDetailOpen(false);
+        setIsComputerPaneOpen(false);
+        setActiveComputerData(null);
+        setShowSubagentPanel(false);
+        setSelectedSubagentToolCall(null);
+        setActiveSurface(null);
+        subagent.reset();
+
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem('everfern_streaming_thought');
+            sessionStorage.removeItem('everfern_live_tool_calls');
+            sessionStorage.removeItem('everfern_is_loading');
+        }
+    };
+
     const isEmpty = messages.length === 0 && !isLoading && liveToolCalls.length === 0 && !streamingContent;
     const isProjectLocked = !isEmpty && folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
-    const displayName = (config?.userName || onboardingName || "there").toString();
+    const [profileDisplayName, setProfileDisplayName] = useState<string>("");
+    const displayName = (config?.userName || onboardingName || profileDisplayName || "User").toString();
+
+    useEffect(() => {
+        let mounted = true;
+        const fetchDisplayName = async () => {
+            try {
+                let name = "";
+                if ((window as any).electronAPI?.loadConfig) {
+                    const res = await (window as any).electronAPI.loadConfig();
+                    if (res.success && res.config?.provider === 'everfern' && res.config?.apiKey) {
+                        try {
+                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+                            const userRes = await fetch(`${API_URL}/api/user/me`, {
+                                headers: { Authorization: `Bearer ${res.config.apiKey}` }
+                            });
+                            if (userRes.ok) {
+                                const userData = await userRes.json();
+                                name = userData.displayName || userData.fullName || userData.name || '';
+                                if (!name && userData.email) name = userData.email.split('@')[0];
+                            }
+                        } catch (e) {
+                            console.error("Failed to fetch user from API", e);
+                        }
+                    }
+                    if (!name && res.success && res.config?.userName) {
+                        name = res.config.userName;
+                    }
+                }
+                if (!name && (window as any).electronAPI?.system?.getUsername) {
+                    name = await (window as any).electronAPI.system.getUsername();
+                }
+                if (mounted && name) {
+                    setProfileDisplayName(name);
+                }
+            } catch {
+                // Keep the existing greeting fallback.
+            }
+        };
+
+        fetchDisplayName();
+        const interval = setInterval(fetchDisplayName, 5000);
+        return () => {
+            mounted = false;
+            clearInterval(interval);
+        };
+    }, []);
 
     useEffect(() => {
         if (displayName) {
@@ -1292,10 +1505,26 @@ export default function ChatPage() {
             setSettingsCustomModel(config.customModel || "z-ai/glm5");
             setModelValidationStatus("none");
             setSettingsShowuiUrl(config.showuiUrl || "http://127.0.0.1:7860");
+            const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
+            const defaultLoadedVlmModel =
+                loadedVlmProvider === "everfern" ? "fern-1" :
+                loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
+                loadedVlmProvider === "minimax" ? "MiniMax-M3" :
+                loadedVlmProvider === "openai" ? "gpt-5.5" :
+                loadedVlmProvider === "anthropic" ? "claude-opus-4.6" :
+                "qwen3-vl:235b-cloud";
+            const defaultLoadedVlmUrl =
+                loadedVlmProvider === "minimax" ? "https://api.minimax.io/v1" :
+                loadedVlmProvider === "openai" ? "https://api.openai.com/v1" :
+                loadedVlmProvider === "anthropic" ? "https://api.anthropic.com" :
+                loadedVlmProvider === "nvidia" ? "https://integrate.api.nvidia.com/v1" :
+                loadedVlmProvider === "ollama" ? "https://ollama.com" :
+                "";
+            const loadedVlmUrl = config.vlm?.baseUrl || defaultLoadedVlmUrl;
             setSettingsVlmMode(config.vlm?.engine === "cloud" ? "cloud" : "local");
-            setSettingsVlmCloudProvider(config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama");
-            setSettingsVlmCloudModel(config.vlm?.engine === "cloud" ? (config.vlm.model || "qwen3-vl:235b-instruct-cloud") : "qwen3-vl:235b-instruct-cloud");
-            setSettingsVlmCloudUrl(config.vlm?.engine === "cloud" ? (config.vlm.baseUrl || "https://ollama.com") : "https://ollama.com");
+            setSettingsVlmCloudProvider(loadedVlmProvider);
+            setSettingsVlmCloudModel(config.vlm?.engine === "cloud" ? (config.vlm.model || defaultLoadedVlmModel) : "qwen3-vl:235b-cloud");
+            setSettingsVlmCloudUrl(config.vlm?.engine === "cloud" ? (loadedVlmProvider === "minimax" && loadedVlmUrl.includes("ollama.com") ? defaultLoadedVlmUrl : loadedVlmUrl) : "https://ollama.com");
             setSettingsVlmCloudKey(config.vlm?.engine === "cloud" ? (config.keys?.[`vlm-${config.vlm.provider || 'ollama'}`] || config.vlm.apiKey || "") : "");
         }
     }, [showSettings]);
@@ -1637,6 +1866,7 @@ export default function ChatPage() {
         if (!api?.plans?.read) return;
         try {
             const planContent = await api.plans.read(chatId, 'execution_plan.md');
+            if (activeConversationIdRef.current !== chatId) return;
             if (planContent) setActivePlan({ content: planContent, chatId });
             else setActivePlan(null);
         } catch (e) { console.error("Failed to check for plan", e); }
@@ -1647,6 +1877,7 @@ export default function ChatPage() {
         if (!api?.sites?.list) return;
         try {
             const results = await api.sites.list(chatId);
+            if (activeConversationIdRef.current !== chatId) return;
             // Filter sites to only include those belonging to the current chat
             const chatSites = (results || []).filter((s: any) => s.chatId === chatId);
             setCurrentSites(chatSites);
@@ -1774,7 +2005,9 @@ export default function ChatPage() {
                 toolCallMap.current.set(mapKey, newTc.id);
                 liveToolCallsRef.current = [...filtered, newTc];
                 setLiveToolCalls([...liveToolCallsRef.current]);
+                maybeOpenUserUrlTool(newTc);
             });
+            acpApi.onToolUpdate?.(applyLiveToolUpdate);
             acpApi.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
                 // Write directly to ref — NO state update, NO re-render
                 const map = subAgentProgressRef.current;
@@ -1844,6 +2077,9 @@ export default function ChatPage() {
                     };
                     liveToolCallsRef.current = updated;
                     setLiveToolCalls(updated);
+                    if (record.toolName === 'show_user_url') {
+                        openToolDetailTab(mapToolCallForDetail(updated[existingIdx]));
+                    }
 
                     // Detect preference/choice memories from memory_search results using structured data
                     if (record.toolName === 'memory_search' && record.result?.data?.hasPreference) {
@@ -1946,11 +2182,12 @@ export default function ChatPage() {
                     providerType: currentM?.providerType,
                     conversationId: activeConversationId,
                     assistantMessageId: assistantMessageIdRef.current,
+                    operatorMode: pursueGoalMode,
                 });
             } catch (err) { console.error("Stream error:", err); }
             finally { setIsLoading(false); }
         })();
-    }, [activeConversationId, selectedModel, availableModels]);
+    }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate]);
 
     const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = false) => {
         if (msgs.length === 0) return;
@@ -2229,12 +2466,14 @@ export default function ChatPage() {
                     const updatedToolCalls = [...filtered, newTc];
                     liveToolCallsRef.current = updatedToolCalls;
                     setLiveToolCalls(updatedToolCalls);
+                    maybeOpenUserUrlTool(newTc);
 
                     console.log('[Frontend] ✅ Added tool to timeline:', toolName);
                     console.log('[Frontend] Total tools AFTER adding:', liveToolCallsRef.current.length);
                     console.log('[Frontend] Updated liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, label: tc.label, status: tc.status })));
 
                 });
+                api.onToolUpdate?.(applyLiveToolUpdate);
                 api.onViewSkill(({ name }: { name: string }) => {
                     const display = resolveToolDisplay('view_skill', { name });
                     const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName: 'view_skill', ...display, status: 'done' };
@@ -2411,6 +2650,10 @@ export default function ChatPage() {
                         toolCallMap.current.delete(key);
                         liveToolCallsRef.current = updatedToolCalls;
                         setLiveToolCalls(updatedToolCalls);
+                        if (record.toolName === 'show_user_url') {
+                            const updatedTool = updatedToolCalls.find(t => t.id === existingId);
+                            if (updatedTool) openToolDetailTab(mapToolCallForDetail(updatedTool));
+                        }
                     }
                 });
                 api.onThought(({ content }: { content: string }) => {
@@ -2746,6 +2989,7 @@ export default function ChatPage() {
                     conversationId: activeConversationIdRef.current,
                     projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
                     assistantMessageId: assistantMessageIdRef.current,
+                    operatorMode: pursueGoalMode,
                 });
             } catch (err) {
                 if (isMessageCommittedRef.current) return;
@@ -2786,7 +3030,7 @@ export default function ChatPage() {
                 setIsLoading(false);
             }
         })();
-    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan]);
+    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan, pursueGoalMode, applyLiveToolUpdate]);
 
     const handleQuestionSubmit = useCallback((answers: Record<string, string[]>, attachedFiles?: Array<{ name: string; content?: string; base64?: string; mimeType?: string }>) => {
         // Format as clear form response so AI doesn't interpret as a new question
@@ -3049,82 +3293,32 @@ export default function ChatPage() {
     }, [handleSend]);
 
     const handleNewChat = () => {
+        conversationSwitchSeqRef.current += 1;
         setShowArtifacts(false);
         setShowSettings(false);
         setShowIntegrationSettings(false);
         setShowProjectsPage(false);
-        setMessages([]);
-        setInputValue("");
-        setAttachments([]);
-        activeConversationIdRef.current = null;
-        setActiveConversationId(null);
-        setCurrentPlan(null);
-        setContextItems([]);
-        setExecutionPlan(null);
-        setIsExecutionPlanPaneOpen(false);
-        // Clear live states
-        setStreamingContent("");
-        setStreamingThought("");
-        streamingContentRef.current = "";
-        streamingThoughtRef.current = "";
-        liveToolCallsRef.current = [];
-        setLiveToolCalls([]);
-        setStreamingToolCalls([]);
-        streamingToolCallsRef.current = [];
-        subAgentProgressRef.current.clear();
-        setSubAgentProgressVersion(0);
-        setCurrentPhase(undefined);
-        setCurrentNode("");
-        setMissionTimeline(null);
-        setMissionComplete(false);
-        setActivePlanSteps(null);
-        setActivePlanTitle(null);
-        setPanelTasks([]);
-        setShowTasksPanel(false);
-        setInstructions("");
-        // Reset subagent tracking
-        setShowSubagentPanel(false);
-        setSelectedSubagentToolCall(null);
-        subagent.reset();
+        resetConversationUiState(null, { clearInput: true, clearAttachments: true });
     };
 
     const handleSelectConversation = async (id: string) => {
         if (!id) return;
 
+        const loadSeq = ++conversationSwitchSeqRef.current;
         setShowArtifacts(false);
         setShowSettings(false);
         setShowIntegrationSettings(false);
         setShowProjectsPage(false);
         setSidebarOpen(false); // auto-collapse on mobile/small screens
+        resetConversationUiState(id, { clearAttachments: true });
 
         try {
             if ((window as any).electronAPI?.history?.load) {
                 const conv = await (window as any).electronAPI.history.load(id);
+                if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
+                    return;
+                }
                 if (conv?.messages) {
-                    // Clear live states before loading new conversation
-                    setStreamingContent("");
-                    setStreamingThought("");
-                    streamingContentRef.current = "";
-                    streamingThoughtRef.current = "";
-                    liveToolCallsRef.current = [];
-                    setLiveToolCalls([]);
-                    setStreamingToolCalls([]);
-                    streamingToolCallsRef.current = [];
-                    subAgentProgressRef.current.clear();
-                    setSubAgentProgressVersion(0);
-                    setCurrentPhase(undefined);
-                    setCurrentNode("");
-                    setMissionTimeline(null);
-                    setMissionComplete(false);
-                    setActivePlanSteps(null);
-                    setActivePlanTitle(null);
-                    setPanelTasks([]);
-                    setShowTasksPanel(false);
-                    setInstructions("");
-
-                    activeConversationIdRef.current = id;
-                    setActiveConversationId(id);
-
                     // Restore project context
                     if (conv.projectId) {
                         // Find project in the current projects list
@@ -3142,7 +3336,7 @@ export default function ChatPage() {
                         setFolderContexts([]);
                     }
 
-                    setMessages(conv.messages.map((m: any) => ({
+                    const loadedMessages = conv.messages.map((m: any) => ({
                         id: m.id || crypto.randomUUID(),
                         role: m.role,
                         content: m.content,
@@ -3160,11 +3354,9 @@ export default function ChatPage() {
                         attachments: m.attachments || [],
                         timestamp: m.createdAt ? new Date(m.createdAt) : new Date(conv.updatedAt),
                         stopped: !!m.stopped
-                    })));
-                    setCurrentPlan(null);
-                    setContextItems([]);
-                    setExecutionPlan(null);
-                    setIsExecutionPlanPaneOpen(false);
+                    }));
+                    messagesRef.current = loadedMessages;
+                    setMessages(loadedMessages);
                     const savedPlan = localStorage.getItem(`everfern_execution_plan_${id}`);
                     if (savedPlan) {
                         try {
@@ -3174,10 +3366,14 @@ export default function ChatPage() {
                         } catch (e) { }
                     }
                     checkForPlan(id);
+                    checkForSites(id);
 
                     // ── Restore pending HITL form if one was active when app closed ──
                     try {
                         const pendingHitl = await (window as any).electronAPI?.history?.hitl?.getPending?.(id);
+                        if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
+                            return;
+                        }
                         if (pendingHitl?.request) {
                             console.log('[HITL Restore] Found pending HITL request on load:', pendingHitl.request.id);
                             (window as any).__activeHitl = true;
@@ -3251,7 +3447,13 @@ export default function ChatPage() {
     const handleSaveSettings = async () => {
         const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
-        const defaultVlmModel = settingsVlmCloudProvider === 'everfern' ? 'fern-1' : settingsVlmCloudProvider === 'openrouter' ? 'bytedance/ui-tars-1.5-7b' : settingsVlmCloudProvider === 'openai' ? 'gpt-4o' : 'qwen3-vl:235b-instruct-cloud';
+        const defaultVlmModel =
+          settingsVlmCloudProvider === 'everfern' ? 'fern-1' :
+          settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
+          settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
+          settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :
+          settingsVlmCloudProvider === 'anthropic' ? 'claude-opus-4.6' :
+          'qwen3-vl:235b-cloud';
         const finalVlmModel = settingsVlmCloudModel.trim() || defaultVlmModel;
         if (settingsVlmMode === "cloud") {
           // For cloud-only providers like 'everfern' and 'openrouter', don't pass baseUrl/apiKey
@@ -3359,6 +3561,35 @@ export default function ChatPage() {
                             <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('document'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                 Upload Document
+                            </button>
+                            <div style={{ height: 1, backgroundColor: "#f1f1ef", margin: "4px 6px" }} />
+                            <button
+                                type="button"
+                                onClick={() => setPursueGoalMode(v => !v)}
+                                title="Enable operator mode for long-running goals"
+                                style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: pursueGoalMode ? "rgba(0,0,0,0.05)" : "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = pursueGoalMode ? "rgba(0,0,0,0.05)" : "transparent"}
+                            >
+                                <SparklesIcon width={18} height={18} style={{ flexShrink: 0 }} />
+                                <span style={{ flex: 1 }}>Pursue goal</span>
+                                <span
+                                    aria-hidden
+                                    style={{
+                                        width: 32,
+                                        height: 18,
+                                        borderRadius: 999,
+                                        backgroundColor: pursueGoalMode ? "#201e24" : "#d6d6d3",
+                                        padding: 2,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: pursueGoalMode ? "flex-end" : "flex-start",
+                                        transition: "all 0.18s ease",
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    <span style={{ width: 14, height: 14, borderRadius: "50%", backgroundColor: "#ffffff", boxShadow: "0 1px 2px rgba(0,0,0,0.18)" }} />
+                                </span>
                             </button>
                         </motion.div>
                     )}
@@ -3839,7 +4070,7 @@ export default function ChatPage() {
                         </div>
                     </header>
 
-                    <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "#ffffff", margin: "0 12px 12px 0", borderRadius: 28, border: "1px solid #e8e6d9", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", overflow: "hidden" }}>
+                    <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "#ffffff", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid #e8e6d9", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", overflow: "hidden" }}>
                         {/* Main Chat Area */}
                         {showAnalyticsPage ? (
                             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "#fff" }}>
@@ -3870,9 +4101,9 @@ export default function ChatPage() {
                                 />
                             </div>
                         ) : (
-                        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-                            <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 0 32px" }}>
-                                <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 32px" }}>
+                        <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+                            <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px" }}>
+                                <div style={{ maxWidth: isToolDetailOpen ? 620 : 800, margin: "0 auto", padding: isToolDetailOpen ? "0 22px" : "0 32px" }}>
 
                                     {/* ── Empty / Home State ── */}
                                     {isEmpty && (
@@ -4003,38 +4234,6 @@ export default function ChatPage() {
                                                         request={hitlRequest}
                                                         onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
                                                         onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                    />
-                                                )}
-
-                                                {/* Task 7.4: Local Execution Permission Card */}
-                                                {localExecutionRequest && (
-                                                    <LocalExecutionPermissionCard
-                                                        command={localExecutionRequest.command}
-                                                        shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
-                                                        reason={localExecutionRequest.reason}
-                                                        agentName="EverFern"
-                                                        onDeny={() => {
-                                                            console.log('[Frontend] LocalExecutionPermissionCard 2: onDeny triggered', localExecutionRequest?.requestId);
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            console.log('[Frontend] sendLocalExecutionResponse exists:', typeof acpApi?.sendLocalExecutionResponse);
-                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: false, alwaysAllow: false });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
-                                                        onAlwaysAllow={() => {
-                                                            console.log('[Frontend] LocalExecutionPermissionCard 2: onAlwaysAllow triggered', localExecutionRequest?.requestId);
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            console.log('[Frontend] sendLocalExecutionResponse exists:', typeof acpApi?.sendLocalExecutionResponse);
-                                                            setLocalAlwaysAllowed(true);
-                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: true });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
-                                                        onAllowOnce={() => {
-                                                            console.log('[Frontend] LocalExecutionPermissionCard 2: onAllowOnce triggered', localExecutionRequest?.requestId);
-                                                            const acpApi = (window as any).electronAPI?.acp;
-                                                            console.log('[Frontend] sendLocalExecutionResponse exists:', typeof acpApi?.sendLocalExecutionResponse);
-                                                            acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: false });
-                                                            setLocalExecutionRequest(null);
-                                                        }}
                                                     />
                                                 )}
 
@@ -4339,6 +4538,8 @@ export default function ChatPage() {
                                                     subAgentProgress={subAgentProgress}
                                                     debateData={debateData}
                                                     isDebating={isDebating}
+                                                    debateId={lastDebateId}
+                                                    onSkipDebate={skipDebate}
                                                     missionTimeline={missionTimeline}
                                                     onPillClick={handlePillClick}
                                                 />
@@ -4534,7 +4735,7 @@ export default function ChatPage() {
                                         )}
                                     </AnimatePresence>
 
-                                    <div style={{ width: "100%", maxWidth: 860, margin: "0 auto 8px auto", padding: "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+                                    <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                                         {/* Task 7.4: Local Execution Permission Card — above input */}
                                         {localExecutionRequest && (
                                             <div style={{ padding: '0 0 12px' }}>
@@ -4544,20 +4745,13 @@ export default function ChatPage() {
                                                     reason={localExecutionRequest.reason}
                                                     agentName="EverFern"
                                                     onDeny={() => {
-                                                        const acpApi = (window as any).electronAPI?.acp;
-                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: false, alwaysAllow: false });
-                                                        setLocalExecutionRequest(null);
+                                                        respondToLocalExecutionRequest(localExecutionRequest, false, false);
                                                     }}
                                                     onAlwaysAllow={() => {
-                                                        const acpApi = (window as any).electronAPI?.acp;
-                                                        setLocalAlwaysAllowed(true);
-                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: true });
-                                                        setLocalExecutionRequest(null);
+                                                        respondToLocalExecutionRequest(localExecutionRequest, true, true);
                                                     }}
                                                     onAllowOnce={() => {
-                                                        const acpApi = (window as any).electronAPI?.acp;
-                                                        acpApi?.sendLocalExecutionResponse({ requestId: localExecutionRequest.requestId, approved: true, alwaysAllow: false });
-                                                        setLocalExecutionRequest(null);
+                                                        respondToLocalExecutionRequest(localExecutionRequest, true, false);
                                                     }}
                                                 />
                                             </div>
@@ -4955,6 +5149,10 @@ export default function ChatPage() {
                         <ToolDetailSidePanel
                             isOpen={isToolDetailOpen}
                             toolCall={selectedToolCall}
+                            tabs={toolDetailTabs}
+                            activeTabId={activeToolDetailTabId}
+                            onSelectTab={handleSelectToolDetailTab}
+                            onCloseTab={handleCloseToolDetailTab}
                             onClose={() => setIsToolDetailOpen(false)}
                             conversationId={activeConversationId || ""}
                             subAgentProgress={subAgentProgress}

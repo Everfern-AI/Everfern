@@ -101,6 +101,12 @@ export class MissionIntegrator {
     const stepId = this.nodeStepMap.get(nodeId) || `step:${nodeId}`;
     const step = this.tracker.getStep(stepId);
     if (step) {
+      if (step.status === 'completed') {
+        this.tracker.updateStep(stepId, {
+          status: 'in-progress',
+          startTime: step.startTime || Date.now(),
+        });
+      }
       this.tracker.updateStep(stepId, {
         toolCalls: toolNames,
       });

@@ -10,7 +10,7 @@ import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
 import { createPresentFilesTool } from '../tools/present-files';
-import { createWorkspaceRequestTool, allowFileDeleteTool } from '../tools/control-plane';
+import { allowFileDeleteTool } from '../tools/control-plane';
 import { terminalTool, terminalStatusTool } from '../tools/terminal';
 import { searchMcpRegistryTool, connectMcpServerTool, listMcpToolsTool } from '../tools/mcp-registry-tool';
 import { localPermissionTool } from '../tools/local-permission';
@@ -24,9 +24,10 @@ import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
 import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
+import { hydrateVlmApiKey } from '../../lib/vlm-config';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
-import { previewLiveUrlTool } from '../tools/preview-live-url';
+import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
 import * as os from 'os';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
@@ -37,7 +38,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     // Check if we need a separate vision client for Navis
     // If the main AI doesn't support vision, use the configured VLM (from settings)
     let visionClient: AIClient | undefined;
-    const mainConfig = runner.client.getFullConfig();
+    const mainConfig = hydrateVlmApiKey(runner.client.getFullConfig() as any);
     if (mainConfig.vlm) {
       try {
         const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
@@ -112,7 +113,6 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     skillTool,
     createPresentFilesTool(runner),
     ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),
-    createWorkspaceRequestTool(config.requestPermission),
     allowFileDeleteTool,
     searchMcpRegistryTool,
     connectMcpServerTool,
@@ -130,6 +130,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     recallFactTool,
     updateProfileTool,
     previewLiveUrlTool,
+    showUserUrlTool,
   );
 
   // Add dynamically connected MCP tools

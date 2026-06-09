@@ -9,9 +9,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
+const sentLocalExecutionResponses = new Set<string>();
+
 // ── Type Definitions for Providers ────────────────────────────────
 
-export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
+export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
 // ── Type Definitions for Local Execution ──────────────────────────
 
@@ -34,6 +36,7 @@ export interface ProviderMeta {
   type: ProviderType;
   name: string;
   description: string;
+  image: string;
   requiresApiKey: boolean;
   isLocal: boolean;
   defaultModel: string;
@@ -184,7 +187,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cb(record);
       });
     },
-    onToolUpdate: (cb: (data: { toolName: string; update: string }) => void) => {
+    onToolUpdate: (cb: (data: { toolName: string; toolCallId?: string; update: string }) => void) => {
       ipcRenderer.on('acp:tool-update', (_e, data) => cb(data));
     },
     onOptima: (cb: (data: { event: string; details: string }) => void) => {
@@ -289,6 +292,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:local-execution-request', (_e, data) => cb(data));
     },
     sendLocalExecutionResponse: (response: LocalExecutionResponse) => {
+      if (response?.requestId && sentLocalExecutionResponses.has(response.requestId)) {
+        return;
+      }
+      if (response?.requestId) {
+        sentLocalExecutionResponses.add(response.requestId);
+        setTimeout(() => sentLocalExecutionResponses.delete(response.requestId), 10 * 60 * 1000);
+      }
       ipcRenderer.send('acp:local-execution-response', response);
     },
     removeLocalExecutionListeners: () => {
@@ -299,6 +309,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDebateStream: (cb: (event: any) => void) => {
       ipcRenderer.on('debate:stream', (_e, event) => cb(event));
     },
+    skipDebate: (debateId: string) => ipcRenderer.invoke('debate:skip', debateId),
     removeDebateStreamListener: () => {
       ipcRenderer.removeAllListeners('debate:stream');
     },
@@ -391,6 +402,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectFiles: () => ipcRenderer.invoke('projects:selectFiles'),
     listFiles: (projectPath: string) => ipcRenderer.invoke('projects:listFiles', projectPath),
     readFile: (projectPath: string, filePath: string) => ipcRenderer.invoke('projects:readFile', projectPath, filePath),
+    readFileDataUrl: (projectPath: string, filePath: string) => ipcRenderer.invoke('projects:readFileDataUrl', projectPath, filePath),
   },
 
   // ── Sites ─────────────────────────────────────────────────────────
@@ -461,6 +473,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     set: (config: ToolSettingsConfig) => ipcRenderer.invoke('tool-settings:set', config),
     getBrowsers: () => ipcRenderer.invoke('tool-settings:get-browsers'),
     openDebugBrowser: () => ipcRenderer.invoke('debug:open-browser'),
+    prepareNavisMainProfileExtension: (startUrl?: string) => ipcRenderer.invoke('navis-extension:prepare-main-profile', startUrl),
+    getNavisExtensionStatus: () => ipcRenderer.invoke('navis-extension:status'),
   },
 
   // ── Chat Title ─────────────────────────────────────────────────────
@@ -535,6 +549,7 @@ export interface ToolSettingsConfig {
     useChromeProfile: boolean;
     selectedBrowserId: string;
     useIsolatedBrowser: boolean;
+    automationMode: 'extension-first' | 'playwright';
   };
 }
 
@@ -615,7 +630,7 @@ export type ElectronAPI = {
     onThought:             (cb: (data: { content: string }) => void) => void;
     onToolStart:           (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => void;
     onToolCall:            (cb: (record: any) => void) => void;
-    onToolUpdate:          (cb: (data: { toolName: string; update: string }) => void) => void;
+    onToolUpdate:          (cb: (data: { toolName: string; toolCallId?: string; update: string }) => void) => void;
     onOptima:              (cb: (data: { event: string; details: string }) => void) => void;
     onShowArtifact:        (cb: (data: { name: string }) => void) => void;
     onShowPlan:            (cb: (data: { chatId: string; content: string }) => void) => void;
@@ -650,6 +665,9 @@ export type ElectronAPI = {
     onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => void;
     sendLocalExecutionResponse: (response: LocalExecutionResponse) => void;
     removeLocalExecutionListeners: () => void;
+    onDebateStream: (cb: (event: any) => void) => void;
+    skipDebate: (debateId: string) => Promise<{ success: boolean }>;
+    removeDebateStreamListener: () => void;
     removeStreamListeners: () => void;
     removeMissionListeners: () => void;
   };
@@ -696,6 +714,7 @@ export type ElectronAPI = {
     selectFiles: () => Promise<string[]>;
     listFiles: (projectPath: string) => Promise<{ files: string[] }>;
     readFile: (projectPath: string, filePath: string) => Promise<string | null>;
+    readFileDataUrl: (projectPath: string, filePath: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; size?: number; error?: string }>;
   };
   sites: {
     list:   (chatId?: string) => Promise<any[]>;
@@ -707,7 +726,7 @@ export type ElectronAPI = {
   terminal: {
     listProcesses: () => Promise<{ id: string; commandLine: string; status: 'running' | 'done'; exitCode?: number | null; bufferSize: number }[]>;
     killProcess:   (id: string) => Promise<{ success: boolean }>;
-    getStatus:     (id: string) => Promise<{ success: boolean; status?: 'running' | 'done'; output?: string; exitCode?: number | null; error?: string }>;
+    getStatus:     (id: string) => Promise<{ success: boolean; status?: 'running' | 'done' | 'completed' | 'failed' | 'terminated'; output?: string; exitCode?: number | null; cwd?: string; error?: string }>;
   };
   showui: {
     install: () => Promise<{ success: boolean; showuiDir?: string; error?: string }>;
@@ -744,6 +763,12 @@ export type ElectronAPI = {
         botToken: string;
         webhookUrl?: string;
         connected: boolean;
+        model?: string;
+        provider?: string;
+        requireApproval?: boolean;
+        approvalCode?: string;
+        approvedUsers?: string[];
+        botUsername?: string;
       };
       discord: {
         enabled: boolean;
@@ -764,6 +789,35 @@ export type ElectronAPI = {
     get: () => Promise<ToolSettingsConfig>;
     set: (config: ToolSettingsConfig) => Promise<{ success: boolean }>;
     getBrowsers: () => Promise<BrowserInfo[]>;
+    openDebugBrowser: () => Promise<{
+      success: boolean;
+      message: string;
+      endpoint?: string;
+      browserName?: string;
+      profileDir?: string;
+      command?: string;
+      usedExistingEndpoint?: boolean;
+      usingReusableProfile?: boolean;
+    }>;
+    prepareNavisMainProfileExtension: (startUrl?: string) => Promise<{
+      success: boolean;
+      message: string;
+      extensionPath: string;
+      connected: boolean;
+      browserName?: string;
+      executablePath?: string;
+      userDataDir?: string;
+      profileDirectory?: string;
+      needsBrowserRestart?: boolean;
+      command?: string;
+    }>;
+    getNavisExtensionStatus: () => Promise<{
+      listening: boolean;
+      port: number;
+      connectedExtensions: number;
+      connected: boolean;
+      extensionPath: string;
+    }>;
   };
   chat: {
     generateTitle: (conversationId: string, firstMessage: string) => Promise<{ queued: boolean }>;

@@ -13,6 +13,8 @@ class ExtensionBridgeServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private port = 4001;
   private activeSessions: Map<string, { id: string; url: string; title: string }> = new Map();
+  private nextRequestId = 1;
+  private pendingRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; timeout: NodeJS.Timeout }>();
 
   start() {
     if (this.server) return;
@@ -105,9 +107,24 @@ class ExtensionBridgeServer extends EventEmitter {
         try {
           const payload = JSON.parse(message.toString());
           console.log(`[BridgeServer] 📥 Message received [${payload.type}]`);
+
+          if (payload.type === 'response' && payload.requestId) {
+            const pending = this.pendingRequests.get(payload.requestId);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              this.pendingRequests.delete(payload.requestId);
+              if (payload.success === false) {
+                pending.reject(new Error(payload.error || 'Extension command failed'));
+              } else {
+                pending.resolve(payload.data);
+              }
+            }
+            return;
+          }
           
           if (payload.type === 'handshake') {
               console.log(`[BridgeServer] 👋 Handshake from extension: ${payload.extensionId}`);
+              this.emit('extension-connected', payload);
           }
           
           this.emit('extension-event', payload);
@@ -118,6 +135,7 @@ class ExtensionBridgeServer extends EventEmitter {
 
       ws.on('close', () => {
           console.log('[BridgeServer] 🔌 Extension disconnected');
+          this.emit('extension-disconnected');
       });
     });
 
@@ -182,7 +200,71 @@ class ExtensionBridgeServer extends EventEmitter {
     });
   }
 
+  hasConnectedExtensions(): boolean {
+    if (!this.wss) return false;
+    for (const client of this.wss.clients) {
+      if (client.readyState === WebSocket.OPEN) return true;
+    }
+    return false;
+  }
+
+  getStatus() {
+    return {
+      listening: !!this.server,
+      port: this.port,
+      connectedExtensions: this.wss
+        ? Array.from(this.wss.clients).filter(client => client.readyState === WebSocket.OPEN).length
+        : 0,
+      sessions: Array.from(this.activeSessions.values()),
+    };
+  }
+
+  waitForExtensionConnection(timeoutMs = 10000): Promise<boolean> {
+    if (this.hasConnectedExtensions()) return Promise.resolve(true);
+
+    return new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        this.off('extension-connected', onConnected);
+        resolve(false);
+      }, timeoutMs);
+      const onConnected = () => {
+        clearTimeout(timeout);
+        resolve(true);
+      };
+      this.once('extension-connected', onConnected);
+    });
+  }
+
+  sendRequest(command: string, data: any = {}, timeoutMs = 10000): Promise<any> {
+    if (!this.wss) return Promise.reject(new Error('Extension bridge server is not running'));
+
+    const client = Array.from(this.wss.clients).find(c => c.readyState === WebSocket.OPEN);
+    if (!client) return Promise.reject(new Error('No Navis companion extension is connected'));
+
+    const requestId = `navis-${Date.now()}-${this.nextRequestId++}`;
+    const payload = {
+      type: 'command',
+      command,
+      requestId,
+      data,
+    };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Timed out waiting for Navis extension command: ${command}`));
+      }, timeoutMs);
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+      client.send(JSON.stringify(payload));
+    });
+  }
+
   stop() {
+    for (const [requestId, pending] of this.pendingRequests.entries()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Extension bridge server stopped'));
+      this.pendingRequests.delete(requestId);
+    }
     this.wss?.close();
     this.server?.close();
     this.server = null;

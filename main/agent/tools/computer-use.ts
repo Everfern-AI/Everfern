@@ -54,8 +54,9 @@ const COMPUTER_USE_TOOL_SPEC = {
   function: {
     name: "computer_use",
     description: [
-      "Use a mouse and keyboard to interact with a computer, and take screenshots.",
+      "Use a mouse and keyboard to interact with native desktop applications, and take screenshots.",
       "* This is an interface to a desktop GUI. You do not have access to a terminal or applications menu. You must click on desktop icons to start applications.",
+      "* Do not use this for websites, browser tabs, web apps, Gmail, Google Docs, booking sites, listings, or forms in a browser. Use the navis browser automation tool for those.",
       "* Some applications may take time to start or process actions, so you may need to wait and take successive screenshots to see the results of your actions.",
       "* The screen's resolution is dynamically detected from the host system.",
       "* Whenever you intend to move the cursor to click on an element like an icon, you should consult a screenshot to determine the coordinates of the element before moving the cursor.",
@@ -135,7 +136,62 @@ const SYSTEM_PROMPT = `You are an automation agent with direct access to a GUI c
 - Be precise and avoid unnecessary movements.
 - Always inspect the most recent screenshot before clicking.
 - If an application needs time to load, wait before taking more actions.
+- Use this only for native desktop applications and local OS UI. Browser websites and web apps such as Gmail must be handled by Navis instead.
 - You must finish by calling action=answer with the final response and action=terminate with success/failure.`;
+
+const COMPUTER_USE_ACTION_TOOL = {
+  name: COMPUTER_USE_TOOL_SPEC.function.name,
+  description: COMPUTER_USE_TOOL_SPEC.function.description,
+  parameters: COMPUTER_USE_TOOL_SPEC.function.parameters,
+};
+
+const COMPUTER_USE_OUTPUT_INSTRUCTIONS = [
+  "You are controlling the user's real Windows desktop, not a Linux VM or sandbox.",
+  "Respond by calling the computer_use tool for the next single GUI action.",
+  "Do not describe the action in prose when a GUI action is needed.",
+  "For mouse actions, include exact coordinate [x, y] from the screenshot.",
+  "Use wait when the UI needs time, answer for final user-facing text, and terminate when the task is finished.",
+].join("\n");
+
+function brainPrompt(objective: string): string {
+  return [
+    "You are a desktop task agent. Look at the screenshot and decide the next action.",
+    "",
+    "Rules:",
+    "1. If the task is COMPLETE (song playing, file saved, result displayed, app open), output ONLY: done",
+    "2. Otherwise output ONLY a plain-English instruction — no coords, no explanation.",
+    "3. Do NOT repeat failed actions.",
+    "4. Be specific: 'click the search bar' beats 'click something'.",
+    "",
+    `Task: ${objective}`,
+    "",
+    "Output done if complete, otherwise plain English action.",
+  ].join("\n");
+}
+
+const HAND_PROMPT = [
+  "Parse this instruction and output a JSON array of action strings.",
+  'Example: ["click(450,380)", "type(search query)", "drag([100,200], [300,400])", "hold(500,600, 1000)"]',
+  "Note: drag takes [start_x, start_y], [end_x, end_y]. hold takes x, y, time_ms.",
+  'Another example: ["click(200,500)", "press(space)", "hold_w", "release_w"]',
+  "Format rules:",
+  "- click(x,y) / move(x,y) / smooth(x,y) — TWO numbers only, no text. click(450,380) NOT click(start_box=...)",
+  "- type(text) — text in parentheses",
+  "- press(key) — single key name",
+  "- hold(x, y, ms) — hold mouse at x,y for ms",
+  "- drag([x1,y1], [x2,y2]) — drag mouse from x1,y1 to x2,y2",
+  "- Booleans/flags like start_box= are not allowed",
+  "Valid actions:",
+  "click(x,y) | move(x,y) | smooth(x,y) | double_click(x,y)",
+  "type(text) | press(key) | scroll(up/down)",
+  "right_click() | left_click()",
+  "ctrl_a() | ctrl_c() | ctrl_v() | win()",
+  "alt tab | alt f4",
+  "hold_w | release_w | hold_a | release_a | hold_d | release_d | hold_s | release_s",
+  "press(enter) | press(escape) | press(tab) | press(space)",
+  "press(1) through press(9) | sprint() | sneak() | interact() | center()",
+  "Output ONLY the JSON array. No explanation.",
+].join("\n");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1095,6 +1151,7 @@ class ComputerUseAgent {
 
     let step = 0;
     const history: any[] = [];
+    let noActionRetries = 0;
 
     // Allow one extra step for a "force finish" synthesis if limit reached
     while (step <= this.maxTurns) {
@@ -1127,24 +1184,61 @@ class ComputerUseAgent {
 
       let response: any;
       try {
-        // [Independent TARS] No tools, no models, no system prompt.
-        // Just task + screenshot + history.
+        const brainHand = await this.runBrainHandTurn(img, step, finalTurnPrompt);
+        if (brainHand) {
+          const { instruction, actions } = brainHand;
+          if (instruction) {
+            console.log(`[Dumb-Agent] Brain: ${instruction}`);
+            onProgress?.({ type: "reasoning", toolCallId: this.toolCallId, timestamp: new Date().toISOString(), stepNumber: step, content: instruction });
+          }
+
+          if (/\bdone\b/i.test(instruction)) {
+            this.finalAnswer = "Task completed.";
+            break;
+          }
+
+          if (actions.length) {
+            console.log(`[Dumb-Agent] Hand: ${actions.join(", ")}`);
+            await this.dispatchAll(actions, onUpdate, onProgress, step);
+            this.history.push(`${instruction} -> ${actions.join(", ")}`);
+            if (this.history.length > this.historyWindow) this.history = this.history.slice(-this.historyWindow);
+            if (this.terminated || this.finalAnswer) break;
+            await sleep(1);
+            continue;
+          }
+
+          noActionRetries++;
+          if (noActionRetries <= 2 && !isFinalTurn) {
+            console.warn(`[Dumb-Agent] Brain/HAND produced no executable action; retrying (${noActionRetries}/2)`);
+            await sleep(1);
+            continue;
+          }
+          console.warn("[Dumb-Agent] No actions received from brain/hand path");
+          break;
+        }
+
         const modelName = this.client.provider === "everfern"
           ? "everfern-tars-v1"
           : (this.model || "everfern-tars-v1");
+        const actionReminder = noActionRetries > 0
+          ? "\n\nYour previous response did not contain an executable action. This time output ONLY a computer_use tool call or a compact action JSON with coordinates."
+          : "";
 
         response = await this.client.chat({
           messages: [
+            { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
               content: [
-                { type: "text", text: `Task: ${this.task}\nStep: ${step}${finalTurnPrompt}` },
+                { type: "text", text: `${COMPUTER_USE_OUTPUT_INSTRUCTIONS}\n\nTask: ${this.task}\nStep: ${step}${finalTurnPrompt}${actionReminder}` },
                 { type: "image_url", image_url: { url: img } }
               ]
             }
           ],
           model: modelName,
-          temperature: 0.1
+          temperature: 0.1,
+          tools: [COMPUTER_USE_ACTION_TOOL],
+          toolChoice: isFinalTurn ? "auto" : "required",
         });
       } catch (err: any) {
         console.error("[Dumb-Agent] API error:", err);
@@ -1162,14 +1256,30 @@ class ComputerUseAgent {
 
       const toolCalls: any[] = response.toolCalls || [];
       if (!toolCalls.length) {
+        const textActions = this.parseModelOutput(content);
+        if (textActions.length) {
+          console.log(`[Dumb-Agent] Parsed ${textActions.length} text action(s) from model output`);
+          await this.dispatchAll(textActions, onUpdate, onProgress, step);
+          noActionRetries = 0;
+          if (this.terminated || this.finalAnswer) break;
+          await sleep(1);
+          continue;
+        }
+
         if (content.toLowerCase().includes("done") || content.toLowerCase().includes("complete")) {
            this.finalAnswer = content;
            break;
         }
-        // If no actions and not done, something is wrong
+        noActionRetries++;
+        if (noActionRetries <= 2 && !isFinalTurn) {
+          console.warn(`[Dumb-Agent] No executable action received from API; retrying with stricter instruction (${noActionRetries}/2)`);
+          await sleep(1);
+          continue;
+        }
         console.warn("[Dumb-Agent] No actions received from API");
         break;
       }
+      noActionRetries = 0;
 
       for (const toolCall of toolCalls) {
         let args: any;
@@ -1216,6 +1326,64 @@ class ComputerUseAgent {
     };
   }
 
+  private isBrainHandProvider(): boolean {
+    // Ollama Cloud works better in the normal single-model computer-use loop.
+    // Keep the split planner/action path only for OpenRouter, where Qwen + UI-TARS
+    // are intentionally paired as separate models.
+    return this.client.provider === "openrouter";
+  }
+
+  private getBrainHandModels(): { brain: string; hand: string } | null {
+    if (!this.isBrainHandProvider()) return null;
+    return {
+      brain: this.REASONER_MODEL,
+      hand: this.ACTION_MODEL,
+    };
+  }
+
+  private async runBrainHandTurn(
+    screenshot: string,
+    step: number,
+    finalTurnPrompt: string,
+  ): Promise<{ instruction: string; actions: string[] } | null> {
+    const models = this.getBrainHandModels();
+    if (!models) return null;
+
+    console.log(`[Dumb-Agent] Brain/HAND provider=${this.client.provider} brain=${models.brain} hand=${models.hand}`);
+    const historyText = this.history.slice(-8).join("\n");
+    const instruction = (await this.ask(models.brain, [
+      {
+        role: "system",
+        content: brainPrompt(this.task),
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: `Task: ${this.task}\nStep: ${step}${finalTurnPrompt}\n\nHistory:\n${historyText}` },
+          { type: "image_url", image_url: { url: screenshot } },
+        ],
+      },
+    ], 512)).trim();
+
+    if (!instruction || /\bdone\b/i.test(instruction)) {
+      return { instruction: instruction || "done", actions: [] };
+    }
+
+    const rawActions = (await this.ask(models.hand, [
+      { role: "system", content: HAND_PROMPT },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: `Instruction: ${instruction}` },
+          { type: "image_url", image_url: { url: screenshot } },
+        ],
+      },
+    ], 1024)).trim();
+
+    const actions = this.parseModelOutput(rawActions);
+    return { instruction, actions };
+  }
+
   private parseModelOutput(raw: string): string[] {
     if (!raw || !raw.trim()) return [];
     raw = raw.trim();
@@ -1224,7 +1392,13 @@ class ComputerUseAgent {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map(x => String(x).trim());
+        return parsed
+          .map(x => typeof x === "string" ? x : this.actionObjectToString(x))
+          .filter((x): x is string => Boolean(x?.trim()));
+      }
+      const action = this.actionObjectToString(parsed);
+      if (action) {
+        return [action];
       }
     } catch {}
 
@@ -1246,6 +1420,7 @@ class ComputerUseAgent {
     const validated: string[] = [];
     const validPatterns = [
       /^click\s*\(\s*[^)]+\s*\)$/i,
+      /^(left|right)_click\s*\(\s*[^)]+\s*\)$/i,
       /^move\s*\(\s*[^)]+\s*\)$/i,
       /^smooth\s*\(\s*[^)]+\s*\)$/i,
       /^look\s*\(\s*[^)]+\s*\)$/i,
@@ -1253,6 +1428,7 @@ class ComputerUseAgent {
       /^press\s*\(\s*[^)]+\s*\)$/i,
       /^type\s*\(\s*[^)]+\s*\)$/i,
       /^scroll\s*\(\s*[^)]+\s*\)$/i,
+      /^wait\s*\(\s*[^)]+\s*\)$/i,
       /^hold_[acdemsw]$/i,
       /^release_[acdemsw]$/i,
       /^left_click\s*\(\s*\)$/i,
@@ -1288,6 +1464,32 @@ class ComputerUseAgent {
       }
     }
     return validated;
+  }
+
+  private actionObjectToString(value: any): string | null {
+    if (!value || typeof value !== "object") return null;
+    const action = typeof value.action === "string" ? value.action.toLowerCase() : "";
+    if (!action) return null;
+
+    const coordinate = Array.isArray(value.coordinate) ? value.coordinate : null;
+    if (coordinate && coordinate.length >= 2) {
+      const x = Number(coordinate[0]);
+      const y = Number(coordinate[1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        if (action.includes("double")) return `double_click(${Math.round(x)},${Math.round(y)})`;
+        if (action.includes("right")) return `right_click(${Math.round(x)},${Math.round(y)})`;
+        if (action.includes("move")) return `move(${Math.round(x)},${Math.round(y)})`;
+        if (action.includes("drag")) return `drag(${Math.round(x)},${Math.round(y)})`;
+        return `click(${Math.round(x)},${Math.round(y)})`;
+      }
+    }
+
+    if (action === "type" && typeof value.text === "string") return `type("${value.text.replace(/"/g, '\\"')}")`;
+    if (action === "answer" && typeof value.text === "string") return `done()`;
+    if (action === "wait") return `wait(${Number(value.time) || 1})`;
+    if (action === "key" && Array.isArray(value.keys)) return value.keys.join("+");
+    if (action === "terminate") return `done()`;
+    return null;
   }
 
   async dispatchAll(actions: string[], onUpdate?: any, onProgress?: any, step?: number) {
@@ -1335,7 +1537,7 @@ class ComputerUseAgent {
 
     const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
 
-    const coords = (has(/\((?:click|move|drag|double[_\s]?click)\s*\(/, text)) ? parseXy(text) : null;
+    const coords = has(/^(?:click|move|drag|double[_\s]?click|right[_\s]?click|left[_\s]?click)\s*\(/, text) ? parseXy(text) : null;
 
     // Shortcut detection
     const shortcutMatch = text.match(/^(alt|ctrl|shift|meta)\s+(tab|enter|esc|f\d+|space|right|left|up|down|\w)$/i) ||
@@ -1395,6 +1597,13 @@ class ComputerUseAgent {
     if (has(/scroll\s*\(\s*(\w+)\s*\)/i, text)) {
       const dir = text.match(/scroll\s*\(\s*(\w+)\s*\)/i)![1].toLowerCase();
       await this.tool.call({ action: "scroll", pixels: dir.includes("up") ? -500 : 500 });
+      return true;
+    }
+
+    if (has(/wait\s*\(\s*([^)]+)\s*\)/i, text)) {
+      const rawSeconds = text.match(/wait\s*\(\s*([^)]+)\s*\)/i)![1];
+      const seconds = Number(rawSeconds.replace(/[^\d.]/g, "")) || 1;
+      await this.tool.call({ action: "wait", time: seconds });
       return true;
     }
 

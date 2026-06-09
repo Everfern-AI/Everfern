@@ -42,9 +42,13 @@ function findWebSearchResult(messages: any[]): { content: string; found: boolean
  * vs. passive research (finding info, comparing, investigating).
  */
 function isInteractiveTask(messages: any[]): boolean {
-  const userMsg = messages.find((m: any) => m.role === 'user' || m.type === 'human' || m._getType?.() === 'human');
-  if (!userMsg) return false;
-  const content = typeof userMsg.content === 'string' ? userMsg.content : JSON.stringify(userMsg.content);
+  const userMessages = messages
+    .filter((m: any) => m.role === 'user' || m.type === 'human' || m._getType?.() === 'human')
+    .slice(-5);
+  if (userMessages.length === 0) return false;
+  const content = userMessages
+    .map((m: any) => typeof m.content === 'string' ? m.content : JSON.stringify(m.content))
+    .join('\n');
   const lower = content.toLowerCase();
 
   // Booking / travel patterns
@@ -236,7 +240,7 @@ export const createWebExplorerNode = (
         return { webExplorerComplete: true, taskPhase: 'evaluating' as const, returningFromSpecialist: null };
       }
 
-      const userTask = messages.find((m: any) => m.role === 'user')?.content || '';
+      const userTask = [...messages].reverse().find((m: any) => m.role === 'user' || m.type === 'human' || m._getType?.() === 'human')?.content || '';
       const taskText = typeof userTask === 'string' ? userTask : JSON.stringify(userTask);
 
       const candidates = extractTopCandidates(searchContent, taskText, 5);

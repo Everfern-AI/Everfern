@@ -35,6 +35,14 @@ export interface TelegramConfig extends PlatformConfig {
     respondToGroups?: boolean;
     /** Whether to respond only to mentions in groups */
     groupMentionOnly?: boolean;
+    /** Whether Telegram users must pair with a one-time approval code before chatting */
+    requireApproval?: boolean;
+    /** Current pairing code users must send as: fern approve <code> */
+    approvalCode?: string;
+    /** Approved Telegram user IDs */
+    approvedUsers?: string[];
+    /** Called when a Telegram user approves successfully so the host can persist config */
+    onApproveUser?: (user: { id: string; name: string; approvedAt: string }) => void;
   };
 }
 
@@ -194,9 +202,13 @@ export class TelegramPlatform extends MessagePlatform {
         parse_mode: this.mapParseMode(parseMode)
       });
     } catch (error: any) {
-      // If editing fails (e.g., message too old or identical content),
-      // delete the old message and send a new one
-      if (error.code === 400 || error.message?.includes('message is not modified')) {
+      const errorText = String(error.message || error.response?.body?.description || '').toLowerCase();
+      if (errorText.includes('message is not modified')) {
+        return;
+      }
+
+      // If editing fails because the message is no longer editable, replace it.
+      if (error.code === 400) {
         try {
           await this.bot.deleteMessage(chatId, parseInt(messageId));
           await this.bot.sendMessage(chatId, this.formatText(text, parseMode), {
@@ -455,6 +467,9 @@ export class TelegramPlatform extends MessagePlatform {
    */
   private handleIncomingMessage(message: TelegramBot.Message): void {
     const telegramConfig = this.config as TelegramConfig;
+    const userId = message.from?.id.toString() || '';
+    const userName = this.getUserDisplayName(message.from);
+    const messageText = this.sanitizeInput(message.text || message.caption || '');
 
     // Check if chat is allowed
     if (telegramConfig.config.allowedChats &&
@@ -480,13 +495,24 @@ export class TelegramPlatform extends MessagePlatform {
       return;
     }
 
+    if (!this.isTelegramUserApproved(userId)) {
+      this.handleApprovalGate(message, userId, userName, messageText).catch(error => {
+        console.error('[Telegram] Approval gate failed:', error);
+      });
+      return;
+    }
+
     // Convert to platform-agnostic format
+    const conversationKey = message.chat.type === 'private'
+      ? `telegram:dm:${message.chat.id}`
+      : `telegram:${message.chat.id}`;
+
     const incomingMessage: IncomingMessage = {
       id: message.message_id.toString(),
       platform: 'telegram',
       user: {
-        id: message.from?.id.toString() || 'unknown',
-        name: this.getUserDisplayName(message.from),
+        id: userId || 'unknown',
+        name: userName,
         avatar: undefined // Telegram doesn't provide avatar URLs directly
       },
       chat: {
@@ -495,7 +521,7 @@ export class TelegramPlatform extends MessagePlatform {
         type: this.mapChatType(message.chat.type)
       },
       content: {
-        text: this.sanitizeInput(message.text || message.caption || ''),
+        text: messageText,
         files: this.extractFiles(message),
         isMention: this.isBotMentioned(message),
         replyTo: message.reply_to_message ? {
@@ -505,7 +531,12 @@ export class TelegramPlatform extends MessagePlatform {
         } : undefined
       },
       timestamp: new Date(message.date * 1000),
-      raw: message
+      raw: message,
+      metadata: {
+        conversationKey,
+        replyTargetId: message.message_id.toString(),
+        sourceChannelId: message.chat.id.toString()
+      }
     };
 
     this.emitMessage(incomingMessage);
@@ -518,17 +549,24 @@ export class TelegramPlatform extends MessagePlatform {
     if (!this.bot) return;
 
     try {
-      const welcomeMessage = `🤖 *Welcome to Everfern Bot!*
+      const telegramConfig = this.config as TelegramConfig;
+      const approvalCode = telegramConfig.config.approvalCode;
+      const requiresApproval = telegramConfig.config.requireApproval !== false;
+      const approvalText = requiresApproval
+        ? approvalCode
+          ? `\n\nBefore we chat, open Telegram and send:\n\n\`fern approve ${approvalCode}\`\n\nAfter the code matches, this chat is unlocked.`
+          : `\n\nBefore we chat, ask the EverFern desktop owner to generate a Telegram approval code in Integrations, then send:\n\n\`fern approve <code>\``
+        : '';
 
-I'm your AI assistant powered by Everfern. I can help you with:
+      const welcomeMessage = `🤖 *Welcome to EverFern Bot!*
+
+I'm your AI assistant powered by EverFern. I can help you with:
 
 • Answering questions
 • Writing and analyzing code
 • Research and information gathering
 • Creative tasks and brainstorming
-• And much more!
-
-Just send me a message and I'll be happy to help! 😊`;
+• And much more!${approvalText}`;
 
       await this.bot.sendMessage(message.chat.id, welcomeMessage, {
         parse_mode: 'Markdown'
@@ -536,6 +574,70 @@ Just send me a message and I'll be happy to help! 😊`;
     } catch (error) {
       console.error('Error handling /start command:', error);
     }
+  }
+
+  private isTelegramUserApproved(userId: string): boolean {
+    const telegramConfig = this.config as TelegramConfig;
+    if (telegramConfig.config.requireApproval === false) return true;
+    if (!userId) return false;
+
+    const approvedUsers = telegramConfig.config.approvedUsers || [];
+    return approvedUsers.includes(userId);
+  }
+
+  private async handleApprovalGate(
+    message: TelegramBot.Message,
+    userId: string,
+    userName: string,
+    messageText: string
+  ): Promise<void> {
+    if (!this.bot) return;
+
+    const telegramConfig = this.config as TelegramConfig;
+    const approvalCode = (telegramConfig.config.approvalCode || '').trim();
+    const normalized = messageText.trim().toLowerCase();
+    const extractedCode = normalized
+      .replace(/^`+|`+$/g, '')
+      .replace(/^fern\s+approve\s+/i, '')
+      .trim();
+    const approvalMatch = normalized.match(/(?:^|\s)fern\s+approve\s+([a-z0-9-]+)(?:\s|$)/i);
+    const providedCode = approvalMatch?.[1] || extractedCode;
+
+    console.log('[Telegram] Approval gate check:', {
+      userId,
+      approvalCode,
+      providedCode,
+      messageText: normalized
+    });
+
+    if (approvalCode && providedCode && providedCode.toLowerCase() === approvalCode.toLowerCase()) {
+      const approvedUsers = telegramConfig.config.approvedUsers || [];
+      if (!approvedUsers.includes(userId)) {
+        approvedUsers.push(userId);
+        telegramConfig.config.approvedUsers = approvedUsers;
+      }
+
+      telegramConfig.config.onApproveUser?.({
+        id: userId,
+        name: userName,
+        approvedAt: new Date().toISOString()
+      });
+
+      await this.bot.sendMessage(
+        message.chat.id,
+        'Approved. The code matched, and you can now message Fern here.',
+        { reply_to_message_id: message.message_id }
+      );
+      return;
+    }
+
+    const instruction = approvalCode
+      ? `This Telegram account is not approved yet.\n\nPlease send this in Telegram:\nfern approve ${approvalCode}\n\nIf that code matches, I will unlock the chat.`
+      : 'This Telegram account is not approved yet. Ask the EverFern desktop owner to generate a Telegram approval code in Integrations, then send:\nfern approve <code>';
+
+    await this.bot.sendMessage(message.chat.id, instruction, {
+      reply_to_message_id: message.message_id
+    });
   }
 
   /**

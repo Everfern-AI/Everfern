@@ -91,7 +91,8 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
 
     case 'create_plan':
     case 'execution_plan':
-    case 'update_plan': {
+    case 'update_plan':
+    case 'update_plan_step': {
       const title = typeof args?.title === 'string' ? args.title.trim() : '';
       return {
         icon: React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", fill: "none", viewBox: "0 0 24 24", strokeWidth: 1.5, stroke: "currentColor", width: 16, height: 16 },
@@ -108,9 +109,45 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       return { icon: React.createElement(CheckCircleIcon, { width: 16, height: 16 }), label: step ? `${status === 'done' ? 'Completed' : 'Updated'}: ${truncate(step, 60)}` : 'Updating step', color: '#14b8a6' };
     }
 
+    case 'todo_write': {
+      const tasks = Array.isArray(args?.tasks) ? args.tasks : [];
+      const inProgress = tasks.filter((task: any) => task?.status === 'in_progress').length;
+      const completed = tasks.filter((task: any) => task?.status === 'completed').length;
+      const label = tasks.length
+        ? `Todo list: ${completed}/${tasks.length} done${inProgress ? `, ${inProgress} active` : ''}`
+        : 'Updating todo list';
+      return {
+        icon: React.createElement(ClipboardDocumentListIcon, { width: 16, height: 16 }),
+        label,
+        color: '#14b8a6',
+      };
+    }
+
     case 'web_search': {
       const query = typeof args?.query === 'string' ? args.query.trim() : '';
       return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: query ? `Searching for "${truncate(query, 60)}"` : 'Searching web', color: '#3b82f6' };
+    }
+
+    case 'search_mcp_registry': {
+      const keyword = typeof args?.keyword === 'string'
+        ? args.keyword.trim()
+        : typeof args?.query === 'string'
+          ? args.query.trim()
+          : '';
+      return {
+        icon: React.createElement(Cog6ToothIcon, { width: 16, height: 16 }),
+        label: keyword ? `Searching MCP registry: ${truncate(keyword, 60)}` : 'Searching MCP registry',
+        color: '#06b6d4'
+      };
+    }
+
+    case 'show_user_url': {
+      const url = typeof args?.url === 'string' ? args.url.trim() : '';
+      return {
+        icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }),
+        label: url ? `Opening ${truncate(url, 60)}` : 'Opening browser',
+        color: '#3b82f6'
+      };
     }
 
     case 'read_file': {
@@ -194,6 +231,22 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       return {
         icon: React.createElement(PresentationChartBarIcon, { width: 16, height: 16 }),
         label: title ? `Visualizing: ${truncate(title, 60)}` : 'Generating visual',
+        color: '#8b5cf6'
+      };
+    }
+
+    case 'pptx_generator': {
+      const title = typeof args?.title === 'string' ? args.title.trim() : '';
+      const outputPath = typeof args?.outputPath === 'string' ? args.outputPath.trim() : '';
+      const slides = Array.isArray(args?.slides) ? args.slides : [];
+      const target = title || (outputPath ? basename(outputPath) : '');
+      return {
+        icon: React.createElement(PresentationChartBarIcon, { width: 16, height: 16 }),
+        label: target
+          ? `Generating deck: ${truncate(target, 60)}`
+          : slides.length
+            ? `Generating ${slides.length}-slide deck`
+            : 'Generating presentation',
         color: '#8b5cf6'
       };
     }

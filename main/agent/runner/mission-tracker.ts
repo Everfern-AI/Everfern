@@ -77,7 +77,14 @@ export class MissionTracker {
     const oldStatus = step.status;
     Object.assign(step, updates);
 
-    // Track timing
+    // Track timing and completion counts.
+    if (oldStatus === 'completed' && step.status !== 'completed') {
+      this.timeline.completedSteps = Math.max(0, this.timeline.completedSteps - 1);
+      step.endTime = undefined;
+      step.duration = undefined;
+      step.result = undefined;
+    }
+
     if (oldStatus === 'pending' && step.status === 'in-progress') {
       step.startTime = Date.now();
     } else if (oldStatus !== 'completed' && step.status === 'completed') {

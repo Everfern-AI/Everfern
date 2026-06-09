@@ -603,15 +603,21 @@ export class BotIntegrationManager extends EventEmitter {
         console.log(`[BotManager] Validation disabled, skipping validation`);
       }
 
+      const conversationId = message.metadata?.conversationKey || `${message.platform}:${message.chat.id}`;
+
       // Create message context
       const context: MessageContext = {
         message,
         targetPlatforms: [message.platform],
-        conversationId: `${message.platform}_${message.chat.id}`,
+        conversationId,
         metadata: {
           receivedAt: new Date(),
           platform: message.platform,
-          validated: this.config.validation.enabled
+          validated: this.config.validation.enabled,
+          replyTargetId: message.metadata?.replyTargetId || message.id,
+          sourceGuildId: message.metadata?.sourceGuildId,
+          sourceChannelId: message.metadata?.sourceChannelId || message.chat.id,
+          sourceThreadId: message.metadata?.sourceThreadId || message.chat.threadId
         }
       };
 

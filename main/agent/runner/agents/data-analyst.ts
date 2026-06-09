@@ -85,6 +85,24 @@ export const createDataAnalystNode = (
   const progressStreamer = createProgressStreamer(eventQueue);
 
   return async (state: GraphStateType, config?: any): Promise<Partial<GraphStateType>> => {
+    const loopCount = (state.dataAnalysisSelfLoopCount || 0) + 1;
+    const MAX_DATA_ANALYST_PASSES = 8;
+    if (loopCount > MAX_DATA_ANALYST_PASSES) {
+      const message = `Data analyst stopped after ${MAX_DATA_ANALYST_PASSES} passes to avoid an infinite analysis loop. Please narrow the analysis request or ask me to continue from the current checkpoint.`;
+      eventQueue?.push({ type: 'thought', content: `⚠️ ${message}` });
+      return {
+        messages: [{ role: 'assistant', content: message } as any],
+        pendingToolCalls: [],
+        returningFromSpecialist: null,
+        dataAnalysisComplete: true,
+        dataAnalysisSelfLoopCount: loopCount,
+        completionSignal: {
+          reason: 'cannot_proceed',
+          explanation: message,
+        },
+      };
+    }
+
     const tools = toolDefs || (runner as any)._buildToolDefinitions();
 
     // Get conversation ID from execution context (Requirement 5.1)
@@ -213,7 +231,8 @@ CRITICAL RULES:
       return {
         ...result,
         returningFromSpecialist: isComplete ? null : 'data_analyst',
-        dataAnalysisComplete: isComplete
+        dataAnalysisComplete: isComplete,
+        dataAnalysisSelfLoopCount: loopCount,
       };
 
 

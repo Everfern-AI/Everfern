@@ -9,7 +9,7 @@ import { BrowserWindow } from 'electron';
 import type { DebateResult, DebateMessage } from './debate-types';
 
 export interface DebateStreamEvent {
-  type: 'debate_start' | 'vanguard_complete' | 'phantom_complete' | 'arbiter_complete' | 'debate_complete' | 'debate_error';
+  type: 'debate_start' | 'vanguard_complete' | 'phantom_complete' | 'arbiter_complete' | 'debate_complete' | 'debate_error' | 'debate_skipped';
   timestamp: string;
   debateId: string;
   phase?: 'vanguard' | 'phantom' | 'arbiter';
