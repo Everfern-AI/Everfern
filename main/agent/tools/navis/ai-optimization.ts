@@ -37,7 +37,7 @@ export function compressHistory(
   const earlierSteps = history.slice(0, -config.compressionThreshold);
 
   // Create a summary of earlier steps
-  const summary = `[${earlierSteps.length} earlier steps summarized]
+  const summary = `[${history.length} earlier steps summarized]
 - Started with task
 - Completed ${earlierSteps.length} intermediate steps
 - Current progress: ${recentSteps[0]?.split('→')[1] || 'in progress'}`;
@@ -178,7 +178,7 @@ export function optimizeContext(context: string, maxChars: number = 8000): strin
  * Implements Req 4.2 and 4.3: Low detail for <200KB, high for >200KB
  */
 export function getDetailLevel(screenshotSizeKB: number): 'low' | 'high' {
-  return screenshotSizeKB > 200 ? 'high' : 'low'; // Req 4.2, 4.3
+  return screenshotSizeKB >= 200 ? 'high' : 'low'; // Req 4.2, 4.3
 }
 
 /**

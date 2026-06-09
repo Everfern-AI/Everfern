@@ -609,9 +609,10 @@ function ensureNavisTabGroupExtension(): string {
         manifest_version: 3,
         name: 'EverFern Navis Tab Group (Chrome)',
         version: '1.0.0',
-        permissions: ['tabs', 'tabGroups'],
+        permissions: ['tabs', 'tabGroups', 'scripting', 'activeTab', 'alarms', 'storage'],
         host_permissions: ['<all_urls>'],
         background: { service_worker: 'service-worker.js' },
+        action: { default_title: 'EverFern Navis Tab Control' },
       },
       null,
       2,
@@ -620,8 +621,79 @@ function ensureNavisTabGroupExtension(): string {
   );
 
   const chromeServiceWorker = `
+const BRIDGE_URL = 'ws://127.0.0.1:4001';
 const NAVIS_GROUP_TITLE = 'Navis Agent';
+let socket = null;
+let reconnectTimer = null;
 let navisGroupId = -1;
+const navisTabs = new Set();
+const navisEvents = [];
+let restoredPanelState = false;
+let bridgeState = {
+  connected: false,
+  status: 'disconnected',
+  sessionActive: false,
+  activeTask: '',
+  activeUrl: '',
+  activeTitle: '',
+  lastEventType: '',
+  lastEventAt: 0,
+  lastUpdated: Date.now()
+};
+
+function persistPanelState() {
+  if (!chrome.storage || !chrome.storage.local) return;
+  try {
+    chrome.storage.local.set({
+      navisPanelState: {
+        bridgeState: {
+          ...bridgeState,
+          connected: false
+        },
+        events: navisEvents.slice(-100),
+        savedAt: Date.now()
+      }
+    });
+  } catch {}
+}
+
+function restorePanelState(callback) {
+  if (restoredPanelState) {
+    if (callback) callback();
+    return;
+  }
+  restoredPanelState = true;
+  try {
+    chrome.storage.local.get('navisPanelState', result => {
+      const saved = result && result.navisPanelState;
+      if (saved) {
+        if (Array.isArray(saved.events)) {
+          navisEvents.splice(0, navisEvents.length, ...saved.events);
+        }
+        if (saved.bridgeState) {
+          bridgeState = {
+            ...bridgeState,
+            ...saved.bridgeState,
+            connected: Boolean(socket && socket.readyState === WebSocket.OPEN)
+          };
+        }
+      }
+      if (callback) callback();
+    });
+  } catch {
+    if (callback) callback();
+  }
+}
+
+function getPanelState() {
+  return {
+    ...bridgeState,
+    connected: Boolean(socket && socket.readyState === WebSocket.OPEN),
+    status: socket && socket.readyState === WebSocket.OPEN ? 'connected' : bridgeState.status,
+    events: navisEvents.slice(-100),
+    lastUpdated: Date.now()
+  };
+}
 
 async function ensureNavisGroup(tabId) {
   if (!tabId) return;
@@ -666,14 +738,305 @@ async function ensureNavisGroup(tabId) {
   }
 }
 
+function rememberNavisEvent(event) {
+  const clean = {
+    ...event,
+    timestamp: event && event.timestamp ? event.timestamp : new Date().toISOString()
+  };
+  const task = clean.timelineBranch && clean.timelineBranch.taskDescription;
+  const metadata = clean.metadata || {};
+  const action = clean.action || {};
+  const actionParams = action.params || {};
+  if (task) bridgeState.activeTask = String(task);
+  if (metadata.url || actionParams.url) bridgeState.activeUrl = String(metadata.url || actionParams.url);
+  if (metadata.title) bridgeState.activeTitle = String(metadata.title);
+  bridgeState.lastEventType = String(clean.type || 'step');
+  bridgeState.lastEventAt = Date.now();
+  navisEvents.push(clean);
+  while (navisEvents.length > 100) navisEvents.shift();
+  persistPanelState();
+  syncOverlayToTabs('update');
+}
+
+function connect() {
+  restorePanelState();
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+  try {
+    socket = new WebSocket(BRIDGE_URL);
+    socket.onopen = () => {
+      bridgeState.connected = true;
+      bridgeState.status = 'connected';
+    };
+    socket.onmessage = async event => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+      if (payload.type === 'state-update') {
+        const sessionActive = Boolean(payload.data && payload.data.sessionActive);
+        bridgeState.sessionActive = sessionActive;
+        if (!sessionActive) {
+          bridgeState.activeTask = '';
+          navisEvents.length = 0;
+        }
+        syncOverlayToTabs('update');
+        return;
+      }
+      if (payload.type === 'command' && payload.command === 'navis-progress') {
+        rememberNavisEvent(payload.data || {});
+        return;
+      }
+    };
+    socket.onclose = () => {
+      bridgeState.connected = false;
+      bridgeState.status = 'disconnected';
+      scheduleReconnect();
+    };
+    socket.onerror = () => {
+      bridgeState.connected = false;
+      bridgeState.status = 'disconnected';
+      scheduleReconnect();
+    };
+  } catch {
+    bridgeState.connected = false;
+    bridgeState.status = 'disconnected';
+    scheduleReconnect();
+  }
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, 2000);
+}
+
+function canInjectIntoTab(tab) {
+  const url = String(tab && tab.url || '');
+  return Boolean(tab && tab.id && /^(https?:|file:)/i.test(url));
+}
+
+async function syncOverlayToTabs(mode) {
+  const state = getPanelState();
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!canInjectIntoTab(tab)) continue;
+    const isNavisGroup = navisGroupId >= 0 && tab.groupId === navisGroupId;
+    if (tab.url && (tab.url.includes('navis=true') || navisTabs.has(tab.id) || isNavisGroup)) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: renderEverFernNavisOverlay,
+          args: [state, { mode: mode || 'update' }]
+        });
+      } catch (error) {}
+    }
+  }
+}
+
+function renderEverFernNavisOverlay(state, options) {
+  const hostId = 'everfern-navis-page-overlay';
+  const existing = document.getElementById(hostId);
+  const mode = options && options.mode || 'update';
+  if (mode === 'hide') {
+    if (existing) existing.remove();
+    return { success: true, visible: false };
+  }
+  if (mode === 'toggle' && existing) {
+    existing.remove();
+    return { success: true, visible: false };
+  }
+  const events = Array.isArray(state && state.events) ? state.events.slice(-10) : [];
+  if (mode === 'update' && !existing && !events.length && !(state && state.sessionActive)) {
+    return { success: true, visible: false };
+  }
+
+  function clean(value, fallback) {
+    const text = String(value == null ? '' : value).replace(/\\s+/g, ' ').trim();
+    return text || fallback || '';
+  }
+  function esc(value) {
+    return clean(value, '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  function kind(event) {
+    if (!event) return 'step';
+    if (event.type === 'reasoning') return 'thought';
+    if (event.type === 'action') return 'action';
+    if (event.type === 'complete') return 'done';
+    if (event.type === 'abort' || event.type === 'error') return 'error';
+    return 'step';
+  }
+  function kindLabel(value) {
+    if (value === 'thought') return 'Thinking';
+    if (value === 'action') return 'Action';
+    if (value === 'done') return 'Done';
+    if (value === 'error') return 'Issue';
+    return 'Step';
+  }
+  function eventTitle(event) {
+    if (!event) return 'Waiting for Navis';
+    if (event.type === 'reasoning') return 'Thinking';
+    if (event.type === 'action') return clean(event.action && event.action.description, 'Browser action');
+    if (event.type === 'complete') return 'Task complete';
+    if (event.type === 'abort' || event.type === 'error') return 'Needs attention';
+    return 'Working';
+  }
+  function eventBody(event) {
+    if (!event) return 'Navis will stream browser thoughts and actions here.';
+    return clean(event.content || event.detail || event.message || (event.metadata && event.metadata.title), 'Working through the current page.');
+  }
+  function timeLabel(timestamp) {
+    if (!timestamp) return 'No updates yet';
+    const time = new Date(timestamp).getTime();
+    if (!Number.isFinite(time)) return 'Updated recently';
+    const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+    if (seconds < 5) return 'Live just now';
+    if (seconds < 60) return 'Updated ' + seconds + 's ago';
+    return 'Updated ' + Math.round(seconds / 60) + 'm ago';
+  }
+  function meta(event) {
+    const parts = [];
+    if (event && event.stepNumber) parts.push('step ' + event.stepNumber + (event.totalSteps ? '/' + event.totalSteps : ''));
+    if (event && event.metadata && event.metadata.refs !== undefined) parts.push(event.metadata.refs + ' refs');
+    if (event && event.timestamp) parts.push(timeLabel(event.timestamp));
+    return parts.join(' · ');
+  }
+
+  const latest = events[events.length - 1];
+  const progress = latest && latest.stepNumber && latest.totalSteps
+    ? Math.max(3, Math.min(100, Math.round((Number(latest.stepNumber) / Number(latest.totalSteps)) * 100)))
+    : (latest ? 20 : 0);
+
+  const host = existing || document.createElement('div');
+  host.id = hostId;
+  host.style.position = 'fixed';
+  host.style.top = '14px';
+  host.style.right = '14px';
+  host.style.width = 'min(390px, calc(100vw - 28px))';
+  host.style.height = 'calc(100vh - 28px)';
+  host.style.zIndex = '2147483647';
+  host.style.pointerEvents = 'auto';
+  if (!existing) document.documentElement.appendChild(host);
+  const root = host.shadowRoot || host.attachShadow({ mode: 'open' });
+
+  const feed = events.slice().reverse().map(event => {
+    const eventKind = kind(event);
+    return [
+      '<li class="ef-feed-item ' + eventKind + '">',
+      '<span class="ef-dot"></span>',
+      '<div class="ef-feed-copy">',
+      '<div class="ef-feed-heading"><span>' + kindLabel(eventKind) + '</span><strong>' + esc(eventTitle(event)) + '</strong></div>',
+      '<p>' + esc(eventBody(event)) + '</p>',
+      '<small>' + esc(meta(event)) + '</small>',
+      '</div>',
+      '</li>'
+    ].join('');
+  }).join('') || '<li class="ef-empty">Navis thoughts, clicks, typing, and page reads will appear here as soon as a task starts.</li>';
+
+  root.innerHTML = [
+    '<style>',
+    '@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800;900&display=swap");',
+    ':host{all:initial}',
+    '.ef-shell{height:100%;display:flex;flex-direction:column;box-sizing:border-box;background:#f3f6fa;border:2px solid rgba(255,255,255,0.75);border-radius:28px;box-shadow:8px 8px 20px rgba(163,177,198,0.45),-8px -8px 20px rgba(255,255,255,0.85),inset 4px 4px 10px rgba(163,177,198,0.22),inset -4px -4px 10px rgba(255,255,255,0.92);font-family:"Figtree",system-ui,sans-serif;color:#2e3a59;overflow:hidden}',
+    '.ef-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px}',
+    '.ef-brand{display:flex;align-items:center;gap:12px;min-width:0}',
+    '.ef-logo{width:38px;height:38px;border-radius:12px;background:#3b82f6;color:#fff;display:grid;place-items:center;font-weight:900;font-size:16px;box-shadow:3px 3px 6px rgba(59,130,246,0.3),inset 2px 2px 4px rgba(255,255,255,0.4),inset -2px -2px 4px rgba(0,0,0,0.2)}',
+    '.ef-title{min-width:0}.ef-title strong{display:block;font-size:15px;line-height:1.2;font-weight:800;color:#1a202c}.ef-title span{display:block;margin-top:2px;color:#718096;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.ef-close{width:30px;height:30px;border:none;border-radius:11px;background:#fff;color:#718096;font:16px/1 "Figtree",sans-serif;font-weight:700;cursor:pointer;display:grid;place-items:center;box-shadow:3px 3px 6px rgba(163,177,198,0.3),-3px -3px 6px rgba(255,255,255,0.8),inset 2px 2px 4px rgba(163,177,198,0.1),inset -2px -2px 4px rgba(255,255,255,0.9);transition:all 0.2s ease}',
+    '.ef-close:active{box-shadow:inset 2px 2px 4px rgba(163,177,198,0.2),inset -2px -2px 4px rgba(255,255,255,0.4)}',
+    '.ef-body{display:flex;flex-direction:column;gap:14px;min-height:0;flex:1;padding:14px;overflow-y:auto}',
+    '.ef-body::-webkit-scrollbar{width:8px}',
+    '.ef-body::-webkit-scrollbar-track{background:transparent}',
+    '.ef-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}',
+    '.ef-status{display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:20px;background:#fff;padding:12px 14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}',
+    '.ef-status-left{flex:1;min-width:0}',
+    '.ef-status strong{display:block;margin-top:4px;font-size:13px;line-height:1.35;font-weight:750;color:#2d3748;overflow-wrap:anywhere;max-height:120px;overflow-y:auto;padding-right:10px}',
+    '.ef-status strong::-webkit-scrollbar{width:6px}',
+    '.ef-status strong::-webkit-scrollbar-track{background:#f3f6fa;border-radius:10px;box-shadow:inset 1px 1px 3px rgba(163,177,198,0.2)}',
+    '.ef-status strong::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}',
+    '.ef-status strong::-webkit-scrollbar-thumb:hover{background:#a3b1c6}',
+    '.ef-kicker{display:block;color:#a0aec0;font-size:9.5px;text-transform:uppercase;font-weight:800;letter-spacing:.08em}',
+    '.ef-pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#e6f4ea;border:1px solid rgba(255,255,255,0.9);color:#137333;font-size:10.5px;font-weight:700;white-space:nowrap;box-shadow:2px 2px 4px rgba(163,177,198,0.15),inset 1px 1px 2px rgba(255,255,255,0.4),inset -1px -1px 2px rgba(0,0,0,0.05)}.ef-pill:before{content:"";width:7px;height:7px;border-radius:99px;background:#1e8e3e;box-shadow:0 0 10px rgba(30,142,62,.4)}.ef-pill.waiting{background:#fef7e0;color:#b06000}.ef-pill.waiting:before{background:#f9ab00;box-shadow:none}',
+    '.ef-mission{display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;align-items:center;border-radius:20px;background:#fff;padding:14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}',
+    '.ef-orb{width:40px;height:40px;border-radius:999px;background:radial-gradient(circle at 30% 24%,#fff 0%,#a5f3fc 20%,#3b82f6 50%,#8b5cf6 80%,#06b6d4 100%);box-shadow:0 4px 12px rgba(59,130,246,0.25),inset 2px 2px 4px rgba(255,255,255,0.9),inset -2px -2px 4px rgba(0,0,0,0.2);animation:efPulse 2.4s ease-in-out infinite}@keyframes efPulse{0%,100%{transform:scale(.95)}50%{transform:scale(1.05)}}',
+    '.ef-mission strong{display:block;font-size:14px;line-height:1.25;font-weight:800;color:#1a202c}.ef-mission p{margin:5px 0 0;color:#4a5568;font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
+    '.ef-progress{height:8px;margin-top:10px;border-radius:999px;background:#e2e8f0;box-shadow:inset 1px 1px 3px rgba(0,0,0,0.15),inset -1px -1px 3px rgba(255,255,255,0.85);overflow:hidden}',
+    '.ef-progress span{display:block;height:100%;width:' + progress + '%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#3b82f6 48%,#8b5cf6);box-shadow:inset 1px 1px 2px rgba(255, 255, 255, 0.4),inset -1px -1px 2px rgba(0, 0, 0, 0.15);transition:width .22s ease}.ef-fresh{margin-top:6px;color:#a0aec0;font-size:10.5px}',
+    '.ef-page{border-radius:20px;background:#fff;padding:12px 14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}.ef-page strong{display:block;margin-top:4px;font-size:12.5px;line-height:1.35;font-weight:750;color:#2d3748;overflow-wrap:anywhere}.ef-page p{margin:4px 0 0;color:#718096;font-size:11.5px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ef-feed-title{display:flex;align-items:center;justify-content:space-between;margin:4px 4px 0;color:#718096;font-size:10.5px;text-transform:uppercase;font-weight:800;letter-spacing:.08em}',
+    '.ef-feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;min-height:0;overflow:auto;padding-right:2px}',
+    '.ef-feed::-webkit-scrollbar{width:8px}',
+    '.ef-feed::-webkit-scrollbar-track{background:#f3f6fa;border-radius:10px;box-shadow:inset 2px 2px 5px rgba(163,177,198,0.22),inset -2px -2px 5px rgba(255,255,255,0.92)}',
+    '.ef-feed::-webkit-scrollbar-thumb{background:#a3b1c6;border-radius:10px;border:2px solid #f3f6fa;box-shadow:1px 1px 3px rgba(163,177,198,0.4),-1px -1px 3px rgba(255,255,255,0.8)}',
+    '.ef-feed::-webkit-scrollbar-thumb:hover{background:#718096}',
+    '.ef-feed-item,.ef-empty{display:grid;grid-template-columns:12px minmax(0,1fr);gap:10px;border-radius:18px;background:#fff;padding:11px 12px;border:1px solid rgba(255,255,255,0.85);box-shadow:3px 3px 8px rgba(163,177,198,0.15),-3px -3px 8px rgba(255,255,255,0.7),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}.ef-empty{display:block;color:#718096;font-size:12px;line-height:1.5}',
+    '.ef-feed-item.thought{background:linear-gradient(90deg,#f3e8ff,#fff 40%)}.ef-feed-item.action{background:linear-gradient(90deg,#e0f2fe,#fff 40%)}.ef-feed-item.done{background:linear-gradient(90deg,#dcfce7,#fff 40%)}',
+    '.ef-dot{width:9px;height:9px;margin-top:5px;border-radius:999px;background:#3b82f6;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.8)}.ef-feed-item.thought .ef-dot{background:#8b5cf6}.ef-feed-item.done .ef-dot{background:#22a566}.ef-feed-item.error .ef-dot{background:#ef4444}',
+    '.ef-feed-heading{display:flex;align-items:center;gap:7px;min-width:0}.ef-feed-heading span{height:18px;padding:0 7px;border-radius:999px;background:#edf2f7;color:#4a5568;font-size:9.5px;font-weight:800;line-height:18px;text-transform:uppercase;letter-spacing:.04em}.ef-feed-heading strong{min-width:0;color:#1a202c;font-size:12.5px;line-height:1.35;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ef-feed-copy p{margin:5px 0 0;color:#4a5568;font-size:11.5px;line-height:1.45}.ef-feed-copy small{display:block;margin-top:6px;color:#a0aec0;font:10px ui-monospace,monospace}',
+    '@media (max-width:520px){.ef-shell{border-radius:22px}.ef-top{padding:16px}.ef-body{padding:12px}}',
+    '</style>',
+    '<aside class="ef-shell" role="complementary" aria-label="EverFern Navis live task panel">',
+    '<header class="ef-top"><div class="ef-brand"><div class="ef-logo">N</div><div class="ef-title"><strong>EverFern Navis</strong><span>Live browser agent</span></div></div><button class="ef-close" type="button" aria-label="Close EverFern Navis panel">x</button></header>',
+    '<section class="ef-body">',
+    '<div class="ef-status"><div class="ef-status-left"><span class="ef-kicker">Task</span><strong>\' + esc(state && state.activeTask || \'No active Navis task yet\') + \'</strong></div><span class="ef-pill \' + (state && state.connected ? \'\' : \'waiting\') + \'">\' + (state && state.connected ? \'Live\' : \'Waiting\') + \'</span></div>',
+    '<div class="ef-mission"><div class="ef-orb"></div><div><span class="ef-kicker">Now</span><strong>\' + esc(eventTitle(latest)) + \'</strong><p>\' + esc(eventBody(latest)) + \'</p><div class="ef-progress"><span></span></div><div class="ef-fresh">\' + esc(timeLabel(latest && latest.timestamp)) + \'</div></div></div>',
+    '<div class="ef-page"><span class="ef-kicker">Current page</span><strong>\' + esc(state && state.activeTitle || document.title || \'Current tab\') + \'</strong><p>\' + esc(state && state.activeUrl || location.href) + \'</p></div>',
+    '<div class="ef-feed-title"><span>Agent activity</span><span>\' + events.length + \' events</span></div>',
+    '<ol class="ef-feed">\' + feed + \'</ol>',
+    '</section>',
+    '</aside>'
+  ].join('');
+
+  const closeButton = root.querySelector('.ef-close');
+  if (closeButton) closeButton.addEventListener('click', () => host.remove(), { once: true });
+  return { success: true, visible: true };
+}
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url && changeInfo.url.includes('navis=true')) {
-    ensureNavisGroup(tabId);
-  } else if (tab.url && tab.url.includes('navis=true')) {
-    ensureNavisGroup(tabId);
+  const isNavisGroup = navisGroupId >= 0 && tab && tab.groupId === navisGroupId;
+  if ((tab && tab.url && tab.url.includes('navis=true')) || isNavisGroup) {
+    navisTabs.add(tabId);
+  }
+  if (changeInfo.status === 'complete' || changeInfo.groupId !== undefined) {
+    if (isNavisGroup || navisTabs.has(tabId)) {
+      ensureNavisGroup(tabId);
+      syncOverlayToTabs('show');
+    }
   }
 });
-`.trimStart();
+
+chrome.tabs.onRemoved.addListener(tabId => {
+  navisTabs.delete(tabId);
+});
+
+chrome.action.onClicked.addListener(async tab => {
+  try {
+    if (canInjectIntoTab(tab)) {
+      navisTabs.add(tab.id);
+      restorePanelState(async () => {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: renderEverFernNavisOverlay,
+          args: [getPanelState(), { mode: 'toggle' }]
+        });
+      });
+    }
+  } catch (error) {
+    console.warn('[Navis Tab Control] Failed to toggle overlay', error);
+  }
+});
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'navis-keepalive') connect();
+});
+chrome.alarms.create('navis-keepalive', { periodInMinutes: 0.5 });
+
+connect();
+  `;
 
   fs.writeFileSync(path.join(chromeDir, 'service-worker.js'), chromeServiceWorker, 'utf-8');
 

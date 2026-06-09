@@ -379,6 +379,18 @@ async function overlayTargetTabs() {
       }
     } catch {}
   }
+  if (navisGroupId >= 0) {
+    try {
+      const groupTabs = await chrome.tabs.query({ groupId: navisGroupId });
+      for (const tab of groupTabs) {
+        if (seen.has(tab.id)) continue;
+        if (canInjectIntoTab(tab)) {
+          targets.push(tab);
+          seen.add(tab.id);
+        }
+      }
+    } catch {}
+  }
   return targets;
 }
 
@@ -499,31 +511,51 @@ function renderEverFernNavisOverlay(state, options) {
 
   root.innerHTML = [
     '<style>',
+    '@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800;900&display=swap");',
     ':host{all:initial}',
-    '.ef-shell{height:100%;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid rgba(214,204,188,.92);border-radius:22px;background:rgba(250,248,242,.94);box-shadow:0 24px 80px rgba(31,29,26,.22),0 2px 8px rgba(31,29,26,.08),inset 0 1px 0 rgba(255,255,255,.84);backdrop-filter:blur(18px);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f1d1a;overflow:hidden}',
-    '.ef-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 16px 12px;border-bottom:1px solid rgba(230,223,209,.82)}',
-    '.ef-brand{display:flex;align-items:center;gap:11px;min-width:0}',
-    '.ef-logo{width:38px;height:38px;border-radius:14px;background:#1f1d1a;color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;letter-spacing:.02em;box-shadow:0 10px 24px rgba(31,29,26,.18)}',
-    '.ef-title{min-width:0}.ef-title strong{display:block;font-size:15px;line-height:1.15;font-weight:760;letter-spacing:0}.ef-title span{display:block;margin-top:3px;color:#77716a;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-    '.ef-close{width:30px;height:30px;border:1px solid rgba(214,204,188,.95);border-radius:11px;background:#fffefb;color:#77716a;font:18px/1 system-ui;cursor:pointer;box-shadow:0 1px 2px rgba(31,29,26,.06)}',
-    '.ef-body{display:flex;flex-direction:column;gap:12px;min-height:0;flex:1;padding:14px}',
-    '.ef-status{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(230,223,209,.9);border-radius:16px;background:#fffefb;padding:11px 12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.78)}',
-    '.ef-status-left{min-width:0}.ef-kicker{display:block;color:#aaa39a;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.ef-status strong{display:block;margin-top:4px;font-size:13px;line-height:1.35;font-weight:720;overflow-wrap:anywhere}.ef-pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#f5f4f0;border:1px solid rgba(230,223,209,.95);color:#16784a;font-size:11px;font-weight:650;white-space:nowrap}.ef-pill:before{content:"";width:7px;height:7px;border-radius:99px;background:#22a566;box-shadow:0 0 10px rgba(34,165,102,.4)}',
-    '.ef-mission{display:grid;grid-template-columns:42px minmax(0,1fr);gap:12px;align-items:center;border:1px solid rgba(230,223,209,.9);border-radius:18px;background:radial-gradient(circle at 4% 0%,rgba(59,130,246,.13),transparent 34%),radial-gradient(circle at 100% 0%,rgba(124,58,237,.12),transparent 34%),#fffefb;padding:13px 12px}',
-    '.ef-orb{width:40px;height:40px;border-radius:999px;background:radial-gradient(circle at 30% 24%,#fff 0%,#8ee7ff 18%,#3b82f6 48%,#7c3aed 78%,#14b8a6 100%);box-shadow:0 0 26px rgba(59,130,246,.32),inset 0 1px 4px rgba(255,255,255,.9);animation:efPulse 2.6s ease-in-out infinite}@keyframes efPulse{0%,100%{transform:scale(.96)}50%{transform:scale(1.04)}}',
-    '.ef-mission strong{display:block;font-size:14px;line-height:1.25;font-weight:760}.ef-mission p{margin:4px 0 0;color:#6f6961;font-size:12px;line-height:1.45;overflow-wrap:anywhere}.ef-progress{height:6px;margin-top:10px;border-radius:999px;background:rgba(31,29,26,.08);overflow:hidden}.ef-progress span{display:block;height:100%;width:' + progress + '%;border-radius:inherit;background:linear-gradient(90deg,#8ee7ff,#3b82f6 48%,#7c3aed);box-shadow:0 0 12px rgba(59,130,246,.32);transition:width .22s ease}.ef-fresh{margin-top:6px;color:#aaa39a;font-size:10.5px}',
-    '.ef-page{border:1px solid rgba(230,223,209,.9);border-radius:16px;background:#fffefb;padding:11px 12px}.ef-page strong{display:block;margin-top:4px;font-size:12.5px;line-height:1.35;font-weight:700;overflow-wrap:anywhere}.ef-page p{margin:4px 0 0;color:#77716a;font-size:11.5px;line-height:1.4;overflow-wrap:anywhere}',
-    '.ef-feed-title{display:flex;align-items:center;justify-content:space-between;margin:2px 2px 0;color:#8d857a;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em}.ef-feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto;padding-right:2px}',
-    '.ef-feed-item,.ef-empty{display:grid;grid-template-columns:13px minmax(0,1fr);gap:10px;border:1px solid rgba(230,223,209,.9);border-radius:15px;background:#fffefb;padding:11px 12px;box-shadow:0 1px 2px rgba(31,29,26,.05),inset 0 1px 0 rgba(255,255,255,.78)}.ef-empty{display:block;color:#77716a;font-size:12px;line-height:1.5}',
-    '.ef-feed-item.thought{background:linear-gradient(90deg,rgba(124,58,237,.08),transparent 46%),#fffefb}.ef-feed-item.action{background:linear-gradient(90deg,rgba(59,130,246,.08),transparent 46%),#fffefb}.ef-feed-item.done{background:linear-gradient(90deg,rgba(34,165,102,.08),transparent 46%),#fffefb}',
-    '.ef-dot{width:9px;height:9px;margin-top:5px;border-radius:999px;background:radial-gradient(circle at 35% 30%,#fff 0%,#8ee7ff 20%,#3b82f6 56%,#7c3aed 100%);box-shadow:0 0 12px rgba(59,130,246,.34)}.ef-feed-item.action .ef-dot{background:#3b82f6}.ef-feed-item.done .ef-dot{background:#22a566;box-shadow:none}.ef-feed-item.error .ef-dot{background:#ef4444;box-shadow:none}',
-    '.ef-feed-heading{display:flex;align-items:center;gap:7px;min-width:0}.ef-feed-heading span{height:18px;padding:0 7px;border-radius:999px;background:rgba(31,29,26,.06);color:#77716a;font-size:9.5px;font-weight:760;line-height:18px;text-transform:uppercase;letter-spacing:.04em}.ef-feed-heading strong{min-width:0;color:#1f1d1a;font-size:12.5px;line-height:1.35;font-weight:730;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ef-feed-copy p{margin:5px 0 0;color:#6f6961;font-size:11.5px;line-height:1.45}.ef-feed-copy small{display:block;margin-top:6px;color:#aaa39a;font:10.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}',
-    '@media (max-width:520px){.ef-shell{border-radius:18px}.ef-top{padding:14px}.ef-body{padding:12px}}',
+    '.ef-shell{height:100%;display:flex;flex-direction:column;box-sizing:border-box;background:#f3f6fa;border:2px solid rgba(255,255,255,0.75);border-radius:28px;box-shadow:8px 8px 20px rgba(163,177,198,0.45),-8px -8px 20px rgba(255,255,255,0.85),inset 4px 4px 10px rgba(163,177,198,0.22),inset -4px -4px 10px rgba(255,255,255,0.92);font-family:"Figtree",system-ui,sans-serif;color:#2e3a59;overflow:hidden}',
+    '.ef-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px}',
+    '.ef-brand{display:flex;align-items:center;gap:12px;min-width:0}',
+    '.ef-logo{width:38px;height:38px;border-radius:12px;background:#3b82f6;color:#fff;display:grid;place-items:center;font-weight:900;font-size:16px;box-shadow:3px 3px 6px rgba(59,130,246,0.3),inset 2px 2px 4px rgba(255,255,255,0.4),inset -2px -2px 4px rgba(0,0,0,0.2)}',
+    '.ef-title{min-width:0}.ef-title strong{display:block;font-size:15px;line-height:1.2;font-weight:800;color:#1a202c}.ef-title span{display:block;margin-top:2px;color:#718096;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.ef-close{width:30px;height:30px;border:none;border-radius:11px;background:#fff;color:#718096;font:16px/1 "Figtree",sans-serif;font-weight:700;cursor:pointer;display:grid;place-items:center;box-shadow:3px 3px 6px rgba(163,177,198,0.3),-3px -3px 6px rgba(255,255,255,0.8),inset 2px 2px 4px rgba(163,177,198,0.1),inset -2px -2px 4px rgba(255,255,255,0.9);transition:all 0.2s ease}',
+    '.ef-close:active{box-shadow:inset 2px 2px 4px rgba(163,177,198,0.2),inset -2px -2px 4px rgba(255,255,255,0.4)}',
+    '.ef-body{display:flex;flex-direction:column;gap:14px;min-height:0;flex:1;padding:14px;overflow-y:auto}',
+    '.ef-body::-webkit-scrollbar{width:8px}',
+    '.ef-body::-webkit-scrollbar-track{background:transparent}',
+    '.ef-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}',
+    '.ef-status{display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:20px;background:#fff;padding:12px 14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}',
+    '.ef-status-left{flex:1;min-width:0}',
+    '.ef-status strong{display:block;margin-top:4px;font-size:13px;line-height:1.35;font-weight:750;color:#2d3748;overflow-wrap:anywhere;max-height:120px;overflow-y:auto;padding-right:10px}',
+    '.ef-status strong::-webkit-scrollbar{width:6px}',
+    '.ef-status strong::-webkit-scrollbar-track{background:#f3f6fa;border-radius:10px;box-shadow:inset 1px 1px 3px rgba(163,177,198,0.2)}',
+    '.ef-status strong::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}',
+    '.ef-status strong::-webkit-scrollbar-thumb:hover{background:#a3b1c6}',
+    '.ef-kicker{display:block;color:#a0aec0;font-size:9.5px;text-transform:uppercase;font-weight:800;letter-spacing:.08em}',
+    '.ef-pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:#e6f4ea;border:1px solid rgba(255,255,255,0.9);color:#137333;font-size:10.5px;font-weight:700;white-space:nowrap;box-shadow:2px 2px 4px rgba(163,177,198,0.15),inset 1px 1px 2px rgba(255,255,255,0.4),inset -1px -1px 2px rgba(0,0,0,0.05)}.ef-pill:before{content:"";width:7px;height:7px;border-radius:99px;background:#1e8e3e;box-shadow:0 0 10px rgba(30,142,62,.4)}.ef-pill.waiting{background:#fef7e0;color:#b06000}.ef-pill.waiting:before{background:#f9ab00;box-shadow:none}',
+    '.ef-mission{display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;align-items:center;border-radius:20px;background:#fff;padding:14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}',
+    '.ef-orb{width:40px;height:40px;border-radius:999px;background:radial-gradient(circle at 30% 24%,#fff 0%,#a5f3fc 20%,#3b82f6 50%,#8b5cf6 80%,#06b6d4 100%);box-shadow:0 4px 12px rgba(59,130,246,0.25),inset 2px 2px 4px rgba(255,255,255,0.9),inset -2px -2px 4px rgba(0,0,0,0.2);animation:efPulse 2.4s ease-in-out infinite}@keyframes efPulse{0%,100%{transform:scale(.95)}50%{transform:scale(1.05)}}',
+    '.ef-mission strong{display:block;font-size:14px;line-height:1.25;font-weight:800;color:#1a202c}.ef-mission p{margin:5px 0 0;color:#4a5568;font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
+    '.ef-progress{height:8px;margin-top:10px;border-radius:999px;background:#e2e8f0;box-shadow:inset 1px 1px 3px rgba(0,0,0,0.15),inset -1px -1px 3px rgba(255,255,255,0.85);overflow:hidden}',
+    '.ef-progress span{display:block;height:100%;width:' + progress + '%;border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#3b82f6 48%,#8b5cf6);box-shadow:inset 1px 1px 2px rgba(255, 255, 255, 0.4),inset -1px -1px 2px rgba(0, 0, 0, 0.15);transition:width .22s ease}.ef-fresh{margin-top:6px;color:#a0aec0;font-size:10.5px}',
+    '.ef-page{border-radius:20px;background:#fff;padding:12px 14px;border:1px solid rgba(255,255,255,0.85);box-shadow:4px 4px 10px rgba(163,177,198,0.22),-4px -4px 10px rgba(255,255,255,0.85),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}.ef-page strong{display:block;margin-top:4px;font-size:12.5px;line-height:1.35;font-weight:750;color:#2d3748;overflow-wrap:anywhere}.ef-page p{margin:4px 0 0;color:#718096;font-size:11.5px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ef-feed-title{display:flex;align-items:center;justify-content:space-between;margin:4px 4px 0;color:#718096;font-size:10.5px;text-transform:uppercase;font-weight:800;letter-spacing:.08em}',
+    '.ef-feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;min-height:0;overflow:auto;padding-right:2px}',
+    '.ef-feed::-webkit-scrollbar{width:8px}',
+    '.ef-feed::-webkit-scrollbar-track{background:#f3f6fa;border-radius:10px;box-shadow:inset 2px 2px 5px rgba(163,177,198,0.22),inset -2px -2px 5px rgba(255,255,255,0.92)}',
+    '.ef-feed::-webkit-scrollbar-thumb{background:#a3b1c6;border-radius:10px;border:2px solid #f3f6fa;box-shadow:1px 1px 3px rgba(163,177,198,0.4),-1px -1px 3px rgba(255,255,255,0.8)}',
+    '.ef-feed::-webkit-scrollbar-thumb:hover{background:#718096}',
+    '.ef-feed-item,.ef-empty{display:grid;grid-template-columns:12px minmax(0,1fr);gap:10px;border-radius:18px;background:#fff;padding:11px 12px;border:1px solid rgba(255,255,255,0.85);box-shadow:3px 3px 8px rgba(163,177,198,0.15),-3px -3px 8px rgba(255,255,255,0.7),inset 2px 2px 4px rgba(163,177,198,0.15),inset -2px -2px 4px rgba(255,255,255,0.9)}.ef-empty{display:block;color:#718096;font-size:12px;line-height:1.5}',
+    '.ef-feed-item.thought{background:linear-gradient(90deg,#f3e8ff,#fff 40%)}.ef-feed-item.action{background:linear-gradient(90deg,#e0f2fe,#fff 40%)}.ef-feed-item.done{background:linear-gradient(90deg,#dcfce7,#fff 40%)}',
+    '.ef-dot{width:9px;height:9px;margin-top:5px;border-radius:999px;background:#3b82f6;box-shadow:inset 1px 1px 2px rgba(255,255,255,0.8)}.ef-feed-item.thought .ef-dot{background:#8b5cf6}.ef-feed-item.done .ef-dot{background:#22a566}.ef-feed-item.error .ef-dot{background:#ef4444}',
+    '.ef-feed-heading{display:flex;align-items:center;gap:7px;min-width:0}.ef-feed-heading span{height:18px;padding:0 7px;border-radius:999px;background:#edf2f7;color:#4a5568;font-size:9.5px;font-weight:800;line-height:18px;text-transform:uppercase;letter-spacing:.04em}.ef-feed-heading strong{min-width:0;color:#1a202c;font-size:12.5px;line-height:1.35;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ef-feed-copy p{margin:5px 0 0;color:#4a5568;font-size:11.5px;line-height:1.45}.ef-feed-copy small{display:block;margin-top:6px;color:#a0aec0;font:10px ui-monospace,monospace}',
+    '@media (max-width:520px){.ef-shell{border-radius:22px}.ef-top{padding:16px}.ef-body{padding:12px}}',
     '</style>',
     '<aside class="ef-shell" role="complementary" aria-label="EverFern Navis live task panel">',
-    '<header class="ef-top"><div class="ef-brand"><div class="ef-logo">EF</div><div class="ef-title"><strong>EverFern Navis</strong><span>Live browser agent</span></div></div><button class="ef-close" type="button" aria-label="Close EverFern Navis panel">x</button></header>',
+    '<header class="ef-top"><div class="ef-brand"><div class="ef-logo">N</div><div class="ef-title"><strong>EverFern Navis</strong><span>Live browser agent</span></div></div><button class="ef-close" type="button" aria-label="Close EverFern Navis panel">x</button></header>',
     '<section class="ef-body">',
-    '<div class="ef-status"><div class="ef-status-left"><span class="ef-kicker">Task</span><strong>' + esc(state && state.activeTask || 'No active Navis task yet') + '</strong></div><span class="ef-pill">' + (state && state.connected ? 'Live' : 'Waiting') + '</span></div>',
+    '<div class="ef-status"><div class="ef-status-left"><span class="ef-kicker">Task</span><strong>' + esc(state && state.activeTask || 'No active Navis task yet') + '</strong></div><span class="ef-pill ' + (state && state.connected ? '' : 'waiting') + '">' + (state && state.connected ? 'Live' : 'Waiting') + '</span></div>',
     '<div class="ef-mission"><div class="ef-orb"></div><div><span class="ef-kicker">Now</span><strong>' + esc(eventTitle(latest)) + '</strong><p>' + esc(eventBody(latest)) + '</p><div class="ef-progress"><span></span></div><div class="ef-fresh">' + esc(timeLabel(latest && latest.timestamp)) + '</div></div></div>',
     '<div class="ef-page"><span class="ef-kicker">Current page</span><strong>' + esc(state && state.activeTitle || document.title || 'Current tab') + '</strong><p>' + esc(state && state.activeUrl || location.href) + '</p></div>',
     '<div class="ef-feed-title"><span>Agent activity</span><span>' + events.length + ' events</span></div>',
@@ -1040,10 +1072,18 @@ if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'complete' && navisTabs.has(tabId)) {
-    ensureNavisGroup(tabId);
-    syncOverlayToTabs('show');
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const isNavisGroup = navisGroupId >= 0 && tab && tab.groupId === navisGroupId;
+  if ((tab && tab.url && tab.url.includes('navis=true')) || isNavisGroup) {
+    if (!navisTabs.has(tabId)) {
+      navisTabs.set(tabId, { sessionId: 'default', createdAt: Date.now() });
+    }
+  }
+  if (changeInfo.status === 'complete' || changeInfo.groupId !== undefined) {
+    if (isNavisGroup || navisTabs.has(tabId)) {
+      ensureNavisGroup(tabId);
+      syncOverlayToTabs('show');
+    }
   }
 });
 chrome.alarms.onAlarm.addListener(alarm => {
@@ -2036,7 +2076,7 @@ export async function prepareNavisMainProfileExtension(selectedBrowserId = 'chro
     };
   }
 
-  const connected = await bridgeServer.waitForExtensionConnection(browserWasRunning ? 5000 : 12000);
+  const connected = await bridgeServer.waitForExtensionConnection(12000);
 
   return {
     success: connected,
@@ -2052,7 +2092,7 @@ export async function prepareNavisMainProfileExtension(selectedBrowserId = 'chro
     message: connected
       ? `Navis companion extension is connected in ${browserInfo?.name || 'Chromium'} using the main profile.`
       : browserWasRunning
-        ? `${browserInfo?.name || 'Chromium'} was already running, so Chrome may have ignored --load-extension. Close all ${browserInfo?.name || 'browser'} windows and run Prepare main profile extension again.`
+        ? `${browserInfo?.name || 'Chromium'} was detected as running (possibly in the background). Chrome may have ignored --load-extension. Close all browser windows, run 'taskkill /f /im ${path.basename(executablePath)}' in your terminal/command prompt to terminate background processes, and click Prepare main profile extension again.`
         : `Launched ${browserInfo?.name || 'Chromium'} with the Navis companion extension, but it did not connect to EverFern within the timeout.`,
   };
 }

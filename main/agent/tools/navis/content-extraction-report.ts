@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Page } from 'playwright';
 import type { AIClient } from '../../../lib/ai-client';
+import { captureInteractiveElements } from './element-capture';
 
 export interface NavisDomExtractionSnapshot {
   url: string;
@@ -296,14 +297,143 @@ export function summarizeMarkdown(markdown: string, max = 900): string {
   return compactWhitespace(clean, max);
 }
 
+async function identifyClickElements(
+  page: Page,
+  goal: string,
+  aiClient: AIClient,
+  clickTarget?: string,
+): Promise<{ shouldClick: boolean; refs: string[]; collapseAfterClick: boolean; waitMsAfterClick: number }> {
+  try {
+    const interactiveSnapshot = await captureInteractiveElements(page);
+    if (!interactiveSnapshot || !interactiveSnapshot.raw) {
+      return { shouldClick: false, refs: [], collapseAfterClick: false, waitMsAfterClick: 500 };
+    }
+
+    const items = JSON.parse(interactiveSnapshot.raw);
+    const visibleInteractive = items
+      .filter((item: any) => item.ref && item.visible !== false && item.inViewport !== false)
+      .slice(0, 100)
+      .map((item: any) => ({
+        ref: item.ref,
+        role: item.role,
+        name: item.name,
+        label: item.label,
+        type: item.type,
+      }));
+
+    if (visibleInteractive.length === 0) {
+      return { shouldClick: false, refs: [], collapseAfterClick: false, waitMsAfterClick: 500 };
+    }
+
+    const prompt = `You are Navis Element Identifier. 
+We need to extract details from the current page to satisfy this goal: "${goal}".
+${clickTarget ? `The user specified these targets to click/expand: "${clickTarget}".` : 'Some pages (e.g. flight lists, accordions, search results) hide complete details until you click/expand each item.'}
+Your job is to look at the list of visible interactive elements and determine if we need to systematically click/expand multiple items to reveal the necessary information.
+
+Here is the list of interactive elements:
+${JSON.stringify(visibleInteractive, null, 2)}
+
+If we need to click multiple items (e.g. each flight row, accordion header, detail link) to get the required information, return a JSON object containing:
+- "shouldClick": true
+- "refs": an array of the element refs to click in order (e.g. ["e1", "e2", "e3"])
+- "collapseAfterClick": true/false (usually false for flight details/accordions)
+- "waitMsAfterClick": number (time to wait in ms after each click, e.g. 500)
+
+If no clicking is needed (the information is already visible or this is not a list that needs expanding), return:
+- "shouldClick": false
+- "refs": []
+
+Return ONLY valid JSON. No markdown fences. No extra text.`;
+
+    const response = await aiClient.chat({
+      messages: [
+        { role: 'system', content: 'You are a precise JSON assistant.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.1,
+      responseFormat: 'json',
+    });
+
+    const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
+    const cleanJson = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const result = JSON.parse(cleanJson);
+    return {
+      shouldClick: Boolean(result.shouldClick),
+      refs: Array.isArray(result.refs) ? result.refs.map(String) : [],
+      collapseAfterClick: Boolean(result.collapseAfterClick),
+      waitMsAfterClick: typeof result.waitMsAfterClick === 'number' ? result.waitMsAfterClick : 500,
+    };
+  } catch (err) {
+    console.warn('[Navis Extract] Element identification failed:', err);
+    return { shouldClick: false, refs: [], collapseAfterClick: false, waitMsAfterClick: 500 };
+  }
+}
+
 export async function createNavisExtractionReport(
   page: Page,
   goal: string,
   aiClient?: AIClient,
+  clickTarget?: string,
 ): Promise<NavisExtractionReport> {
   const snapshot = await captureDomForExtraction(page, goal);
-  const parsed = await parseDomSnapshotToMarkdown(snapshot, goal, aiClient);
-  const reportPath = await writeNavisExtractionReport(parsed.markdown, snapshot);
+  
+  let combinedText = snapshot.mainText;
+
+  if (aiClient) {
+    console.log('[Navis Extract] Running click-and-extract detection...');
+    const clickInfo = await identifyClickElements(page, goal, aiClient, clickTarget);
+    if (clickInfo.shouldClick && clickInfo.refs.length > 0) {
+      console.log(`[Navis Extract] Subagent identified ${clickInfo.refs.length} elements to click systematically:`, clickInfo.refs);
+      const clickedContents: string[] = [];
+      clickedContents.push(`### Initial Page Content\n${snapshot.mainText}`);
+
+      const maxClicks = Math.min(clickInfo.refs.length, 15);
+      for (let i = 0; i < maxClicks; i++) {
+        const ref = clickInfo.refs[i];
+        const selector = `[data-ref="${ref}"]`;
+        const locator = page.locator(selector);
+        
+        const isVisible = await locator.isVisible({ timeout: 500 }).catch(() => false);
+        if (!isVisible) continue;
+
+        try {
+          console.log(`[Navis Extract] Subagent clicking element ${ref} (${i + 1}/${maxClicks})...`);
+          await locator.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+          await locator.click({ timeout: 1500 });
+          
+          await page.waitForTimeout(clickInfo.waitMsAfterClick);
+
+          const pageText = await page.evaluate(() => {
+            const clone = document.body.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll('script, style, noscript, iframe, svg, canvas, nav, footer, header').forEach(node => node.remove());
+            return clone.innerText || clone.textContent || '';
+          }).catch(() => '');
+
+          clickedContents.push(`### Content after clicking element ${ref}\n${pageText}`);
+
+          if (clickInfo.collapseAfterClick) {
+            await locator.click({ timeout: 1000 }).catch(() => {});
+            await page.waitForTimeout(200);
+          }
+        } catch (clickErr) {
+          console.warn(`[Navis Extract] Failed to click ref ${ref}:`, clickErr);
+        }
+      }
+
+      combinedText = clickedContents.join('\n\n---\n\n');
+      if (combinedText.length > 120000) {
+        combinedText = combinedText.slice(0, 120000) + '\n...[truncated due to excessive length]';
+      }
+    }
+  }
+
+  const enrichedSnapshot = {
+    ...snapshot,
+    mainText: combinedText
+  };
+
+  const parsed = await parseDomSnapshotToMarkdown(enrichedSnapshot, goal, aiClient);
+  const reportPath = await writeNavisExtractionReport(parsed.markdown, enrichedSnapshot);
 
   return {
     reportPath,

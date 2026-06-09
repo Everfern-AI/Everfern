@@ -93,10 +93,11 @@ It may include an `htmlDomParser` section generated from raw HTML with headings,
 - If `click_element` fails or the same ref goal repeats once, switch to `smart_click`/`click_text` using the element name, href, or visible text. Do not repeat the same ref blindly.
 
 **Fast extraction handoff**:
-- When a page contains the information you need, call `extract_content` with a precise `goal` instead of spending extra turns analyzing the whole DOM yourself.
-- `extract_content` captures the DOM/text, hands it to a separate parser AI, and writes a temporary Markdown report. The action result returns the report path plus a short summary.
+- When a page contains the information you need, call `extract` (or `extract_content`) with a precise `goal` instead of spending extra turns analyzing the whole DOM yourself.
+- `extract` automatically programmatically clicks/expands list details, expandable rows, and accordions to reveal complete details before parsing them. You can optionally specify a `click_target` string (e.g. "flight details", "accordion header") to guide which elements to click.
+- This action captures the DOM/text snapshots, aggregates the contents, hands it to a separate parser AI, and writes a temporary Markdown report. The action result returns the report path plus a short summary.
 - Use that report path/summary in memory and final reporting. Do not re-parse huge page text inside the navigation loop unless the report says the requested information was missing.
-- Do not use `extract_content` as a substitute for interaction. If the user asked you to book, search, log in, fill a form, send a message/email, choose filters, or navigate to a result, keep using `smart_click`, `click_text`, `smart_type`, and `wait_for_navigation` until the workflow is actually complete.
+- Do not use `extract` as a substitute for interaction. If the user asked you to book, search, log in, fill a form, send a message/email, choose filters, or navigate to a result, keep using `smart_click`, `click_text`, `smart_type`, and `wait_for_navigation` until the workflow is actually complete.
 
 **When to request vision**:
 - Set `current_state.request_vision=true` only if DOM/refs are insufficient, a visual overlay is blocking the page, content is canvas/image-only, coordinates matter, or the visual layout must be inspected.
@@ -379,7 +380,7 @@ These are especially useful when:
     "next_goal": "Extract pricing and features from competitor1"
   },
   "action": [
-    {"extract_content": {"goal": "Extract pricing plans, key features, and target audience"}},
+    {"extract": {"goal": "Extract pricing plans, key features, and target audience", "click_target": "features list"}},
     {"switch_tab": {"index": 2}}
   ]
 }
@@ -473,7 +474,7 @@ For browser interactions:
 - To type freely (FALLBACK if input_text fails/ineffective): browser_click on the input field followed by browser_type with text="..."
 - To press a key (e.g. Enter to submit): press_key with key="Enter" (optionally ref="eN" to press on a specific element)
 - To wait for route changes/redirects: wait_for_navigation with timeoutMs=4000
-- To extract: extract_content with goal="..."
+- To extract: extract (or extract_content) with goal="..." and optional click_target="..."
 - To scroll: scroll_down or scroll_up
 - To open a new tab: open_tab with url="..."
 - To switch tabs: switch_tab with index=0 (or target="partial title")

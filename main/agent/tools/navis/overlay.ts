@@ -212,9 +212,7 @@ const RAW_SCRIPT = `
         --trail-x: 15px; \
         --trail-y: 24px; \
         --trail-opacity: 0.42; \
-        transition: left 0.42s cubic-bezier(0.16, 1, 0.3, 1), \
-                    top  0.42s cubic-bezier(0.16, 1, 0.3, 1), \
-                    opacity 0.16s ease; \
+        transition: opacity 0.16s ease; \
         opacity: 0; \
         z-index: 2147483647; \
         margin-left: -6px; \
@@ -388,9 +386,102 @@ const RAW_SCRIPT = `
     }
     console.log('[Navis] Overlay successfully created and appended with ID: ' + OVERLAY_ID);
 
+    let currentX = null;
+    let currentY = null;
+    let targetX = null;
+    let targetY = null;
     let lastCursorX = null;
     let lastCursorY = null;
-    let cursorRestTimer = null;
+    let animationFrameId = null;
+    let clickPending = false;
+
+    function lerp(start, end, amt) {
+      return (1 - amt) * start + amt * end;
+    }
+
+    function updateCursorDom(x, y, isMoving) {
+      const c = shadow.getElementById('cursor');
+      if (!c) return;
+
+      let tilt = -8;
+      let swayX = 0;
+      let swayY = 0;
+      let scale = 1;
+      let trailX = 15;
+      let trailY = 24;
+      let trailOpacity = 0.42;
+
+      if (typeof lastCursorX === 'number' && typeof lastCursorY === 'number') {
+        const dx = x - lastCursorX;
+        const dy = y - lastCursorY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > 0.1) {
+          tilt = Math.max(-22, Math.min(16, (dx * 0.15) + (dy * 0.06) - 8));
+          swayX = Math.max(-4.5, Math.min(4.5, -dx * 0.1));
+          swayY = Math.max(-3.2, Math.min(3.2, -dy * 0.08));
+          scale = Math.min(1.075, 1 + distance * 0.003);
+          trailX = Math.max(6, Math.min(28, 15 - dx * 0.15));
+          trailY = Math.max(13, Math.min(34, 24 - dy * 0.12));
+          trailOpacity = Math.min(0.9, 0.38 + distance * 0.015);
+        }
+      }
+
+      lastCursorX = x;
+      lastCursorY = y;
+
+      if (isMoving) {
+        c.classList.add('is-moving');
+      } else {
+        c.classList.remove('is-moving');
+      }
+
+      c.style.opacity = '1';
+      c.style.left = x + 'px';
+      c.style.top = y + 'px';
+      c.style.setProperty('--tilt', tilt.toFixed(2) + 'deg');
+      c.style.setProperty('--sway-x', swayX.toFixed(2) + 'px');
+      c.style.setProperty('--sway-y', swayY.toFixed(2) + 'px');
+      c.style.setProperty('--scale', scale.toFixed(3));
+      c.style.setProperty('--trail-x', trailX.toFixed(2) + 'px');
+      c.style.setProperty('--trail-y', trailY.toFixed(2) + 'px');
+      c.style.setProperty('--trail-opacity', trailOpacity.toFixed(2));
+    }
+
+    function animateCursor() {
+      if (currentX === null || currentY === null) {
+        currentX = targetX;
+        currentY = targetY;
+      }
+
+      const dx = targetX - currentX;
+      const dy = targetY - currentY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < 0.8) {
+        currentX = targetX;
+        currentY = targetY;
+        updateCursorDom(currentX, currentY, false);
+        animationFrameId = null;
+
+        if (clickPending) {
+          clickPending = false;
+          const c = shadow.getElementById('cursor');
+          if (c) {
+            c.classList.remove('click-anim');
+            void c.offsetWidth;
+            c.classList.add('click-anim');
+          }
+        }
+        return;
+      }
+
+      currentX = lerp(currentX, targetX, 0.15);
+      currentY = lerp(currentY, targetY, 0.15);
+
+      updateCursorDom(currentX, currentY, true);
+
+      animationFrameId = requestAnimationFrame(animateCursor);
+    }
 
     window.__navis_controls = {
       setStatus: function(t) {
@@ -398,57 +489,30 @@ const RAW_SCRIPT = `
         if (el) el.textContent = t;
       },
       moveCursor: function(x, y, click) {
-        const c = shadow.getElementById('cursor');
-        if (!c) return;
-        let tilt = -8;
-        let swayX = 0;
-        let swayY = 0;
-        let scale = click ? 0.96 : 1;
-        let trailX = 15;
-        let trailY = 24;
-        let trailOpacity = click ? 0.82 : 0.42;
-        if (typeof lastCursorX === 'number' && typeof lastCursorY === 'number') {
-          const dx = x - lastCursorX;
-          const dy = y - lastCursorY;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          if (distance > 1) {
-            tilt = Math.max(-22, Math.min(16, (dx * 0.036) + (dy * 0.014) - 8));
-            swayX = Math.max(-4.5, Math.min(4.5, -dx * 0.024));
-            swayY = Math.max(-3.2, Math.min(3.2, -dy * 0.02));
-            scale = click ? 0.94 : Math.min(1.075, 1 + distance * 0.0008);
-            trailX = Math.max(6, Math.min(28, 15 - dx * 0.035));
-            trailY = Math.max(13, Math.min(34, 24 - dy * 0.03));
-            trailOpacity = Math.min(0.9, 0.38 + distance * 0.004);
-          }
-        }
-        lastCursorX = x;
-        lastCursorY = y;
-        c.classList.add('is-moving');
-        c.style.opacity = '1';
-        c.style.left = x + 'px';
-        c.style.top = y + 'px';
-        c.style.setProperty('--tilt', tilt.toFixed(2) + 'deg');
-        c.style.setProperty('--sway-x', swayX.toFixed(2) + 'px');
-        c.style.setProperty('--sway-y', swayY.toFixed(2) + 'px');
-        c.style.setProperty('--scale', scale.toFixed(3));
-        c.style.setProperty('--trail-x', trailX.toFixed(2) + 'px');
-        c.style.setProperty('--trail-y', trailY.toFixed(2) + 'px');
-        c.style.setProperty('--trail-opacity', trailOpacity.toFixed(2));
-        if (cursorRestTimer) clearTimeout(cursorRestTimer);
-        cursorRestTimer = setTimeout(function() {
-          c.style.setProperty('--tilt', '-8deg');
-          c.style.setProperty('--sway-x', '0px');
-          c.style.setProperty('--sway-y', '0px');
-          c.style.setProperty('--scale', '1');
-          c.style.setProperty('--trail-x', '15px');
-          c.style.setProperty('--trail-y', '24px');
-          c.style.setProperty('--trail-opacity', '0.42');
-          c.classList.remove('is-moving');
-        }, 520);
+        targetX = x;
+        targetY = y;
         if (click) {
-          c.classList.remove('click-anim');
-          void c.offsetWidth;
-          c.classList.add('click-anim');
+          clickPending = true;
+        }
+
+        if (currentX === null || currentY === null) {
+          currentX = x;
+          currentY = y;
+          updateCursorDom(x, y, false);
+          if (clickPending) {
+            clickPending = false;
+            const c = shadow.getElementById('cursor');
+            if (c) {
+              c.classList.remove('click-anim');
+              void c.offsetWidth;
+              c.classList.add('click-anim');
+            }
+          }
+          return;
+        }
+
+        if (!animationFrameId) {
+          animationFrameId = requestAnimationFrame(animateCursor);
         }
       },
       highlight: function(r) {

@@ -1,14 +1,24 @@
 import * as fs from 'fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildDomParserPrompt,
   createFallbackMarkdown,
   getNavisReportDirectory,
   parseDomSnapshotToMarkdown,
   writeNavisExtractionReport,
+  createNavisExtractionReport,
   type NavisDomExtractionSnapshot,
 } from '../content-extraction-report';
 import { executeAction } from '../actions';
+
+vi.mock('../element-capture', () => ({
+  captureInteractiveElements: async () => ({
+    raw: JSON.stringify([
+      { ref: 'e1', visible: true, inViewport: true, role: 'button', name: 'Flight 1' },
+      { ref: 'e2', visible: true, inViewport: true, role: 'button', name: 'Flight 2' }
+    ])
+  })
+}));
 
 const snapshot: NavisDomExtractionSnapshot = {
   url: 'https://example.com/flights',
@@ -80,7 +90,12 @@ describe('Navis content extraction report', () => {
 
   it('wires the actual extract_content action to a temporary markdown report', async () => {
     const aiClient: any = {
-      chat: async () => ({ content: '# Parsed DOM Report\n\n- Extracted through the action path.' }),
+      chat: async (options?: any) => {
+        if (options?.responseFormat === 'json') {
+          return { content: JSON.stringify({ shouldClick: false, refs: [] }) };
+        }
+        return { content: '# Parsed DOM Report\n\n- Extracted through the action path.' };
+      },
     };
     const page: any = {
       evaluate: async () => {
@@ -108,5 +123,107 @@ describe('Navis content extraction report', () => {
     expect(fs.readFileSync((result.data as any).reportPath, 'utf8')).toContain('Parsed DOM Report');
 
     fs.rmSync((result.data as any).reportPath, { force: true });
+  });
+
+  it('wires the actual extract action (synonym) to a temporary markdown report', async () => {
+    const aiClient: any = {
+      chat: async (options?: any) => {
+        if (options?.responseFormat === 'json') {
+          return { content: JSON.stringify({ shouldClick: false, refs: [] }) };
+        }
+        return { content: '# Parsed DOM Report\n\n- Extracted through the action path.' };
+      },
+    };
+    const page: any = {
+      evaluate: async () => {
+        throw new Error('No DOM in unit test');
+      },
+      url: () => 'https://example.com/action-path',
+      title: async () => 'Action Path Page',
+    };
+
+    const result = await executeAction(
+      'extract',
+      { goal: 'Extract action path data' },
+      page,
+      {} as any,
+      undefined,
+      1,
+      3,
+      aiClient,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('Temporary Markdown report:');
+    expect((result.data as any).reportPath).toContain(getNavisReportDirectory());
+    expect(fs.existsSync((result.data as any).reportPath)).toBe(true);
+    expect(fs.readFileSync((result.data as any).reportPath, 'utf8')).toContain('Parsed DOM Report');
+
+    fs.rmSync((result.data as any).reportPath, { force: true });
+  });
+
+  it('systematically clicks elements when identifyClickElements returns shouldClick: true', async () => {
+    const aiClient: any = {
+      chat: async (options: any) => {
+        if (options.responseFormat === 'json') {
+          return {
+            content: JSON.stringify({
+              shouldClick: true,
+              refs: ['e1', 'e2'],
+              collapseAfterClick: false,
+              waitMsAfterClick: 10,
+            }),
+          };
+        }
+        return {
+          content: '# Parsed DOM Report\n\n- Flight details extracted.',
+        };
+      },
+    };
+
+    const clickedRefs: string[] = [];
+    const locatorMock = (selector: string) => {
+      const ref = selector.match(/data-ref="([^"]+)"/)?.[1] || '';
+      return {
+        isVisible: async () => true,
+        scrollIntoViewIfNeeded: async () => {},
+        click: async () => {
+          clickedRefs.push(ref);
+        },
+      };
+    };
+
+    const page: any = {
+      evaluate: async (fn: any, arg?: any) => {
+        if (arg !== undefined) {
+          // This is captureDomForExtraction
+          return {
+            url: 'https://example.com/flights',
+            title: 'Flights',
+            capturedAt: new Date().toISOString(),
+            goal: arg,
+            mainText: 'Initial flights list',
+            headings: [],
+            links: [],
+            buttons: [],
+            formFields: [],
+            tables: [],
+          };
+        }
+        // This is inside the click loop
+        return 'Page content after click';
+      },
+      url: () => 'https://example.com/flights',
+      title: async () => 'Flights',
+      locator: locatorMock,
+      waitForTimeout: async () => {},
+    };
+
+    const report = await createNavisExtractionReport(page, 'Extract live flight prices', aiClient);
+
+    expect(clickedRefs).toEqual(['e1', 'e2']);
+    expect(report.markdown).toBe('# Parsed DOM Report\n\n- Flight details extracted.');
+    
+    fs.rmSync(report.reportPath, { force: true });
   });
 });

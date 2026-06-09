@@ -40,6 +40,7 @@ export type ActionName =
   | 'scroll_up'
   | 'wait'
   | 'extract_content'
+  | 'extract'
   | 'open_tab'
   | 'switch_tab'
   | 'close_tab'
@@ -171,7 +172,12 @@ function metadataLabel(meta: RefMetadata | null, ref: string): string {
 }
 
 // ── Multi-Strategy Element Finder ───────────────────────────────
-async function findElement(page: Page, ref: string, logger?: NavisLogger): Promise<{ locator: any; name: string }> {
+async function findElement(
+  page: Page,
+  ref: string,
+  logger?: NavisLogger,
+  opts: { resolveClickableAncestor?: boolean } = {}
+): Promise<{ locator: any; name: string }> {
   const meta = getRefMetadata(page, ref);
 
   const strategies: Array<() => Promise<{ locator: any; method: string } | null>> = [
@@ -268,7 +274,49 @@ async function findElement(page: Page, ref: string, logger?: NavisLogger): Promi
                      await result.locator.textContent().catch(() => '') ||
                      metadataLabel(meta, ref);
       console.log(`[Navis] Element found using ${result.method}: ${name.slice(0, 30)}`);
-      return { locator: result.locator, name: name || ref };
+      let finalLocator = result.locator;
+
+      if (opts.resolveClickableAncestor) {
+        try {
+          const resolvedSelector = await result.locator.evaluate((el: Element) => {
+            const isInteractive = (node: Element) => {
+              const tag = node.tagName.toLowerCase();
+              const role = node.getAttribute('role');
+              return ['input', 'textarea', 'select', 'button', 'a', 'summary'].includes(tag) ||
+                     ['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem', 'option'].includes(role || '') ||
+                     node.hasAttribute('onclick');
+            };
+
+            if (isInteractive(el)) {
+              return null; // Keep self
+            }
+
+            let current = el.parentElement;
+            for (let i = 0; i < 5 && current; i++) {
+              if (isInteractive(current)) {
+                const id = current.id;
+                if (id) return `#${CSS.escape(id)}`;
+                
+                const attr = 'data-navis-click-ancestor';
+                const val = 'c-' + Math.random().toString(36).slice(2, 9);
+                current.setAttribute(attr, val);
+                return `[${attr}="${val}"]`;
+              }
+              current = current.parentElement;
+            }
+            return null;
+          });
+
+          if (resolvedSelector) {
+            console.log(`[Navis] Resolving to interactive ancestor selector: ${resolvedSelector}`);
+            finalLocator = page.locator(resolvedSelector);
+          }
+        } catch (evalErr) {
+          console.warn('[Navis] Failed to resolve interactive ancestor:', evalErr);
+        }
+      }
+
+      return { locator: finalLocator, name: name || ref };
     }
   }
 
@@ -1061,8 +1109,9 @@ export async function executeAction(
       case 'wait':
         return await executeWait(args as { ms?: number }, logger, step, maxSteps);
 
+      case 'extract':
       case 'extract_content':
-        return await executeExtractContent(args as { goal?: string }, page, logger, step, maxSteps, aiClient);
+        return await executeExtractContent(args as { goal?: string; click_target?: string }, page, logger, step, maxSteps, aiClient);
 
       case 'open_tab':
         return await executeOpenTab(args as { url?: string }, session, logger, step, maxSteps);
@@ -1077,7 +1126,7 @@ export async function executeAction(
         return await executeWaitForNavigation(args as { timeoutMs?: number; urlContains?: string }, page, logger, step, maxSteps);
 
       case 'solve_captcha':
-        return await executeSolveCaptcha(page, session, logger, step, maxSteps);
+        return await executeSolveCaptcha(page, session, logger, step, maxSteps, aiClient);
 
       case 'done':
         return executeDone(args as { success: boolean; text: string });
@@ -1171,7 +1220,7 @@ async function executeClickElement(
   if (!args.ref) return { success: false, message: 'Missing ref parameter', stateChanged: false };
 
   try {
-    const { locator, name } = await findElement(page, args.ref, logger);
+    const { locator, name } = await findElement(page, args.ref, logger, { resolveClickableAncestor: true });
     return await clickLocator(locator, name, `ref=${args.ref}`, page, session, logger, step, maxSteps);
   } catch (err: any) {
     return { success: false, message: `Click failed: ${err.message}`, stateChanged: false };
@@ -1377,7 +1426,7 @@ async function executeWaitForNavigation(
 }
 
 async function executeExtractContent(
-  args: { goal?: string },
+  args: { goal?: string; click_target?: string },
   page: Page,
   logger?: NavisLogger,
   step?: number,
@@ -1387,7 +1436,7 @@ async function executeExtractContent(
   const goal = args.goal || 'Extract the relevant page content.';
 
   try {
-    const report = await createNavisExtractionReport(page, goal, aiClient);
+    const report = await createNavisExtractionReport(page, goal, aiClient, args.click_target);
     logger?.extract(step, maxSteps, `report saved: ${report.reportPath}`);
 
     return {
@@ -1493,9 +1542,108 @@ async function executeCloseTab(page: Page, session: BrowserSession, logger?: Nav
   return { success: true, message: 'Tab closed', stateChanged: true };
 }
 
-async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
+async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?: NavisLogger, step?: number, maxSteps?: number, aiClient?: AIClient): Promise<ActionResult> {
   logger?.tabChange(step, maxSteps, 'solving captcha...');
   await session.setOverlayStatus('Solving captcha...');
+
+  // Try AI-powered solving if an AI client is provided
+  if (aiClient) {
+    console.log('[Navis] AI client provided. Attempting AI-powered visual captcha solver...');
+    const aiRes = await tryAiSolveCaptcha(page, aiClient, logger, step, maxSteps);
+    if (aiRes.success) {
+      // Check if captcha is still present
+      const stillCaptcha = await page.evaluate(() => {
+        const title = document.title.toLowerCase();
+        const bodyText = document.body?.innerText?.toLowerCase() || '';
+        return title.includes('captcha') || bodyText.includes('captcha') || bodyText.includes('verify') || bodyText.includes('human');
+      });
+      if (!stillCaptcha) {
+        invalidateElementSnapshotCache(page);
+        logger?.tabChange(step, maxSteps, 'AI successfully solved captcha!');
+        return { success: true, message: 'Captcha solved by AI, proceeding', stateChanged: true };
+      }
+      console.log('[Navis] AI solved action executed, but captcha challenge page is still present. Falling back to programmatic solver...');
+    } else if (aiRes.attempted) {
+      console.log('[Navis] AI captcha solver attempted but failed. Falling back to programmatic solver...');
+    }
+  }
+
+  // 1. Detect and solve slider captchas
+  const handleBox = await page.evaluate(() => {
+    const findSliderHandle = () => {
+      const selectors = [
+        '.slider-button', '.slider-handle', '.geetest_slider_button', 
+        '.nc_scale_btn', '.drag-button', '[class*="slider"] button', 
+        '[class*="slider"] div[role="button"]', '[class*="slider"] span',
+        '[class*="handle"]', '[class*="arrow"]', 'div[aria-label*="slider"]',
+        'button[aria-label*="slider"]', '.slider'
+      ];
+      for (const sel of selectors) {
+        const els = document.querySelectorAll(sel);
+        for (const el of Array.from(els)) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 5 && rect.height > 5) {
+            return el;
+          }
+        }
+      }
+
+      const allEls = document.querySelectorAll('button, div, span');
+      for (const el of Array.from(allEls)) {
+        const text = el.textContent || '';
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 5 && rect.height > 5 && rect.width < 120) {
+          if (text === '→' || text === '->' || el.querySelector('svg') || el.className.includes('arrow') || el.className.includes('btn')) {
+            const parentText = el.parentElement?.textContent || '';
+            if (parentText.toLowerCase().includes('slide') || parentText.toLowerCase().includes('secure')) {
+              return el;
+            }
+          }
+        }
+      }
+      return null;
+    };
+    const el = findSliderHandle();
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }).catch(() => null);
+
+  if (handleBox) {
+    console.log('[Navis] Slider captcha detected at:', handleBox);
+    logger?.tabChange(step, maxSteps, 'slider captcha detected, dragging handle...');
+    try {
+      const centerX = handleBox.x + handleBox.width / 2;
+      const centerY = handleBox.y + handleBox.height / 2;
+
+      await page.mouse.move(centerX, centerY);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await page.mouse.down();
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      const slideDistance = 280;
+      const dragSteps = 25;
+      for (let i = 1; i <= dragSteps; i++) {
+        const pct = i / dragSteps;
+        const currentX = centerX + (slideDistance * pct);
+        const currentY = centerY + Math.sin(pct * Math.PI) * 4 + (Math.random() * 2 - 1);
+        await page.mouse.move(currentX, currentY);
+        await new Promise(resolve => setTimeout(resolve, 15 + Math.random() * 15));
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await page.mouse.up();
+      console.log('[Navis] Slider drag complete, waiting for validation...');
+      await new Promise(resolve => setTimeout(resolve, 3500));
+    } catch (err) {
+      console.warn('[Navis] Slider solve failed:', err);
+    }
+  }
 
   const solved = await page.evaluate(() => {
     const title = document.title.toLowerCase();
@@ -1562,6 +1710,172 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
   }
 
   return { success: true, message: 'Page no longer shows captcha challenge', stateChanged: true };
+}
+
+async function tryAiSolveCaptcha(
+  page: Page,
+  aiClient: AIClient,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number
+): Promise<{ success: boolean; attempted: boolean }> {
+  try {
+    const screenshot = await page.screenshot({ type: 'jpeg', quality: 80 }).then(b => b.toString('base64')).catch(() => null);
+    if (!screenshot) {
+      console.log('[Navis AI Captcha] Could not capture page screenshot.');
+      return { success: false, attempted: false };
+    }
+
+    const candidates = await page.evaluate(() => {
+      const list: any[] = [];
+      const elements = document.querySelectorAll('iframe, input, button, a, [role="button"], .slider-handle, .slider-button, [class*="slider"], [class*="handle"], [data-ref]');
+      elements.forEach((el: any) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 3 && rect.height > 3 && rect.top >= 0 && rect.left >= 0) {
+          const isDup = list.some(item => Math.abs(item.x - rect.left) < 5 && Math.abs(item.y - rect.top) < 5 && Math.abs(item.width - rect.width) < 5);
+          if (!isDup) {
+            list.push({
+              ref: el.getAttribute('data-ref') || el.getAttribute('aria-ref') || '',
+              tag: el.tagName,
+              type: el.type || '',
+              text: (el.textContent || el.value || '').trim().slice(0, 100),
+              className: el.className || '',
+              id: el.id || '',
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            });
+          }
+        }
+      });
+      return list.slice(0, 50);
+    }).catch(() => []);
+
+    console.log(`[Navis AI Captcha] Found ${candidates.length} candidate elements for visual captcha solving.`);
+
+    const userMessageContent: any[] = [];
+    if (aiClient.supportsVision()) {
+      userMessageContent.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:image/jpeg;base64,${screenshot}`,
+          detail: 'high'
+        }
+      });
+    }
+
+    userMessageContent.push({
+      type: 'text',
+      text: `We are on a web page displaying a CAPTCHA, verification check, or security challenge (such as a slider puzzle, a Cloudflare Turnstile checkbox, an hCaptcha/reCAPTCHA check, or a confirm button).
+
+Below is the list of candidate elements retrieved from the page DOM (which may include the slider handle, the checkbox, or the verify button):
+${candidates.map((c, i) => `Candidate ${i}: ref="${c.ref}", tag="${c.tag}", text="${c.text}", class="${c.className}", id="${c.id}", boundingBox={x: ${c.x}, y: ${c.y}, w: ${c.width}, h: ${c.height}}`).join('\n')}
+
+Based on the screenshot and the list of candidates, please identify the interactive element to click or drag.
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "type": "slider" | "checkbox" | "button" | "unknown",
+  "matchedCandidateIndex": number | null (0-based index of the matched candidate, or null if none),
+  "clickX": number | null (X coordinate to click in viewport pixels if no candidate matches),
+  "clickY": number | null (Y coordinate to click in viewport pixels if no candidate matches),
+  "dragStartX": number | null (starting X coordinate for slider in viewport pixels if no candidate matches),
+  "dragStartY": number | null (starting Y coordinate for slider in viewport pixels if no candidate matches),
+  "dragDistance": number | null (distance in pixels to drag the slider handle to the right)
+}`
+    });
+
+    console.log('[Navis AI Captcha] Calling AI to solve captcha...');
+    const response = await aiClient.chat({
+      messages: [
+        { role: 'system', content: 'You are a CAPTCHA solving assistant. Analyze candidate DOM elements and visual screenshots to return precise click/drag targets in the requested JSON format.' },
+        { role: 'user', content: userMessageContent }
+      ],
+      responseFormat: 'json',
+      temperature: 0.1
+    });
+
+    const rawContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    console.log('[Navis AI Captcha] AI Response:', rawContent);
+
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('[Navis AI Captcha] No valid JSON found in AI response');
+      return { success: false, attempted: true };
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
+    if (!result || result.type === 'unknown') {
+      console.log('[Navis AI Captcha] AI could not determine captcha type.');
+      return { success: false, attempted: true };
+    }
+
+    let clickX = result.clickX;
+    let clickY = result.clickY;
+    let dragStartX = result.dragStartX;
+    let dragStartY = result.dragStartY;
+
+    if (result.matchedCandidateIndex !== null && result.matchedCandidateIndex !== undefined) {
+      const idx = Number(result.matchedCandidateIndex);
+      if (idx >= 0 && idx < candidates.length) {
+        const c = candidates[idx];
+        const cx = c.x + c.width / 2;
+        const cy = c.y + c.height / 2;
+        if (result.type === 'slider') {
+          dragStartX = cx;
+          dragStartY = cy;
+        } else {
+          clickX = cx;
+          clickY = cy;
+        }
+        console.log(`[Navis AI Captcha] AI resolved candidate ${idx} (${c.tag}, ${c.text}) at coordinates (${cx}, ${cy})`);
+      }
+    }
+
+    if (result.type === 'slider') {
+      if (dragStartX === null || dragStartY === null) {
+        console.warn('[Navis AI Captcha] Slider coordinates missing.');
+        return { success: false, attempted: true };
+      }
+      logger?.tabChange(step, maxSteps, 'AI dragging slider handle...');
+      await page.mouse.move(dragStartX, dragStartY);
+      await new Promise(r => setTimeout(r, 300));
+      await page.mouse.down();
+      await new Promise(r => setTimeout(r, 200));
+
+      const slideDistance = result.dragDistance || 280;
+      const dragSteps = 30;
+      for (let i = 1; i <= dragSteps; i++) {
+        const pct = i / dragSteps;
+        const currentX = dragStartX + (slideDistance * pct);
+        const currentY = dragStartY + Math.sin(pct * Math.PI) * 4 + (Math.random() * 2 - 1);
+        await page.mouse.move(currentX, currentY);
+        await new Promise(r => setTimeout(r, 15 + Math.random() * 15));
+      }
+      await new Promise(r => setTimeout(r, 300));
+      await page.mouse.up();
+      console.log('[Navis AI Captcha] AI slider drag complete, waiting for validation...');
+      await new Promise(r => setTimeout(r, 4000));
+      return { success: true, attempted: true };
+    } else if (result.type === 'checkbox' || result.type === 'button') {
+      if (clickX === null || clickY === null) {
+        console.warn('[Navis AI Captcha] Click coordinates missing.');
+        return { success: false, attempted: true };
+      }
+      logger?.tabChange(step, maxSteps, `AI clicking verification ${result.type}...`);
+      await page.mouse.move(clickX, clickY);
+      await new Promise(r => setTimeout(r, 200));
+      await page.mouse.click(clickX, clickY);
+      console.log('[Navis AI Captcha] AI click complete, waiting...');
+      await new Promise(r => setTimeout(r, 3000));
+      return { success: true, attempted: true };
+    }
+
+    return { success: false, attempted: false };
+  } catch (err) {
+    console.error('[Navis AI Captcha] AI captcha solver error:', err);
+    return { success: false, attempted: true };
+  }
 }
 
 function executeDone(args: { success: boolean; text: string }): ActionResult {
@@ -1894,7 +2208,7 @@ async function executeHoldElement(
     let name = args.ref || `(${args.x}, ${args.y})`;
 
     if (args.ref) {
-      const { locator, name: foundName } = await findElement(page, args.ref, logger);
+      const { locator, name: foundName } = await findElement(page, args.ref, logger, { resolveClickableAncestor: true });
       await scrollIntoViewForAction(locator);
       name = foundName;
       const box = await locator.boundingBox();
@@ -1938,7 +2252,7 @@ async function executeDragElement(
   maxSteps?: number,
 ): Promise<ActionResult> {
   try {
-    const { locator: sourceLocator, name: sourceName } = await findElement(page, args.sourceRef, logger);
+    const { locator: sourceLocator, name: sourceName } = await findElement(page, args.sourceRef, logger, { resolveClickableAncestor: true });
     await scrollIntoViewForAction(sourceLocator);
     const sourceBox = await sourceLocator.boundingBox();
     if (!sourceBox) throw new Error('Could not find source element bounding box');
@@ -1951,7 +2265,7 @@ async function executeDragElement(
     let targetName = `(${args.targetX}, ${args.targetY})`;
 
     if (args.targetRef) {
-      const { locator: targetLocator, name: foundTargetName } = await findElement(page, args.targetRef, logger);
+      const { locator: targetLocator, name: foundTargetName } = await findElement(page, args.targetRef, logger, { resolveClickableAncestor: true });
       await scrollIntoViewForAction(targetLocator);
       targetName = foundTargetName;
       const targetBox = await targetLocator.boundingBox();

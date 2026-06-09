@@ -70,7 +70,8 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { scroll_down: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
           { properties: { scroll_up: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
           { properties: { wait: { type: 'object', properties: { ms: { type: 'number' } }, additionalProperties: false } }, required: ['wait'], additionalProperties: false },
-          { properties: { extract_content: { type: 'object', properties: { goal: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract_content'], additionalProperties: false },
+          { properties: { extract_content: { type: 'object', properties: { goal: { type: 'string' }, click_target: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract_content'], additionalProperties: false },
+          { properties: { extract: { type: 'object', properties: { goal: { type: 'string' }, click_target: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract'], additionalProperties: false },
           { properties: { open_tab: { type: 'object', properties: { url: { type: 'string' } }, additionalProperties: false } }, required: ['open_tab'], additionalProperties: false },
           { properties: { switch_tab: { type: 'object', properties: { index: { type: 'number' }, target: { type: 'string' } }, additionalProperties: false } }, required: ['switch_tab'], additionalProperties: false },
           { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
@@ -119,7 +120,7 @@ const { systemPrompt: NAVIS_SYSTEM_PROMPT, nextStepPrompt: NEXT_STEP_PROMPT } = 
 const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
 Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
 Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
-Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, open_tab, switch_tab, close_tab, done.`;
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
 
 const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
 Current URL: {url_placeholder}
@@ -454,7 +455,7 @@ export class NavisOrchestrator {
         const visionAvailable = Boolean(useVision || forceVision);
         const domWeak = isDomContextWeak(snapshot, semanticDomJson);
         const pageHasRenderedContent = url !== '' && !url.includes('about:blank');
-        const shouldCaptureVision = visionAvailable && pageHasRenderedContent && (initialVisionPending || forceNextVision || domWeak);
+        const shouldCaptureVision = visionAvailable && pageHasRenderedContent;
 
         if (shouldCaptureVision) {
           try {
@@ -594,7 +595,7 @@ If you failed to find the info, report that clearly.`;
 
           lastResult = result.message;
 
-          if (actionName === 'extract_content' && result.data && typeof result.data === 'object') {
+          if ((actionName === 'extract_content' || actionName === 'extract') && result.data && typeof result.data === 'object') {
             const data = result.data as any;
             if (typeof data.reportPath === 'string') {
               extractionReports.push({

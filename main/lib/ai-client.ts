@@ -346,6 +346,13 @@ export class AIClient {
           delete plainHeaders['Keep-Alive'];
           safeInit.headers = plainHeaders;
 
+          console.log(`[AIClient Fetch] Request headers: ${Object.keys(plainHeaders).join(', ')}`);
+          if (plainHeaders['Authorization']) {
+            console.log(`[AIClient Fetch] Authorization header value starts with: ${plainHeaders['Authorization'].slice(0, 18)}... (total length: ${plainHeaders['Authorization'].length})`);
+          } else {
+            console.warn('[AIClient Fetch] WARNING: No Authorization header found!');
+          }
+
           const result = Promise.resolve(fetch(url, safeInit)).then((res: any) => {
             if (res) {
               if (!res.headers) {
