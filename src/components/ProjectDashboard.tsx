@@ -17,7 +17,7 @@ export function ProjectDashboard() {
   const [projects, setProjects] = useState<ProjectInfo[]>([
     {
       name: 'my-react-app',
-      path: 'C:/Users/srini/Downloads/EverFern/projects/my-react-app',
+      path: 'C:/Users/user/Downloads/EverFern/projects/my-react-app',
       template: 'React + Vite',
       createdAt: '2026-05-07',
       port: 5173,

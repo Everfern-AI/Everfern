@@ -1041,7 +1041,7 @@ export function TerminalView({
       textMeta: 'rgba(255,255,255,0.42)',
       accent: '#d19a3a',
     };
-    const displayCwd = cwd || 'C:\\Users\\srini\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+    const displayCwd = cwd || 'C:\\Users\\user\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
     const tabTitle = displayCwd.length > 18 ? `${displayCwd.slice(0, 14)}...` : displayCwd;
 
     return (

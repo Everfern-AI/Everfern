@@ -180,6 +180,130 @@ function scrubOrchestratorNoise(text: string): string {
     return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Generates a meaningful task title when the task decomposer is skipped.
+ * Uses the AI's narrative text if available, otherwise generates a smart
+ * title from the tool name and arguments.
+ */
+function generateFallbackTaskTitle(toolName: string, args: Record<string, unknown>, narrativeText?: string): string {
+    // If the AI provided a narrative before this tool call, use it as the title
+    if (narrativeText) {
+        // Clean and truncate the narrative for use as a title
+        const cleaned = narrativeText
+            .replace(/^(let me|i'll|i will|going to|now |first,?\s*)/i, '')
+            .replace(/[.…]+$/, '')
+            .trim();
+        if (cleaned.length > 5 && cleaned.length <= 80) {
+            return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        }
+        if (cleaned.length > 80) {
+            return cleaned.slice(0, 77) + '...';
+        }
+    }
+
+    const name = toolName.toLowerCase();
+    const pathArg = String(args.path || args.filePath || args.file_path || args.file || args.TargetFile || args.AbsolutePath || '');
+    const basename = pathArg ? pathArg.split(/[/\\]/).pop() || pathArg : '';
+    const cmdArg = String(args.command || args.cmd || '').trim();
+    const queryArg = String(args.query || args.keyword || '').trim();
+
+    // Terminal commands — parse the command for a meaningful title
+    if (name === 'terminal_execute' || name === 'executepwsh' || name === 'bash' || name === 'run_command') {
+        if (cmdArg) {
+            const cmd = cmdArg.replace(/^(cd\s+\S+\s*&&\s*)+/, '').trim();
+            const bin = cmd.split(/\s+/)[0]?.toLowerCase() || '';
+            if (bin === 'npm' || bin === 'yarn' || bin === 'pnpm' || bin === 'bun') {
+                const sub = cmd.split(/\s+/)[1] || '';
+                if (sub === 'install' || sub === 'i' || sub === 'add') return 'Installing dependencies';
+                if (sub === 'run') return `Running ${cmd.split(/\s+/)[2] || 'script'}`;
+                if (sub === 'test') return 'Running tests';
+                if (sub === 'build') return 'Building project';
+                return `Running ${bin} ${sub}`.trim();
+            }
+            if (bin === 'git') {
+                const sub = cmd.split(/\s+/)[1] || '';
+                return `Git ${sub || 'operation'}`;
+            }
+            if (bin === 'pip' || bin === 'pip3') return 'Installing Python packages';
+            if (bin === 'python' || bin === 'python3') return 'Running Python script';
+            if (bin === 'tsc') return 'Type checking';
+            if (bin === 'eslint' || bin === 'prettier') return 'Linting & formatting';
+            return `Running command: ${cmd.length > 50 ? cmd.slice(0, 47) + '...' : cmd}`;
+        }
+        return 'Running command';
+    }
+
+    // File write
+    if (name.includes('write') || name.includes('create') || name === 'save') {
+        return basename ? `Creating ${basename}` : 'Writing file';
+    }
+
+    // File edit
+    if (name.includes('edit') || name.includes('replace') || name.includes('str_replace')) {
+        return basename ? `Editing ${basename}` : 'Editing file';
+    }
+
+    // File read
+    if (name === 'read' || name === 'read_file' || name === 'view_file') {
+        return basename ? `Reading ${basename}` : 'Reading file';
+    }
+
+    // Web search
+    if (name === 'web_search') {
+        return queryArg ? `Searching: ${queryArg.slice(0, 60)}` : 'Searching the web';
+    }
+
+    // Navis
+    if (name === 'navis') {
+        return 'Browsing the web';
+    }
+
+    // File listing
+    if (name === 'ls' || name === 'list_files' || name === 'system_files') {
+        return 'Exploring files';
+    }
+
+    // Grep / search
+    if (name === 'grep' || name === 'find' || name === 'search_files') {
+        return queryArg ? `Searching for "${queryArg.slice(0, 40)}"` : 'Searching codebase';
+    }
+
+    // Spawn agent
+    if (name === 'spawn_agent') {
+        const role = String(args.role || args.name || args.agentName || '').trim();
+        return role ? `Spawning agent: ${role}` : 'Spawning sub-agent';
+    }
+
+    // Plan-related
+    if (name.includes('plan')) {
+        return 'Planning execution';
+    }
+
+    // Todo
+    if (name === 'todo_write') {
+        return 'Updating task list';
+    }
+
+    // Computer use
+    if (name === 'computer_use') {
+        return 'Desktop automation';
+    }
+
+    // Artifact
+    if (name === 'create_artifact') {
+        const title = String(args.title || '').trim();
+        return title ? `Creating: ${title.slice(0, 60)}` : 'Creating artifact';
+    }
+
+    // PPTX
+    if (name === 'pptx_generator') {
+        return 'Generating presentation';
+    }
+
+    // Fallback: clean up tool name
+    return toolName.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+}
+
 function extractSuggestedFollowUps(content: string): { cleanContent: string; followUps: Array<{ icon: string; text: string }> } {
     if (!content) return { cleanContent: '', followUps: [] };
     const regex = /<suggested_follow_ups>([\s\S]*?)<\/suggested_follow_ups>/i;
@@ -2321,7 +2445,7 @@ export default function ChatPage() {
                 setLiveToolCalls([...liveToolCallsRef.current]);
                 maybeOpenUserUrlTool(newTc);
 
-                // Fallback Task Creation
+                // Fallback Task Creation — group tool calls into meaningful tasks
                 if (!hasPlanCreatedRef.current) {
                     setActivePlanTitle("Task Execution Steps");
                     setActivePlanSteps(prev => {
@@ -2329,11 +2453,24 @@ export default function ChatPage() {
                         const stepId = toolCallId || newTc.id;
                         if (steps.some(s => s.id === stepId)) return steps;
 
-                        const toolDisplay = resolveToolDisplay(toolName, toolArgs);
+                        // Generate a meaningful task title from:
+                        // 1. The AI's narrative text (what it said before calling the tool)
+                        // 2. A smart heuristic based on tool name + args
+                        const smartTitle = generateFallbackTaskTitle(toolName, toolArgs, narrativeText);
+
+                        // Check if the last step has the same narrative context and is still in-progress
+                        // If so, this tool call belongs to the same logical task — don't create a new step
+                        const lastStep = steps[steps.length - 1];
+                        if (lastStep && lastStep.status === 'in-progress' && narrativeText &&
+                            lastStep.description === narrativeText) {
+                            // Same narrative context — this tool call is part of the same task
+                            return steps;
+                        }
+
                         const newStep = {
                             id: stepId,
-                            title: toolDisplay.label,
-                            description: `Executing tool ${toolName}`,
+                            title: smartTitle,
+                            description: narrativeText || `Executing ${toolName.replace(/_/g, ' ')}`,
                             tool: toolName,
                             status: 'in-progress' as const
                         };

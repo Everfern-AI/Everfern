@@ -12,17 +12,17 @@ const AGENT_DEFAULT_CWD = path.join(os.homedir(), '.everfern');
  */
 export const terminalTool: AgentTool = {
   name: 'terminal_execute',
-  description: 'Execute a terminal command with persistence and tracking. Use for long-running tasks or when you need to monitor output.',
+  description: `Execute a terminal command with persistence and tracking. IMPORTANT: target 'main' runs in the host machine's shell (PowerShell on Windows, Bash/Zsh on macOS/Linux). target 'vm' runs inside the Linux VM (WSL on Windows, Docker on macOS). Check which target you are using and write commands compatible with that target's shell syntax.`,
   parameters: {
     type: 'object',
     properties: {
-      command: { type: 'string', description: 'The command to execute' },
+      command: { type: 'string', description: 'The command to execute. For target "main" on a Windows host, you MUST write Windows PowerShell commands (do not use "ls -la", use PowerShell syntax and backslash paths). For target "vm", write Linux Bash commands and use forward-slash Linux paths.' },
       cwd: { type: 'string', description: 'Working directory (defaults to ~/.everfern)' },
       id: { type: 'string', description: 'Optional unique ID for this command session' },
       timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000). Use 180000-300000 for builds, installs, typechecks, and slow commands.' },
       timeout: { type: 'number', description: 'Optional timeout. Values <= 10000 are treated as seconds; larger values are milliseconds.' },
       timeoutSeconds: { type: 'number', description: 'Optional timeout in seconds.' },
-      target: { type: 'string', enum: ['main', 'vm'], description: "Environment target: 'main' (host system, requires permission) or 'vm' (Linux VM, no permission needed). Defaults to 'main'." }
+      target: { type: 'string', enum: ['main', 'vm'], description: "Environment target: 'main' (host system: PowerShell on Windows, Bash/Zsh on Unix; requires permission) or 'vm' (Linux VM: WSL on Windows, Docker on macOS; no permission needed). Defaults to 'main'." }
     },
     required: ['command']
   },

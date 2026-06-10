@@ -1,0 +1,1059 @@
+{
+  "chart_data": {
+    "monthly": [
+      {
+        "credit": 197027.0,
+        "debit": -23495.0,
+        "count": 37,
+        "credit_count": 34,
+        "debit_count": 3,
+        "month": "2025-04",
+        "net": 173532.0
+      },
+      {
+        "credit": 1166489.0,
+        "debit": -20448.0,
+        "count": 45,
+        "credit_count": 42,
+        "debit_count": 3,
+        "month": "2025-05",
+        "net": 1146041.0
+      },
+      {
+        "credit": 82261.0,
+        "debit": -27927.0,
+        "count": 25,
+        "credit_count": 21,
+        "debit_count": 4,
+        "month": "2025-06",
+        "net": 54334.0
+      },
+      {
+        "credit": 81967.0,
+        "debit": -86949.0,
+        "count": 30,
+        "credit_count": 25,
+        "debit_count": 5,
+        "month": "2025-07",
+        "net": -4982.0
+      },
+      {
+        "credit": 146175.0,
+        "debit": -28299.0,
+        "count": 38,
+        "credit_count": 34,
+        "debit_count": 4,
+        "month": "2025-08",
+        "net": 117876.0
+      },
+      {
+        "credit": 93466.0,
+        "debit": -118408.0,
+        "count": 35,
+        "credit_count": 27,
+        "debit_count": 8,
+        "month": "2025-09",
+        "net": -24942.0
+      },
+      {
+        "credit": 187837.0,
+        "debit": -26506.0,
+        "count": 42,
+        "credit_count": 38,
+        "debit_count": 4,
+        "month": "2025-10",
+        "net": 161331.0
+      },
+      {
+        "credit": 74700.0,
+        "debit": -141927.0,
+        "count": 30,
+        "credit_count": 24,
+        "debit_count": 6,
+        "month": "2025-11",
+        "net": -67227.0
+      },
+      {
+        "credit": 106683.0,
+        "debit": -88267.0,
+        "count": 37,
+        "credit_count": 32,
+        "debit_count": 5,
+        "month": "2025-12",
+        "net": 18416.0
+      },
+      {
+        "credit": 106890.0,
+        "debit": -39069.0,
+        "count": 38,
+        "credit_count": 33,
+        "debit_count": 5,
+        "month": "2026-01",
+        "net": 67821.0
+      },
+      {
+        "credit": 106036.0,
+        "debit": -23986.0,
+        "count": 37,
+        "credit_count": 34,
+        "debit_count": 3,
+        "month": "2026-02",
+        "net": 82050.0
+      },
+      {
+        "credit": 81612.0,
+        "debit": -22965.0,
+        "count": 32,
+        "credit_count": 29,
+        "debit_count": 3,
+        "month": "2026-03",
+        "net": 58647.0
+      }
+    ],
+    "debit_cats": {
+      "Electricity": -84888.0,
+      "Development Fund": -60636.0,
+      "Salary / Wages": -112000.0,
+      "Other": -390722.0
+    },
+    "credit_cats": {
+      "IMPS Receipts": 241919.0,
+      "UPI Receipts": 889751.0,
+      "NEFT Receipts": 290382.0,
+      "Other Credits": 1009091.0
+    },
+    "daily_balance": [
+      {
+        "date": "2025-04-03",
+        "balance": 301482.85
+      },
+      {
+        "date": "2025-04-05",
+        "balance": 322591.85
+      },
+      {
+        "date": "2025-04-06",
+        "balance": 367057.85
+      },
+      {
+        "date": "2025-04-07",
+        "balance": 369851.85
+      },
+      {
+        "date": "2025-04-08",
+        "balance": 378641.85
+      },
+      {
+        "date": "2025-04-13",
+        "balance": 387767.85
+      },
+      {
+        "date": "2025-04-15",
+        "balance": 393942.85
+      },
+      {
+        "date": "2025-04-16",
+        "balance": 401523.85
+      },
+      {
+        "date": "2025-04-22",
+        "balance": 404566.85
+      },
+      {
+        "date": "2025-04-24",
+        "balance": 410559.85
+      },
+      {
+        "date": "2025-04-25",
+        "balance": 415722.85
+      },
+      {
+        "date": "2025-04-28",
+        "balance": 420539.85
+      },
+      {
+        "date": "2025-04-30",
+        "balance": 423509.85
+      },
+      {
+        "date": "2025-05-04",
+        "balance": 461696.85
+      },
+      {
+        "date": "2025-05-05",
+        "balance": 467581.85
+      },
+      {
+        "date": "2025-05-06",
+        "balance": 480796.85
+      },
+      {
+        "date": "2025-05-07",
+        "balance": 468262.85
+      },
+      {
+        "date": "2025-05-08",
+        "balance": 471011.85
+      },
+      {
+        "date": "2025-05-10",
+        "balance": 486011.85
+      },
+      {
+        "date": "2025-05-12",
+        "balance": 491611.85
+      },
+      {
+        "date": "2025-05-14",
+        "balance": 497199.85
+      },
+      {
+        "date": "2025-05-19",
+        "balance": 500187.85
+      },
+      {
+        "date": "2025-05-20",
+        "balance": 506519.85
+      },
+      {
+        "date": "2025-05-23",
+        "balance": 1515610.85
+      },
+      {
+        "date": "2025-05-26",
+        "balance": 1518477.85
+      },
+      {
+        "date": "2025-05-27",
+        "balance": 1521081.85
+      },
+      {
+        "date": "2025-05-28",
+        "balance": 1523900.85
+      },
+      {
+        "date": "2025-05-29",
+        "balance": 1526803.85
+      },
+      {
+        "date": "2025-05-30",
+        "balance": 551784.85
+      },
+      {
+        "date": "2025-05-31",
+        "balance": 560459.85
+      },
+      {
+        "date": "2025-06-01",
+        "balance": 550905.85
+      },
+      {
+        "date": "2025-06-02",
+        "balance": 562672.85
+      },
+      {
+        "date": "2025-06-03",
+        "balance": 573682.85
+      },
+      {
+        "date": "2025-06-04",
+        "balance": 567793.85
+      },
+      {
+        "date": "2025-06-06",
+        "balance": 585873.85
+      },
+      {
+        "date": "2025-06-15",
+        "balance": 591424.85
+      },
+      {
+        "date": "2025-06-22",
+        "balance": 587459.85
+      },
+      {
+        "date": "2025-06-25",
+        "balance": 590404.85
+      },
+      {
+        "date": "2025-06-27",
+        "balance": 595653.85
+      },
+      {
+        "date": "2025-06-30",
+        "balance": 614793.85
+      },
+      {
+        "date": "2025-07-01",
+        "balance": 627696.85
+      },
+      {
+        "date": "2025-07-02",
+        "balance": 627752.85
+      },
+      {
+        "date": "2025-07-03",
+        "balance": 630606.85
+      },
+      {
+        "date": "2025-07-05",
+        "balance": 639144.85
+      },
+      {
+        "date": "2025-07-06",
+        "balance": 647884.85
+      },
+      {
+        "date": "2025-07-08",
+        "balance": 655974.85
+      },
+      {
+        "date": "2025-07-11",
+        "balance": 659019.85
+      },
+      {
+        "date": "2025-07-14",
+        "balance": 662233.85
+      },
+      {
+        "date": "2025-07-20",
+        "balance": 665238.85
+      },
+      {
+        "date": "2025-07-21",
+        "balance": 636228.85
+      },
+      {
+        "date": "2025-07-22",
+        "balance": 642471.85
+      },
+      {
+        "date": "2025-07-23",
+        "balance": 610770.85
+      },
+      {
+        "date": "2025-07-31",
+        "balance": 613733.85
+      },
+      {
+        "date": "2025-08-02",
+        "balance": 682054.85
+      },
+      {
+        "date": "2025-08-03",
+        "balance": 687620.85
+      },
+      {
+        "date": "2025-08-04",
+        "balance": 704719.85
+      },
+      {
+        "date": "2025-08-05",
+        "balance": 704983.85
+      },
+      {
+        "date": "2025-08-07",
+        "balance": 707659.85
+      },
+      {
+        "date": "2025-08-13",
+        "balance": 710981.85
+      },
+      {
+        "date": "2025-08-15",
+        "balance": 714333.85
+      },
+      {
+        "date": "2025-08-16",
+        "balance": 717340.85
+      },
+      {
+        "date": "2025-08-17",
+        "balance": 732340.85
+      },
+      {
+        "date": "2025-08-20",
+        "balance": 733791.85
+      },
+      {
+        "date": "2025-08-24",
+        "balance": 728675.85
+      },
+      {
+        "date": "2025-08-30",
+        "balance": 731609.85
+      },
+      {
+        "date": "2025-09-02",
+        "balance": 716409.85
+      },
+      {
+        "date": "2025-09-05",
+        "balance": 760456.85
+      },
+      {
+        "date": "2025-09-07",
+        "balance": 751990.85
+      },
+      {
+        "date": "2025-09-08",
+        "balance": 738844.85
+      },
+      {
+        "date": "2025-09-09",
+        "balance": 680989.85
+      },
+      {
+        "date": "2025-09-10",
+        "balance": 683851.85
+      },
+      {
+        "date": "2025-09-12",
+        "balance": 686903.85
+      },
+      {
+        "date": "2025-09-14",
+        "balance": 679843.85
+      },
+      {
+        "date": "2025-09-15",
+        "balance": 682980.85
+      },
+      {
+        "date": "2025-09-20",
+        "balance": 385693.85
+      },
+      {
+        "date": "2025-09-29",
+        "balance": 388679.85
+      },
+      {
+        "date": "2025-09-30",
+        "balance": 406667.85
+      },
+      {
+        "date": "2025-10-01",
+        "balance": 416726.85
+      },
+      {
+        "date": "2025-10-02",
+        "balance": 446726.85
+      },
+      {
+        "date": "2025-10-03",
+        "balance": 431526.85
+      },
+      {
+        "date": "2025-10-04",
+        "balance": 471525.85
+      },
+      {
+        "date": "2025-10-05",
+        "balance": 482809.85
+      },
+      {
+        "date": "2025-10-06",
+        "balance": 505653.85
+      },
+      {
+        "date": "2025-10-07",
+        "balance": 525779.85
+      },
+      {
+        "date": "2025-10-08",
+        "balance": 531217.85
+      },
+      {
+        "date": "2025-10-09",
+        "balance": 533869.85
+      },
+      {
+        "date": "2025-10-10",
+        "balance": 536895.85
+      },
+      {
+        "date": "2025-10-11",
+        "balance": 542398.85
+      },
+      {
+        "date": "2025-10-15",
+        "balance": 572398.85
+      },
+      {
+        "date": "2025-10-24",
+        "balance": 572098.85
+      },
+      {
+        "date": "2025-11-04",
+        "balance": 490804.85
+      },
+      {
+        "date": "2025-11-05",
+        "balance": 502164.85
+      },
+      {
+        "date": "2025-11-06",
+        "balance": 490068.85
+      },
+      {
+        "date": "2025-11-07",
+        "balance": 495588.85
+      },
+      {
+        "date": "2025-11-08",
+        "balance": 501954.85
+      },
+      {
+        "date": "2025-11-10",
+        "balance": 497959.85
+      },
+      {
+        "date": "2025-11-11",
+        "balance": 500977.85
+      },
+      {
+        "date": "2025-11-16",
+        "balance": 505089.85
+      },
+      {
+        "date": "2025-11-19",
+        "balance": 490089.85
+      },
+      {
+        "date": "2025-11-24",
+        "balance": 496008.85
+      },
+      {
+        "date": "2025-11-28",
+        "balance": 501931.85
+      },
+      {
+        "date": "2025-11-30",
+        "balance": 504871.85
+      },
+      {
+        "date": "2025-12-01",
+        "balance": 489671.85
+      },
+      {
+        "date": "2025-12-02",
+        "balance": 518794.85
+      },
+      {
+        "date": "2025-12-03",
+        "balance": 499256.85
+      },
+      {
+        "date": "2025-12-04",
+        "balance": 504776.85
+      },
+      {
+        "date": "2025-12-05",
+        "balance": 516108.85
+      },
+      {
+        "date": "2025-12-06",
+        "balance": 531268.85
+      },
+      {
+        "date": "2025-12-07",
+        "balance": 539390.85
+      },
+      {
+        "date": "2025-12-08",
+        "balance": 547787.85
+      },
+      {
+        "date": "2025-12-09",
+        "balance": 550832.85
+      },
+      {
+        "date": "2025-12-10",
+        "balance": 553887.85
+      },
+      {
+        "date": "2025-12-11",
+        "balance": 556674.85
+      },
+      {
+        "date": "2025-12-19",
+        "balance": 559710.85
+      },
+      {
+        "date": "2025-12-26",
+        "balance": 562617.85
+      },
+      {
+        "date": "2025-12-30",
+        "balance": 523287.85
+      },
+      {
+        "date": "2026-01-01",
+        "balance": 511134.85
+      },
+      {
+        "date": "2026-01-02",
+        "balance": 546068.85
+      },
+      {
+        "date": "2026-01-03",
+        "balance": 567011.85
+      },
+      {
+        "date": "2026-01-04",
+        "balance": 571453.85
+      },
+      {
+        "date": "2026-01-05",
+        "balance": 579880.85
+      },
+      {
+        "date": "2026-01-07",
+        "balance": 582643.85
+      },
+      {
+        "date": "2026-01-08",
+        "balance": 585657.85
+      },
+      {
+        "date": "2026-01-09",
+        "balance": 593903.85
+      },
+      {
+        "date": "2026-01-10",
+        "balance": 596885.85
+      },
+      {
+        "date": "2026-01-11",
+        "balance": 599786.85
+      },
+      {
+        "date": "2026-01-12",
+        "balance": 593493.85
+      },
+      {
+        "date": "2026-01-15",
+        "balance": 591569.85
+      },
+      {
+        "date": "2026-01-20",
+        "balance": 594455.85
+      },
+      {
+        "date": "2026-02-01",
+        "balance": 281909.85
+      },
+      {
+        "date": "2026-02-02",
+        "balance": 324978.85
+      },
+      {
+        "date": "2026-02-03",
+        "balance": 333514.85
+      },
+      {
+        "date": "2026-02-04",
+        "balance": 339057.85
+      },
+      {
+        "date": "2026-02-05",
+        "balance": 347739.85
+      },
+      {
+        "date": "2026-02-06",
+        "balance": 341874.85
+      },
+      {
+        "date": "2026-02-07",
+        "balance": 344613.85
+      },
+      {
+        "date": "2026-02-08",
+        "balance": 347474.85
+      },
+      {
+        "date": "2026-02-10",
+        "balance": 352791.85
+      },
+      {
+        "date": "2026-02-11",
+        "balance": 358655.85
+      },
+      {
+        "date": "2026-02-12",
+        "balance": 361547.85
+      },
+      {
+        "date": "2026-02-13",
+        "balance": 364409.85
+      },
+      {
+        "date": "2026-02-15",
+        "balance": 367454.85
+      },
+      {
+        "date": "2026-02-21",
+        "balance": 373443.85
+      },
+      {
+        "date": "2026-02-27",
+        "balance": 376505.85
+      },
+      {
+        "date": "2026-03-02",
+        "balance": 361005.85
+      },
+      {
+        "date": "2026-03-05",
+        "balance": 387712.85
+      },
+      {
+        "date": "2026-03-06",
+        "balance": 386358.85
+      },
+      {
+        "date": "2026-03-07",
+        "balance": 391868.85
+      },
+      {
+        "date": "2026-03-09",
+        "balance": 394731.85
+      },
+      {
+        "date": "2026-03-10",
+        "balance": 402981.85
+      },
+      {
+        "date": "2026-03-11",
+        "balance": 411475.85
+      },
+      {
+        "date": "2026-03-12",
+        "balance": 417201.85
+      },
+      {
+        "date": "2026-03-13",
+        "balance": 420136.85
+      },
+      {
+        "date": "2026-03-14",
+        "balance": 423073.85
+      },
+      {
+        "date": "2026-03-17",
+        "balance": 425850.85
+      },
+      {
+        "date": "2026-03-30",
+        "balance": 435152.85
+      }
+    ],
+    "top_debits": [
+      {
+        "date": "2025-11-04",
+        "description": "MB:Oct25GprcashexppaybacktoGiri",
+        "amount": -62984.0,
+        "ref": "KKBKH2530870390",
+        "balance": 490804.85
+      },
+      {
+        "date": "2025-12-30",
+        "description": "SentIMPS536420509751Giridhar",
+        "amount": -39330.0,
+        "ref": "IMPS-",
+        "balance": 523287.85
+      },
+      {
+        "date": "2025-11-04",
+        "description": "MB:Sep25GprcashexppaybacktoGiri",
+        "amount": -39072.0,
+        "ref": "KKBKH2530870374",
+        "balance": 553788.85
+      },
+      {
+        "date": "2025-07-23",
+        "description": "SentIMPS520401425859Giridhar",
+        "amount": -34767.0,
+        "ref": "IMPS-",
+        "balance": 607704.85
+      },
+      {
+        "date": "2025-07-21",
+        "description": "SentIMPS520223792807Giridhar",
+        "amount": -29010.0,
+        "ref": "IMPS-",
+        "balance": 636228.85
+      },
+      {
+        "date": "2025-12-03",
+        "description": "MB:paybacktogirigprcashexpnov25",
+        "amount": -25704.0,
+        "ref": "KKBKH2533786855",
+        "balance": 507289.85
+      },
+      {
+        "date": "2025-09-09",
+        "description": "MB:paybckamt2giricashexpaug25",
+        "amount": -22519.0,
+        "ref": "KKBKH2525264583",
+        "balance": 716325.85
+      },
+      {
+        "date": "2025-09-09",
+        "description": "MB:paybckamt2girisumpcashexpenses",
+        "amount": -21336.0,
+        "ref": "KKBKH2525265071",
+        "balance": 694989.85
+      },
+      {
+        "date": "2025-09-08",
+        "description": "MB:paybckamtGaneshfestivalexp25",
+        "amount": -21125.0,
+        "ref": "KKBKH2525195619",
+        "balance": 738844.85
+      },
+      {
+        "date": "2025-11-19",
+        "description": "UPI/KUDITHERY",
+        "amount": -15000.0,
+        "ref": "UPI-532364413656",
+        "balance": 490089.85
+      }
+    ],
+    "top_credits": [
+      {
+        "date": "2025-05-23",
+        "description": "FD MATURITY PROCEEDS",
+        "amount": 536790.0,
+        "ref": "TO",
+        "balance": 1043309.85
+      },
+      {
+        "date": "2025-05-23",
+        "description": "FD MATURITY PROCEEDS",
+        "amount": 429655.0,
+        "ref": "TO",
+        "balance": 1515610.85
+      },
+      {
+        "date": "2025-05-23",
+        "description": "FD MATURITY PROCEEDS",
+        "amount": 42646.0,
+        "ref": "TO",
+        "balance": 1085955.85
+      },
+      {
+        "date": "2025-10-02",
+        "description": "NEFT ICIN127500830079",
+        "amount": 30000.0,
+        "ref": "NEFTINW-",
+        "balance": 446726.85
+      },
+      {
+        "date": "2025-10-15",
+        "description": "Recd:IMPS/528808662175/RACHANA",
+        "amount": 30000.0,
+        "ref": "IMPS-",
+        "balance": 572398.85
+      },
+      {
+        "date": "2025-04-03",
+        "description": "Recd:IMPS/509312914286/BHAGYAS",
+        "amount": 15000.0,
+        "ref": "IMPS-",
+        "balance": 241482.85
+      },
+      {
+        "date": "2025-04-03",
+        "description": "UPI/NITIN",
+        "amount": 15000.0,
+        "ref": "UPI-509336737381",
+        "balance": 256482.85
+      },
+      {
+        "date": "2025-04-03",
+        "description": "UPI/SINGIREDDY",
+        "amount": 15000.0,
+        "ref": "UPI-509358837362",
+        "balance": 271482.85
+      },
+      {
+        "date": "2025-04-03",
+        "description": "UPI/SRAVAN KUMAR",
+        "amount": 15000.0,
+        "ref": "UPI-509360311477",
+        "balance": 286482.85
+      },
+      {
+        "date": "2025-04-03",
+        "description": "UPI/SIRIKONDA ARUN",
+        "amount": 15000.0,
+        "ref": "UPI-509367822199",
+        "balance": 301482.85
+      }
+    ],
+    "top_payees": [
+      {
+        "name": "ARAVIND BABU",
+        "count": 14,
+        "amount": 53319.0
+      },
+      {
+        "name": "ARPITA",
+        "count": 13,
+        "amount": 35792.0
+      },
+      {
+        "name": "GUNDAREDDY",
+        "count": 13,
+        "amount": 35176.0
+      },
+      {
+        "name": "LAKSHMI SWATHI",
+        "count": 12,
+        "amount": 33732.0
+      },
+      {
+        "name": "DULURI",
+        "count": 12,
+        "amount": 33572.0
+      },
+      {
+        "name": "GAUTAMD",
+        "count": 12,
+        "amount": 37231.0
+      },
+      {
+        "name": "AARDIP",
+        "count": 12,
+        "amount": 37873.0
+      },
+      {
+        "name": "D SURESH",
+        "count": 11,
+        "amount": 35841.0
+      },
+      {
+        "name": "ANKUSH",
+        "count": 11,
+        "amount": 34597.0
+      },
+      {
+        "name": "PUSHAP DEEP",
+        "count": 11,
+        "amount": 34842.0
+      },
+      {
+        "name": "MANI KRISHNA",
+        "count": 11,
+        "amount": 34021.0
+      },
+      {
+        "name": "SOMASHEKHAR",
+        "count": 11,
+        "amount": 33573.0
+      },
+      {
+        "name": "SRINIVAS",
+        "count": 11,
+        "amount": 30838.0
+      },
+      {
+        "name": "SUBHA JYOTI",
+        "count": 10,
+        "amount": 32928.0
+      },
+      {
+        "name": "ANJAN",
+        "count": 10,
+        "amount": 36451.0
+      }
+    ],
+    "dow_counts": {
+      "Thursday": 45,
+      "Saturday": 67,
+      "Sunday": 63,
+      "Monday": 71,
+      "Tuesday": 64,
+      "Wednesday": 53,
+      "Friday": 63
+    },
+    "dom_credits": {
+      "3": 138108.0,
+      "5": 165618.0,
+      "6": 134341.0,
+      "7": 58450.0,
+      "8": 53684.0,
+      "13": 18245.0,
+      "15": 57026.0,
+      "16": 14700.0,
+      "22": 9286.0,
+      "24": 11912.0,
+      "25": 8108.0,
+      "28": 13559.0,
+      "30": 89346.0,
+      "4": 160265.0,
+      "10": 46168.0,
+      "12": 17270.0,
+      "14": 14907.0,
+      "19": 6024.0,
+      "20": 16387.0,
+      "23": 1012157.0,
+      "26": 5774.0,
+      "27": 10915.0,
+      "29": 5889.0,
+      "31": 11638.0,
+      "1": 23540.0,
+      "2": 255642.0,
+      "11": 31612.0,
+      "17": 17777.0,
+      "9": 16806.0,
+      "21": 5989.0
+    },
+    "dom_debits": {
+      "3": -72432.0,
+      "4": -136658.0,
+      "7": -29200.0,
+      "1": -61400.0,
+      "22": -3965.0,
+      "2": -69072.0,
+      "21": -29010.0,
+      "23": -34767.0,
+      "5": -7983.0,
+      "24": -5416.0,
+      "8": -21125.0,
+      "9": -57855.0,
+      "14": -10228.0,
+      "6": -31151.0,
+      "10": -9671.0,
+      "19": -15000.0,
+      "30": -39330.0,
+      "12": -6293.0,
+      "15": -7690.0
+    },
+    "period": {
+      "start": "2025-04-03",
+      "end": "2026-03-30",
+      "total_credit": 2431143.0,
+      "total_debit": 648246.0,
+      "net_change": 1782897.0,
+      "opening_balance": 249977.85,
+      "closing_balance": 435152.85,
+      "total_txns": 426,
+      "credit_count": 373,
+      "debit_count": 53
+    }
+  },
+  "account_info": {
+    "account_number": "5613082412",
+    "account_type": "SAVINGS",
+    "branch": "Hyderabad Botanical Garden Road",
+    "ifsc": "KKBK0008398",
+    "micr": "500485058",
+    "entity_name": "Green Park Plot Owners Welfare Association",
+    "crn": "XXXXXX390",
+    "address": "P No 1 To 4, 11 To 14 Golden Tulip Estate, Kondapur, Serilingampally, Hyderabad - 500084",
+    "period": "01 Apr 2025 - 31 Mar 2026",
+    "generated_on": "09 Jun 2026, 04:21 PM"
+  }
+}

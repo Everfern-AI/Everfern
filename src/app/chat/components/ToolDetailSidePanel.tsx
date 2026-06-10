@@ -297,7 +297,7 @@ function normalizePanelUrl(value: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
-const DEFAULT_TOOL_DETAIL_ROOT = 'C:\\Users\\srini\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+const DEFAULT_TOOL_DETAIL_ROOT = 'C:\\Users\\user\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
 
 function isMacPlatform() {
   if (typeof navigator === 'undefined') return false;

@@ -222,7 +222,11 @@ export function ToolCallDetailPane({
 }) {
   const [activeTab, setActiveTab] = useState<'input' | 'output' | 'timeline'>('input');
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
-  const isCodeOrFileViewer = ['write', 'edit', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file', 'read', 'read_file', 'view_file'].includes(toolCall.toolName.toLowerCase());
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+  const isCodeOrFileViewer = isWrite || isEdit || isRead;
 
   return (
     <motion.div
@@ -524,13 +528,13 @@ export function ToolCallDetailPane({
 
 function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   const args = toolCall.arguments || (toolCall as any).args || {};
-  const filePath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || 'unknown_file';
+  const filePath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
   
   const toolNameLower = toolCall.toolName.toLowerCase();
-  const isWrite = ['write', 'write_file', 'write_to_file'].includes(toolNameLower);
-  const isEdit = ['edit', 'edit_file', 'replace_file_content', 'multi_replace_file_content'].includes(toolNameLower);
-  const isRead = ['read', 'read_file', 'view_file'].includes(toolNameLower);
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
 
   interface CodeLine {
     text: string;
@@ -540,7 +544,28 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   let codeLines: CodeLine[] = [];
 
   if (isWrite) {
-    const content = args.content || args.text || args.CodeContent || '';
+    // Try all known content argument keys
+    let content = args.content || args.text || args.CodeContent || args.html
+      || args.code || args.data || args.body || args.fileContent
+      || args.source || args.output || args.file_content || '';
+
+    // If args have no content, try extracting from the tool call result
+    if (!content && toolCall.result) {
+      const r = toolCall.result;
+      if (typeof r === 'string' && r.length > 0 && !r.startsWith('{')) {
+        content = r;
+      } else if (r?.data?.content) {
+        content = r.data.content;
+      } else if (r?.output && typeof r.output === 'string' && !r.output.startsWith('{')) {
+        content = r.output;
+      } else if (Array.isArray(r?.content)) {
+        content = r.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+    }
+
     const lines = typeof content === 'string' ? content.split('\n') : [];
     codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
   } else if (isRead) {
@@ -623,7 +648,13 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   }
 
   if (codeLines.length === 0) {
-    codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
+    if (toolCall.status === 'executing' || toolCall.status === 'pending') {
+      codeLines = [{ text: '// Writing file...', type: 'normal' }];
+    } else if (isWrite) {
+      codeLines = [{ text: '// File was written but content was not captured in tool arguments', type: 'normal' }];
+    } else {
+      codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
+    }
   }
 
   return (

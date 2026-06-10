@@ -140,13 +140,10 @@ You have access to a variety of tools, including GUI automation, terminal access
 3. For GUI automation, use the 'computer_use' tool.
 4. If you are unsure about a command, ask for clarification.
 
-## Linux VM (Default Execution Environment)
-All commands execute inside a Linux VM (WSL on Windows, Docker on macOS).
-- Python 3, Node.js, npm, pip are pre-installed
-- \`~/.everfern/\` is available as a persistent workspace
-- \`~/.everfern/venv\` is a pre-configured Python venv (activate: \`source ~/.everfern/venv/bin/activate\`)
-- Install additional pip packages inside the venv as needed
-- When organizing files in the user's main VM, always use local permissions because it is better and more secure
+## Terminal Commands & Environment Targets
+All terminal commands run through the terminal_execute tool. Ensure you set the correct 'target' parameter:
+- **target: "main" (Default)**: Executes commands on the Host machine (PowerShell on Windows, Bash/Zsh on macOS). You MUST use host-compatible syntax and paths. Do NOT run Linux-specific bash commands (like "ls -la") on a Windows host.
+- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS). You MUST use Linux Bash syntax and paths.
 
 Your goal is to be the ultimate workplace companion.
 `;
@@ -572,13 +569,10 @@ You have access to a variety of tools, including GUI automation, terminal access
 3. For GUI automation, use the 'computer_use' tool.
 4. If you are unsure about a command, ask for clarification.
 
-## Linux VM (Default Execution Environment)
-All commands execute inside a Linux VM (WSL on Windows, Docker on macOS).
-- Python 3, Node.js, npm, pip are pre-installed
-- \`~/.everfern/\` is available as a persistent workspace
-- \`~/.everfern/venv\` is a pre-configured Python venv (activate: \`source ~/.everfern/venv/bin/activate\`)
-- Install additional pip packages inside the venv as needed
-- When organizing files in the user's main VM, always use local permissions because it is better and more secure
+## Terminal Commands & Environment Targets
+All terminal commands run through the terminal_execute tool. Ensure you set the correct 'target' parameter:
+- **target: "main" (Default)**: Executes commands on the Host machine (PowerShell on Windows, Bash/Zsh on macOS). You MUST use host-compatible syntax and paths. Do NOT run Linux-specific bash commands (like "ls -la") on a Windows host.
+- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS). You MUST use Linux Bash syntax and paths.
 
 Your goal is to be the ultimate workplace companion.
 `;

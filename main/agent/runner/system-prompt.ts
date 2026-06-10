@@ -145,6 +145,7 @@ export async function getSlimSystemPromptAsync(
   // Read the Markdown file asynchronously
   let promptMd = '';
   const searchPaths = [
+    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
     path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
     path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
     path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'), // Fallback from dist-electron
@@ -172,10 +173,10 @@ export async function getSlimSystemPromptAsync(
   // OS Info
   const osInfo =
     platform === 'win32'
-      ? '**OS**: Windows (host). Default: commands execute in Linux VM (WSL). Fallback: if WSL is unavailable, commands run in Windows cmd.exe. Check terminal output for "Host Fallback (CMD)" to know which environment is active. Use Linux paths (/mnt/c/Users/...) when WSL is available, Windows paths (C:\\Users\\...) when fallback is active.'
+      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
       : platform === 'darwin'
-        ? '**OS**: macOS (host). All commands execute in the Docker Linux VM. Use Linux paths.'
-        : '**OS**: Linux. All commands execute natively.';
+        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
+        : '**OS**: Linux. All commands execute natively using Bash.';
   console.log(`[SystemPrompt] OS info string: platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
 
   // Session File Registry
@@ -219,7 +220,7 @@ export async function getSlimSystemPromptAsync(
     .replace(/{{CURRENT_DATE}}/g, new Date().toISOString().split('T')[0])
     .replace(/{{WORKSPACE_MOUNTED}}/g, workspaceMounted)
     .replace(/{{USER_NAME}}/g, user.username)
-    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.com')
+    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
     .replace(/{{OTHER_TOOLS}}/g, ''); 
 
   // Inject Integration Status
@@ -309,6 +310,7 @@ export function getSlimSystemPrompt(
   // Read the Markdown file (cache this separately if needed)
   let promptMd = '';
   const searchPaths = [
+    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
     path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
     path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
     path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'), // Fallback from dist-electron
@@ -336,10 +338,10 @@ export function getSlimSystemPrompt(
   // OS Info
   const osInfo =
     platform === 'win32'
-      ? '**OS**: Windows (host). Default: commands execute in Linux VM (WSL). Fallback: if WSL is unavailable, commands run in Windows cmd.exe. Check terminal output for "Host Fallback (CMD)" to know which environment is active. Use Linux paths (/mnt/c/Users/...) when WSL is available, Windows paths (C:\\Users\\...) when fallback is active.'
+      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
       : platform === 'darwin'
-        ? '**OS**: macOS (host). All commands execute in the Docker Linux VM. Use Linux paths.'
-        : '**OS**: Linux. All commands execute natively.';
+        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
+        : '**OS**: Linux. All commands execute natively using Bash.';
   console.log(`[SystemPrompt] OS info string (sync): platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
 
   // Session File Registry
@@ -372,7 +374,7 @@ export function getSlimSystemPrompt(
     .replace(/{{CURRENT_DATE}}/g, new Date().toISOString().split('T')[0])
     .replace(/{{WORKSPACE_MOUNTED}}/g, workspaceMounted)
     .replace(/{{USER_NAME}}/g, user.username)
-    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.com')
+    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
     .replace(/{{OTHER_TOOLS}}/g, ''); 
 
   // Cache the result

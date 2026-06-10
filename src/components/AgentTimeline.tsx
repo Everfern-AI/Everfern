@@ -171,18 +171,16 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
 const IconContainer = ({
     icon,
     shape,
-    size = 24,
 }: {
     icon: React.ReactNode;
     shape: IconShape;
-    size?: number;
 }) => (
     <div
         style={{
-            width: size,
-            height: size,
+            width: 24,
+            height: 24,
             flexShrink: 0,
-            borderRadius: shape === "circle" ? "50%" : size === 24 ? 7 : 5,
+            borderRadius: shape === "circle" ? "50%" : 7,
             background: "#d3d3d0",
             boxShadow: [
                 "inset 0 1px 0 rgba(255,255,255,0.70)",
@@ -355,22 +353,21 @@ const SubAgentProgressTimeline = ({
                             <div style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 6,
+                                gap: 8,
                                 width: "fit-content",
                                 maxWidth: "100%",
-                                padding: "3px 8px 3px 5px",
-                                borderRadius: 999,
-                                fontSize: 11,
+                                padding: "5px 10px 5px 6px",
+                                borderRadius: 12,
+                                fontSize: 11.5,
                                 color: isComplete ? "#15803d" : isAbort ? "#b91c1c" : "#4b5563",
-                                lineHeight: 1.2,
+                                lineHeight: 1.35,
                                 background: "#fbfbfa",
                                 border: "1px solid rgba(0,0,0,0.07)",
                                 boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                             }}>
                                 <IconContainer
-                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 10).icon}
-                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 10).shape}
-                                    size={18}
+                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 11).icon}
+                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 11).shape}
                                 />
                                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {text}
@@ -380,20 +377,19 @@ const SubAgentProgressTimeline = ({
                             <div style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 8,
-                                padding: "4px 10px 4px 6px",
-                                borderRadius: 999,
-                                fontSize: 11.5,
+                                gap: 10,
+                                padding: "7px 14px 7px 8px",
+                                borderRadius: 14,
+                                fontSize: 12.5,
                                 color: "#333",
-                                lineHeight: 1.2,
+                                lineHeight: 1.4,
                                 position: "relative",
                                 overflow: "hidden",
                                 ...galliumSurface,
                             }}>
                                 <IconContainer 
-                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : "tool"), 11).icon} 
-                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : "tool"), 11).shape} 
-                                    size={20}
+                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).icon} 
+                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).shape} 
                                 />
                                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {text}
@@ -455,12 +451,12 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
     const label = isSkill
         ? `Skill - ${skillName || tc.label || tc.toolName?.replace(/_/g, " ") || "Tool"}`
         : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool"));
-    let { icon, shape } = getToolMeta(tc.toolName, 11);
+    let { icon, shape } = getToolMeta(tc.toolName);
 
     // system_files: pick action-specific icon at render time
     if (tc.toolName === 'system_files') {
         const sfa = String(tc.args?.action ?? '');
-        const sz = { width: 11, height: 11, flexShrink: 0 as const };
+        const sz = { width: 13, height: 13, flexShrink: 0 as const };
         if (sfa === 'move')   icon = <ArrowRightIcon style={sz} />;
         else if (sfa === 'rename') icon = <DocumentDuplicateIcon style={sz} />;
         else if (sfa === 'mkdirp') icon = <FolderPlusIcon style={sz} />;
@@ -515,20 +511,20 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
                     ...galliumSurface,
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
+                    gap: 8,
                     width: "fit-content",
                     maxWidth: "min(100%, 620px)",
-                    padding: "3px 8px 3px 5px",
-                    borderRadius: 999,
+                    padding: "5px 10px 5px 7px",
+                    borderRadius: 12,
                     cursor: onClick ? "pointer" : "default",
-                    fontSize: 11.5,
+                    fontSize: 12,
                     color: isDone ? "#aaa" : "#333",
-                    lineHeight: 1.2,
+                    lineHeight: 1.25,
                     position: "relative",
                     overflow: "hidden",
                 }}
             >
-                <IconContainer icon={icon} shape={shape} size={20} />
+                <IconContainer icon={icon} shape={shape} />
 
                 <span style={{
                     overflow: "hidden",
@@ -1100,6 +1096,52 @@ const renderToolGroups = (
     return rendered;
 };
 
+const shouldHideStepResult = (str: string | undefined | null): boolean => {
+    if (!str) return true;
+    const trimmed = str.trim();
+    if (!trimmed) return true;
+
+    // Check for JSON structures
+    if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"') || trimmed.startsWith('\\"')) {
+        // Direct JSON check
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (typeof parsed === 'object' && parsed !== null) {
+                return true;
+            }
+        } catch {}
+
+        // Double-serialized JSON check
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            try {
+                const parsed = JSON.parse(JSON.parse(trimmed));
+                if (typeof parsed === 'object' && parsed !== null) {
+                    return true;
+                }
+            } catch {}
+        }
+    }
+
+    const lower = trimmed.toLowerCase();
+    // Check for assistant messages or tool calls indicators
+    if (lower.includes('"messages"') || lower.includes('"tool_calls"') || lower.includes('"role"') || lower.includes('"content"')) {
+        return true;
+    }
+    if (lower.includes('\\"messages\\"') || lower.includes('\\"tool_calls\\"') || lower.includes('\\"role\\"') || lower.includes('\\"content\\"')) {
+        return true;
+    }
+
+    // Check for "Completed X tool calls" or similar technical progress noise
+    if (/^completed\s*\d*\s*tool\s*calls?$/i.test(trimmed) || 
+        /^completed\s*\d*\s*calls?$/i.test(trimmed) ||
+        trimmed.startsWith('Completed tool call') ||
+        trimmed.startsWith('Completed tool calls')) {
+        return true;
+    }
+
+    return false;
+};
+
 // ── Mission Step Row (accordion) ───────────────────────────────────────────────
 const MissionStepRow = ({
     step,
@@ -1265,7 +1307,7 @@ const MissionStepRow = ({
                                 </div>
                             )}
 
-                            {step.result && isDone && !(step.result.trim().startsWith('{') && step.result.trim().endsWith('}')) && !(step.result.trim().startsWith('[') && step.result.trim().endsWith(']')) && (
+                            {step.result && isDone && !shouldHideStepResult(step.result) && (
                                 <div style={{
                                     fontSize: 12, color: "#9ca3af", lineHeight: 1.5,
                                     marginTop: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6,

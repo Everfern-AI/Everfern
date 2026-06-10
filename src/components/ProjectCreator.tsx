@@ -7,7 +7,7 @@ import { useState } from 'react';
 export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
   const [template, setTemplate] = useState('react-vite');
   const [projectName, setProjectName] = useState('');
-  const [projectPath, setProjectPath] = useState('C:/Users/srini/Downloads/EverFern/projects');
+  const [projectPath, setProjectPath] = useState('C:/Users/user/Downloads/EverFern/projects');
 
   const templates = [
     { value: 'react-vite', label: 'React + Vite + TypeScript', icon: '⚛' },

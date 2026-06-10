@@ -108,6 +108,52 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; bgCol
   },
 };
 
+const shouldHideStepResult = (str: string | undefined | null): boolean => {
+  if (!str) return true;
+  const trimmed = str.trim();
+  if (!trimmed) return true;
+
+  // Check for JSON structures
+  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"') || trimmed.startsWith('\\"')) {
+    // Direct JSON check
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return true;
+      }
+    } catch {}
+
+    // Double-serialized JSON check
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        const parsed = JSON.parse(JSON.parse(trimmed));
+        if (typeof parsed === 'object' && parsed !== null) {
+          return true;
+        }
+      } catch {}
+    }
+  }
+
+  const lower = trimmed.toLowerCase();
+  // Check for assistant messages or tool calls indicators
+  if (lower.includes('"messages"') || lower.includes('"tool_calls"') || lower.includes('"role"') || lower.includes('"content"')) {
+    return true;
+  }
+  if (lower.includes('\\"messages\\"') || lower.includes('\\"tool_calls\\"') || lower.includes('\\"role\\"') || lower.includes('\\"content\\"')) {
+    return true;
+  }
+
+  // Check for "Completed X tool calls" or similar technical progress noise
+  if (/^completed\s*\d*\s*tool\s*calls?$/i.test(trimmed) || 
+      /^completed\s*\d*\s*calls?$/i.test(trimmed) ||
+      trimmed.startsWith('Completed tool call') ||
+      trimmed.startsWith('Completed tool calls')) {
+    return true;
+  }
+
+  return false;
+};
+
 const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({ 
   timeline, 
   isRunning,
@@ -285,7 +331,7 @@ const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
                           )}
 
                           {/* Result Preview */}
-                          {step.result && !(typeof step.result === 'string' && step.result.trim().startsWith('{') && step.result.trim().endsWith('}')) && !(typeof step.result === 'string' && step.result.trim().startsWith('[') && step.result.trim().endsWith(']')) && (
+                          {step.result && !shouldHideStepResult(step.result) && (
                             <div>
                               <div className="text-gray-400 font-medium mb-1">Result:</div>
                               <div className={`text-[11px] ${isSidebar ? 'bg-white border-gray-100' : 'bg-slate-700'} border p-2 rounded-lg text-gray-600 max-h-24 overflow-y-auto font-mono break-words leading-relaxed`}>

@@ -120,9 +120,15 @@ Registered MCP server → Shell/Terminal → navis for browser/web software → 
 ### 3.2 Terminal & Shell
 
 - Use the terminal tool for all shell operations.
+- **SHELL & OS TARGETING POLICY:**
+  - Before writing a command, verify the target environment information:
+    {{OS_INFO}}
+  - On Windows host machines:
+    - **`target: 'main'` (Default)** executes in **Windows PowerShell**. You MUST write valid PowerShell commands. Linux-specific commands (like `ls -la`) will FAIL. Use PowerShell cmdlets (like `Get-ChildItem`) or aliases, and use backslashes for local Windows paths (`C:\Users\...`).
+    - **`target: 'vm'`** executes in a **Linux VM (WSL/Bash)**. You MUST write valid Linux Bash commands. Use Linux path formats (`/mnt/c/Users/...` or `/home/...`).
 - **Always pass `cwd` explicitly — never use `cd`.** This rule applies to both `target: 'vm'` and `target: 'main'`.
 - Never use `curl` or `wget` for web research — use `web_search` for quick lookup/link discovery and `navis` for page access, browser workflows, forms, listings, booking, multi-page extraction, or deep research.
-- Git: prefer new commits over amending. Include `Co-Authored-By: EverFern <noreply@everfern.com>` in commit messages.
+- Git: prefer new commits over amending. Include `Co-Authored-By: EverFern <noreply@everfern.app>` in commit messages.
 
 **CODING TASKS — ALWAYS USE MAIN HOST (`target: 'main'`):**
 
@@ -147,7 +153,7 @@ Examples:
 
 ```
 // CORRECT
-{ "tool": "terminal_execute", "args": { "command": "npm install", "cwd": "C:\\Users\\srini\\myapp", "target": "main" } }
+{ "tool": "terminal_execute", "args": { "command": "npm install", "cwd": "C:\\Users\\user\\myapp", "target": "main" } }
 
 // WRONG
 { "tool": "terminal_execute", "args": { "command": "npm install", "target": "vm" } }

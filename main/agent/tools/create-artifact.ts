@@ -1,14 +1,8 @@
-/**
- * EverFern Desktop — Artifact Creator Tool
- *
- * Creates HTML artifacts from AI output (dashboards, reports, visualizations).
- * Files are auto-saved to .everfern/artifacts folder for easy presentation.
- */
-
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AgentTool, ToolResult } from '../runner/types';
+import { translateLinuxPathToHost, translateWindowsPathToLinux, runInLinuxVM } from './linux-vm-executor';
 
 const ARTIFACTS_DIR = () => path.join(os.homedir(), '.everfern', 'artifacts');
 
@@ -105,10 +99,8 @@ export const createArtifactTool = (runner?: any): AgentTool => ({
   name: 'create_artifact',
   description:
     'Create HTML artifacts (dashboards, reports, charts, galleries) that display in the UI. ' +
-    'The tool auto-injects Tailwind CSS, Figtree font, and Chart.js — DO NOT include these CDN links yourself. ' +
-    'Pass ONLY the body content in the html field (no <!DOCTYPE>, <html>, or <head> tags). ' +
-    'Use Tailwind utility classes for ALL styling. Never write custom CSS unless absolutely necessary. ' +
-    'Files are auto-saved to .everfern/artifacts and auto-presented.',
+    'The tool can either create a new artifact using standard templates, or reference an already generated file (by path) to present it as an artifact. ' +
+    'Tailwind CSS, Figtree font, and Chart.js are auto-injected for templates.',
 
   parameters: {
     type: 'object',
@@ -116,16 +108,20 @@ export const createArtifactTool = (runner?: any): AgentTool => ({
       html: {
         type: 'string',
         description: 'Body content ONLY — no <!DOCTYPE>, <html>, <head>, or <body> tags. ' +
-          'Tailwind CSS, Figtree font, and Chart.js are already injected. ' +
-          'Use Tailwind classes for all styling (e.g. class="p-8 bg-gray-900 text-white rounded-xl").'
+          'Required unless path is specified. Tailwind CSS, Figtree font, and Chart.js are already injected.'
       },
-      title: { type: 'string', description: 'Title for the artifact.' },
+      path: {
+        type: 'string',
+        description: 'Absolute or relative path to an already generated HTML/content file. ' +
+          'If provided, the tool reads the content from this path. Can be a path inside the Linux VM or host.'
+      },
+      title: { type: 'string', description: 'Title for the artifact. Auto-derived from the file/title if omitted.' },
       description: { type: 'string', description: 'Description shown to user.' },
       template: { type: 'string', enum: ['blank', 'dashboard', 'report', 'chart', 'gallery', 'slides'], description: 'Template to use.' },
       css: { type: 'string', description: 'Additional CSS to inject (use sparingly — prefer Tailwind classes).' },
       js: { type: 'string', description: 'Custom JavaScript to inject (Chart.js is already available as Chart).' }
     },
-    required: ['html']
+    required: []
   },
 
   async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
@@ -145,21 +141,118 @@ export const createArtifactTool = (runner?: any): AgentTool => ({
       
       fs.mkdirSync(artifactsDir, { recursive: true });
 
-      const htmlContent = wrapInHtml({
-        html: String(args.html || ''),
-        title: String(args.title || ''),
-        description: String(args.description || ''),
-        template: String(args.template || 'blank') as any,
-        css: args.css ? String(args.css) : undefined,
-        js: args.js ? String(args.js) : undefined
-      });
+      let content = '';
+      let isFullHtml = false;
 
-      const safeTitle = String(args.title || 'artifact')
+      if (args.path) {
+        const filePathParam = String(args.path);
+        let fileRead = false;
+
+        if (process.platform === 'win32') {
+          // Check if path is a WSL-internal path (starts with / and not /mnt/)
+          const isWslInternal = filePathParam.startsWith('/') && !filePathParam.startsWith('/mnt/');
+          if (isWslInternal) {
+            try {
+              onUpdate?.(`📖 Reading WSL file: ${filePathParam}...`);
+              const res = await runInLinuxVM(`cat "${filePathParam}"`);
+              if (res.exitCode === 0) {
+                content = res.stdout;
+                fileRead = true;
+              } else {
+                console.warn(`[CreateArtifact] Failed to cat WSL file ${filePathParam}: ${res.stderr}`);
+              }
+            } catch (err) {
+              console.warn(`[CreateArtifact] Failed to read WSL file:`, err);
+            }
+          }
+        } else if (process.platform === 'darwin') {
+          // Check if the path is Docker-container-internal
+          const isDockerInternal = filePathParam.startsWith('/') && !filePathParam.startsWith('/host/Users/') && !filePathParam.startsWith('/mnt/');
+          if (isDockerInternal) {
+            try {
+              onUpdate?.(`📖 Reading Docker file: ${filePathParam}...`);
+              const { execSync } = require('child_process');
+              content = execSync(`docker exec everfern-ubuntu cat "${filePathParam}"`, { encoding: 'utf-8', timeout: 30000 });
+              fileRead = true;
+            } catch (err) {
+              console.warn(`[CreateArtifact] Failed to read Docker file:`, err);
+            }
+          }
+        }
+
+        if (!fileRead) {
+          // Standard host file read (handles /mnt/c/ via translateLinuxPathToHost)
+          try {
+            const hostPath = translateLinuxPathToHost(filePathParam);
+            onUpdate?.(`📖 Reading file: ${hostPath}...`);
+            if (fs.existsSync(hostPath)) {
+              content = fs.readFileSync(hostPath, 'utf-8');
+              fileRead = true;
+            } else {
+              console.warn(`[CreateArtifact] File not found: ${hostPath}`);
+            }
+          } catch (err) {
+            console.warn(`[CreateArtifact] Failed to read file:`, err);
+          }
+        }
+
+        if (!fileRead) {
+          return {
+            success: false,
+            output: `Failed to read file from path: ${filePathParam}`,
+            error: `File not found or unreadable at path: ${filePathParam}`
+          };
+        }
+
+        // Detect if it is already a full HTML document
+        isFullHtml = /<html/i.test(content) || /<!doctype/i.test(content);
+      } else if (args.html) {
+        content = String(args.html);
+      } else {
+        return {
+          success: false,
+          output: 'Failed to create artifact: either "html" or "path" parameter must be provided.',
+          error: 'Missing required parameters: html or path'
+        };
+      }
+
+      // Auto-extract/determine title
+      let title = String(args.title || '');
+      if (!title && content) {
+        const titleMatch = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch && titleMatch[1]) {
+          title = titleMatch[1].trim();
+        }
+      }
+      if (!title && args.path) {
+        const baseName = path.basename(String(args.path));
+        title = baseName.replace(/\.[^/.]+$/, ""); // strip extension
+      }
+      if (!title) {
+        title = 'artifact';
+      }
+
+      // Determine final HTML content
+      let htmlContent: string;
+      if (isFullHtml) {
+        htmlContent = content;
+      } else {
+        htmlContent = wrapInHtml({
+          html: content,
+          title: title,
+          description: args.description ? String(args.description) : undefined,
+          template: String(args.template || 'blank') as any,
+          css: args.css ? String(args.css) : undefined,
+          js: args.js ? String(args.js) : undefined
+        });
+      }
+
+      const safeTitle = title
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
 
-      const filename = `${safeTitle}.html`;
+      const filename = `${safeTitle || 'artifact'}.html`;
       const filePath = path.join(artifactsDir, filename);
 
       fs.writeFileSync(filePath, htmlContent, 'utf-8');
@@ -168,13 +261,13 @@ export const createArtifactTool = (runner?: any): AgentTool => ({
 
       return {
         success: true,
-        output: `✅ Artifact created: **${args.title || filename}**\n` +
+        output: `✅ Artifact created: **${title}**\n` +
                `📁 Saved to: \`${filePath}\`\n` +
                `🎁 Auto-presented to user.`,
         data: {
           type: 'create_artifact',
           path: filePath,
-          title: args.title,
+          title: title,
           description: args.description
         }
       };

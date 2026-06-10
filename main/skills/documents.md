@@ -8,7 +8,7 @@ description: "Use this skill when a user asks you to read, open, or work with an
 ## How Files Work in EverFern
 
 In EverFern Desktop, the user can:
-1. **Type a file path directly** — e.g., `C:\Users\srini\Downloads\report.pdf`
+1. **Type a file path directly** — e.g., `C:\Users\user\Downloads\report.pdf`
 2. **Drag & drop a file** — the path is surfaced to you in the message
 3. **Share a folder as context** — the folder contents are listed in the message
 

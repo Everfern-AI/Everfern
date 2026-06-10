@@ -9,7 +9,7 @@ interface Props {
 export default function CreateProjectModal({ isOpen, onClose, onCreated }: Props) {
   const [template, setTemplate] = useState('react-vite');
   const [name, setName] = useState('');
-  const [location, setLocation] = useState('C:/Users/srini/Downloads/EverFern/projects');
+  const [location, setLocation] = useState('C:/Users/user/Downloads/EverFern/projects');
 
   if (!isOpen) return null;
 

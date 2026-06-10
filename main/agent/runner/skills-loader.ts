@@ -269,7 +269,7 @@ You have access to the following specialized skills. Each skill provides domain-
     prompt += `- JSON Parameter: "skill": "${skill.name}"\n\n`;
   }
 
-  prompt += `### EXAMPLE SKILL INVOCATION:\n{\n  "tool": "run_command",\n  "skill": "xlsx",\n  "CommandLine": "python analyze_spreadsheet.py",\n  "Cwd": "C:/Users/srini/.everfern/exec",\n  "WaitMsBeforeAsync": 8000,\n  "SafeToAutoRun": true\n}\n\nAfter invoking with a skill parameter, immediately read that skill's SKILL.md file to understand its procedures, then follow those procedures exactly.\n`;
+  prompt += `### EXAMPLE SKILL INVOCATION:\n{\n  "tool": "run_command",\n  "skill": "xlsx",\n  "CommandLine": "python analyze_spreadsheet.py",\n  "Cwd": "C:/Users/user/.everfern/exec",\n  "WaitMsBeforeAsync": 8000,\n  "SafeToAutoRun": true\n}\n\nAfter invoking with a skill parameter, immediately read that skill's SKILL.md file to understand its procedures, then follow those procedures exactly.\n`;
 
   return prompt;
 }
