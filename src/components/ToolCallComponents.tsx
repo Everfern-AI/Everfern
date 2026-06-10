@@ -98,7 +98,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
     const [expanded, setExpanded] = useState(false);
     const running = tc.status === 'running';
     const errored = tc.status === 'error';
-    const isTerminal = tc.toolName === 'run_command' || tc.toolName === 'bash' || tc.toolName === 'run_terminal';
+    const isTerminal = tc.toolName === 'run_command' || tc.toolName === 'bash' || tc.toolName === 'run_terminal' || tc.toolName === 'terminal_execute' || tc.toolName === 'terminal_status';
     const output = tc.output || '';
     const looksLikeTerminal = isTerminal || (output.includes('$ ') && output.includes('\n')) || output.includes('~');
 
@@ -286,7 +286,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const [expanded, setExpanded] = useState(false);
     const isRunning = tc.status === 'running';
     const isError = tc.status === 'error';
-    const isTerminal = tc.toolName === 'run_command' || tc.toolName === 'bash' || tc.toolName === 'run_terminal';
+    const isTerminal = tc.toolName === 'run_command' || tc.toolName === 'bash' || tc.toolName === 'run_terminal' || tc.toolName === 'terminal_execute' || tc.toolName === 'terminal_status';
     const cmdStr = (tc.args?.command || tc.args?.CommandLine || tc.args?.commandLine) as string | undefined;
 
     const isLs = isTerminal && typeof cmdStr === 'string' && cmdStr.trim().startsWith('ls');

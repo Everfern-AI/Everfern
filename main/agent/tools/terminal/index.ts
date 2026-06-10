@@ -29,6 +29,13 @@ export const terminalTool: AgentTool = {
   execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
     const registry = CommandRegistry.getInstance();
     const command = args.command as string;
+    if (!command) {
+      return {
+        success: false,
+        output: 'Error: The "command" parameter is required.',
+        error: 'missing_parameter'
+      };
+    }
     const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
     const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
     const normalizeTimeoutMs = (value: unknown): number | undefined => {
@@ -54,7 +61,7 @@ export const terminalTool: AgentTool = {
 
     onUpdate?.(`Terminal [${id}] (${target}): Executing "${command}"...`);
 
-    const info = await registry.execute(id, command, cwd, timeoutMs, target);
+    const info = await registry.execute(id, command, cwd, timeoutMs, target, onUpdate);
 
     try {
       const { getAgentContext } = require('../pi-tools');

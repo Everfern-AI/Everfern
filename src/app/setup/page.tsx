@@ -18,6 +18,7 @@ import {
     X,
     Coffee,
     Check,
+    Shield,
 } from "lucide-react";
 
 import WindowControls from "../components/WindowControls";
@@ -635,7 +636,7 @@ export default function SetupPage() {
                 </div>
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
-                {[1, 2, 3, 4, 5].map(s => (
+                {[1, 2, 3, 4, 5, 6].map(s => (
                     <div
                         key={s}
                         style={{
@@ -1229,9 +1230,145 @@ export default function SetupPage() {
                                 <BackButton onClick={() => setStep(4)} />
                             </div>
                             <LinuxVMSetupStep
-                                onComplete={handleSave}
-                                onSkip={handleSave}
+                                onComplete={() => setStep(6)}
+                                onSkip={() => setStep(6)}
                             />
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 6: Privacy & Security ── */}
+                    {step === 6 && (
+                        <motion.div
+                            key="step6"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(5)} />
+                            </div>
+
+                            {/* Static Padlock SVG */}
+                            <div style={{ marginBottom: 36, width: 120, height: 130 }}>
+                                <svg width="120" height="130" viewBox="0 0 120 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    {/* Shackle */}
+                                    <path
+                                        d="M44 66 L44 50 Q44 36 60 36 Q76 36 76 50 L76 66"
+                                        stroke="#201e24" strokeWidth="6" strokeLinecap="round"
+                                        fill="none"
+                                    />
+                                    {/* Lock body */}
+                                    <rect x="38" y="64" width="44" height="32" rx="6" fill="#201e24" />
+                                    {/* Keyhole circle */}
+                                    <circle cx="60" cy="76" r="4" fill="#f5f4f0" />
+                                    {/* Keyhole slot */}
+                                    <rect x="58" y="76" width="4" height="8" rx="2" fill="#f5f4f0" />
+                                </svg>
+                            </div>
+
+                            {/* Title */}
+                            <h1 style={{
+                                fontSize: 32,
+                                fontWeight: 500,
+                                letterSpacing: "-0.03em",
+                                color: "#201e24",
+                                marginBottom: 12,
+                                lineHeight: 1.1,
+                            }}>
+                                Your privacy is protected
+                            </h1>
+
+                            {/* Subtitle */}
+                            <p style={{
+                                fontSize: 14,
+                                color: "#8a8886",
+                                lineHeight: 1.7,
+                                maxWidth: 360,
+                                marginBottom: 32,
+                            }}>
+                                {engine === "everfern" ? (
+                                    <>EverFern Cloud runs on our own self-hosted infrastructure. We <strong style={{ color: "#201e24" }}>never send your data to third parties</strong>, host all models ourselves, and <strong style={{ color: "#201e24" }}>don't store any of your conversations or code</strong>.  Your work stays yours.</>
+                                ) : (
+                                    <>All your API keys and credentials are stored <strong style={{ color: "#201e24" }}>locally on your device</strong> and never leave your machine. EverFern doesn't collect, track, or transmit any of your data.</>
+                                )}
+                            </p>
+
+                            {/* Privacy feature pills */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", marginBottom: 36 }}>
+                                {(engine === "everfern" ? [
+                                    { icon: "🏠", title: "Self-Hosted Models", desc: "All AI models run on our own infrastructure — no third-party APIs." },
+                                    { icon: "🚫", title: "Zero Data Sharing", desc: "We never send your data, code, or prompts to anyone." },
+                                    { icon: "🗑️", title: "No Data Storage", desc: "Conversations and code are processed in-memory and never saved on our servers." },
+                                ] : [
+                                    { icon: "🔑", title: "Local Key Storage", desc: "API keys are saved in ~/.everfern/config.json on your device only." },
+                                    { icon: "🛡️", title: "No Telemetry", desc: "EverFern doesn't collect analytics, usage data, or error reports." },
+                                    { icon: "💻", title: "Your Device, Your Data", desc: "All processing happens locally or directly with your chosen provider." },
+                                ]).map((feature, i) => (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ opacity: 0, x: -12 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: 0.8 + i * 0.15, duration: 0.35, ease: "easeOut" }}
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 14,
+                                            padding: "14px 18px",
+                                            borderRadius: 14,
+                                            background: "rgba(32,30,36,0.03)",
+                                            border: "1px solid rgba(32,30,36,0.08)",
+                                            textAlign: "left",
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 20, flexShrink: 0 }}>{feature.icon}</span>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 600, color: "#201e24", marginBottom: 2 }}>{feature.title}</div>
+                                            <div style={{ fontSize: 12, color: "#8a8886", lineHeight: 1.5 }}>{feature.desc}</div>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+
+                            {/* Continue button */}
+                            <motion.button
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 1.3, duration: 0.35 }}
+                                onClick={handleSave}
+                                disabled={isSaving}
+                                style={{
+                                    width: "100%",
+                                    height: 52,
+                                    background: "#201e24",
+                                    color: "#f5f4f0",
+                                    borderRadius: 12,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 8,
+                                    cursor: isSaving ? "wait" : "pointer",
+                                    border: "none",
+                                    transition: "background 0.15s",
+                                    letterSpacing: "0.01em",
+                                    opacity: isSaving ? 0.7 : 1,
+                                }}
+                                onMouseEnter={e => !isSaving && (e.currentTarget.style.background = "#111111")}
+                                onMouseLeave={e => (e.currentTarget.style.background = "#201e24")}
+                            >
+                                {isSaving ? "Finishing setup..." : (<>Get Started <ArrowRight size={16} strokeWidth={2.5} /></>)}
+                            </motion.button>
+
+                            <p style={{ fontSize: 11, color: "#a1a19e", marginTop: 18, lineHeight: 1.5 }}>
+                                By continuing you agree to the EverFern{" "}
+                                <span style={{ textDecoration: "underline", cursor: "pointer" }}>Terms of Service</span>{" "}
+                                and{" "}
+                                <span style={{ textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span>.
+                            </p>
                         </motion.div>
                     )}
                 </AnimatePresence>

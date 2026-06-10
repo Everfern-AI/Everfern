@@ -2426,6 +2426,17 @@ function TerminalAnsiOutput({
   );
 }
 
+function translateWindowsPathToLinux(winPath: string): string {
+  const clean = winPath.trim();
+  const driveLetterMatch = clean.match(/^([A-Za-z]):[\\\/]/);
+  if (driveLetterMatch) {
+    const driveLetter = driveLetterMatch[1].toLowerCase();
+    const pathWithoutDrive = clean.substring(3);
+    return `/mnt/${driveLetter}/${pathWithoutDrive.replace(/\\/g, '/')}`;
+  }
+  return clean.replace(/\\/g, '/');
+}
+
 function PS1({ user = 'ubuntu', host = 'localhost', path = '~' }: { user?: string; host?: string; path?: string }) {
   return (
     <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 13 }}>
@@ -2555,7 +2566,10 @@ export function TerminalView({
   // ── Linux Terminal Style (original) ──
   const user = 'ubuntu';
   const host = 'localhost';
-  const path = cwd || '~';
+  let path = cwd || '~';
+  if (path !== '~') {
+    path = translateWindowsPathToLinux(path);
+  }
 
   return (
     <TerminalChrome title="Terminal" tint="#5af78e">

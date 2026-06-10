@@ -340,7 +340,9 @@ export class CommandRegistry {
       console.log(`[CommandRegistry] Command ${req.id} timed out. Terminating shell.`);
       const active = shell.activeExecution;
       if (active) {
-        active.output += `\n[Timeout: Command produced no output for ${timeoutMs/1000} seconds and was terminated.]`;
+        const timeoutMsg = `\n[Timeout: Command execution timed out after ${timeoutMs/1000} seconds and was terminated.]`;
+        active.output += timeoutMsg;
+        active.onData?.(timeoutMsg);
         const info: CommandInfo = {
           id: active.id,
           command: active.command,

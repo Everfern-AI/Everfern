@@ -1062,9 +1062,32 @@ function normalizeVlmConfig(config: any) {
   return { ...config, vlm };
 }
 
+function normalizeConfig(config: any) {
+  if (!config) return config;
+
+  // 1. Normalize VLM config first
+  config = normalizeVlmConfig(config);
+
+  // 2. Clean up stale local baseUrl for cloud/online providers (Main Provider)
+  if (config.provider && !['ollama', 'lmstudio'].includes(config.provider)) {
+    if (config.baseUrl && (config.baseUrl.includes('localhost') || config.baseUrl.includes('127.0.0.1'))) {
+      delete config.baseUrl;
+    }
+  }
+
+  // 3. Clean up stale local baseUrl for cloud/online providers (VLM Provider)
+  if (config.vlm?.provider && !['ollama', 'lmstudio'].includes(config.vlm.provider)) {
+    if (config.vlm.baseUrl && (config.vlm.baseUrl.includes('localhost') || config.vlm.baseUrl.includes('127.0.0.1'))) {
+      delete config.vlm.baseUrl;
+    }
+  }
+
+  return config;
+}
+
 ipcMain.handle('save-config', async (_event, config) => {
   try {
-    config = normalizeVlmConfig(config);
+    config = normalizeConfig(config);
     const configDir  = path.join(os.homedir(), '.everfern');
     const configPath = path.join(configDir, 'config.json');
 
@@ -1127,7 +1150,7 @@ function loadConfigSync() {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
       const config = JSON.parse(data);
-      const normalizedConfig = normalizeVlmConfig(config);
+      const normalizedConfig = normalizeConfig(config);
       Object.assign(config, normalizedConfig);
 
       // Auto-migrate hf.co/Qwen/Qwen3-VL-2B-Thinking-GGUF -> qwen3-vl:2b

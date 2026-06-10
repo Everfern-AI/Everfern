@@ -890,6 +890,13 @@ export class RollbackManager {
    * @returns Strategy information including reversibility and rollback command
    */
   identifyRollbackStrategy(command: string): RollbackStrategyInfo {
+    if (!command) {
+      return {
+        strategy: 'manual',
+        reversible: false,
+        reason: 'Command is empty or undefined',
+      };
+    }
     const trimmed = command.trim();
 
     // ── Irreversible commands (dangerous operations) ─────────────────

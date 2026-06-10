@@ -934,6 +934,10 @@ export default function ChatPage() {
         const acpApi = (window as any).electronAPI?.acp;
         if (!acpApi?.onLocalExecutionRequest) return;
         acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
+            if (request.conversationId && request.conversationId !== activeConversationIdRef.current) {
+                console.log(`[Frontend] Ignoring local execution request for stale conversation: ${request.conversationId}`);
+                return;
+            }
             if (localAlwaysAllowedRef.current) {
                 respondToLocalExecutionRequest(request, true, true);
                 return;
@@ -1122,6 +1126,7 @@ export default function ChatPage() {
     const liveToolCallsRef = useRef<ToolCallDisplay[]>([]);
     const activeConversationIdRef = useRef<string | null>(null);
     const conversationSwitchSeqRef = useRef(0);
+    const loadPromiseRef = useRef<Promise<void> | null>(null);
     const streamingToolCallsRef = useRef<LiveToolCall[]>([]);
     const streamingContentRef = useRef("");
     const pendingNarrativeRef = useRef<string>("");
@@ -1139,7 +1144,10 @@ export default function ChatPage() {
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
 
-    const applyLiveToolUpdate = useCallback((data: { toolName: string; toolCallId?: string; update: string }) => {
+    const applyLiveToolUpdate = useCallback((data: { toolName: string; toolCallId?: string; update: string; conversationId?: string }) => {
+        if (data.conversationId && data.conversationId !== activeConversationIdRef.current) {
+            return;
+        }
         const update = String(data.update || '').trim();
         if (!update) return;
 
@@ -1967,7 +1975,7 @@ export default function ChatPage() {
             if (type === 'image') {
                 options = { filters: [{ name: 'Images', extensions: ['jpg', 'png', 'webp', 'gif', 'jpeg'] }] };
             } else if (type === 'document') {
-                options = { filters: [{ name: 'Documents', extensions: ['pdf', 'txt', 'md', 'json', 'csv', 'docx'] }] };
+                options = { filters: [{ name: 'All Files', extensions: ['*'] }] };
             }
 
             console.log('[handleAttachment] Opening file picker with options:', options);
@@ -2109,7 +2117,8 @@ export default function ChatPage() {
                 }
                 setShowPermissionModal(true);
             });
-            acpApi.onToolStart(({ toolName, toolArgs, toolCallId }: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string }) => {
+            acpApi.onToolStart(({ toolName, toolArgs, toolCallId, conversationId }: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string; conversationId?: string }) => {
+                if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 if (toolName === 'ask_user_question') {
                     console.log('[Frontend] Received ask_user_question tool_start:', JSON.stringify({ toolName, toolArgs }, null, 2));
                 }
@@ -2161,6 +2170,7 @@ export default function ChatPage() {
             });
             acpApi.onToolUpdate?.(applyLiveToolUpdate);
             acpApi.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
+                if (event?.conversationId && event.conversationId !== activeConversationIdRef.current) return;
                 // Write directly to ref — NO state update, NO re-render
                 const map = subAgentProgressRef.current;
                 if (map.size >= 10 && !map.has(event.toolCallId)) {
@@ -2193,6 +2203,7 @@ export default function ChatPage() {
                 }
             });
             acpApi.onToolCall((record: any) => {
+                if (record?.conversationId && record.conversationId !== activeConversationIdRef.current) return;
                 // Debug: Log the tool call structure
                 if (record.toolName === 'ask_user_question') {
                     console.log('[Frontend] 📥 Received ask_user_question tool call');
@@ -2219,7 +2230,7 @@ export default function ChatPage() {
                     const updated = [...liveToolCallsRef.current];
                     updated[existingIdx] = persistableToolCall({
                         ...updated[existingIdx],
-                        status: 'done' as const,
+                        status: record.result?.success ? 'done' : 'error',
                         output: typeof record.result === 'string'
                             ? record.result
                             : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)),
@@ -2244,14 +2255,16 @@ export default function ChatPage() {
                     }
                 }
             });
-            acpApi.onThought(({ content }: { content: string }) => {
+            acpApi.onThought(({ content, conversationId }: { content: string; conversationId?: string }) => {
+                if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 // Filter out fun startup messages and keep only actual thoughts
                 if (!['🎬 Let\'s do this!'].includes(content)) {
                     streamingThoughtRef.current += content;
                     setStreamingThought(streamingThoughtRef.current);
                 }
             });
-            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens }: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
+            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+                if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 // Calculate pricing using model info if available
                 if (modelInfo) {
                     const promptCost = (promptTokens || 0) * modelInfo.promptPricing;
@@ -2266,6 +2279,7 @@ export default function ChatPage() {
                 setContextTokens({ used: totalTokens, max: 128000 });
             });
             acpApi.onSurfaceAction((data: any) => {
+                if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
                 if (data.action === 'create' || data.action === 'update') {
                     setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
                 } else if (data.action === 'delete') {
@@ -2273,7 +2287,8 @@ export default function ChatPage() {
                 }
             });
 
-            acpApi.onStreamChunk(({ delta, done }: { delta: string; done: boolean }) => {
+            acpApi.onStreamChunk(({ delta, done, conversationId }: { delta: string; done: boolean; conversationId?: string }) => {
+                if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 if (isMessageCommittedRef.current) return;
                 if (!done) {
                     if (delta) {
@@ -2470,7 +2485,10 @@ export default function ChatPage() {
         }
     }, [revertTarget, messages, saveConversation]);
 
-    const handleSend = useCallback((overrideValue?: any, currentMessages?: Message[]) => {
+    const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[]) => {
+        if (loadPromiseRef.current) {
+            await loadPromiseRef.current;
+        }
         console.log('[Frontend handleSend] CALLED - Starting new message send');
         const textToUse = typeof overrideValue === 'string' ? overrideValue : inputValue;
         if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || (isLoading && !bypassLoadingRef.current)) return;
@@ -2544,13 +2562,6 @@ export default function ChatPage() {
                 }
                 if (!api?.stream) throw new Error('No AI provider configured.');
 
-                // CRITICAL: Stop the previous backend stream to prevent its delayed events
-                // (like done: true) from interfering with the new stream.
-                if (api?.stop) {
-                    console.log('[Frontend handleSend] Stopping previous backend stream');
-                    await api.stop();
-                }
-
                 api.onAgentPermissionRequest(() => {
                     const soundUrl = api?.getPermissionSoundUrl?.();
                     if (soundUrl) {
@@ -2562,7 +2573,9 @@ export default function ChatPage() {
                     }
                     setShowPermissionModal(true);
                 });
-                api.onToolStart(({ toolName, toolArgs, toolCallId }: { toolName: string; toolArgs: Record<string, unknown>, toolCallId?: string }) => {
+
+                api.onToolStart(({ toolName, toolArgs, toolCallId, conversationId }: { toolName: string; toolArgs: Record<string, unknown>, toolCallId?: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log('[Frontend] 🔧 Received tool_start:', toolName, 'with args:', toolArgs);
                     console.log('[Frontend] Current liveToolCalls length BEFORE adding:', liveToolCallsRef.current.length);
                     console.log('[Frontend] Current liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, status: tc.status })));
@@ -2626,18 +2639,21 @@ export default function ChatPage() {
 
                 });
                 api.onToolUpdate?.(applyLiveToolUpdate);
-                api.onViewSkill(({ name }: { name: string }) => {
+                api.onViewSkill(({ name, conversationId }: { name: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const display = resolveToolDisplay('view_skill', { name });
                     const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName: 'view_skill', ...display, status: 'done' };
                     liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
                     setLiveToolCalls(liveToolCallsRef.current);
                 });
-                api.onSkillDetected(({ skillName, reason }: { skillName: string; skillDescription: string; reason: string }) => {
+                api.onSkillDetected(({ skillName, reason, conversationId }: { skillName: string; skillDescription: string; reason: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName: 'skill_detected', displayName: `📚 Skill Detected: ${skillName}`, description: reason, status: 'done', args: { skillName } };
                     liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
                     setLiveToolCalls(liveToolCallsRef.current);
                 });
                 api.onSurfaceAction((data: any) => {
+                    if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
                     if (data.action === 'create' || data.action === 'update') {
                         setActiveSurface({ surfaceId: data.surfaceId, catalogId: data.catalogId, components: data.components });
                     } else if (data.action === 'delete') {
@@ -2647,6 +2663,7 @@ export default function ChatPage() {
 
                 // Handle multi-agent subagent events
                 api.onSubagentEvent?.((event: any) => {
+                    if (event?.conversationId && event.conversationId !== activeConversationIdRef.current) return;
                     if (event.type === 'subagent_event') {
                         console.log('[Frontend] 🤖 Subagent event received:', event.subagentEventType, event.agent);
                         subagent.handleStreamEvent(event);
@@ -2658,6 +2675,7 @@ export default function ChatPage() {
                 let accumulated = "";
 
                 api.onToolCall((record: any) => {
+                    if (record?.conversationId && record.conversationId !== activeConversationIdRef.current) return;
                     const recordTcId = record.id || record.toolCallId;
 
                     // Debug: Log the tool call structure
@@ -2804,7 +2822,7 @@ export default function ChatPage() {
                         const updatedToolCalls = liveToolCallsRef.current.map((t, idx) => t.id === existingId
                             ? persistableToolCall({
                                 ...t,
-                                status: 'done' as const,
+                                status: record.result?.success ? 'done' : 'error',
                                 output: typeof record.result === 'string' ? record.result : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)),
                                 data: record.result?.data,
                                 base64Image: record.result?.base64Image,
@@ -2821,14 +2839,16 @@ export default function ChatPage() {
                         }
                     }
                 });
-                api.onThought(({ content }: { content: string }) => {
+                api.onThought(({ content, conversationId }: { content: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     // Filter out fun startup messages, keep only actual thoughts
                     if (!['🎬 Let\'s do this!'].includes(content)) {
                         streamingThoughtRef.current += content;
                         setStreamingThought(streamingThoughtRef.current);
                     }
                 });
-                api.onUsage(({ promptTokens, completionTokens, totalTokens }: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
+                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
 
                     // Calculate pricing using model info if available
@@ -2844,10 +2864,17 @@ export default function ChatPage() {
                     hasReceivedUsageData.current = true;
                     setContextTokens({ used: totalTokens, max: 128000 });
                 });
-                api.onOptima(({ event, details }: { event: string; details: string }) => { setStreamingThought(prev => { const icon = event === 'cache_hit' ? '⚡' : '✂️'; const label = event === 'cache_hit' ? 'Semantic Cache Hit' : 'Prompt Slimmed'; return `> [!NOTE]\n> **Optima**: ${icon} ${label} — ${details}\n\n` + prev; }); });
-                api.onShowArtifact?.(({ name }: { name: string }) => { setSelectedArtifactName(name); setShowArtifacts(true); });
+                api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
+                    setStreamingThought(prev => { const icon = event === 'cache_hit' ? '⚡' : '✂️'; const label = event === 'cache_hit' ? 'Semantic Cache Hit' : 'Prompt Slimmed'; return `> [!NOTE]\n> **Optima**: ${icon} ${label} — ${details}\n\n` + prev; });
+                });
+                api.onShowArtifact?.(({ name, conversationId }: { name: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
+                    setSelectedArtifactName(name); setShowArtifacts(true);
+                });
 
-                api.onShowPlan?.(({ content }: { chatId: string; content: string }) => {
+                api.onShowPlan?.(({ content, conversationId }: { chatId: string; content: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log('[Plan] Execution plan detected, saving accumulated content');
                     if (isMessageCommittedRef.current || isHandlingPlanRef.current) return;
                     isMessageCommittedRef.current = true;
@@ -2913,6 +2940,7 @@ export default function ChatPage() {
 
                 // Listen to sub-agent progress events
                 api.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
+                    if (event?.conversationId && event.conversationId !== activeConversationIdRef.current) return;
                     // Update the ref map directly to prevent full re-renders
                     const newMap = subAgentProgressRef.current;
 
@@ -2952,13 +2980,15 @@ export default function ChatPage() {
                 });
 
                 console.log('[Frontend handleSend] Registering NEW onStreamChunk handler');
-                api.onToolCallStart(({ index, toolName }: { index: number; toolName: string }) => {
+                api.onToolCallStart(({ index, toolName, conversationId }: { index: number; toolName: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const newEntry: LiveToolCall = { index, toolName, partialArguments: '', isStreaming: true };
                     streamingToolCallsRef.current = [...streamingToolCallsRef.current.filter(t => t.index !== index), newEntry];
                     setStreamingToolCalls([...streamingToolCallsRef.current]);
                 });
 
-                api.onToolCallChunk(({ index, argumentsDelta }: { index: number; argumentsDelta: string }) => {
+                api.onToolCallChunk(({ index, argumentsDelta, conversationId }: { index: number; argumentsDelta: string; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const existing = streamingToolCallsRef.current.find(t => t.index === index);
                     if (existing) {
                         const updated = streamingToolCallsRef.current.map(t =>
@@ -2969,7 +2999,8 @@ export default function ChatPage() {
                     }
                 });
 
-                api.onToolCallComplete(({ index, toolName, arguments: args }: { index: number; toolName: string; arguments: Record<string, unknown> }) => {
+                api.onToolCallComplete(({ index, toolName, arguments: args, conversationId }: { index: number; toolName: string; arguments: Record<string, unknown>; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const updated = streamingToolCallsRef.current.map(t =>
                         t.index === index ? { ...t, isStreaming: false } : t
                     );
@@ -2977,7 +3008,8 @@ export default function ChatPage() {
                     setStreamingToolCalls([...updated]);
                 });
 
-                api.onStreamChunk(({ delta, done }: { delta: string; done: boolean }) => {
+                api.onStreamChunk(({ delta, done, conversationId }: { delta: string; done: boolean; conversationId?: string }) => {
+                    if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log(`[Frontend onStreamChunk] delta="${delta}", done=${done}, isMessageCommittedRef=${isMessageCommittedRef.current}`);
                     if (isMessageCommittedRef.current) {
                         console.log('[Frontend onStreamChunk] BLOCKED by isMessageCommittedRef guard');
@@ -3465,9 +3497,10 @@ export default function ChatPage() {
         setSidebarOpen(false); // auto-collapse on mobile/small screens
         resetConversationUiState(id, { clearAttachments: true });
 
-        try {
-            if ((window as any).electronAPI?.history?.load) {
-                const conv = await (window as any).electronAPI.history.load(id);
+        const loadPromise = (async () => {
+            try {
+                if ((window as any).electronAPI?.history?.load) {
+                    const conv = await (window as any).electronAPI.history.load(id);
                 if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
                     return;
                 }
@@ -3541,6 +3574,9 @@ export default function ChatPage() {
                 }
             }
         } catch (err) { console.error("Failed to load conversation:", err); }
+        })();
+        loadPromiseRef.current = loadPromise;
+        await loadPromise;
     };
 
     const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };

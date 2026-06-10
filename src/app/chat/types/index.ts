@@ -83,6 +83,7 @@ export interface SubAgentProgressEvent {
   type: SubAgentProgressEventType;
   toolCallId: string;
   timestamp: string;
+  conversationId?: string;
   stepNumber?: number;
   totalSteps?: number;
   content?: string;

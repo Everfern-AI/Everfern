@@ -279,7 +279,16 @@ export class AIClient {
       }
     }
 
-    let finalBaseUrl = config.baseUrl ?? DEFAULT_URLS[config.provider];
+    let finalBaseUrl = config.baseUrl;
+    // Clean up stale local baseUrl for cloud/online providers
+    if (config.provider && !['ollama', 'lmstudio'].includes(config.provider)) {
+      if (finalBaseUrl && (finalBaseUrl.includes('localhost') || finalBaseUrl.includes('127.0.0.1'))) {
+        finalBaseUrl = undefined;
+      }
+    }
+    if (!finalBaseUrl) {
+      finalBaseUrl = DEFAULT_URLS[config.provider];
+    }
     // Ollama Cloud uses /v1 for OpenAI-compatible API, not /api
     if (config.provider === 'ollama-cloud') {
       if (finalBaseUrl === 'https://ollama.com' || finalBaseUrl === 'https://ollama.com/api') {

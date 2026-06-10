@@ -374,16 +374,16 @@ export function registerAgentHandlers() {
 
     const flushBuffers = () => {
       if (chunkBuffer) {
-        try { streamSender.send('acp:stream-chunk', { delta: chunkBuffer, done: false }); } catch (e) {}
+        try { streamSender.send('acp:stream-chunk', { delta: chunkBuffer, done: false, conversationId: request.conversationId }); } catch (e) {}
         chunkBuffer = '';
       }
       if (thoughtBuffer) {
-        try { streamSender.send('acp:thought', { content: thoughtBuffer }); } catch (e) {}
+        try { streamSender.send('acp:thought', { content: thoughtBuffer, conversationId: request.conversationId }); } catch (e) {}
         thoughtBuffer = '';
       }
       if (toolCallChunkBuffer.length > 0) {
         for (const item of toolCallChunkBuffer) {
-          try { streamSender.send('acp:tool-call-chunk', item); } catch (e) {}
+          try { streamSender.send('acp:tool-call-chunk', { ...item, conversationId: request.conversationId }); } catch (e) {}
         }
         toolCallChunkBuffer = [];
       }
@@ -401,6 +401,9 @@ export function registerAgentHandlers() {
           if (value instanceof Error) return { message: value.message, stack: value.stack };
           return value;
         }));
+        if (safeData && typeof safeData === 'object' && !Array.isArray(safeData)) {
+          safeData.conversationId = request.conversationId;
+        }
         streamSender.send(channel, safeData);
       } catch (err) {
         console.error(`[IPC] Serialization failed for ${channel}:`, err);
@@ -524,7 +527,7 @@ export function registerAgentHandlers() {
           } catch (e) {
             console.error('[AgentIPC] Failed to hide overlay:', e);
           }
-          streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true });
+          streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true, conversationId: request.conversationId });
           break;
         }
 
@@ -690,7 +693,7 @@ export function registerAgentHandlers() {
         const { getComputerOverlayManager } = require('../computer-overlay');
         getComputerOverlayManager().hide();
       } catch (e) {}
-      streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true });
+      streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId });
     }
   });
 }
