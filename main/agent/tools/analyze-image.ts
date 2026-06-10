@@ -18,9 +18,9 @@ function mimeType(ext: string): string {
   return map[ext] || 'image/jpeg';
 }
 
-type VisionClient = AIClient;
+export type VisionClient = AIClient;
 
-function getVisionClient(mainClient: AIClient): { client: VisionClient; isFallback: boolean } | null {
+export function getVisionClient(mainClient: AIClient): { client: VisionClient; isFallback: boolean } | null {
   if (mainClient.supportsVision()) {
     return { client: mainClient, isFallback: false };
   }
@@ -57,7 +57,7 @@ function readAndEncode(filePath: string): { dataUrl: string; b64: string; mime: 
   return { dataUrl: `data:${mime};base64,${b64}`, b64, mime, fileName: path.basename(resolvedPath) };
 }
 
-async function doVisionChat(
+export async function doVisionChat(
   client: VisionClient,
   messages: ChatMessage[],
   onUpdate?: (msg: string) => void,

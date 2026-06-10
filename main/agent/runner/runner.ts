@@ -203,8 +203,29 @@ export class AgentRunner {
         const agentType = (args.agent_type as string) || 'generic';
         const context = (args.context as string) || '';
         const maxDepth = Math.min((args.max_depth as number) || 2, 3);
-        const agentId = crypto.randomUUID();
         const timeout = AGENT_TYPE_TIMEOUT[agentType] ?? 120000;
+        const emitSubagentPhase = (
+          subagentEventType: 'phase_start' | 'phase_complete' | 'phase_error',
+          agentId: string,
+          data: Record<string, unknown> = {},
+        ) => {
+          if (!emitEvent) return;
+          emitEvent({
+            type: 'subagent_event',
+            subagentEventType,
+            phase: agentType,
+            agent: agentType,
+            toolCallId,
+            timestamp: new Date().toISOString(),
+            data: {
+              agentId,
+              description: task,
+              agentType,
+              toolCallId,
+              ...data,
+            },
+          } as any);
+        };
 
         onUpdate?.(`Spawning ${agentType} agent for: ${(task || '').substring(0, 80)}...`);
 
@@ -262,12 +283,34 @@ export class AgentRunner {
             toolCallId: toolCallId
           });
 
+          emitSubagentPhase('phase_start', spawnedAgent.agentId, {
+            initialMetrics: {
+              mode: 'parallel',
+              maxDepth,
+            },
+          });
+
           const child = await spawner.waitForAgent(spawnedAgent.agentId, timeout);
           if (child && child.result) {
+            emitSubagentPhase('phase_complete', spawnedAgent.agentId, {
+              output: child.result,
+              metrics: {
+                status: child.status,
+                durationMs: child.completedAt ? child.completedAt - child.createdAt : undefined,
+              },
+            });
             return { success: true, output: `Sub-agent [${agentType}] (ID: ${spawnedAgent.agentId}):\n${child.result}` };
           }
+          emitSubagentPhase('phase_error', spawnedAgent.agentId, {
+            error: child?.error || 'Unknown error',
+          });
           return { success: false, output: `Sub-agent failed: ${child?.error || 'Unknown error'}` };
         } catch (err) {
+          if (toolCallId) {
+            emitSubagentPhase('phase_error', toolCallId, {
+              error: String(err),
+            });
+          }
           return { success: false, output: `Spawn failed: ${err}` };
         }
       }
@@ -607,7 +650,69 @@ export class AgentRunner {
         let currentContent = '';
         let currentThought = '';
         let currentToolCalls: any[] = [];
+        const currentSubAgentProgress = new Map<string, any[]>();
         let lastSyncTime = 0;
+
+        const sanitizeProgressEventForPersistence = (raw: any, fallbackToolCallId?: string) => {
+          if (!raw || typeof raw !== 'object') return null;
+          const event = {
+            ...raw,
+            toolCallId: raw.toolCallId || fallbackToolCallId || '',
+            timestamp: raw.timestamp || new Date().toISOString(),
+          };
+          if (event.screenshot) {
+            event.screenshot = {
+              ...event.screenshot,
+              base64: '',
+              screenshotPath: event.screenshot.screenshotPath || event.screenshotPath,
+            };
+          }
+          if (!event.screenshotPath && event.screenshot?.screenshotPath) {
+            event.screenshotPath = event.screenshot.screenshotPath;
+          }
+          return event;
+        };
+
+        const mergeProgressEvents = (existing: any[] = [], incoming: any[] = []) => {
+          const seen = new Set<string>();
+          const merged: any[] = [];
+          for (const raw of [...existing, ...incoming]) {
+            const event = sanitizeProgressEventForPersistence(raw);
+            if (!event) continue;
+            const key = [
+              event.toolCallId || '',
+              event.type || '',
+              event.timestamp || '',
+              event.stepNumber ?? '',
+              event.content || '',
+              event.action?.type || '',
+              event.screenshotPath || event.screenshot?.screenshotPath || '',
+            ].join('|');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push(event);
+          }
+          return merged.slice(-100);
+        };
+
+        const attachProgressToToolCall = (toolCall: any) => {
+          const toolCallId = toolCall?.id || toolCall?.toolCallId || toolCall?.tool_call_id;
+          if (!toolCallId) return toolCall;
+          const progress = mergeProgressEvents(toolCall.subAgentProgress || [], currentSubAgentProgress.get(toolCallId) || []);
+          if (progress.length === 0) return toolCall;
+          const screenshotPaths = progress
+            .map((event: any) => event.screenshotPath || event.screenshot?.screenshotPath)
+            .filter((p: any) => typeof p === 'string' && p.length > 0);
+          const existingPaths = Array.isArray(toolCall.data?.screenshotPaths) ? toolCall.data.screenshotPaths : [];
+          const mergedPaths = Array.from(new Set([...existingPaths, ...screenshotPaths]));
+          return {
+            ...toolCall,
+            subAgentProgress: progress,
+            data: mergedPaths.length > 0
+              ? { ...(toolCall.data || {}), screenshotPaths: mergedPaths }
+              : toolCall.data,
+          };
+        };
 
         let isSaving = false;
         let pendingSave = false;
@@ -634,7 +739,7 @@ export class AgentRunner {
                   role: 'assistant',
                   content: currentContent,
                   thought: currentThought,
-                  toolCalls: currentToolCalls,
+                  toolCalls: currentToolCalls.map(attachProgressToToolCall),
                   missionTimeline: missionTracker.getTimeline(),
                 }
               ] as any,
@@ -776,14 +881,30 @@ export class AgentRunner {
                 durationTracker.onThoughtStart();
                 await syncToDb();
               } else if (event.type === 'tool_call') {
-                currentToolCalls.push({
-                  id: (event as any).toolCall.toolCallId || crypto.randomUUID(),
+                currentToolCalls.push(attachProgressToToolCall({
+                  id: (event as any).toolCall.toolCallId || (event as any).toolCall.id || crypto.randomUUID(),
                   toolName: (event as any).toolCall.toolName,
                   args: (event as any).toolCall.args,
                   result: (event as any).toolCall.result,
                   status: 'done'
-                });
+                }));
                 await syncToDb(true); // Force sync on tool completion
+              } else if (event.type === 'subagent-progress') {
+                const toolCallId = String((event as any).toolCallId || (event as any).data?.toolCallId || '');
+                if (toolCallId) {
+                  const progressEvent = sanitizeProgressEventForPersistence(
+                    { ...((event as any).data || {}), toolCallId },
+                    toolCallId
+                  );
+                  if (progressEvent) {
+                    currentSubAgentProgress.set(
+                      toolCallId,
+                      mergeProgressEvents(currentSubAgentProgress.get(toolCallId) || [], [progressEvent])
+                    );
+                    currentToolCalls = currentToolCalls.map(attachProgressToToolCall);
+                    await syncToDb();
+                  }
+                }
               }
 
               yield event;

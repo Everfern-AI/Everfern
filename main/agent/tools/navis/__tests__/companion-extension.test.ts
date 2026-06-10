@@ -57,6 +57,10 @@ describe('Navis companion extension', () => {
       expect(serviceWorker).toContain('chrome.action.onClicked.addListener');
       expect(serviceWorker).toContain('function renderEverFernNavisOverlay');
       expect(serviceWorker).toContain('everfern-navis-page-overlay');
+      expect(serviceWorker).toContain('function renderEverFernNavisMouse');
+      expect(serviceWorker).toContain('everfern-navis-mouse');
+      expect(serviceWorker).toContain('lastMouseByTab');
+      expect(serviceWorker).toContain('syncMouseToTab');
       expect(serviceWorker).toContain("syncOverlayToTabs('show')");
       expect(serviceWorker).toContain('EverFern Navis live task panel');
       expect(sidePanelHtml).toContain('Live thinking');

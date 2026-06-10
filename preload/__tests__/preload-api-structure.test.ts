@@ -20,12 +20,16 @@ describe('Preload API Structure', () => {
     // Verify the method is defined in the acp object
     expect(preloadContent).toContain('onSubAgentProgress:');
     expect(preloadContent).toContain("ipcRenderer.on('acp:sub-agent-progress'");
+    expect(preloadContent).toContain('onSubagentEvent:');
+    expect(preloadContent).toContain("ipcRenderer.on('acp:subagent-event'");
 
     // Verify the TypeScript type definition exists
     expect(preloadContent).toContain('onSubAgentProgress: (cb: (event: any) => void) => void;');
+    expect(preloadContent).toContain('onSubagentEvent: (cb: (event: any) => void) => void;');
 
     // Verify cleanup is implemented
     expect(preloadContent).toContain("removeAllListeners('acp:sub-agent-progress')");
+    expect(preloadContent).toContain("removeAllListeners('acp:subagent-event')");
   });
 
   it('should have correct method signature in TypeScript types', () => {

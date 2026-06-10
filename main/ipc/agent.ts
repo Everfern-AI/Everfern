@@ -418,8 +418,70 @@ export function registerAgentHandlers() {
       const msgId = request.assistantMessageId || `draft-${Date.now()}`;
       let draftContent = '';
       let draftToolCalls: any[] = [];
+      const draftSubAgentProgress = new Map<string, any[]>();
       let lastDraftSave = 0;
       const DRAFT_INTERVAL_MS = 3000;
+
+      const sanitizeDraftProgressEvent = (raw: any, fallbackToolCallId?: string) => {
+        if (!raw || typeof raw !== 'object') return null;
+        const event = {
+          ...raw,
+          toolCallId: raw.toolCallId || fallbackToolCallId || '',
+          timestamp: raw.timestamp || new Date().toISOString(),
+        };
+        if (event.screenshot) {
+          event.screenshot = {
+            ...event.screenshot,
+            base64: '',
+            screenshotPath: event.screenshot.screenshotPath || event.screenshotPath,
+          };
+        }
+        if (!event.screenshotPath && event.screenshot?.screenshotPath) {
+          event.screenshotPath = event.screenshot.screenshotPath;
+        }
+        return event;
+      };
+
+      const mergeDraftProgress = (existing: any[] = [], incoming: any[] = []) => {
+        const seen = new Set<string>();
+        const merged: any[] = [];
+        for (const raw of [...existing, ...incoming]) {
+          const event = sanitizeDraftProgressEvent(raw);
+          if (!event) continue;
+          const key = [
+            event.toolCallId || '',
+            event.type || '',
+            event.timestamp || '',
+            event.stepNumber ?? '',
+            event.content || '',
+            event.action?.type || '',
+            event.screenshotPath || event.screenshot?.screenshotPath || '',
+          ].join('|');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(event);
+        }
+        return merged.slice(-100);
+      };
+
+      const attachDraftProgress = (toolCall: any) => {
+        const toolCallId = toolCall?.id || toolCall?.toolCallId || toolCall?.tool_call_id;
+        if (!toolCallId) return toolCall;
+        const progress = mergeDraftProgress(toolCall.subAgentProgress || [], draftSubAgentProgress.get(toolCallId) || []);
+        if (progress.length === 0) return toolCall;
+        const screenshotPaths = progress
+          .map((event: any) => event.screenshotPath || event.screenshot?.screenshotPath)
+          .filter((p: any) => typeof p === 'string' && p.length > 0);
+        const existingPaths = Array.isArray(toolCall.data?.screenshotPaths) ? toolCall.data.screenshotPaths : [];
+        const mergedPaths = Array.from(new Set([...existingPaths, ...screenshotPaths]));
+        return {
+          ...toolCall,
+          subAgentProgress: progress,
+          data: mergedPaths.length > 0
+            ? { ...(toolCall.data || {}), screenshotPaths: mergedPaths }
+            : toolCall.data,
+        };
+      };
 
       const saveDraft = async () => {
         if (!convId || (!draftContent && draftToolCalls.length === 0)) return;
@@ -429,7 +491,7 @@ export function registerAgentHandlers() {
              (id, conversation_id, role, content, tool_calls, order_index, created_at)
              VALUES (?, ?, 'assistant', ?, ?, 9999, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
             [msgId, convId, draftContent,
-             draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls) : null,
+             draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls.map(attachDraftProgress)) : null,
              msgId, new Date().toISOString()]
           );
           // Also ensure the conversation row exists
@@ -489,7 +551,10 @@ export function registerAgentHandlers() {
           safeSend('acp:tool-call', streamEvent.toolCall);
           // Track tool call in draft for persistence
           if (streamEvent.toolCall) {
-            const tc = streamEvent.toolCall;
+            const tc = attachDraftProgress({
+              ...streamEvent.toolCall,
+              id: streamEvent.toolCall.id || streamEvent.toolCall.toolCallId || streamEvent.toolCall.tool_call_id,
+            });
             const existingIdx = draftToolCalls.findIndex(t => t.id === tc.id);
             if (existingIdx >= 0) {
               draftToolCalls[existingIdx] = { ...draftToolCalls[existingIdx], ...tc };
@@ -579,6 +644,21 @@ export function registerAgentHandlers() {
           reflectAndRemember(history, userInput, fullResponse, client);
         } else if (streamEvent.type === 'subagent-progress') {
           const progressPayload = streamEvent.data !== undefined ? streamEvent.data : streamEvent;
+          const toolCallId = String((streamEvent as any).toolCallId || progressPayload?.toolCallId || '');
+          if (toolCallId) {
+            const event = sanitizeDraftProgressEvent({ ...progressPayload, toolCallId }, toolCallId);
+            if (event) {
+              draftSubAgentProgress.set(
+                toolCallId,
+                mergeDraftProgress(draftSubAgentProgress.get(toolCallId) || [], [event])
+              );
+              draftToolCalls = draftToolCalls.map(attachDraftProgress);
+              if (Date.now() - lastDraftSave > DRAFT_INTERVAL_MS) {
+                lastDraftSave = Date.now();
+                saveDraft().catch(() => {});
+              }
+            }
+          }
           safeSend('acp:sub-agent-progress', progressPayload);
         } else if (streamEvent.type === 'local_execution_request') {
           // Forward local execution request to renderer

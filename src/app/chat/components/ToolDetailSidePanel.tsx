@@ -125,7 +125,7 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'todo_write' || n.includes('todo_write')) return ToolType.TODO_WRITE;
   if (n === 'read' || n === 'read_file' || n === 'view_file' || n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
   if (n === 'local_permission') return ToolType.LOCAL_PERMISSION;
-  if (n === 'analyze_image' || n.includes('analyze_image')) return ToolType.IMAGE_ANALYSIS;
+  if (n === 'analyze_image' || n.includes('analyze_image') || n === 'visual_classification_sheet') return ToolType.IMAGE_ANALYSIS;
   return ToolType.GENERIC;
 }
 
@@ -189,6 +189,7 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n === 'pptx_generator') return { Icon: FileIcon, label: 'Presentation' };
   if (n === 'todo_write' || n.includes('todo_write')) return { Icon: CheckCircle, label: 'Todo List' };
   if (n === 'local_permission') return { Icon: Shield, label: 'Permission' };
+  if (n === 'visual_classification_sheet') return { Icon: Image, label: 'Visual Sheet' };
   if (n === 'analyze_image' || n.includes('analyze_image')) return { Icon: Image, label: 'Image Analysis' };
   return { Icon: Braces, label: 'Generic Tool' };
 }
@@ -271,6 +272,7 @@ function ToolTabIcon({ toolName }: { toolName?: string }) {
   if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return <FolderOpenIcon style={{ width: 13, height: 13 }} />;
   if (n.includes('web_search') || n.includes('remote_web_search')) return <Search size={13} />;
   if (n === 'pptx_generator') return <FileIcon size={13} />;
+  if (n === 'visual_classification_sheet') return <Image size={13} />;
   if (n.includes('plan')) return <CheckCircle size={13} />;
   if (n.includes('todo')) return <CheckCircle size={13} />;
   return <FileIcon size={13} />;
@@ -4910,16 +4912,61 @@ function LocalPermissionView({
 /* ============================================================
    IMAGE ANALYSIS VIEW
    ============================================================ */
-function ImageViewer({ dataUrl, fileName }: { dataUrl: string; fileName: string }) {
+type ImagePreviewItem = {
+  fileName: string;
+  dataUrl?: string;
+  path?: string;
+  subtitle?: string;
+  badge?: string;
+};
+
+function imagePathBasename(value: string): string {
+  return String(value || '').split(/[/\\]/).pop() || String(value || '');
+}
+
+function hasImageExtension(value: string): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp|avif|ico|svg|tiff?)$/i.test(String(value || '').split(/[?#]/)[0]);
+}
+
+function asImageDataUrl(value: string, fallbackMime = 'image/jpeg'): string {
+  if (!value) return '';
+  if (/^data:image\//i.test(value)) return value;
+  const clean = value.includes(',') && /^data:/i.test(value) ? value.substring(value.indexOf(',') + 1) : value;
+  return `data:${fallbackMime};base64,${clean}`;
+}
+
+function uniqueImageItems(items: ImagePreviewItem[]): ImagePreviewItem[] {
+  const seen = new Set<string>();
+  const result: ImagePreviewItem[] = [];
+  for (const item of items) {
+    const key = item.path || item.dataUrl || item.fileName;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function ImageViewer({ image, variant = 'image' }: { image: ImagePreviewItem; variant?: 'image' | 'sheet' }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
+  const dataUrl = image.dataUrl || '';
+  const fileName = image.fileName || imagePathBasename(image.path || 'Image');
+  const isSheet = variant === 'sheet';
 
   return (
     <div style={{
       borderRadius: T.r10, overflow: 'hidden', background: T.surface,
-      border: `1px solid ${T.borderSubtle}`,
+      border: `1px solid ${T.border}`,
+      boxShadow: CLAY.shadow,
     }}>
-      <div style={{ position: 'relative', background: T.surfaceRaised, aspectRatio: '16/10', overflow: 'hidden' }}>
+      <div style={{
+        position: 'relative',
+        background: isSheet ? '#f4efe6' : T.surfaceRaised,
+        minHeight: isSheet ? 220 : undefined,
+        aspectRatio: isSheet ? undefined : '16/10',
+        overflow: 'hidden',
+      }}>
         {loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <motion.div
@@ -4932,7 +4979,13 @@ function ImageViewer({ dataUrl, fileName }: { dataUrl: string; fileName: string 
           <img
             src={dataUrl}
             alt={fileName}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: loading ? 'none' : 'block' }}
+            style={{
+              width: '100%',
+              height: isSheet ? 'auto' : '100%',
+              maxHeight: isSheet ? 720 : undefined,
+              objectFit: 'contain',
+              display: loading ? 'none' : 'block',
+            }}
             onLoad={() => setLoading(false)}
             onError={() => { setLoading(false); setErr(true); }}
           />
@@ -4943,66 +4996,156 @@ function ImageViewer({ dataUrl, fileName }: { dataUrl: string; fileName: string 
           </div>
         )}
       </div>
-      <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderSubtle}` }}>
-        <span style={{ fontSize: 12, fontWeight: 400, color: T.text, fontFamily: T.mono }}>{fileName}</span>
+      <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 400, color: T.text, fontFamily: T.mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {fileName}
+          </div>
+          {(image.subtitle || image.path) && (
+            <div style={{ fontSize: 10.5, color: T.textMuted, fontFamily: T.sans, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+              {image.subtitle || image.path}
+            </div>
+          )}
+        </div>
+        {image.badge && (
+          <span style={{
+            flexShrink: 0,
+            fontSize: 10,
+            color: T.textSecondary,
+            background: T.surfaceRaised,
+            border: `1px solid ${T.border}`,
+            borderRadius: 999,
+            padding: '3px 8px',
+            fontFamily: T.sans,
+          }}>
+            {image.badge}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 function ImageAnalysisView({
+  title = 'Image Analysis',
   question,
   output,
   imageCount,
+  sheetCount,
+  directory,
+  outputDir,
+  manifestPath,
   fileNames,
   images = [],
+  isSheet = false,
 }: {
+  title?: string;
   question?: string;
   output?: string;
   imageCount?: number;
+  sheetCount?: number;
+  directory?: string;
+  outputDir?: string;
+  manifestPath?: string;
   fileNames?: string[];
-  images?: { fileName: string; dataUrl: string }[];
+  images?: ImagePreviewItem[];
+  isSheet?: boolean;
 }) {
-  const [localImages, setLocalImages] = useState<{ fileName: string; dataUrl: string }[]>(images);
+  const [localImages, setLocalImages] = useState<ImagePreviewItem[]>(() => uniqueImageItems(images));
 
   useEffect(() => {
-    if (images.length > 0) {
-      setLocalImages(images);
-      return;
-    }
-    if (!fileNames || fileNames.length === 0) return;
+    const seededImages = uniqueImageItems(images);
+    setLocalImages(seededImages);
+
+    const pathsFromSeed = seededImages
+      .filter(img => !img.dataUrl && img.path)
+      .map(img => img.path as string);
+    const pathsToLoad = Array.from(new Set([
+      ...pathsFromSeed,
+      ...(fileNames || []),
+    ].filter(hasImageExtension)));
+
+    if (pathsToLoad.length === 0) return;
 
     let cancelled = false;
     (async () => {
-      const api = (window as any).electronAPI?.screenshot;
-      if (!api?.load) return;
-      const results: { fileName: string; dataUrl: string }[] = [];
-      for (const name of fileNames) {
+      const systemApi = (window as any).electronAPI?.system;
+      const screenshotApi = (window as any).electronAPI?.screenshot;
+      const results: ImagePreviewItem[] = [];
+      for (const name of pathsToLoad) {
         try {
-          const result = await api.load(name);
+          let result = await systemApi?.readImageDataUrl?.(name);
+          if (!result?.dataUrl) result = await screenshotApi?.load?.(name);
           if (cancelled) return;
-          if (result?.dataUrl) results.push({ fileName: name, dataUrl: result.dataUrl });
+          if (result?.dataUrl) {
+            const existing = seededImages.find(img => img.path === name);
+            results.push({
+              fileName: existing?.fileName || imagePathBasename(name),
+              path: name,
+              dataUrl: result.dataUrl,
+              subtitle: existing?.subtitle,
+              badge: existing?.badge || (isSheet ? `Sheet ${results.length + 1}` : undefined),
+            });
+          }
         } catch { /* skip */ }
       }
-      if (!cancelled && results.length > 0) setLocalImages(results);
+      if (!cancelled && results.length > 0) {
+        const loadedByPath = new Map(results.map(item => [item.path, item]));
+        setLocalImages(uniqueImageItems([
+          ...seededImages.map(img => img.path && loadedByPath.has(img.path) ? loadedByPath.get(img.path)! : img),
+          ...results,
+        ]));
+      }
     })();
     return () => { cancelled = true; };
-  }, [fileNames, images]);
+  }, [fileNames, images, isSheet]);
+
+  const metaRows = [
+    directory ? { label: 'Source', value: directory } : null,
+    outputDir ? { label: 'Output folder', value: outputDir } : null,
+    manifestPath ? { label: 'Manifest', value: manifestPath } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const summaryParts = [
+    imageCount !== undefined ? `${imageCount} image${imageCount === 1 ? '' : 's'}` : null,
+    sheetCount !== undefined ? `${sheetCount} sheet${sheetCount === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
         <h3 style={{ fontSize: 13.5, fontWeight: 400, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
-          Image Analysis
+          {title}
         </h3>
-        {imageCount !== undefined && (
+        {summaryParts.length > 0 && (
           <p style={{ fontSize: 12, color: T.textMuted, margin: 0, fontFamily: T.sans }}>
-            {imageCount} image{imageCount !== 1 ? 's' : ''} analyzed
+            {summaryParts.join(' • ')} {isSheet ? 'prepared for vision' : 'analyzed'}
           </p>
         )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {metaRows.length > 0 && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {metaRows.map(row => (
+              <div key={row.label} style={{
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: T.r10,
+                padding: '10px 14px',
+                boxShadow: CLAY.shadow,
+              }}>
+                <p style={{ fontSize: 9.5, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 5px', fontFamily: T.sans }}>
+                  {row.label}
+                </p>
+                <p style={{ fontSize: 11.5, color: T.text, margin: 0, fontFamily: T.mono, overflowWrap: 'anywhere', lineHeight: 1.45 }}>
+                  {row.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Question */}
         {question && (
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '14px 18px' }}>
@@ -5017,13 +5160,33 @@ function ImageAnalysisView({
         {localImages.length > 0 && (
           <div>
             <p style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 10px', fontFamily: T.sans }}>
-              Images
+              {isSheet ? 'Contact Sheets' : 'Images'}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isSheet ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 10,
+            }}>
               {localImages.map((img, i) => (
-                <ImageViewer key={`${img.fileName}-${i}`} dataUrl={img.dataUrl} fileName={img.fileName} />
+                img.dataUrl ? (
+                  <ImageViewer key={`${img.fileName}-${i}`} image={img} variant={isSheet ? 'sheet' : 'image'} />
+                ) : null
               ))}
             </div>
+          </div>
+        )}
+
+        {localImages.length === 0 && (fileNames?.some(hasImageExtension) || isSheet) && (
+          <div style={{
+            background: T.surface,
+            border: `1px solid ${T.border}`,
+            borderRadius: T.r10,
+            padding: '18px',
+            color: T.textMuted,
+            fontSize: 12,
+            fontFamily: T.sans,
+          }}>
+            Image previews are not loaded yet. Stored paths are available above and in the tool output.
           </div>
         )}
 
@@ -5067,19 +5230,66 @@ function extractLocalPermissionData(tc: any) {
    ============================================================ */
 function extractImageAnalysisData(tc: any) {
   try {
-    const images: { fileName: string; dataUrl: string }[] = [];
-    const rawImages = tc.data?.images || tc.result?.data?.images || [];
+    const toolName = String(tc.toolName || '').toLowerCase();
+    const isSheet = toolName === 'visual_classification_sheet';
+    const data = tc.data || tc.result?.data || {};
+    const args = tc.args || {};
+    const images: ImagePreviewItem[] = [];
+    const rawImages = data.images || [];
     if (Array.isArray(rawImages)) {
       for (const img of rawImages) {
-        if (img?.dataUrl && img?.fileName) images.push({ fileName: img.fileName, dataUrl: img.dataUrl });
+        if (img?.dataUrl && (img?.fileName || img?.path)) {
+          images.push({
+            fileName: img.fileName || imagePathBasename(img.path),
+            path: img.path,
+            dataUrl: img.dataUrl,
+            badge: isSheet ? `Sheet ${images.length + 1}` : undefined,
+          });
+        }
       }
     }
+
+    const sheets = Array.isArray(data.sheets) ? data.sheets : [];
+    for (const sheet of sheets) {
+      const pathValue = sheet?.path || '';
+      const dataUrl = sheet?.dataUrl;
+      if (!pathValue && !dataUrl) continue;
+      images.push({
+        fileName: sheet?.fileName || imagePathBasename(pathValue) || `Sheet ${images.length + 1}`,
+        path: pathValue,
+        dataUrl,
+        subtitle: pathValue ? `IDs ${sheet?.firstId ?? '?'}-${sheet?.lastId ?? '?'}` : undefined,
+        badge: `Sheet ${sheet?.sheetIndex !== undefined ? Number(sheet.sheetIndex) + 1 : images.length + 1}`,
+      });
+    }
+
+    if ((tc.base64Image || data.base64Image) && images.length === 0) {
+      images.push({
+        fileName: isSheet ? 'visual-classification-sheet.jpg' : 'analysis-image.jpg',
+        dataUrl: asImageDataUrl(tc.base64Image || data.base64Image),
+        badge: isSheet ? 'Sheet 1' : undefined,
+      });
+    }
+
+    const rawFileNames = [
+      ...(Array.isArray(data.fileNames) ? data.fileNames : []),
+      ...(sheets.map((sheet: any) => sheet?.path).filter(Boolean)),
+      ...(Array.isArray(args.images) ? args.images : []),
+      ...(args.imagePath ? [args.imagePath] : []),
+    ].filter(Boolean);
+
     return {
-      question: tc.args?.question || '',
-      output: tc.output || tc.result?.output || '',
-      imageCount: tc.data?.imageCount || tc.result?.data?.imageCount || images.length || tc.args?.images?.length || (tc.args?.imagePath ? 1 : 0),
-      fileNames: tc.data?.fileNames || tc.result?.data?.fileNames || (tc.args?.images ? [...tc.args.images] : tc.args?.imagePath ? [tc.args.imagePath] : []),
-      images,
+      title: isSheet ? 'Visual Classification Sheet' : 'Image Analysis',
+      question: args.question || '',
+      output: tc.output || tc.result?.output || data.visionOutput || '',
+      imageCount: data.imageCount || images.length || args.images?.length || (args.imagePath ? 1 : 0),
+      sheetCount: data.sheetCount || (sheets.length || undefined),
+      directory: data.directory || args.directory || '',
+      outputDir: data.outputDir || '',
+      manifestPath: data.manifestPath || '',
+      fileNames: Array.from(new Set(rawFileNames)),
+      images: uniqueImageItems(images),
+      isSheet,
     };
   } catch { return null; }
 }

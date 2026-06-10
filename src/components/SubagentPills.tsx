@@ -33,6 +33,10 @@ const T = {
 };
 
 const STANDARD_SUBAGENTS = [
+  { agent: 'coding-specialist', label: 'Coding', icon: Code, color: T.green, bgFaint: T.greenFaint, desc: 'Implements delegated coding work.' },
+  { agent: 'web-explorer', label: 'Web', icon: Eye, color: T.blue, bgFaint: T.blueFaint, desc: 'Browses pages and extracts live information.' },
+  { agent: 'data-analyst', label: 'Data', icon: FileText, color: T.purple, bgFaint: T.purpleFaint, desc: 'Analyzes files, tables, and datasets.' },
+  { agent: 'generic', label: 'Sub-agent', icon: Zap, color: '#64748b', bgFaint: 'rgba(100,116,139,0.08)', desc: 'Handles delegated parallel work.' },
   { agent: 'exploration_agent', label: 'Exploration', icon: Eye, color: T.blue, bgFaint: T.blueFaint, desc: 'Scans the codebase for architecture, files, and templates.' },
   { agent: 'planning_agent', label: 'Planning', icon: FileText, color: T.purple, bgFaint: T.purpleFaint, desc: 'Constructs the technical implementation plan.' },
   { agent: 'worker_agent', label: 'Worker', icon: Code, color: T.green, bgFaint: T.greenFaint, desc: 'Writes the code, applies patches, and creates files.' },

@@ -16,6 +16,7 @@ export interface SubagentPhase {
   name: string;
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
   agent: string;
+  agentId?: string;
   description: string;
   startTime?: number;
   endTime?: number;
@@ -63,6 +64,30 @@ const T = {
    ============================================================ */
 
 const AGENTS_META: Record<string, { icon: React.ComponentType<{ size?: number; strokeWidth?: number }>, label: string, description: string, color: string }> = {
+  'coding-specialist': {
+    icon: Code,
+    label: 'Coding specialist',
+    description: 'Implements code',
+    color: T.green,
+  },
+  'web-explorer': {
+    icon: Search,
+    label: 'Web explorer',
+    description: 'Browses and extracts',
+    color: T.blue,
+  },
+  'data-analyst': {
+    icon: FileText,
+    label: 'Data analyst',
+    description: 'Processes data',
+    color: '#8b5cf6',
+  },
+  generic: {
+    icon: Bot,
+    label: 'Sub-agent',
+    description: 'Handles delegated work',
+    color: '#64748b',
+  },
   exploration_agent: {
     icon: Eye,
     label: 'Exploration',

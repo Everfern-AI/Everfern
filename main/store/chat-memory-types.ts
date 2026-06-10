@@ -30,6 +30,8 @@ export interface ToolCall {
   status?: 'pending' | 'success' | 'error';
   /** Error message if the tool call failed */
   error?: string;
+  /** Nested sub-agent/decomposer progress events used by the agent timeline */
+  subAgentProgress?: any[];
 }
 
 /**

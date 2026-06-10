@@ -5,6 +5,24 @@ import * as os from 'os';
 import { memorySaveTool } from '../agent/tools/memory-save';
 import { ensureDockerContainer } from '../agent/tools/linux-vm-executor';
 
+function imageMimeFromPath(filePath: string): string | null {
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    avif: 'image/avif',
+    ico: 'image/x-icon',
+    svg: 'image/svg+xml',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+  };
+  return map[ext] || null;
+}
+
 export function registerSystemHandlers() {
   ipcMain.handle('system:checkWSL', async () => {
     try {
@@ -417,6 +435,45 @@ export function registerSystemHandlers() {
       }
     }
     return { success: false, error: 'No URL provided' };
+  });
+
+  ipcMain.handle('system:read-image-data-url', async (_event, filePath: string) => {
+    try {
+      if (!filePath || typeof filePath !== 'string') {
+        return { success: false, error: 'No image path provided' };
+      }
+
+      const resolved = path.resolve(filePath);
+      const mimeType = imageMimeFromPath(resolved);
+      if (!mimeType) {
+        return { success: false, error: 'Unsupported image file type' };
+      }
+
+      if (!fs.existsSync(resolved)) {
+        return { success: false, error: 'File not found' };
+      }
+
+      const stat = fs.statSync(resolved);
+      const maxPreviewBytes = 32 * 1024 * 1024;
+      if (!stat.isFile()) {
+        return { success: false, error: 'Path is not a file' };
+      }
+      if (stat.size > maxPreviewBytes) {
+        return { success: false, error: 'Image is too large to preview inline', size: stat.size };
+      }
+
+      const base64 = fs.readFileSync(resolved).toString('base64');
+      return {
+        success: true,
+        path: resolved,
+        mimeType,
+        size: stat.size,
+        dataUrl: `data:${mimeType};base64,${base64}`,
+      };
+    } catch (err: any) {
+      console.error('[IPC] system:read-image-data-url error:', err);
+      return { success: false, error: err.message || String(err) };
+    }
   });
 
   ipcMain.handle('system:fetch-metadata', async (_event, url: string) => {

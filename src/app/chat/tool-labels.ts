@@ -251,6 +251,20 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       };
     }
 
+    case 'visual_classification_sheet': {
+      const directory = typeof args?.directory === 'string' ? args.directory.trim() : '';
+      const question = typeof args?.question === 'string' ? args.question.trim() : '';
+      return {
+        icon: React.createElement(CameraIcon, { width: 16, height: 16 }),
+        label: directory
+          ? `${question ? 'Classifying sheet' : 'Creating image sheet'}: ${truncate(basename(directory), 60)}`
+          : question
+            ? 'Classifying image sheet'
+            : 'Creating image sheet',
+        color: '#8b5cf6'
+      };
+    }
+
     case 'mcp_call': {
       const server = typeof args?.server === 'string' ? args.server.trim() : '';
       const tool = typeof args?.tool === 'string' ? args.tool.trim() : '';

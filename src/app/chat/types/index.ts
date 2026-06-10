@@ -72,7 +72,12 @@ export type SubAgentProgressEventType =
   | 'action'     // Action execution
   | 'screenshot' // Screenshot captured
   | 'complete'   // Sub-agent completed
-  | 'abort';     // Sub-agent aborted
+  | 'abort'      // Sub-agent aborted
+  | 'error'
+  | 'branch_start'
+  | 'branch_update'
+  | 'branch_complete'
+  | 'branch_abort';
 
 export interface SubAgentProgressEvent {
   type: SubAgentProgressEventType;
@@ -90,11 +95,23 @@ export interface SubAgentProgressEvent {
     base64: string;
     width: number;
     height: number;
+    screenshotPath?: string;
   };
+  screenshotPath?: string;
   metadata?: {
     model?: string;
     provider?: string;
     [key: string]: unknown;
+  };
+  timelineBranch?: {
+    parentId?: string;
+    parentSessionKey?: string;
+    agentType?: 'web-explorer' | 'navis' | 'computer-use' | 'research' | 'coding-specialist' | 'data-analyst';
+    branchLevel?: number;
+    visualPosition?: { x: number; y: number };
+    branchStatus?: 'pending' | 'running' | 'completed' | 'failed' | 'aborted';
+    taskDescription?: string;
+    sessionId?: string;
   };
 }
 

@@ -118,6 +118,7 @@ let reconnectTimer = null;
 let navisGroupId = -1;
 const navisTabs = new Map();
 const lastRefsByTab = new Map();
+const lastMouseByTab = new Map();
 const panelPorts = new Set();
 const navisEvents = [];
 let restoredPanelState = false;
@@ -569,6 +570,67 @@ function renderEverFernNavisOverlay(state, options) {
   return { success: true, visible: true };
 }
 
+function renderEverFernNavisMouse(point) {
+  const hostId = 'everfern-navis-mouse';
+  const x = Math.max(18, Math.min(window.innerWidth - 18, Number(point && point.x) || Math.round(window.innerWidth - 430)));
+  const y = Math.max(18, Math.min(window.innerHeight - 18, Number(point && point.y) || 96));
+  const label = String(point && point.label || 'Navis');
+  let host = document.getElementById(hostId);
+  if (!host) {
+    host = document.createElement('div');
+    host.id = hostId;
+    host.style.position = 'fixed';
+    host.style.zIndex = '2147483647';
+    host.style.pointerEvents = 'none';
+    host.style.width = '1px';
+    host.style.height = '1px';
+    document.documentElement.appendChild(host);
+  }
+  host.style.left = x + 'px';
+  host.style.top = y + 'px';
+  const root = host.shadowRoot || host.attachShadow({ mode: 'open' });
+  root.innerHTML = [
+    '<style>',
+    ':host{all:initial}',
+    '.ef-mouse{position:absolute;left:0;top:0;transform:translate(-2px,-1px);filter:drop-shadow(0 10px 18px rgba(31,29,26,.24));animation:efMouseSway 1.8s ease-in-out infinite}',
+    '.ef-pointer{position:relative;width:34px;height:34px}',
+    '.ef-pointer svg{position:absolute;left:0;top:0;width:26px;height:26px;overflow:visible}',
+    '.ef-ring{position:absolute;left:-11px;top:-11px;width:34px;height:34px;border-radius:999px;border:2px solid rgba(59,130,246,.72);box-shadow:0 0 18px rgba(59,130,246,.38),inset 0 0 12px rgba(124,58,237,.18);animation:efClickRing 900ms ease-out infinite}',
+    '.ef-label{position:absolute;left:18px;top:24px;height:22px;padding:0 8px;border:1px solid rgba(214,204,188,.92);border-radius:999px;background:rgba(255,254,251,.92);color:#1f1d1a;font:700 10.5px/22px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:nowrap;box-shadow:0 8px 20px rgba(31,29,26,.12)}',
+    '@keyframes efClickRing{0%{transform:scale(.52);opacity:.95}70%{transform:scale(1.18);opacity:.16}100%{transform:scale(1.34);opacity:0}}',
+    '@keyframes efMouseSway{0%,100%{transform:translate(-2px,-1px) rotate(-2deg)}50%{transform:translate(1px,1px) rotate(2deg)}}',
+    '</style>',
+    '<div class="ef-mouse" aria-hidden="true">',
+    '<div class="ef-pointer">',
+    '<span class="ef-ring"></span>',
+    '<svg viewBox="0 0 32 32"><defs><linearGradient id="efMouseGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".46" stop-color="#8ee7ff"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><path d="M6 3 L25 18 L16.5 19.4 L21 29 L16.2 31 L11.8 21.4 L6 27 Z" fill="url(#efMouseGrad)" stroke="#1f1d1a" stroke-width="1.35" stroke-linejoin="round"/></svg>',
+    '<span class="ef-label">' + label.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])) + '</span>',
+    '</div>',
+    '</div>'
+  ].join('');
+  clearTimeout(window.__everFernNavisMouseTimer);
+  window.__everFernNavisMouseTimer = setTimeout(() => {
+    const node = document.getElementById(hostId);
+    if (node) node.remove();
+  }, Number(point && point.durationMs) || 4200);
+  return { success: true, x, y };
+}
+
+async function syncMouseToTab(tabId, point) {
+  if (!tabId || !point) return;
+  try {
+    const tab = await chrome.tabs.get(Number(tabId));
+    if (!canInjectIntoTab(tab)) return;
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: renderEverFernNavisMouse,
+      args: [point]
+    });
+  } catch (error) {
+    console.debug('[EverFern Navis] Mouse overlay injection skipped:', error && error.message || error);
+  }
+}
+
 function capturePageSnapshot() {
   const textOf = (node, max = 160) => {
     if (!node) return '';
@@ -726,6 +788,7 @@ function dispatchPointerClick(node) {
   const topNode = document.elementFromPoint(x, y);
   const target = topNode && (node.contains(topNode) || topNode.contains(node)) ? topNode : node;
   const eventInit = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+  renderEverFernNavisMouse({ x, y, label: 'Click', durationMs: 6500 });
   target.dispatchEvent(new PointerEvent('pointerdown', eventInit));
   target.dispatchEvent(new MouseEvent('mousedown', eventInit));
   target.dispatchEvent(new PointerEvent('pointerup', eventInit));
@@ -918,7 +981,12 @@ async function handleCommand(command, data) {
       if (!tab || !tab.id) throw new Error('No active tab available');
       const refs = lastRefsByTab.get(tab.id) || [];
       const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: clickTargetInPage, args: [{ ref: String(data.ref || ''), ...data }, refs] });
-      return { tabId: tab.id, url: tab.url, title: tab.title, ...result.result };
+      const clickResult = result && result.result || {};
+      if (clickResult.x != null && clickResult.y != null) {
+        lastMouseByTab.set(tab.id, { x: clickResult.x, y: clickResult.y, label: 'Click', durationMs: 6500, updatedAt: Date.now() });
+        if (!navisTabs.has(tab.id)) navisTabs.set(tab.id, { sessionId: 'default', createdAt: Date.now() });
+      }
+      return { tabId: tab.id, url: tab.url, title: tab.title, ...clickResult };
     }
     case 'click_text':
     case 'smart_click': {
@@ -926,7 +994,12 @@ async function handleCommand(command, data) {
       if (!tab || !tab.id) throw new Error('No active tab available');
       const refs = lastRefsByTab.get(tab.id) || [];
       const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: clickTargetInPage, args: [data, refs] });
-      return { tabId: tab.id, url: tab.url, title: tab.title, ...result.result };
+      const clickResult = result && result.result || {};
+      if (clickResult.x != null && clickResult.y != null) {
+        lastMouseByTab.set(tab.id, { x: clickResult.x, y: clickResult.y, label: 'Click', durationMs: 6500, updatedAt: Date.now() });
+        if (!navisTabs.has(tab.id)) navisTabs.set(tab.id, { sessionId: 'default', createdAt: Date.now() });
+      }
+      return { tabId: tab.id, url: tab.url, title: tab.title, ...clickResult };
     }
     case 'input':
     case 'navis-input-ref': {
@@ -1084,6 +1157,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       ensureNavisGroup(tabId);
       syncOverlayToTabs('show');
     }
+  }
+  if ((changeInfo.status === 'loading' || changeInfo.status === 'complete') && lastMouseByTab.has(tabId)) {
+    const point = lastMouseByTab.get(tabId);
+    syncMouseToTab(tabId, {
+      ...point,
+      label: changeInfo.status === 'loading' ? 'Loading' : 'Click',
+      durationMs: changeInfo.status === 'loading' ? 2200 : 5200,
+    });
   }
 });
 chrome.alarms.onAlarm.addListener(alarm => {

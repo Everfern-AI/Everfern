@@ -77,7 +77,6 @@ import FileViewerModal from './components/FileViewerModal';
 import { SubagentPanel } from './components/SubagentPanel';
 import { ToolCallDetailPane, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
-import { SubagentPills } from '@/components/SubagentPills';
 
 
 // Extracted components
@@ -305,7 +304,7 @@ export default function ChatPage() {
 
     const mapToolCallForDetail = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
-        const progressEvents = subAgentProgressRef.current.get(tc.id) || [];
+        const progressEvents = subAgentProgressRef.current.get(tc.id) || tc.subAgentProgress || [];
         const progressScreenshots = progressEvents
             .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
             .map(e => (e.screenshot?.base64 || e.content) as string);
@@ -774,6 +773,86 @@ export default function ChatPage() {
     const [subAgentProgressVersion, setSubAgentProgressVersion] = useState(0);
     // Stable getter — components that need the live map read from here
     const subAgentProgress = subAgentProgressRef.current;
+
+    const sanitizeProgressForPersistence = useCallback((events?: any[]): SubAgentProgressEvent[] => {
+        if (!Array.isArray(events)) return [];
+
+        const seen = new Set<string>();
+        const sanitized: SubAgentProgressEvent[] = [];
+        for (const raw of events) {
+            if (!raw || typeof raw !== 'object') continue;
+            const event: any = { ...raw };
+            if (event.screenshot) {
+                event.screenshot = {
+                    ...event.screenshot,
+                    base64: '',
+                    screenshotPath: event.screenshot.screenshotPath || event.screenshotPath,
+                };
+            }
+            if (!event.screenshotPath && event.screenshot?.screenshotPath) {
+                event.screenshotPath = event.screenshot.screenshotPath;
+            }
+            const dedupeKey = [
+                event.toolCallId || '',
+                event.type || '',
+                event.timestamp || '',
+                event.stepNumber ?? '',
+                event.content || '',
+                event.action?.type || '',
+                event.screenshotPath || event.screenshot?.screenshotPath || '',
+            ].join('|');
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            sanitized.push(event as SubAgentProgressEvent);
+        }
+        return sanitized.slice(-100);
+    }, []);
+
+    const persistableToolCall = useCallback((
+        tc: ToolCallDisplay,
+        index?: number,
+        statusOverride?: ToolCallDisplay['status']
+    ): ToolCallDisplay => {
+        const inlineEvents = Array.isArray(tc.subAgentProgress) ? tc.subAgentProgress : [];
+        const mappedEvents = tc.id ? (subAgentProgressRef.current.get(tc.id) || []) : [];
+        const progress = sanitizeProgressForPersistence([...inlineEvents, ...mappedEvents]);
+        const screenshotPaths = progress
+            .map((ev: any) => ev.screenshotPath || ev.screenshot?.screenshotPath)
+            .filter((p: any): p is string => typeof p === 'string' && p.length > 0);
+        const existingPaths = Array.isArray(tc.data?.screenshotPaths) ? tc.data.screenshotPaths : [];
+        const mergedPaths = Array.from(new Set([...existingPaths, ...screenshotPaths]));
+
+        return {
+            ...tc,
+            status: statusOverride || tc.status,
+            orderIndex: tc.orderIndex ?? index,
+            subAgentProgress: progress.length > 0 ? progress : undefined,
+            data: mergedPaths.length > 0
+                ? { ...(tc.data || {}), screenshotPaths: mergedPaths }
+                : tc.data,
+        };
+    }, [sanitizeProgressForPersistence]);
+
+    const persistableToolCalls = useCallback((
+        toolCalls: ToolCallDisplay[] = [],
+        statusForTool?: (tc: ToolCallDisplay) => ToolCallDisplay['status'] | undefined
+    ) => toolCalls.map((tc, index) => persistableToolCall(tc, index, statusForTool?.(tc))), [persistableToolCall]);
+
+    const restoreSubAgentProgressFromMessages = useCallback((loadedMessages: Message[]) => {
+        const restored = new Map<string, SubAgentProgressEvent[]>();
+        for (const msg of loadedMessages) {
+            for (const tc of msg.toolCalls || []) {
+                if (!tc.id || !Array.isArray(tc.subAgentProgress) || tc.subAgentProgress.length === 0) continue;
+                const events = sanitizeProgressForPersistence(tc.subAgentProgress.map((event: any) => ({
+                    ...event,
+                    toolCallId: event.toolCallId || tc.id,
+                })));
+                if (events.length > 0) restored.set(tc.id, events);
+            }
+        }
+        subAgentProgressRef.current = restored;
+        setSubAgentProgressVersion(v => v + 1);
+    }, [sanitizeProgressForPersistence]);
 
     // Local Execution Permission State (Task 7.1 & 7.2)
     const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
@@ -1620,8 +1699,9 @@ export default function ChatPage() {
                     isMessageCommittedRef.current = true;
                     const finalContent = streamingContentRef.current || "";
                     const finalThought = streamingThoughtRef.current;
-                    const finalToolCalls = liveToolCallsRef.current.map(t =>
-                        t.status === 'running' ? { ...t, status: 'done' as const } : t
+                    const finalToolCalls = persistableToolCalls(
+                        liveToolCallsRef.current,
+                        t => t.status === 'running' ? 'done' : undefined
                     );
                     const durationMs = thinkingDuration?.duration;
                         if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
@@ -1667,8 +1747,9 @@ export default function ChatPage() {
 
                 const finalContent = streamingContentRef.current || "";
                 const finalThought = streamingThoughtRef.current;
-                const finalToolCalls = liveToolCallsRef.current.map(t =>
-                    t.status === 'running' ? { ...t, status: 'done' as const } : t
+                const finalToolCalls = persistableToolCalls(
+                    liveToolCallsRef.current,
+                    t => t.status === 'running' ? 'done' : undefined
                 );
                 const durationMs = thinkingDuration?.duration;
 
@@ -2065,7 +2146,7 @@ export default function ChatPage() {
                 const existingIdx = existingId ? liveToolCallsRef.current.findIndex(t => t.id === existingId) : -1;
                 if (existingIdx >= 0) {
                     const updated = [...liveToolCallsRef.current];
-                    updated[existingIdx] = {
+                    updated[existingIdx] = persistableToolCall({
                         ...updated[existingIdx],
                         status: 'done' as const,
                         output: typeof record.result === 'string'
@@ -2074,7 +2155,7 @@ export default function ChatPage() {
                         data: record.result?.data,
                         base64Image: record.result?.base64Image,
                         durationMs: record.durationMs
-                    };
+                    }, existingIdx);
                     liveToolCallsRef.current = updated;
                     setLiveToolCalls(updated);
                     if (record.toolName === 'show_user_url') {
@@ -2211,7 +2292,7 @@ export default function ChatPage() {
                 reasoning_content: m.reasoning_content,
                 thinkingDuration: m.thinkingDuration,
                 stopped: m.stopped, // Preserve stopped flag
-                toolCalls: m.toolCalls ? m.toolCalls.map((tc, tcIdx) => {
+                toolCalls: m.toolCalls ? persistableToolCalls(m.toolCalls).map((tc, tcIdx) => {
                     const { icon, ...rest } = tc;
                     return {
                         ...rest,
@@ -2239,7 +2320,7 @@ export default function ChatPage() {
                 (window as any).electronAPI?.chat?.generateTitle?.(id, firstUserMsg.content);
             }
         }
-    }, [activeConversationId, config?.provider, folderContexts]);
+    }, [activeConversationId, config?.provider, folderContexts, persistableToolCalls]);
 
     const handlePlayVoiceResponse = useCallback(async (text: string) => {
         if (!voiceOutputEnabled || !voiceProvider || !voiceElevenlabsKey) return;
@@ -2612,7 +2693,10 @@ export default function ChatPage() {
                             api.removeStreamListeners();
 
                             setLiveToolCalls(prevTools => {
-                                const finalToolCalls = prevTools.map(t => t.status === 'running' ? { ...t, status: 'done' as const } : t);
+                                const finalToolCalls = persistableToolCalls(
+                                    prevTools,
+                                    t => t.status === 'running' ? 'done' : undefined
+                                );
                                 const assistantMsg: Message = {
                                     id: crypto.randomUUID(),
                                     role: "assistant",
@@ -2646,7 +2730,17 @@ export default function ChatPage() {
                     const key = record.id || record.toolCallId || (record.toolName + '_running');
                     const existingId = toolCallMap.current.get(key);
                     if (existingId) {
-                        const updatedToolCalls = liveToolCallsRef.current.map(t => t.id === existingId ? { ...t, status: 'done' as const, output: typeof record.result === 'string' ? record.result : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)), data: record.result?.data, base64Image: record.result?.base64Image, durationMs: record.durationMs } : t);
+                        const updatedToolCalls = liveToolCallsRef.current.map((t, idx) => t.id === existingId
+                            ? persistableToolCall({
+                                ...t,
+                                status: 'done' as const,
+                                output: typeof record.result === 'string' ? record.result : (record.result?.output || JSON.stringify({ ...record.result, base64Image: undefined }, null, 2)),
+                                data: record.result?.data,
+                                base64Image: record.result?.base64Image,
+                                durationMs: record.durationMs,
+                            }, idx)
+                            : t
+                        );
                         toolCallMap.current.delete(key);
                         liveToolCallsRef.current = updatedToolCalls;
                         setLiveToolCalls(updatedToolCalls);
@@ -2689,7 +2783,10 @@ export default function ChatPage() {
                     isHandlingPlanRef.current = true;
                     // Save any accumulated AI response before showing plan
                     if (accumulated || streamingThoughtRef.current) {
-                        const finalToolCalls = liveToolCallsRef.current.map(t => t.status === 'running' ? { ...t, status: 'done' as const } : t);
+                        const finalToolCalls = persistableToolCalls(
+                            liveToolCallsRef.current,
+                            t => t.status === 'running' ? 'done' : undefined
+                        );
                         const assistantMsg: Message = {
                             id: crypto.randomUUID(),
                             role: "assistant",
@@ -2877,30 +2974,10 @@ export default function ChatPage() {
                         let finalContent = accumulated || "";
                         finalContent = finalContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim();
                         const finalThought = streamingThoughtRef.current;
-                        const finalToolCalls = liveToolCallsRef.current.map(t => {
-                            // Strip heavy base64 screenshots before saving to avoid IPC/SQLite crashes,
-                            // but KEEP the screenshotPath so images can be reloaded from disk on refresh.
-                            const strippedProgress = t.subAgentProgress?.map(ev =>
-                                ev.type === 'screenshot' && ev.screenshot
-                                    ? { ...ev, screenshot: { ...ev.screenshot, base64: '' } }
-                                    : ev
-                            );
-                            // Collect screenshot paths from progress events as a fallback for persistence
-                            const progressPaths: string[] = (strippedProgress || [])
-                                .filter((ev: any) => ev.type === 'screenshot' && ev.screenshotPath)
-                                .map((ev: any) => ev.screenshotPath as string);
-                            // Merge with any paths already in result data (from computer_use tool result)
-                            const existingPaths: string[] = t.data?.screenshotPaths || [];
-                            const mergedPaths = Array.from(new Set([...existingPaths, ...progressPaths]));
-                            return {
-                                ...t,
-                                status: t.status === 'running' ? 'done' as const : t.status,
-                                subAgentProgress: strippedProgress,
-                                data: mergedPaths.length > 0
-                                    ? { ...t.data, screenshotPaths: mergedPaths }
-                                    : t.data,
-                            };
-                        });
+                        const finalToolCalls = persistableToolCalls(
+                            liveToolCallsRef.current,
+                            t => t.status === 'running' ? 'done' : undefined
+                        );
 
                         // Check if the message was stopped by user
                         const wasStopped = finalContent.includes('🛑 Stopped by user.');
@@ -2996,7 +3073,10 @@ export default function ChatPage() {
                 isMessageCommittedRef.current = true;
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 api?.removeStreamListeners?.();
-                const finalToolCalls = liveToolCallsRef.current.map(t => t.status === 'running' ? { ...t, status: 'error' as const } : t);
+                const finalToolCalls = persistableToolCalls(
+                    liveToolCallsRef.current,
+                    t => t.status === 'running' ? 'error' : undefined
+                );
                 const assistantMsg: Message = {
                     id: crypto.randomUUID(),
                     role: "assistant",
@@ -3053,8 +3133,9 @@ export default function ChatPage() {
         // If we clear it and abort the stream, the AI's message is lost.
         const pendingContent = streamingContentRef.current;
         const pendingThought = streamingThoughtRef.current;
-        const pendingToolCalls = liveToolCallsRef.current.map(t =>
-            t.status === 'running' ? { ...t, status: 'done' as const } : t
+        const pendingToolCalls = persistableToolCalls(
+            liveToolCallsRef.current,
+            t => t.status === 'running' ? 'done' : undefined
         );
 
         // Commit the assistant's pending message (form content) before sending the user's response.
@@ -3246,8 +3327,9 @@ export default function ChatPage() {
                     // Commit any accumulated content
                     const finalContent = streamingContentRef.current || "";
                     const finalThought = streamingThoughtRef.current;
-                    const finalToolCalls = liveToolCallsRef.current.map(t =>
-                        t.status === 'running' ? { ...t, status: 'done' as const } : t
+                    const finalToolCalls = persistableToolCalls(
+                        liveToolCallsRef.current,
+                        t => t.status === 'running' ? 'done' : undefined
                     );
 
                         if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
@@ -3355,6 +3437,7 @@ export default function ChatPage() {
                         timestamp: m.createdAt ? new Date(m.createdAt) : new Date(conv.updatedAt),
                         stopped: !!m.stopped
                     }));
+                    restoreSubAgentProgressFromMessages(loadedMessages);
                     messagesRef.current = loadedMessages;
                     setMessages(loadedMessages);
                     const savedPlan = localStorage.getItem(`everfern_execution_plan_${id}`);
@@ -3672,8 +3755,9 @@ export default function ChatPage() {
 
                     // Commit the current streaming content as a stopped message
                     const stoppedContent = streamingContent || "";
-                    const finalToolCalls = liveToolCalls.map(t =>
-                        t.status === 'running' ? { ...t, status: 'done' as const } : t
+                    const finalToolCalls = persistableToolCalls(
+                        liveToolCalls,
+                        t => t.status === 'running' ? 'done' : undefined
                     );
 
                     const assistantMsg: Message = {
@@ -3718,6 +3802,93 @@ export default function ChatPage() {
             )}
         </div>
     );
+
+    const formatSubagentLabel = (agent: string) => {
+        const normalized = (agent || "sub-agent").replace(/[_-]+/g, " ").trim();
+        return normalized ? normalized.replace(/\b\w/g, c => c.toUpperCase()) : "Sub-Agent";
+    };
+
+    const renderSubagentSpawnAttachment = () => {
+        const runningPhases = subagent.phases.filter(p => p.status === "in-progress");
+        const activePhase = runningPhases[runningPhases.length - 1];
+
+        if (!subagent.isActive || !activePhase) return null;
+
+        const agentLabel = formatSubagentLabel(activePhase.agent || subagent.coordination?.currentAgent || "sub-agent");
+        const statusLabel = runningPhases.length > 1 ? `${runningPhases.length} running` : "Running";
+
+        return (
+            <div style={{ padding: "10px 16px 0" }}>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setSelectedSubagentToolCall(null);
+                        setShowSubagentPanel(true);
+                        setIsToolDetailOpen(false);
+                        setIsComputerPaneOpen(false);
+                    }}
+                    title="Open sub-agent details"
+                    style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "9px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #e2ddd2",
+                        background: "linear-gradient(180deg, #fffefa 0%, #f4f2eb 100%)",
+                        boxShadow: "0 2px 6px rgba(32,30,36,0.08), inset 0 1px 0 rgba(255,255,255,0.85)",
+                        color: "#201e24",
+                        cursor: "pointer",
+                        textAlign: "left",
+                    }}
+                >
+                    <span
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 9,
+                            background: "radial-gradient(circle at 30% 25%, #ffffff 0%, #dbeafe 34%, #7c3aed 100%)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#ffffff",
+                            boxShadow: "0 7px 18px rgba(59,130,246,0.25)",
+                            flexShrink: 0,
+                        }}
+                    >
+                        <CpuChipIcon width={14} height={14} strokeWidth={2.2} />
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 650, color: "#201e24", lineHeight: 1.2 }}>
+                            Sub-agent spawned
+                        </span>
+                        <span style={{ fontSize: 11.5, color: "#7c776f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {agentLabel} · {activePhase.description || "Working on a delegated task"}
+                        </span>
+                    </span>
+                    <span
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "#eef6ff",
+                            color: "#2563eb",
+                            fontSize: 11,
+                            fontWeight: 650,
+                            flexShrink: 0,
+                        }}
+                    >
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "#3b82f6", boxShadow: "0 0 10px rgba(59,130,246,0.7)" }} />
+                        {statusLabel}
+                    </span>
+                    <ChevronRightIcon width={14} height={14} strokeWidth={2.2} color="#8a8886" />
+                </button>
+            </div>
+        );
+    };
 
     // ── Attachment preview strip (shared) ────────────────────────────────────
     const renderAttachmentStrip = () => (
@@ -4239,9 +4410,8 @@ export default function ChatPage() {
 
                                                  {/* Progressive input container */}
                                                 <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
-                                                     <SubagentPills phases={subagent.phases} isActive={subagent.isActive} />
-                                                    <SubagentPills phases={subagent.phases} isActive={subagent.isActive} />
-                                             {renderAttachmentStrip()}
+                                                    {renderSubagentSpawnAttachment()}
+                                                    {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
                                                         className="placeholder-[#a5a3a0]"
@@ -4852,6 +5022,7 @@ export default function ChatPage() {
                                                 </div>
                                             )}
 
+                                            {renderSubagentSpawnAttachment()}
                                             {renderAttachmentStrip()}
                                             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                                                 <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>

@@ -26,6 +26,7 @@ import { NavisOrchestrator } from '../tools/navis/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import { hydrateVlmApiKey } from '../../lib/vlm-config';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
+import { createVisualClassificationSheetTool } from '../tools/visual-classification-sheet';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
 import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
 import * as os from 'os';
@@ -109,6 +110,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     todoWriteTool,
     askUserTool,
     createAnalyzeImageTool(runner.client, runner),
+    createVisualClassificationSheetTool(runner.client),
     localPermissionTool,
     skillTool,
     createPresentFilesTool(runner),

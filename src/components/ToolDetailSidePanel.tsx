@@ -8,7 +8,7 @@ import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
-  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus
+  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
@@ -25,6 +25,7 @@ export const ToolType = {
   FILE_SYSTEM: 'file_system',
   FILE_EDITOR: 'file_editor',
   TODO_WRITE: 'todo_write',
+  IMAGE_ANALYSIS: 'image_analysis',
   LIVE_PREVIEW: 'live_preview',
   GENERIC: 'generic',
 };
@@ -83,6 +84,7 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
   if (n === 'todo_write') return ToolType.TODO_WRITE;
+  if (n === 'analyze_image' || n.includes('analyze_image') || n === 'visual_classification_sheet') return ToolType.IMAGE_ANALYSIS;
   if (n === 'read' || n === 'read_file' || n === 'view_file' || n.includes('write') || n.includes('replace') || n.includes('edit')) return ToolType.FILE_EDITOR;
   if (n.includes('system_files') || n.includes('list_dir') || n.includes('grep_search')) return ToolType.FILE_SYSTEM;
   return ToolType.GENERIC;
@@ -111,6 +113,8 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
   if (n === 'todo_write') return { Icon: CheckCircle, label: 'Todo List' };
+  if (n === 'visual_classification_sheet') return { Icon: Image, label: 'Visual Sheet' };
+  if (n === 'analyze_image' || n.includes('analyze_image')) return { Icon: Image, label: 'Image Analysis' };
   if (n.includes('system_files')) return { Icon: FolderOpenIcon, label: 'File System', iconSize: 12 };
   return { Icon: Braces, label: 'Generic Tool' };
 }
@@ -1918,6 +1922,22 @@ function extractTodoWriteData(tc: any) {
   };
 }
 
+function extractImageAnalysisData(tc: any) {
+  const args = tc.args || tc.arguments || {};
+  const data = tc.data || tc.result?.data || {};
+  const rawImages = Array.isArray(data.images) ? data.images : [];
+  const images = rawImages
+    .filter((img: any) => img?.fileName && img?.dataUrl)
+    .map((img: any) => ({ fileName: String(img.fileName), dataUrl: String(img.dataUrl) }));
+
+  return {
+    question: args.question || '',
+    output: tc.output || tc.result?.output || '',
+    imageCount: data.imageCount || images.length || (Array.isArray(args.images) ? args.images.length : args.imagePath ? 1 : undefined),
+    images,
+  };
+}
+
 function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
   const argEntries = Object.entries(args || {});
   return (
@@ -2386,6 +2406,53 @@ function TodoWriteView({ tasks, path, output }: { tasks: Array<{ description: st
   );
 }
 
+function ImageAnalysisView({
+  question,
+  output,
+  imageCount,
+  images = [],
+}: {
+  question?: string;
+  output?: string;
+  imageCount?: number;
+  images?: { fileName: string; dataUrl: string }[];
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+        <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
+          Image Analysis
+        </h3>
+        {imageCount !== undefined && (
+          <p style={{ fontSize: 12, color: T.textMuted, margin: 0, fontFamily: T.sans }}>
+            {imageCount} image{imageCount === 1 ? '' : 's'}
+          </p>
+        )}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', background: T.bg, padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {question && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '14px 16px' }}>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: T.text }}>{question}</p>
+          </div>
+        )}
+        {images.map((img, index) => (
+          <div key={`${img.fileName}-${index}`} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}`, fontSize: 12, color: T.textSecondary, fontFamily: T.mono }}>
+              {img.fileName}
+            </div>
+            <img src={img.dataUrl} alt={img.fileName} style={{ display: 'block', width: '100%', height: 'auto' }} />
+          </div>
+        ))}
+        {output && (
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, overflow: 'hidden' }}>
+            <MarkdownViewer content={output} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type FilePaneItem = {
   path: string;
   name: string;
@@ -2762,6 +2829,8 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         extracted = extractSkillData(toolCall);
       } else if (type === ToolType.TODO_WRITE) {
         extracted = extractTodoWriteData(toolCall);
+      } else if (type === ToolType.IMAGE_ANALYSIS) {
+        extracted = extractImageAnalysisData(toolCall);
       } else if (type === ToolType.FILE_SYSTEM || type === ToolType.FILE_EDITOR) {
         extracted = extractFileSystemData(toolCall);
       } else {
@@ -3003,6 +3072,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;
+    if (toolType === ToolType.IMAGE_ANALYSIS) return <ImageAnalysisView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
     if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     return <GenericView {...toolData} />;

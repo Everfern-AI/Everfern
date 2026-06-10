@@ -45,14 +45,22 @@ If the user asks to classify **what's IN the image**, you MUST use vision.
 
 | Method | Best For | Details |
 |--------|----------|---------|
-| `analyze_image` tool (`images` array) | **Batch classification (primary)** | Sends 1–20 images per call to the vision model. The model actually SEES each image. |
+| `visual_classification_sheet` tool | **Large folder classification (primary for 20+ images)** | Creates numbered contact-sheet PNGs and a manifest so vision can classify many images quickly by visible ID. |
+| `analyze_image` tool (`images` array) | **Small batch classification** | Sends 1–20 images per call to the vision model. The model actually SEES each image. |
 | `analyze_image` tool (`imagePath`) | Single image analysis | Describe, OCR, classify one image |
 | Python `Pillow` in WSL | Metadata, resize, convert | File dimensions, format, EXIF |
 | Python `PaddleOCR` in WSL | OCR fallback | When vision model can't read text |
 | Python `transformers` + CLIP | Offline batch (no API cost) | Heavy install (~2GB), use only if no vision model |
 
-For **batch organization**, ALWAYS use `analyze_image` with the `images` parameter first.
+For **batch organization with 20+ images**, use `visual_classification_sheet` first.
+For smaller batches, use `analyze_image` with the `images` parameter.
 Only fall back to Python CLIP if there is no vision-capable model available.
+
+Anime-specific rule: if the user asks to move "anime pictures" into an `anime`
+folder, classify the pixels as anime/manga/anime-style art with vision. Do not
+trust filenames, folders, extensions, dimensions, EXIF, or metadata as evidence.
+Move only high-confidence anime/manga/anime-style images; leave uncertain files
+for review instead of guessing.
 
 ---
 
@@ -102,8 +110,25 @@ Use `system_files` tool to list all image files in the source directory.
 This modifies the user's filesystem — emit `needs_hitl` in your completion signal
 with a clear `hitlRationale` explaining what you'll classify and move.
 
-### Step 3: Classify via vision (batch mode)
-Call `analyze_image` with ALL image paths in the `images` array:
+### Step 3: Classify via vision
+For 20+ images, create visual contact sheets:
+
+```json
+{
+  "tool": "visual_classification_sheet",
+  "args": {
+    "directory": "/path/to/images",
+    "recursive": false,
+    "imagesPerSheet": 20,
+    "question": "Classify each numbered tile as anime/manga, photograph, illustration, screenshot, meme, or uncertain. Return JSON rows keyed by id."
+  }
+}
+```
+
+The tool writes sheet PNGs plus a `manifest.json` mapping each visible ID to the
+original file path. Use the ID-keyed vision results with the manifest before moving.
+
+For fewer than 20 images, call `analyze_image` with image paths in the `images` array:
 
 ```json
 {
@@ -119,13 +144,16 @@ Call `analyze_image` with ALL image paths in the `images` array:
 }
 ```
 
-**Vision models can handle 10–20 images per call** (use `detail: "low"` for batch).
+**Vision models can handle 10–20 direct images per call** (use `detail: "low"` for batch).
 The model will see every image and classify each one individually.
 
-**For 20–100 images**: Make multiple `analyze_image` calls in parallel (e.g. 4 calls
-with 15 images each, all at once in one tool block).
+**For 20–100 images**: Prefer one or more `visual_classification_sheet` sheets.
 
-**For 100+ images**: See "Subagent Workflow" below.
+**For 100+ images**: You may spawn generic subagents to classify separate sheet batches
+concurrently. Each subagent must return only JSON rows with `file`, `category`,
+`confidence`, and `reason`.
+
+For very small sets, direct `analyze_image` is still fine.
 
 ### Step 4: Parse results and move files
 The vision model returns classifications per filename. Parse the response and use
@@ -152,18 +180,19 @@ for item in data:
 
 ## Workflow: Large-scale (100+ images) — Subagent
 
-For very large batches, spawn a subagent to handle the vision calls:
+For very large batches, spawn generic subagents to handle visual sheet batches:
 
 1. List all image files
 2. Signal HITL
-3. Spawn a subagent with:
+3. Call `visual_classification_sheet` to create sheets and a manifest.
+4. Spawn subagents with:
    ```
    I have {N} image files in {folder}. Your task:
-   1. Call `analyze_image` with batches of 15 images each (make multiple parallel calls)
-   2. Compile results into a JSON array: [{"file": "name.jpg", "category": "anime"}, ...]
+   1. Analyze assigned visual classification sheet paths with vision
+   2. Compile results into a JSON array: [{"id": 123, "category": "anime", "confidence": 0.92, "reason": "anime-style face and line art"}, ...]
    3. Output ONLY the JSON array, nothing else
    ```
-4. Take the JSON array and move files with the Python mover script above
+5. Map IDs through the manifest, then move files with the Python mover script above
 
 ---
 
@@ -252,9 +281,9 @@ PNG, JPEG/JPG, GIF, BMP, WEBP, TIFF, SVG
 ## Best Practices
 
 - **Format questions → file extension, no vision. Content questions → analyze_image, never filename guessing.**
-- Batch up to 20 images per `analyze_image` call for efficiency
-- For 20–100 images, make multiple parallel `analyze_image` calls
-- For 100+ images, use a subagent
+- For 20+ images, make visual classification sheets first for speed
+- Batch up to 20 direct images per `analyze_image` call for small sets
+- For 100+ images, use sheet batches plus subagents
 - Always signal HITL before moving/renaming user files
 - Metadata (dimensions, format) doesn't need vision — use Pillow
 - OCR on clean text images works well via vision model directly

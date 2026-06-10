@@ -145,7 +145,7 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
     if (n.includes("code") || n.includes("python") || n.includes("js"))
         return { icon: <CodeBracketIcon style={s} />, shape: "square" };
 
-    if (n.includes("image") || n.includes("screenshot") || n.includes("photo"))
+    if (n === "visual_classification_sheet" || n.includes("image") || n.includes("screenshot") || n.includes("photo"))
         return { icon: <PhotoIcon style={s} />, shape: "square" };
 
     if (n.includes("computer") || n.includes("mouse") || n.includes("click"))
@@ -648,6 +648,16 @@ const getToolActivity = (tc: ToolCallDisplay): { verb: string; detail: string; m
             verb: "Generating deck",
             detail: titleValue || pathValue || (slides ? `${slides} slides` : "presentation"),
             monoDetail: pathValue,
+        };
+    }
+
+    if (name === "visual_classification_sheet") {
+        const directoryValue = argText(args.directory, args.path);
+        const imageCount = typeof tc.data?.imageCount === "number" ? tc.data.imageCount : undefined;
+        return {
+            verb: argText(args.question) ? "Classifying image sheet" : "Creating image sheet",
+            detail: imageCount ? `${imageCount} images` : directoryValue || "image folder",
+            monoDetail: directoryValue,
         };
     }
 

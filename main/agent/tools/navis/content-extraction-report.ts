@@ -53,6 +53,52 @@ function stripModelReasoning(value: string): string {
   return text;
 }
 
+function parseJsonObjectFromModel(value: string): any {
+  const cleaned = value
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const firstObject = cleaned.indexOf('{');
+    const firstArray = cleaned.indexOf('[');
+    const first = firstObject === -1 ? firstArray : firstArray === -1 ? firstObject : Math.min(firstObject, firstArray);
+    if (first < 0) throw new Error('No JSON object found in model response');
+
+    const open = cleaned[first];
+    const close = open === '[' ? ']' : '}';
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = first; i < cleaned.length; i += 1) {
+      const char = cleaned[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') inString = !inString;
+      if (inString) continue;
+      if (char === open) depth += 1;
+      if (char === close) {
+        depth -= 1;
+        if (depth === 0) {
+          return JSON.parse(cleaned.slice(first, i + 1));
+        }
+      }
+    }
+    throw new Error('No complete JSON object found in model response');
+  }
+}
+
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()
@@ -355,8 +401,7 @@ Return ONLY valid JSON. No markdown fences. No extra text.`;
     });
 
     const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
-    const cleanJson = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const result = JSON.parse(cleanJson);
+    const result = parseJsonObjectFromModel(content);
     return {
       shouldClick: Boolean(result.shouldClick),
       refs: Array.isArray(result.refs) ? result.refs.map(String) : [],

@@ -48,12 +48,16 @@ export function useSubagentTracking(conversationId: string | null) {
 
     switch (subagentEvent.type) {
       case 'phase_start': {
-        const phaseId = `${subagentEvent.agent}-${subagentEvent.timestamp}`;
+        const phaseId =
+          typeof subagentEvent.data?.agentId === 'string' && subagentEvent.data.agentId
+            ? subagentEvent.data.agentId
+            : `${subagentEvent.agent}-${subagentEvent.timestamp}`;
         const newPhase: SubagentPhase = {
           id: phaseId,
           name: subagentEvent.phase || '',
           status: 'in-progress',
           agent: subagentEvent.agent || '',
+          agentId: subagentEvent.data?.agentId,
           description: subagentEvent.data?.description || '',
           startTime: subagentEvent.timestamp,
           metrics: subagentEvent.data?.initialMetrics,
@@ -70,10 +74,12 @@ export function useSubagentTracking(conversationId: string | null) {
       }
 
       case 'phase_update': {
-        // Find phase by agent and recent start time
-        const phaseToUpdate = Array.from(phaseMapRef.current.values()).find(
-          p => p.agent === subagentEvent.agent && p.status === 'in-progress'
-        );
+        const agentId = subagentEvent.data?.agentId;
+        const phaseToUpdate =
+          (agentId ? phaseMapRef.current.get(agentId) : undefined) ||
+          Array.from(phaseMapRef.current.values()).find(
+            p => p.agent === subagentEvent.agent && p.status === 'in-progress'
+          );
 
         if (phaseToUpdate) {
           phaseToUpdate.output = subagentEvent.data?.output;
@@ -88,9 +94,12 @@ export function useSubagentTracking(conversationId: string | null) {
       }
 
       case 'phase_complete': {
-        const phaseToComplete = Array.from(phaseMapRef.current.values()).find(
-          p => p.agent === subagentEvent.agent && p.status === 'in-progress'
-        );
+        const agentId = subagentEvent.data?.agentId;
+        const phaseToComplete =
+          (agentId ? phaseMapRef.current.get(agentId) : undefined) ||
+          Array.from(phaseMapRef.current.values()).find(
+            p => p.agent === subagentEvent.agent && p.status === 'in-progress'
+          );
 
         if (phaseToComplete) {
           phaseToComplete.status = 'completed';
@@ -101,15 +110,19 @@ export function useSubagentTracking(conversationId: string | null) {
           setState(prev => ({
             ...prev,
             phases: prev.phases.map(p => (p.id === phaseToComplete.id ? phaseToComplete : p)),
+            isActive: prev.phases.some(p => p.id !== phaseToComplete.id && p.status === 'in-progress'),
           }));
         }
         break;
       }
 
       case 'phase_error': {
-        const phaseToFail = Array.from(phaseMapRef.current.values()).find(
-          p => p.agent === subagentEvent.agent && p.status === 'in-progress'
-        );
+        const agentId = subagentEvent.data?.agentId;
+        const phaseToFail =
+          (agentId ? phaseMapRef.current.get(agentId) : undefined) ||
+          Array.from(phaseMapRef.current.values()).find(
+            p => p.agent === subagentEvent.agent && p.status === 'in-progress'
+          );
 
         if (phaseToFail) {
           phaseToFail.status = 'failed';
@@ -119,6 +132,7 @@ export function useSubagentTracking(conversationId: string | null) {
           setState(prev => ({
             ...prev,
             phases: prev.phases.map(p => (p.id === phaseToFail.id ? phaseToFail : p)),
+            isActive: prev.phases.some(p => p.id !== phaseToFail.id && p.status === 'in-progress'),
           }));
         }
         break;

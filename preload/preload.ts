@@ -110,6 +110,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ensureAttachmentInVm: (filePath: string) => ipcRenderer.invoke('system:ensure-attachment-in-vm', filePath),
     openFile: (filePath: string, appPath?: string) => ipcRenderer.invoke('system:open-file', filePath, appPath),
     getFileApps: (filePath: string) => ipcRenderer.invoke('system:get-file-apps', filePath),
+    readImageDataUrl: (filePath: string) => ipcRenderer.invoke('system:read-image-data-url', filePath),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -271,6 +272,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:sub-agent-progress', (_e, event) => cb(event));
     },
     /**
+     * Register a callback for high-level spawned sub-agent lifecycle events.
+     * These drive the composer "Sub-agent spawned" attachment and Agents panel.
+     */
+    onSubagentEvent: (cb: (event: any) => void) => {
+      ipcRenderer.removeAllListeners('acp:subagent-event');
+      ipcRenderer.on('acp:subagent-event', (_e, event) => cb(event));
+    },
+    /**
      * Remove sub-agent progress event listener.
      * Call this to clean up the listener when component unmounts.
      */
@@ -333,6 +342,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:hitl-request');
       ipcRenderer.removeAllListeners('acp:hitl-response-processed');
       ipcRenderer.removeAllListeners('acp:sub-agent-progress');
+      ipcRenderer.removeAllListeners('acp:subagent-event');
       ipcRenderer.removeAllListeners('acp:tool-call-start');
       ipcRenderer.removeAllListeners('acp:tool-call-chunk');
       ipcRenderer.removeAllListeners('acp:tool-call-complete');
@@ -594,6 +604,7 @@ export type ElectronAPI = {
     ensureAttachmentInVm: (filePath: string) => Promise<{ success: boolean; error?: string }>;
     openFile: (filePath: string, appPath?: string) => Promise<{ success: boolean; error?: string }>;
     getFileApps: (filePath: string) => Promise<Array<{ name: string; path: string; icon: string }>>;
+    readImageDataUrl: (filePath: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; size?: number; path?: string; error?: string }>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
@@ -653,7 +664,8 @@ export type ElectronAPI = {
      * Register a callback for sub-agent progress events.
      * @param cb - Callback that receives SubAgentProgressEvent (see src/app/chat/types.ts)
      */
-    onSubAgentProgress: (cb: (event: SubAgentProgressEvent) => void) => void;
+    onSubAgentProgress: (cb: (event: any) => void) => void;
+    onSubagentEvent: (cb: (event: any) => void) => void;
     /**
      * Remove sub-agent progress event listener.
      * Call this to clean up the listener when component unmounts.

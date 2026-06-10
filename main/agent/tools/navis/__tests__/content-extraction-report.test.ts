@@ -162,6 +162,45 @@ describe('Navis content extraction report', () => {
     fs.rmSync((result.data as any).reportPath, { force: true });
   });
 
+  it('strips model thinking before parsing click-identification JSON', async () => {
+    const aiClient: any = {
+      chat: async (options?: any) => {
+        if (options?.responseFormat === 'json') {
+          return {
+            content: '<think>I should inspect expandable rows first.</think>\n```json\n{"shouldClick":false,"refs":[],"collapseAfterClick":false,"waitMsAfterClick":500}\n```',
+          };
+        }
+        return { content: '# Parsed DOM Report\n\n- No click expansion needed.' };
+      },
+    };
+    const page: any = {
+      evaluate: async (fn: any, arg?: any) => {
+        if (arg !== undefined) {
+          return {
+            url: 'https://example.com/listings',
+            title: 'Listings',
+            capturedAt: new Date().toISOString(),
+            goal: arg,
+            mainText: 'Visible listing details',
+            headings: [],
+            links: [],
+            buttons: [],
+            formFields: [],
+            tables: [],
+          };
+        }
+        return 'Visible listing details';
+      },
+      url: () => 'https://example.com/listings',
+      title: async () => 'Listings',
+    };
+
+    const report = await createNavisExtractionReport(page, 'Extract listing details', aiClient);
+
+    expect(report.markdown).toBe('# Parsed DOM Report\n\n- No click expansion needed.');
+    fs.rmSync(report.reportPath, { force: true });
+  });
+
   it('systematically clicks elements when identifyClickElements returns shouldClick: true', async () => {
     const aiClient: any = {
       chat: async (options: any) => {

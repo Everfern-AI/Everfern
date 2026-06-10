@@ -9,7 +9,7 @@
  * Fix: Only delete messages if isFullSave is explicitly NOT false
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ChatHistoryStore } from '../history';
 import { databaseService } from '../database-service';
 
@@ -291,5 +291,55 @@ describe('Chat Message Persistence on Restart', () => {
     // Verify message content is correct
     expect(loaded?.messages.find(m => m.id === 'ast-1')?.content).toBe('First assistant response (final)');
     expect(loaded?.messages.find(m => m.id === 'ast-2')?.content).toBe('Second assistant response (partial)');
+  });
+
+  it('should preserve nested sub-agent timeline events inside tool calls after reload', async () => {
+    const progressEvent = {
+      type: 'step',
+      toolCallId: 'tool-1',
+      timestamp: new Date().toISOString(),
+      stepNumber: 1,
+      totalSteps: 3,
+      content: 'Task decomposer created a nested implementation step',
+    };
+
+    await historyStore.save({
+      id: testConvId,
+      title: 'Nested timeline conversation',
+      provider: 'test',
+      model: 'test-model',
+      messages: [{
+        id: 'ast-nested',
+        role: 'assistant' as const,
+        content: 'Done',
+        toolCalls: [{
+          id: 'tool-1',
+          toolName: 'executePwsh',
+          args: { command: 'echo hi' },
+          status: 'done',
+          subAgentProgress: [progressEvent],
+          orderIndex: 0,
+        }],
+        missionTimeline: {
+          steps: [{
+            id: 'step-1',
+            name: 'Implement feature',
+            status: 'completed',
+            toolCalls: ['executePwsh'],
+          }],
+        },
+        createdAt: new Date().toISOString(),
+      }],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any);
+
+    const loaded = await historyStore.load(testConvId);
+    const toolCall = loaded?.messages[0]?.toolCalls?.[0] as any;
+
+    expect(toolCall?.subAgentProgress).toHaveLength(1);
+    expect(toolCall?.subAgentProgress?.[0]?.toolCallId).toBe('tool-1');
+    expect(toolCall?.subAgentProgress?.[0]?.content).toContain('Task decomposer');
+    expect(loaded?.messages[0]?.missionTimeline?.steps?.[0]?.name).toBe('Implement feature');
   });
 });
