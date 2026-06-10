@@ -285,7 +285,7 @@ const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
                           )}
 
                           {/* Result Preview */}
-                          {step.result && (
+                          {step.result && !(typeof step.result === 'string' && step.result.trim().startsWith('{') && step.result.trim().endsWith('}')) && !(typeof step.result === 'string' && step.result.trim().startsWith('[') && step.result.trim().endsWith(']')) && (
                             <div>
                               <div className="text-gray-400 font-medium mb-1">Result:</div>
                               <div className={`text-[11px] ${isSidebar ? 'bg-white border-gray-100' : 'bg-slate-700'} border p-2 rounded-lg text-gray-600 max-h-24 overflow-y-auto font-mono break-words leading-relaxed`}>

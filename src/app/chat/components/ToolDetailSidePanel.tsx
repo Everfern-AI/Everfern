@@ -2334,6 +2334,16 @@ const ansiControlRegex = /\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]/
 
 function normalizeTerminalOutput(output?: string, command?: string) {
   let normalized = (output || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Strip host execution context boilerplate if present at start
+  if (/^(success|error): (local )?command (completed|failed)/i.test(normalized.trim())) {
+    const lines = normalized.split('\n');
+    const outputIndex = lines.findIndex(line => line.trim().toLowerCase() === 'output:');
+    if (outputIndex !== -1) {
+      normalized = lines.slice(outputIndex + 1).join('\n');
+    }
+  }
+
   const cmd = (command || '').trim();
   if (cmd) {
     normalized = normalized

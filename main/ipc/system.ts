@@ -645,4 +645,177 @@ export function registerSystemHandlers() {
       return { success: false, error: err.message };
     }
   });
+
+  ipcMain.handle('system:parse-pptx', async (_event, filePath: string) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'everfern-pptx-'));
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        const zipPath = path.join(tempDir, 'temp.zip');
+        fs.copyFileSync(filePath, zipPath);
+        const escapedZipPath = zipPath.replace(/'/g, "''");
+        const escapedTempDir = tempDir.replace(/'/g, "''");
+        const cmd = `powershell.exe -NoProfile -Command "Expand-Archive -Path '${escapedZipPath}' -DestinationPath '${escapedTempDir}' -Force"`;
+        await execAsync(cmd);
+        if (fs.existsSync(zipPath)) {
+          fs.unlinkSync(zipPath);
+        }
+      } else {
+        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
+        await execAsync(cmd);
+      }
+
+      const slidesDir = path.join(tempDir, 'ppt', 'slides');
+      if (!fs.existsSync(slidesDir)) {
+        return { success: false, error: 'Invalid presentation file: missing ppt/slides directory' };
+      }
+
+      const slideFiles = fs.readdirSync(slidesDir)
+        .filter(file => file.startsWith('slide') && file.endsWith('.xml'))
+        .sort((a, b) => {
+          const numA = parseInt(a.replace(/[^\d]/g, ''), 10) || 0;
+          const numB = parseInt(b.replace(/[^\d]/g, ''), 10) || 0;
+          return numA - numB;
+        });
+
+      if (slideFiles.length === 0) {
+        return { success: true, slides: [] };
+      }
+
+      const slides = [];
+
+      const decodeXmlEntities = (str: string): string => {
+        return str
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'")
+          .replace(/&#x9;/g, '\t')
+          .replace(/&#xA;/g, '\n')
+          .replace(/&#xD;/g, '\r')
+          .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+          .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      };
+
+      for (const slideFile of slideFiles) {
+        const slidePath = path.join(slidesDir, slideFile);
+        const xmlContent = fs.readFileSync(slidePath, 'utf8');
+
+        const shapeRegex = /<p:sp>([\s\S]*?)<\/p:sp>/g;
+        let shapeMatch;
+        const shapes = [];
+
+        while ((shapeMatch = shapeRegex.exec(xmlContent)) !== null) {
+          const shapeXml = shapeMatch[1];
+
+          const phRegex = /<p:ph[^>]*?type="([^"]+)"/;
+          const nameRegex = /<p:cNvPr[^>]*?name="([^"]+)"/;
+
+          const phMatch = shapeXml.match(phRegex);
+          const nameMatch = shapeXml.match(nameRegex);
+
+          const phType = phMatch ? phMatch[1].toLowerCase() : '';
+          const name = nameMatch ? nameMatch[1].toLowerCase() : '';
+
+          let role: 'title' | 'subtitle' | 'body' | 'unknown' = 'unknown';
+          if (phType === 'title' || phType === 'ctrtitle' || name.includes('title')) {
+            role = 'title';
+          } else if (phType === 'subtitle' || name.includes('subtitle')) {
+            role = 'subtitle';
+          } else if (phType === 'body' || phType === 'obj' || name.includes('placeholder') || name.includes('content')) {
+            role = 'body';
+          }
+
+          const pRegex = /<a:p>([\s\S]*?)<\/a:p>/g;
+          let pMatch;
+          const paragraphs = [];
+
+          while ((pMatch = pRegex.exec(shapeXml)) !== null) {
+            const pXml = pMatch[1];
+            const tRegex = /<a:t>([^<]*?)<\/a:t>/g;
+            let tMatch;
+            let pText = '';
+            while ((tMatch = tRegex.exec(pXml)) !== null) {
+              pText += tMatch[1];
+            }
+            pText = decodeXmlEntities(pText).trim();
+            if (pText) {
+              paragraphs.push(pText);
+            }
+          }
+
+          if (paragraphs.length > 0) {
+            shapes.push({ role, paragraphs });
+          }
+        }
+
+        let title = '';
+        let subtitle = '';
+        const points: string[] = [];
+
+        const titleShape = shapes.find(s => s.role === 'title');
+        const subtitleShape = shapes.find(s => s.role === 'subtitle');
+
+        if (titleShape) {
+          title = titleShape.paragraphs.join(' ');
+        }
+        if (subtitleShape) {
+          subtitle = subtitleShape.paragraphs.join(' ');
+        }
+
+        shapes.forEach(s => {
+          if (s !== titleShape && s !== subtitleShape) {
+            if (s.role === 'body') {
+              points.push(...s.paragraphs);
+            }
+          }
+        });
+
+        if (!title && shapes.length > 0) {
+          const firstShape = shapes[0];
+          title = firstShape.paragraphs.join(' ');
+          if (shapes.length > 1) {
+            shapes.slice(1).forEach(s => {
+              points.push(...s.paragraphs);
+            });
+          }
+        } else {
+          shapes.forEach(s => {
+            if (s !== titleShape && s !== subtitleShape && s.role !== 'body') {
+              points.push(...s.paragraphs);
+            }
+          });
+        }
+
+        slides.push({
+          title,
+          subtitle,
+          points
+        });
+      }
+
+      return { success: true, slides };
+    } catch (err: any) {
+      console.error('[PPTXParser] error:', err);
+      return { success: false, error: err.message || String(err) };
+    } finally {
+      try {
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      } catch (cleanErr) {
+        console.warn('[PPTXParser] cleanup failed:', cleanErr);
+      }
+    }
+  });
 }
+

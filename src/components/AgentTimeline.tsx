@@ -1241,7 +1241,7 @@ const MissionStepRow = ({
                                 </div>
                             )}
 
-                            {step.result && isDone && (
+                            {step.result && isDone && !(step.result.trim().startsWith('{') && step.result.trim().endsWith('}')) && !(step.result.trim().startsWith('[') && step.result.trim().endsWith(']')) && (
                                 <div style={{
                                     fontSize: 12, color: "#9ca3af", lineHeight: 1.5,
                                     marginTop: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6,

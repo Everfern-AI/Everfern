@@ -271,35 +271,73 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
 }
 
 // ── 3. POWERPOINT (PPT/PPTX) VIEWER ─────────────────────────────────
-function PPTViewer({ filename }: { filename: string }) {
+function PPTViewer({ filename, filePath }: { filename: string; filePath?: string }) {
     const [activeSlide, setActiveSlide] = useState(0);
+    const [slides, setSlides] = useState<Array<{ title: string; subtitle: string; points: string[] }>>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const slides = [
-        {
-            title: "Project Strategy & Roadmap",
-            subtitle: "Delivering Agentic Autonomy",
-            points: [
-                "Streamlining core workflow capabilities by 35%",
-                "Executing sandbox operations with WSL translation tools",
-                "Deploying visual state analyzers via Navis engine layers",
-                "Optimizing resource consumption patterns across worker nodes"
-            ]
-        },
-        {
-            title: "Market Analysis & Performance",
-            subtitle: "Benchmarking against Competitors",
-            points: [
-                "Positioned as top-tier autonomous solution for SMBs",
-                "Competitive moats established through local-first execution",
-                "User retention metrics showing 45% increase month-over-month",
-                "Q4 expansion plans into enterprise sectors"
-            ]
+    useEffect(() => {
+        if (!filePath) {
+            setLoading(false);
+            setError("No file path provided");
+            return;
         }
-    ];
+
+        let isMounted = true;
+        setLoading(true);
+        setError(null);
+
+        (window as any).electronAPI?.system?.parsePptx?.(filePath)
+            .then((res: any) => {
+                if (!isMounted) return;
+                if (res && res.success && res.slides && res.slides.length > 0) {
+                    setSlides(res.slides);
+                    setActiveSlide(0);
+                } else {
+                    setError(res?.error || "Could not parse presentation slides or file is empty");
+                }
+                setLoading(false);
+            })
+            .catch((err: any) => {
+                if (!isMounted) return;
+                console.error("Failed to parse pptx:", err);
+                setError(err.message || "Failed to parse presentation");
+                setLoading(false);
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [filePath]);
+
+    if (loading) {
+        return (
+            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', fontSize: 13, backgroundColor: '#1a1a17', width: '100%', minHeight: 400 }}>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 500, color: '#aaa' }}>Parsing Presentation Slides...</div>
+                    <div style={{ fontSize: 12, color: '#777' }}>Extracting text and shapes from the PPTX structure</div>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || slides.length === 0) {
+        return (
+            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ef4444', fontSize: 14, backgroundColor: '#1a1a17', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
+                <span style={{ fontSize: 32, marginBottom: 16 }}>⚠️</span>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: '#f87171' }}>Failed to View PowerPoint</div>
+                <div style={{ fontSize: 12, color: '#a1a1aa', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
+            </div>
+        );
+    }
+
+    const currentSlide = slides[activeSlide] || { title: "", subtitle: "", points: [] };
 
     return (
-        <div style={{ display: 'flex', height: '100%', backgroundColor: '#1a1a17' }}>
-            <div style={{ width: 180, borderRight: '1px solid #2d2d27', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', height: '100%', backgroundColor: '#1a1a17', width: '100%', minWidth: 0, minHeight: 0 }}>
+            {/* Sidebar with slide previews */}
+            <div style={{ width: 180, borderRight: '1px solid #2d2d27', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto', flexShrink: 0 }}>
                 {slides.map((slide, index) => (
                     <div 
                         key={index}
@@ -314,18 +352,20 @@ function PPTViewer({ filename }: { filename: string }) {
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'space-between',
-                            transition: 'all 0.15s'
+                            transition: 'all 0.15s',
+                            flexShrink: 0
                         }}
                     >
                         <span style={{ fontSize: 9, color: activeSlide === index ? '#0891b2' : '#888', fontWeight: 600 }}>Slide {index + 1}</span>
                         <div style={{ fontSize: 8, color: '#ccc', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {slide.title}
+                            {slide.title || `Slide ${index + 1}`}
                         </div>
                     </div>
                 ))}
             </div>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 24, justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+            {/* Slide stage */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 24, justifyContent: 'center', alignItems: 'center', gap: 16, minWidth: 0, overflowY: 'auto' }}>
                 <div style={{
                     width: '100%',
                     maxWidth: 620,
@@ -337,30 +377,71 @@ function PPTViewer({ filename }: { filename: string }) {
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    fontFamily: 'Inter, sans-serif'
+                    fontFamily: 'Inter, sans-serif',
+                    boxSizing: 'border-box'
                 }}>
                     <div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: '#111', borderBottom: '2px solid #0891b2', paddingBottom: 6 }}>
-                            {slides[activeSlide].title}
+                        <div style={{ fontSize: 20, fontWeight: 700, color: '#111', borderBottom: '2px solid #0891b2', paddingBottom: 6, wordBreak: 'break-word' }}>
+                            {currentSlide.title || "Untitled Slide"}
                         </div>
-                        <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic' }}>
-                            {slides[activeSlide].subtitle}
-                        </div>
+                        {currentSlide.subtitle && (
+                            <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic', wordBreak: 'break-word' }}>
+                                {currentSlide.subtitle}
+                            </div>
+                        )}
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '14px 0', flex: 1, justifyContent: 'center' }}>
-                        {slides[activeSlide].points.map((pt, i) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '14px 0', flex: 1, justifyContent: 'center', overflowY: 'auto' }}>
+                        {currentSlide.points.map((pt, i) => (
                             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                                 <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#0891b2', marginTop: 6, flexShrink: 0 }} />
-                                <div style={{ fontSize: 13, color: '#222', lineHeight: 1.4 }}>{pt}</div>
+                                <div style={{ fontSize: 13, color: '#222', lineHeight: 1.4, wordBreak: 'break-word' }}>{pt}</div>
                             </div>
                         ))}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#888', borderTop: '1px solid #eee', paddingTop: 6 }}>
-                        <span>{filename}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{filename}</span>
                         <span>Slide {activeSlide + 1} of {slides.length}</span>
                     </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <button 
+                        onClick={() => setActiveSlide(prev => Math.max(0, prev - 1))}
+                        disabled={activeSlide === 0}
+                        style={{
+                            padding: '4px 14px',
+                            borderRadius: 6,
+                            border: '1px solid #444',
+                            backgroundColor: '#2d2d27',
+                            color: activeSlide === 0 ? '#555' : '#fff',
+                            cursor: activeSlide === 0 ? 'not-allowed' : 'pointer',
+                            fontSize: 12,
+                            fontWeight: 600
+                        }}
+                    >
+                        Prev
+                    </button>
+                    <span style={{ fontSize: 12, color: '#aaa', fontWeight: 500 }}>
+                        {activeSlide + 1} / {slides.length}
+                    </span>
+                    <button 
+                        onClick={() => setActiveSlide(prev => Math.min(slides.length - 1, prev + 1))}
+                        disabled={activeSlide === slides.length - 1}
+                        style={{
+                            padding: '4px 14px',
+                            borderRadius: 6,
+                            border: '1px solid #444',
+                            backgroundColor: '#2d2d27',
+                            color: activeSlide === slides.length - 1 ? '#555' : '#fff',
+                            cursor: activeSlide === slides.length - 1 ? 'not-allowed' : 'pointer',
+                            fontSize: 12,
+                            fontWeight: 600
+                        }}
+                    >
+                        Next
+                    </button>
                 </div>
             </div>
         </div>
@@ -871,7 +952,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                             return <ExcelViewer filename={selectedCode.name} content={selectedCode.content} />;
                                         }
                                         if (['pptx', 'ppt'].includes(ext)) {
-                                            return <PPTViewer filename={selectedCode.name} />;
+                                            return <PPTViewer filename={selectedCode.name} filePath={artifactPath} />;
                                         }
                                         return (
                                             <>

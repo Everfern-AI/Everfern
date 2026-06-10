@@ -254,16 +254,29 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
         'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\EXCEL.EXE',
       ],
     },
+    {
+      name: 'Microsoft PowerPoint',
+      paths: [
+        'C:\\Program Files\\Microsoft Office\\root\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files\\Microsoft Office\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files (x86)\\Microsoft Office\\Office16\\POWERPNT.EXE',
+        'C:\\Program Files\\Microsoft Office\\Office15\\POWERPNT.EXE',
+        'C:\\Program Files (x86)\\Microsoft Office\\Office15\\POWERPNT.EXE',
+      ],
+    },
   ];
 
   const textExts = ['txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xml', 'ts', 'js', 'tsx', 'jsx', 'py', 'rs', 'go', 'mjs', 'cjs', 'env', 'gitignore', 'gitmodules', 'npmrc', 'svg', 'html', 'css', 'scss'];
   const docExts = ['docx', 'doc', 'rtf'];
   const sheetExts = ['xlsx', 'xls', 'csv'];
+  const pptExts = ['pptx', 'ppt'];
   const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'ico'];
 
   for (const { name, paths: candidates } of knownEditors) {
     if (name === 'Microsoft Word' && !docExts.includes(ext)) continue;
     if (name === 'Microsoft Excel' && !sheetExts.includes(ext)) continue;
+    if (name === 'Microsoft PowerPoint' && !pptExts.includes(ext)) continue;
     if (name === 'Paint' && !imageExts.includes(ext)) continue;
     if ((name === 'Notepad' || name === 'Notepad++' || name === 'Sublime Text' || name === 'VS Code') && !textExts.includes(ext)) continue;
 
@@ -321,6 +334,7 @@ async function getMacApps(ext: string): Promise<FileApp[]> {
     { name: 'Numbers', appPath: '/Applications/Numbers.app', exts: ['csv', 'xlsx', 'xls'] },
     { name: 'Pages', appPath: '/Applications/Pages.app', exts: ['docx', 'doc', 'rtf'] },
     { name: 'Keynote', appPath: '/Applications/Keynote.app', exts: ['pptx', 'ppt'] },
+    { name: 'Microsoft PowerPoint', appPath: '/Applications/Microsoft PowerPoint.app', exts: ['pptx', 'ppt'] },
     { name: 'Sublime Text', appPath: '/Applications/Sublime Text.app', exts: [] },
     { name: 'Zed', appPath: '/Applications/Zed.app', exts: [] },
     { name: 'Nova', appPath: '/Applications/Nova.app', exts: [] },
