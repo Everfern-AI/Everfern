@@ -817,5 +817,221 @@ export function registerSystemHandlers() {
       }
     }
   });
+
+  ipcMain.handle('system:parse-docx', async (_event, filePath: string) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'everfern-docx-'));
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        const zipPath = path.join(tempDir, 'temp.zip');
+        fs.copyFileSync(filePath, zipPath);
+        const escapedZipPath = zipPath.replace(/'/g, "''");
+        const escapedTempDir = tempDir.replace(/'/g, "''");
+        const cmd = `powershell.exe -NoProfile -Command "Expand-Archive -Path '${escapedZipPath}' -DestinationPath '${escapedTempDir}' -Force"`;
+        await execAsync(cmd);
+        if (fs.existsSync(zipPath)) {
+          fs.unlinkSync(zipPath);
+        }
+      } else {
+        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
+        await execAsync(cmd);
+      }
+
+      const docXmlPath = path.join(tempDir, 'word', 'document.xml');
+      if (!fs.existsSync(docXmlPath)) {
+        return { success: false, error: 'Invalid document file: missing word/document.xml' };
+      }
+
+      const xmlContent = fs.readFileSync(docXmlPath, 'utf8');
+
+      // Simple regex parser for paragraphs and headers
+      const pRegex = /<w:p[^>]*>([\s\S]*?)<\/w:p>/g;
+      let pMatch;
+      const paragraphs: string[] = [];
+
+      const decodeXmlEntities = (str: string): string => {
+        return str
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'")
+          .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+          .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      };
+
+      while ((pMatch = pRegex.exec(xmlContent)) !== null) {
+        const pXml = pMatch[1];
+        
+        // Find all w:t tags in this paragraph
+        const tRegex = /<w:t[^>]*>([^<]*?)<\/w:t>/g;
+        let tMatch;
+        let pText = '';
+        while ((tMatch = tRegex.exec(pXml)) !== null) {
+          pText += tMatch[1];
+        }
+        
+        pText = decodeXmlEntities(pText).trim();
+        if (pText) {
+          paragraphs.push(pText);
+        }
+      }
+
+      return { success: true, text: paragraphs.join('\n\n') };
+    } catch (err: any) {
+      console.error('[DOCXParser] error:', err);
+      return { success: false, error: err.message || String(err) };
+    } finally {
+      try {
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      } catch (cleanErr) {
+        console.warn('[DOCXParser] cleanup failed:', cleanErr);
+      }
+    }
+  });
+
+  ipcMain.handle('system:parse-xlsx', async (_event, filePath: string) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'everfern-xlsx-'));
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        const zipPath = path.join(tempDir, 'temp.zip');
+        fs.copyFileSync(filePath, zipPath);
+        const escapedZipPath = zipPath.replace(/'/g, "''");
+        const escapedTempDir = tempDir.replace(/'/g, "''");
+        const cmd = `powershell.exe -NoProfile -Command "Expand-Archive -Path '${escapedZipPath}' -DestinationPath '${escapedTempDir}' -Force"`;
+        await execAsync(cmd);
+        if (fs.existsSync(zipPath)) {
+          fs.unlinkSync(zipPath);
+        }
+      } else {
+        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
+        await execAsync(cmd);
+      }
+
+      // 1. Read shared strings
+      const sharedStrings: string[] = [];
+      const sharedStringsPath = path.join(tempDir, 'xl', 'sharedStrings.xml');
+      if (fs.existsSync(sharedStringsPath)) {
+        const xml = fs.readFileSync(sharedStringsPath, 'utf8');
+        const tRegex = /<t[^>]*>([\s\S]*?)<\/t>/g;
+        let match;
+        const decodeXmlEntities = (str: string): string => {
+          return str
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+            .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+        };
+        while ((match = tRegex.exec(xml)) !== null) {
+          sharedStrings.push(decodeXmlEntities(match[1]));
+        }
+      }
+
+      // 2. Read sheet1
+      const sheet1Path = path.join(tempDir, 'xl', 'worksheets', 'sheet1.xml');
+      if (!fs.existsSync(sheet1Path)) {
+        return { success: false, error: 'Invalid spreadsheet: missing xl/worksheets/sheet1.xml' };
+      }
+
+      const xml = fs.readFileSync(sheet1Path, 'utf8');
+      const rowRegex = /<row[^>]*>([\s\S]*?)<\/row>/g;
+      let rowMatch;
+      const grid: string[][] = [];
+
+      // Helper to map cell reference (like A1, B3, AB4) to col index
+      const colRefToIndex = (ref: string): number => {
+        const letters = ref.replace(/[0-9]/g, '');
+        let index = 0;
+        for (let i = 0; i < letters.length; i++) {
+          index = index * 26 + (letters.charCodeAt(i) - 64);
+        }
+        return index - 1;
+      };
+
+      while ((rowMatch = rowRegex.exec(xml)) !== null) {
+        const rowXml = rowMatch[1];
+        const cellRegex = /<c r="([^"]+)"[^>]*?(?:t="([^"]+)")?>([\s\S]*?)<\/c>/g;
+        let cellMatch;
+        const rowCells: string[] = [];
+
+        while ((cellMatch = cellRegex.exec(rowXml)) !== null) {
+          const ref = cellMatch[1];
+          const t = cellMatch[2] || '';
+          const innerXml = cellMatch[3];
+
+          const vRegex = /<v>([\s\S]*?)<\/v>/;
+          const vMatch = innerXml.match(vRegex);
+          let val = '';
+
+          if (vMatch) {
+            const rawVal = vMatch[1];
+            if (t === 's') {
+              const idx = parseInt(rawVal, 10);
+              val = sharedStrings[idx] || '';
+            } else {
+              val = rawVal;
+            }
+          }
+
+          const colIdx = colRefToIndex(ref);
+          rowCells[colIdx] = val;
+        }
+
+        // Fill empty cells
+        for (let i = 0; i < rowCells.length; i++) {
+          if (rowCells[i] === undefined) {
+            rowCells[i] = '';
+          }
+        }
+        grid.push(rowCells);
+      }
+
+      // Convert grid to CSV content
+      const csvLines = grid.map(row => 
+        row.map(cell => {
+          const escaped = cell.replace(/"/g, '""');
+          if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('"')) {
+            return `"${escaped}"`;
+          }
+          return escaped;
+        }).join(',')
+      );
+
+      return { success: true, csv: csvLines.join('\n') };
+    } catch (err: any) {
+      console.error('[XLSXParser] error:', err);
+      return { success: false, error: err.message || String(err) };
+    } finally {
+      try {
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      } catch (cleanErr) {
+        console.warn('[XLSXParser] cleanup failed:', cleanErr);
+      }
+    }
+  });
 }
 

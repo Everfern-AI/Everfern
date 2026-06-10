@@ -127,6 +127,15 @@ export const TimelineRenderer: React.FC<TimelineRendererProps> = ({
         setTaskStatuses((prev) => {
           const updated = new Map(prev);
           statusUpdates.forEach((status, taskId) => {
+            const oldStatus = prev.get(taskId);
+            if (status === 'completed' && oldStatus !== 'completed') {
+              // It transitioned to completed! Collapse it.
+              setExpandedTasks((prevExpanded) => {
+                const newExpanded = new Set(prevExpanded);
+                newExpanded.delete(taskId);
+                return newExpanded;
+              });
+            }
             updated.set(taskId, status);
           });
           return updated;

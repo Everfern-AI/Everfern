@@ -65,6 +65,7 @@ import SitePreview from './SitePreview';
 import SettingsPage from './SettingsPage';
 import CustomizeModal from './CustomizeModal';
 import FileArtifact from './FileArtifact';
+import DocumentCard from './components/DocumentCard';
 import FileViewerPane from './FileViewerPane';
 import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
@@ -178,6 +179,144 @@ function scrubOrchestratorNoise(text: string): string {
     // Collapse multiple blank lines into one
     return out.replace(/\n{3,}/g, '\n\n').trim();
 }
+
+function extractSuggestedFollowUps(content: string): { cleanContent: string; followUps: Array<{ icon: string; text: string }> } {
+    if (!content) return { cleanContent: '', followUps: [] };
+    const regex = /<suggested_follow_ups>([\s\S]*?)<\/suggested_follow_ups>/i;
+    const match = content.match(regex);
+    if (!match) {
+        return { cleanContent: content, followUps: [] };
+    }
+
+    const cleanContent = content.replace(regex, '').trim();
+    let followUps: Array<{ icon: string; text: string }> = [];
+    try {
+        const parsed = JSON.parse(match[1].trim());
+        if (Array.isArray(parsed)) {
+            followUps = parsed;
+        }
+    } catch (e) {
+        console.error("Failed to parse suggested follow-ups JSON, falling back to line parsing", e);
+        const lines = match[1].split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        for (const line of lines) {
+            const cleanLine = line.replace(/^-\s*/, '').trim();
+            if (cleanLine) {
+                const emojiMatch = cleanLine.match(/^([\u2000-\u32FF\ud800-\udbff\udc00-\udfff\ud83c\ud83d\ud83e\u2600-\u27ff])\s*(.*)$/);
+                if (emojiMatch) {
+                    followUps.push({ icon: emojiMatch[1], text: emojiMatch[2] });
+                } else {
+                    followUps.push({ icon: '💬', text: cleanLine });
+                }
+            }
+        }
+    }
+    return { cleanContent, followUps };
+}
+
+const SuggestedFollowUpsComponent = ({
+    followUps,
+    onSelect
+}: {
+    followUps: Array<{ icon: string; text: string }>;
+    onSelect: (text: string) => void;
+}) => {
+    return (
+        <div style={{
+            marginTop: 18,
+            marginBottom: 8,
+            width: "100%",
+            maxWidth: 640,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8
+        }}>
+            <div style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#8a8886",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                marginBottom: 4,
+                paddingLeft: 4
+            }}>
+                Suggested follow-ups
+            </div>
+            <div style={{
+                display: "flex",
+                flexDirection: "column",
+                border: "1px solid #e8e6d9",
+                borderRadius: 14,
+                overflow: "hidden",
+                backgroundColor: "#ffffff",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.02)"
+            }}>
+                {followUps.map((item, idx) => (
+                    <button
+                        key={idx}
+                        type="button"
+                        onClick={() => onSelect(item.text)}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: "12px 16px",
+                            border: "none",
+                            background: "transparent",
+                            cursor: "pointer",
+                            width: "100%",
+                            textAlign: "left",
+                            color: "#201e24",
+                            fontFamily: "var(--font-sans)",
+                            fontSize: 13.5,
+                            borderBottom: idx < followUps.length - 1 ? "1px solid #f1f1ef" : "none",
+                            transition: "background-color 0.15s ease",
+                            outline: "none"
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#faf9f7";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                    >
+                        {item.icon && (
+                            <span style={{
+                                fontSize: 16,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: 28,
+                                height: 28,
+                                borderRadius: "50%",
+                                backgroundColor: "#f5f4f0",
+                                flexShrink: 0
+                            }}>
+                                {item.icon}
+                            </span>
+                        )}
+                        <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.4 }}>
+                            {item.text}
+                        </span>
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{ color: "#a5a3a0", flexShrink: 0 }}
+                        >
+                            <path d="M5 12h14" />
+                            <path d="m12 5 7 7-7 7" />
+                        </svg>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
 export default function ChatPage() {
@@ -480,6 +619,17 @@ export default function ChatPage() {
     useEffect(() => {
         handleSendRef.current = handleSend;
     });
+
+    useEffect(() => {
+        const handleSendChatEvent = (e: Event) => {
+            const customEvent = e as CustomEvent<string>;
+            if (customEvent.detail && handleSendRef.current) {
+                handleSendRef.current(customEvent.detail);
+            }
+        };
+        window.addEventListener('send-chat-message', handleSendChatEvent);
+        return () => window.removeEventListener('send-chat-message', handleSendChatEvent);
+    }, []);
 
     useEffect(() => {
         const api = (window as any).electronAPI;
@@ -1143,6 +1293,7 @@ export default function ChatPage() {
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
+    const hasPlanCreatedRef = useRef(false);
 
     const applyLiveToolUpdate = useCallback((data: { toolName: string; toolCallId?: string; update: string; conversationId?: string }) => {
         if (data.conversationId && data.conversationId !== activeConversationIdRef.current) {
@@ -1220,6 +1371,7 @@ export default function ChatPage() {
         assistantMessageIdRef.current = null;
         isMessageCommittedRef.current = false;
         isHandlingPlanRef.current = false;
+        hasPlanCreatedRef.current = false;
         hasReceivedUsageData.current = false;
         missionTimelineRef.current = null;
 
@@ -1917,6 +2069,7 @@ export default function ChatPage() {
         if (acpApi.onPlanCreated) {
             acpApi.onPlanCreated(({ plan }: { plan: any }) => {
                 if (plan?.steps) {
+                    hasPlanCreatedRef.current = true;
                     setActivePlanSteps(plan.steps);
                     setActivePlanTitle(plan.title || null);
                 }
@@ -2167,6 +2320,26 @@ export default function ChatPage() {
                 liveToolCallsRef.current = [...filtered, newTc];
                 setLiveToolCalls([...liveToolCallsRef.current]);
                 maybeOpenUserUrlTool(newTc);
+
+                // Fallback Task Creation
+                if (!hasPlanCreatedRef.current) {
+                    setActivePlanTitle("Task Execution Steps");
+                    setActivePlanSteps(prev => {
+                        const steps = prev || [];
+                        const stepId = toolCallId || newTc.id;
+                        if (steps.some(s => s.id === stepId)) return steps;
+
+                        const toolDisplay = resolveToolDisplay(toolName, toolArgs);
+                        const newStep = {
+                            id: stepId,
+                            title: toolDisplay.label,
+                            description: `Executing tool ${toolName}`,
+                            tool: toolName,
+                            status: 'in-progress' as const
+                        };
+                        return [...steps, newStep];
+                    });
+                }
             });
             acpApi.onToolUpdate?.(applyLiveToolUpdate);
             acpApi.onSubAgentProgress?.((event: SubAgentProgressEvent) => {
@@ -2252,6 +2425,25 @@ export default function ChatPage() {
                             rawMemory: record.result.output || '',
                             dismissed: false
                         });
+                    }
+
+                    // Fallback Task Update
+                    if (!hasPlanCreatedRef.current) {
+                        const stepId = record.id || record.toolCallId || existingId;
+                        if (stepId) {
+                            setActivePlanSteps(prev => {
+                                if (!prev) return null;
+                                return prev.map(s => {
+                                    if (s.id === stepId) {
+                                        return {
+                                            ...s,
+                                            status: record.result?.success ? 'completed' : 'failed'
+                                        };
+                                    }
+                                    return s;
+                                });
+                            });
+                        }
                     }
                 }
             });
@@ -2539,6 +2731,7 @@ export default function ChatPage() {
         toolCallMap.current.clear();
         hasReceivedUsageData.current = false;
         assistantMessageIdRef.current = crypto.randomUUID();
+        hasPlanCreatedRef.current = false;
 
         const currentM = availableModels.find(m => m.id === selectedModel) || availableModels[0];
 
@@ -4707,30 +4900,52 @@ export default function ChatPage() {
                                                                 if (displayContent === 'Working...' || displayContent === 'Working') {
                                                                     displayContent = '';
                                                                 }
-                                                                const hasContent = displayContent.length > 0;
+                                                                const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
+                                                                const hasContent = finalContent.length > 0;
                                                                 const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
                                                                 return (
                                                                     <>
                                                                         {hasContent ? (
-                                                                            <StreamingMarkdown content={displayContent} isLive={false} isLatest={idx === messages.length - 1} />
+                                                                            <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
                                                                         ) : hasToolCalls ? (
                                                                             <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic', padding: '8px 0' }}>
 
                                                                             </div>
                                                                         ) : null}
-                                                                        {artifacts.map((art, i) => (
-                                                                            <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-                                                                                <FileArtifact
-                                                                                    path={art.path}
-                                                                                    description={art.description}
-                                                                                    chatId={activeConversationId || ""}
-                                                                                    onOpenArtifact={(name) => {
-                                                                                        setViewingFile({ name, path: art.path });
-                                                                                    }}
-                                                                                />
-                                                                            </div>
-                                                                        ))}
+                                                                        {artifacts.map((art, i) => {
+                                                                            const ext = art.path.split('.').pop()?.toLowerCase() || '';
+                                                                            const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);
+                                                                            return (
+                                                                                <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
+                                                                                    {isPremiumDoc ? (
+                                                                                        <DocumentCard
+                                                                                            path={art.path}
+                                                                                            description={art.description}
+                                                                                            chatId={activeConversationId || ""}
+                                                                                            onOpenArtifact={(name) => {
+                                                                                                setViewingFile({ name, path: art.path });
+                                                                                            }}
+                                                                                        />
+                                                                                    ) : (
+                                                                                        <FileArtifact
+                                                                                            path={art.path}
+                                                                                            description={art.description}
+                                                                                            chatId={activeConversationId || ""}
+                                                                                            onOpenArtifact={(name) => {
+                                                                                                setViewingFile({ name, path: art.path });
+                                                                                            }}
+                                                                                        />
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                        {followUps.length > 0 && (
+                                                                            <SuggestedFollowUpsComponent
+                                                                                followUps={followUps}
+                                                                                onSelect={(text) => handleSend(text)}
+                                                                            />
+                                                                        )}
                                                                     </>
                                                                 );
                                                             })()}
@@ -4843,22 +5058,38 @@ export default function ChatPage() {
                                                         cleanContent = '';
                                                     }
 
+                                                                                  const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
+
                                                     return (
                                                         <>
-                                                            {(cleanContent || streamingContent) && <StreamingMarkdown content={cleanContent} isLive={true} />}
-                                                            {artifacts.map((art, i) => (
-
-                                                                <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-                                                                    <FileArtifact
-                                                                        path={art.path}
-                                                                        description={art.description}
-                                                                        chatId={activeConversationId || ""}
-                                                                        onOpenArtifact={(name) => {
-                                                                            setViewingFile({ name, path: art.path });
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                            ))}
+                                                            {(finalStreamingContent || streamingContent) && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
+                                                            {artifacts.map((art, i) => {
+                                                                const ext = art.path.split('.').pop()?.toLowerCase() || '';
+                                                                const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);
+                                                                return (
+                                                                    <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
+                                                                        {isPremiumDoc ? (
+                                                                            <DocumentCard
+                                                                                path={art.path}
+                                                                                description={art.description}
+                                                                                chatId={activeConversationId || ""}
+                                                                                onOpenArtifact={(name) => {
+                                                                                    setViewingFile({ name, path: art.path });
+                                                                                }}
+                                                                            />
+                                                                        ) : (
+                                                                            <FileArtifact
+                                                                                path={art.path}
+                                                                                description={art.description}
+                                                                                chatId={activeConversationId || ""}
+                                                                                onOpenArtifact={(name) => {
+                                                                                    setViewingFile({ name, path: art.path });
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
                                                             {liveToolCalls.filter(tc => tc.toolName === 'visualize').map(tc => (
                                                                 <InlineVisualization
                                                                     key={tc.id}

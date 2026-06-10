@@ -55,6 +55,11 @@ export const TaskSection: React.FC<TaskSectionProps> = ({
   // Local state for expand/collapse
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
 
+  // Sync local state with parent prop updates
+  React.useEffect(() => {
+    setIsExpanded(initialExpanded);
+  }, [initialExpanded]);
+
   // Handle toggle
   const handleToggle = () => {
     setIsExpanded(!isExpanded);

@@ -171,16 +171,18 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
 const IconContainer = ({
     icon,
     shape,
+    size = 24,
 }: {
     icon: React.ReactNode;
     shape: IconShape;
+    size?: number;
 }) => (
     <div
         style={{
-            width: 24,
-            height: 24,
+            width: size,
+            height: size,
             flexShrink: 0,
-            borderRadius: shape === "circle" ? "50%" : 7,
+            borderRadius: shape === "circle" ? "50%" : size === 24 ? 7 : 5,
             background: "#d3d3d0",
             boxShadow: [
                 "inset 0 1px 0 rgba(255,255,255,0.70)",
@@ -203,24 +205,29 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
     if (status === "completed") {
         return (
             <div style={{
-                width: 20, height: 20, borderRadius: "50%",
-                background: "#e8f5e9", border: "1px solid #c8e6c9",
+                width: 16, height: 16, borderRadius: "50%",
+                background: "#f4f4f5", border: "1.5px solid #d4d4d8",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                position: "relative", zIndex: 1,
             }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 5L4 7L8 3" stroke="#43a047" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                    <path d="M2 5L4 7L8 3" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
             </div>
         );
     }
     if (status === "in-progress") {
         return (
-            <div style={{ width: 20, height: 20, flexShrink: 0, position: "relative" }}>
+            <div style={{
+                width: 16, height: 16, borderRadius: "50%",
+                background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, position: "relative", zIndex: 1
+            }}>
                 <motion.div
                     style={{
-                        width: 20, height: 20, borderRadius: "50%",
-                        border: "2px solid #e0e0e0",
-                        borderTopColor: "#111",
+                        width: 16, height: 16, borderRadius: "50%",
+                        border: "2px solid #e4e4e7",
+                        borderTopColor: "#3b82f6",
                         position: "absolute", inset: 0,
                     }}
                     animate={{ rotate: 360 }}
@@ -232,19 +239,21 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
     if (status === "failed") {
         return (
             <div style={{
-                width: 20, height: 20, borderRadius: "50%",
-                background: "#fef2f2", border: "1px solid #fecaca",
+                width: 16, height: 16, borderRadius: "50%",
+                background: "#fef2f2", border: "1.5px solid #fecaca",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                position: "relative", zIndex: 1,
             }}>
-                <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700 }}>✕</span>
+                <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700, lineHeight: 1 }}>✕</span>
             </div>
         );
     }
     return (
         <div style={{
-            width: 20, height: 20, borderRadius: "50%",
-            border: "1.5px solid #d4d4d4",
+            width: 16, height: 16, borderRadius: "50%",
+            border: "1.5px solid #e4e4e7",
             background: "#fafafa", flexShrink: 0,
+            position: "relative", zIndex: 1,
         }} />
     );
 };
@@ -346,21 +355,22 @@ const SubAgentProgressTimeline = ({
                             <div style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 8,
+                                gap: 6,
                                 width: "fit-content",
                                 maxWidth: "100%",
-                                padding: "5px 10px 5px 6px",
-                                borderRadius: 12,
-                                fontSize: 11.5,
+                                padding: "3px 8px 3px 5px",
+                                borderRadius: 999,
+                                fontSize: 11,
                                 color: isComplete ? "#15803d" : isAbort ? "#b91c1c" : "#4b5563",
-                                lineHeight: 1.35,
+                                lineHeight: 1.2,
                                 background: "#fbfbfa",
                                 border: "1px solid rgba(0,0,0,0.07)",
                                 boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                             }}>
                                 <IconContainer
-                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 11).icon}
-                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 11).shape}
+                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 10).icon}
+                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : isScreenshot ? "screenshot" : "tool"), 10).shape}
+                                    size={18}
                                 />
                                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {text}
@@ -370,19 +380,20 @@ const SubAgentProgressTimeline = ({
                             <div style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: 10,
-                                padding: "7px 14px 7px 8px",
-                                borderRadius: 14,
-                                fontSize: 12.5,
+                                gap: 8,
+                                padding: "4px 10px 4px 6px",
+                                borderRadius: 999,
+                                fontSize: 11.5,
                                 color: "#333",
-                                lineHeight: 1.4,
+                                lineHeight: 1.2,
                                 position: "relative",
                                 overflow: "hidden",
                                 ...galliumSurface,
                             }}>
                                 <IconContainer 
-                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).icon} 
-                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : "tool")).shape} 
+                                    icon={getToolMeta(event.action?.type || (isStep ? "cube" : "tool"), 11).icon} 
+                                    shape={getToolMeta(event.action?.type || (isStep ? "cube" : "tool"), 11).shape} 
+                                    size={20}
                                 />
                                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {text}
@@ -444,12 +455,12 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
     const label = isSkill
         ? `Skill - ${skillName || tc.label || tc.toolName?.replace(/_/g, " ") || "Tool"}`
         : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool"));
-    let { icon, shape } = getToolMeta(tc.toolName);
+    let { icon, shape } = getToolMeta(tc.toolName, 11);
 
     // system_files: pick action-specific icon at render time
     if (tc.toolName === 'system_files') {
         const sfa = String(tc.args?.action ?? '');
-        const sz = { width: 13, height: 13, flexShrink: 0 as const };
+        const sz = { width: 11, height: 11, flexShrink: 0 as const };
         if (sfa === 'move')   icon = <ArrowRightIcon style={sz} />;
         else if (sfa === 'rename') icon = <DocumentDuplicateIcon style={sz} />;
         else if (sfa === 'mkdirp') icon = <FolderPlusIcon style={sz} />;
@@ -504,20 +515,20 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
                     ...galliumSurface,
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    gap: 6,
                     width: "fit-content",
                     maxWidth: "min(100%, 620px)",
-                    padding: "5px 10px 5px 7px",
-                    borderRadius: 12,
+                    padding: "3px 8px 3px 5px",
+                    borderRadius: 999,
                     cursor: onClick ? "pointer" : "default",
-                    fontSize: 12,
+                    fontSize: 11.5,
                     color: isDone ? "#aaa" : "#333",
-                    lineHeight: 1.25,
+                    lineHeight: 1.2,
                     position: "relative",
                     overflow: "hidden",
                 }}
             >
-                <IconContainer icon={icon} shape={shape} />
+                <IconContainer icon={icon} shape={shape} size={20} />
 
                 <span style={{
                     overflow: "hidden",
@@ -1097,6 +1108,7 @@ const MissionStepRow = ({
     defaultOpen,
     onPillClick,
     subAgentProgress,
+    isLast,
 }: {
     step: MissionStep;
     toolCalls: ToolCallDisplay[];
@@ -1104,6 +1116,7 @@ const MissionStepRow = ({
     defaultOpen: boolean;
     onPillClick?: (tc: ToolCallDisplay) => void;
     subAgentProgress?: Map<string, SubAgentProgressEvent[]>;
+    isLast: boolean;
 }) => {
     const [open, setOpen] = useState(defaultOpen);
     const hasRunningTools = toolCalls.some(tc => tc.status === "running");
@@ -1128,8 +1141,19 @@ const MissionStepRow = ({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: isPending ? 0.35 : 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            style={{ marginBottom: 4 }}
+            style={{ marginBottom: 4, position: "relative" }}
         >
+            {!isLast && (
+                <div style={{
+                    position: "absolute",
+                    top: 14,
+                    bottom: -18,
+                    left: 7,
+                    borderLeft: "1.5px dashed #d4d4d8",
+                    zIndex: 0,
+                    pointerEvents: "none",
+                }} />
+            )}
             <div
                 onClick={() => hasContent && setOpen(o => !o)}
                 style={{
@@ -1178,7 +1202,7 @@ const MissionStepRow = ({
                             paddingLeft: 24,
                             paddingBottom: 10,
                             marginLeft: 6,
-                            borderLeft: "1px solid #f3f4f6",
+                            borderLeft: "none",
                         }}>
                             {step.description && (
                                 <p style={{
@@ -1346,10 +1370,9 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                     {/* Vertical connecting line */}
                     <div style={{
                         position: "absolute",
-                        top: 14, bottom: 14, left: 23,
-                        width: 2,
-                        background: "rgba(0,0,0,0.06)",
-                        borderRadius: 2
+                        top: 12, bottom: 12, left: 20,
+                        borderLeft: "2px dashed #d4d4d8",
+                        zIndex: 0
                     }} />
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1359,8 +1382,8 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                             const isFailed = step.status === "failed";
                             const isPending = !isDone && !isActive && !isFailed;
 
-                            const statusColor = isDone ? "#10b981" : isActive ? "#3b82f6" : isFailed ? "#ef4444" : "#d1d5db";
-                            const bgColor = isDone ? "#ecfdf5" : isActive ? "#eff6ff" : isFailed ? "#fef2f2" : "#f9fafb";
+                            const statusColor = isDone ? "#d4d4d8" : isActive ? "#3b82f6" : isFailed ? "#ef4444" : "#e4e4e7";
+                            const bgColor = isDone ? "#f4f4f5" : isActive ? "#eff6ff" : isFailed ? "#fef2f2" : "#f9fafb";
 
                             return (
                                 <motion.div
@@ -1379,24 +1402,24 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                     {/* Node Point */}
                                     <div style={{
                                         marginTop: 2,
-                                        width: 24, height: 24,
+                                        width: 18, height: 18,
                                         borderRadius: "50%",
                                         background: bgColor,
-                                        border: `2px solid ${statusColor}`,
+                                        border: `1.5px solid ${statusColor}`,
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         flexShrink: 0,
                                         boxShadow: isActive ? `0 0 0 4px rgba(59, 130, 246, 0.15)` : 'none'
                                     }}>
-                                        {isDone && <CheckIcon width={14} height={14} style={{ color: statusColor, strokeWidth: 3 }} />}
+                                        {isDone && <CheckIcon width={12} height={12} style={{ color: "#71717a", strokeWidth: 3 }} />}
                                         {isActive && (
                                             <motion.div
                                                 animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
                                                 transition={{ duration: 1.5, repeat: Infinity }}
-                                                style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor }}
+                                                style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor }}
                                             />
                                         )}
-                                        {isFailed && <span style={{ fontSize: 12, fontWeight: 700, color: statusColor, lineHeight: 1 }}>✕</span>}
-                                        {isPending && <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor }} />}
+                                        {isFailed && <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, lineHeight: 1 }}>✕</span>}
+                                        {isPending && <span style={{ width: 4, height: 4, borderRadius: "50%", background: statusColor }} />}
                                     </div>
 
                                     {/* Task Card */}
@@ -1669,6 +1692,7 @@ export const AgentTimeline = ({
                             defaultOpen={step.status === "in-progress" || step.status === "completed"}
                             onPillClick={onPillClick}
                             subAgentProgress={subAgentProgress}
+                            isLast={idx === visibleSteps.length - 1}
                         />
                     ))}
                 </div>

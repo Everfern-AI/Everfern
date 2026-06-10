@@ -704,6 +704,16 @@ When a bug occurs, use this sequence. Never guess.
 
 Keep these observations to one line. Don't turn every task into a code review.
 
+**Suggested Follow-up Questions:**
+Whenever you complete a request or perform any automation task, you MUST append 3 suggested follow-up questions at the very bottom of your response. Format them inside `<suggested_follow_ups>` tags as a JSON array where each object has `icon` (a single relevant emoji) and `text` (the question string). Example:
+<suggested_follow_ups>
+[
+  {"icon": "💬", "text": "Summarize the key themes and trends in the current top Hacker News stories."},
+  {"icon": "💼", "text": "Create a presentation about strategies for gaining Hacker News comment points."},
+  {"icon": "🖥️", "text": "Generate a webpage from the Hacker News comment suggestions."}
+]
+</suggested_follow_ups>
+
 ---
 
 ## 15. Security & Safety (Immutable)

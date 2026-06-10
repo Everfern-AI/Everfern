@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFileApps: (filePath: string) => ipcRenderer.invoke('system:get-file-apps', filePath),
     readImageDataUrl: (filePath: string) => ipcRenderer.invoke('system:read-image-data-url', filePath),
     parsePptx: (filePath: string) => ipcRenderer.invoke('system:parse-pptx', filePath),
+    parseDocx: (filePath: string) => ipcRenderer.invoke('system:parse-docx', filePath),
+    parseXlsx: (filePath: string) => ipcRenderer.invoke('system:parse-xlsx', filePath),
   },
 
   // ── System Tray ──────────────────────────────────────────────────
@@ -607,6 +609,8 @@ export type ElectronAPI = {
     getFileApps: (filePath: string) => Promise<Array<{ name: string; path: string; icon: string }>>;
     readImageDataUrl: (filePath: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; size?: number; path?: string; error?: string }>;
     parsePptx: (filePath: string) => Promise<{ success: boolean; slides?: Array<{ title: string; subtitle: string; points: string[] }>; error?: string }>;
+    parseDocx: (filePath: string) => Promise<{ success: boolean; text?: string; error?: string }>;
+    parseXlsx: (filePath: string) => Promise<{ success: boolean; csv?: string; error?: string }>;
   };
   tray: {
     showWindow:   () => Promise<{ success: boolean }>;
