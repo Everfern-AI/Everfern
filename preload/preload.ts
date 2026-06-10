@@ -229,15 +229,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:mission-phase-change');
       ipcRenderer.removeAllListeners('acp:mission-complete');
     },
-    onMissionStepUpdate: (cb: (data: { step: any; timeline: any }) => void) => {
+    onMissionStepUpdate: (cb: (data: { conversationId?: string; step: any; timeline: any }) => void) => {
       ipcRenderer.removeAllListeners('acp:mission-step-update');
       ipcRenderer.on('acp:mission-step-update', (_e, data) => cb(data));
     },
-    onMissionPhaseChange: (cb: (data: { phase: string; timeline: any }) => void) => {
+    onMissionPhaseChange: (cb: (data: { conversationId?: string; phase: string; timeline: any }) => void) => {
       ipcRenderer.removeAllListeners('acp:mission-phase-change');
       ipcRenderer.on('acp:mission-phase-change', (_e, data) => cb(data));
     },
-    onMissionComplete: (cb: (data: { timeline: any; steps: any[] }) => void) => {
+    onMissionComplete: (cb: (data: { conversationId?: string; timeline: any; steps: any[] }) => void) => {
       ipcRenderer.removeAllListeners('acp:mission-complete');
       ipcRenderer.on('acp:mission-complete', (_e, data) => cb(data));
     },
@@ -653,9 +653,9 @@ export type ElectronAPI = {
     agentPermissionResponse: (granted: boolean) => Promise<{ success: boolean }>;
     playSound: (soundPath: string) => Promise<boolean>;
     validateNvidiaModel: (modelId: string, apiKey: string) => Promise<{ valid: boolean; hasVision?: boolean; error?: string }>;
-    onMissionStepUpdate: (cb: (data: { step: any; timeline: any }) => void) => void;
-    onMissionPhaseChange: (cb: (data: { phase: string; timeline: any }) => void) => void;
-    onMissionComplete: (cb: (data: { timeline: any; steps: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number } }) => void) => void;
+    onMissionStepUpdate: (cb: (data: { conversationId?: string; step: any; timeline: any }) => void) => void;
+    onMissionPhaseChange: (cb: (data: { conversationId?: string; phase: string; timeline: any }) => void) => void;
+    onMissionComplete: (cb: (data: { conversationId?: string; timeline: any; steps: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number } }) => void) => void;
     onPlanCreated: (cb: (data: { plan: any }) => void) => void;
     onHitlRequest: (cb: (data: any) => void) => void;
     sendHitlResponse: (response: string) => void;

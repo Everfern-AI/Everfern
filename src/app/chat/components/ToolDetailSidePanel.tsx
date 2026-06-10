@@ -4928,6 +4928,35 @@ function hasImageExtension(value: string): boolean {
   return /\.(png|jpe?g|gif|webp|bmp|avif|ico|svg|tiff?)$/i.test(String(value || '').split(/[?#]/)[0]);
 }
 
+function extractImagePathsFromText(value: string): string[] {
+  const matches = String(value || '').match(/[A-Za-z]:\\[^\r\n]+?\.(?:png|jpe?g|gif|webp|bmp|avif|ico|svg|tiff?)/gi) || [];
+  return Array.from(new Set(matches.map(match => match.trim()).filter(hasImageExtension)));
+}
+
+function getImageAnalysisPayloadKey(tc: any): string {
+  const data = tc?.data || tc?.result?.data || {};
+  const sheets = Array.isArray(data.sheets) ? data.sheets : [];
+  const images = Array.isArray(data.images) ? data.images : [];
+  const fileNames = Array.isArray(data.fileNames) ? data.fileNames : [];
+  return [
+    tc?.status || '',
+    tc?.output || tc?.result?.output || '',
+    data.imageCount ?? '',
+    data.sheetCount ?? '',
+    data.directory || '',
+    data.outputDir || '',
+    data.manifestPath || '',
+    tc?.base64Image ? String(tc.base64Image).length : 0,
+    data.base64Image ? String(data.base64Image).length : 0,
+    sheets.length,
+    sheets.map((sheet: any) => `${sheet?.path || ''}:${sheet?.dataUrl ? String(sheet.dataUrl).length : 0}`).join('|'),
+    images.length,
+    images.map((img: any) => `${img?.path || img?.fileName || ''}:${img?.dataUrl ? String(img.dataUrl).length : 0}`).join('|'),
+    fileNames.length,
+    fileNames.join('|'),
+  ].join('\n');
+}
+
 function asImageDataUrl(value: string, fallbackMime = 'image/jpeg'): string {
   if (!value) return '';
   if (/^data:image\//i.test(value)) return value;
@@ -5234,11 +5263,13 @@ function extractImageAnalysisData(tc: any) {
     const isSheet = toolName === 'visual_classification_sheet';
     const data = tc.data || tc.result?.data || {};
     const args = tc.args || {};
+    const outputText = tc.output || tc.result?.output || data.visionOutput || '';
+    const outputImagePaths = extractImagePathsFromText(outputText);
     const images: ImagePreviewItem[] = [];
     const rawImages = data.images || [];
     if (Array.isArray(rawImages)) {
       for (const img of rawImages) {
-        if (img?.dataUrl && (img?.fileName || img?.path)) {
+        if ((img?.dataUrl || img?.path) && (img?.fileName || img?.path)) {
           images.push({
             fileName: img.fileName || imagePathBasename(img.path),
             path: img.path,
@@ -5263,6 +5294,15 @@ function extractImageAnalysisData(tc: any) {
       });
     }
 
+    for (const imagePath of outputImagePaths) {
+      if (images.some(img => img.path === imagePath)) continue;
+      images.push({
+        fileName: imagePathBasename(imagePath),
+        path: imagePath,
+        badge: isSheet ? `Sheet ${images.length + 1}` : undefined,
+      });
+    }
+
     if ((tc.base64Image || data.base64Image) && images.length === 0) {
       images.push({
         fileName: isSheet ? 'visual-classification-sheet.jpg' : 'analysis-image.jpg',
@@ -5274,6 +5314,7 @@ function extractImageAnalysisData(tc: any) {
     const rawFileNames = [
       ...(Array.isArray(data.fileNames) ? data.fileNames : []),
       ...(sheets.map((sheet: any) => sheet?.path).filter(Boolean)),
+      ...outputImagePaths,
       ...(Array.isArray(args.images) ? args.images : []),
       ...(args.imagePath ? [args.imagePath] : []),
     ].filter(Boolean);
@@ -5281,7 +5322,7 @@ function extractImageAnalysisData(tc: any) {
     return {
       title: isSheet ? 'Visual Classification Sheet' : 'Image Analysis',
       question: args.question || '',
-      output: tc.output || tc.result?.output || data.visionOutput || '',
+      output: outputText,
       imageCount: data.imageCount || images.length || args.images?.length || (args.imagePath ? 1 : 0),
       sheetCount: data.sheetCount || (sheets.length || undefined),
       directory: data.directory || args.directory || '',
@@ -5341,6 +5382,7 @@ export default function ToolDetailSidePanel({
   const [openWithAppsLoading, setOpenWithAppsLoading] = useState(false);
   const isMac = isMacPlatform();
   const shortcutPrefix = isMac ? '⌘' : 'Ctrl';
+  const imageAnalysisPayloadKey = getImageAnalysisPayloadKey(toolCall);
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 1024);
@@ -5442,7 +5484,7 @@ export default function ToolDetailSidePanel({
   // toolCall?.output changes when an in-progress tool call finishes.
   // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, toolCall?.id, toolCall?.output]);
+  }, [isOpen, toolCall?.id, toolCall?.output, imageAnalysisPayloadKey]);
 
   // Lightweight secondary effect: ONLY updates screenshots for live FERN/computer_use sessions.
   // Runs when new progress events arrive but skips the loading spinner and full re-parse.

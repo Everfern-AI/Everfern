@@ -100,6 +100,26 @@ export const buildGraph = (
         return `**${name}** — \`${JSON.stringify(args).slice(0, 120)}\``;
       };
 
+      const buildFallbackActionSummary = () => {
+        const signal = state.completionSignal;
+        const rationale = String(signal?.hitlRationale || signal?.explanation || '').trim();
+        if (!rationale) {
+          return '**approval_required** — `Review the security rationale before proceeding.`';
+        }
+
+        const backtickCommand = rationale.match(/`([^`]{3,500})`/)?.[1]?.trim();
+        if (backtickCommand) {
+          return `**approval_required** — \`${backtickCommand}\``;
+        }
+
+        const quotedCommand = rationale.match(/["“]([^"”]{3,500})["”]/)?.[1]?.trim();
+        if (quotedCommand && /(?:npm|npx|pnpm|yarn|powershell|pwsh|cmd|python|node|git|rm|del|remove|new-item|mkdir|copy|move|curl|invoke-webrequest)/i.test(quotedCommand)) {
+          return `**approval_required** — \`${quotedCommand}\``;
+        }
+
+        return `**approval_required** — \`${rationale.slice(0, 240)}${rationale.length > 240 ? '…' : ''}\``;
+      };
+
       // If pendingToolCalls is empty but we're in HITL, check the message history for tool calls
       let toolsToDisplay = state.pendingToolCalls || [];
       if (toolsToDisplay.length === 0 && state.messages && state.messages.length > 0) {
@@ -120,7 +140,7 @@ export const buildGraph = (
 
       const toolSummary = toolsToDisplay.length > 0
         ? toolsToDisplay.map(formatToolCallSummary).join('\n')
-        : 'No tools pending';
+        : buildFallbackActionSummary();
 
       const hitlRationale = state.completionSignal?.hitlRationale || 'High-risk operation detected';
       const reasoning = hitlRationale;

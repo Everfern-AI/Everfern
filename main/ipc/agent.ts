@@ -579,12 +579,14 @@ export function registerAgentHandlers() {
         } else if (streamEvent.type === 'mission_step_update') {
           // ── Mission Step Update → acp:mission-step-update ──────────────
           safeSend('acp:mission-step-update', {
+            conversationId: (streamEvent as any).conversationId,
             step: (streamEvent as any).step,
             timeline: (streamEvent as any).timeline,
           });
         } else if (streamEvent.type === 'mission_phase_change') {
           // ── Mission Phase Change → acp:mission-phase-change ────────────
           safeSend('acp:mission-phase-change', {
+            conversationId: (streamEvent as any).conversationId,
             phase: (streamEvent as any).phase,
             timeline: (streamEvent as any).timeline,
           });
@@ -592,6 +594,7 @@ export function registerAgentHandlers() {
           // ── Mission Complete — send BEFORE done:true so listeners are still alive ──
           console.log('[AgentIPC] Mission complete event received');
           safeSend('acp:mission-complete', {
+            conversationId: (streamEvent as any).conversationId,
             timeline: (streamEvent as any).timeline,
             steps: (streamEvent as any).steps,
             thinkingDuration: (streamEvent as any).thinkingDuration,

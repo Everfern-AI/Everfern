@@ -628,15 +628,24 @@ const UserQuestionForm = ({
 
     if (!current) return null;
 
-    const isHighRisk = current.question.includes('High-risk action requires your approval');
+    const isHighRisk =
+        current.question.includes('High-risk action requires your approval') ||
+        current.question.includes('Security Check Required') ||
+        current.question.includes('Actions to execute:');
 
     // ── Render the high-risk approval section ──────────────────────────────
     const renderHighRiskContent = () => {
         const parts = current.question.split(/Actions to execute:/i);
         const headerPart = parts[0] || '';
         const actionsPart = parts[1] || '';
+        const cleanedActionsPart = actionsPart.trim();
+        const isNoToolsPlaceholder = /^no tools pending\.?$/i.test(cleanedActionsPart);
+        const displayActionsPart = isNoToolsPlaceholder ? '' : cleanedActionsPart;
+        const securityTitle = current.question.includes('Security Check Required')
+            ? 'Security Check Required'
+            : 'High-risk action requires your approval';
 
-        const toolEntries = actionsPart ? parseToolEntries(actionsPart) : [];
+        const toolEntries = displayActionsPart ? parseToolEntries(displayActionsPart) : [];
 
         return (
             <div style={{ margin: '0 0 20px 0' }}>
@@ -657,7 +666,7 @@ const UserQuestionForm = ({
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     </svg>
-                    High-risk action requires your approval
+                    {securityTitle}
                 </div>
 
                 {/* Body */}
@@ -672,18 +681,19 @@ const UserQuestionForm = ({
                     lineHeight: 1.6,
                 }}>
                     {/* Preamble text */}
-                    {headerPart.replace('⚠️ High-risk action requires your approval', '').replace('Dangerous tool detected', '').trim() && (
-                        <div style={{ marginBottom: actionsPart ? 16 : 0, color: '#4b5563' }}>
+                    {headerPart.replace('⚠️ High-risk action requires your approval', '').replace('⚠️ Security Check Required', '').replace('Dangerous tool detected', '').trim() && (
+                        <div style={{ marginBottom: displayActionsPart ? 16 : 0, color: '#4b5563' }}>
                             <MarkdownRenderer content={
                                 headerPart
                                     .replace('⚠️ High-risk action requires your approval', '')
+                                    .replace('⚠️ Security Check Required', '')
                                     .replace('Dangerous tool detected', '🚨 **Dangerous tool detected**')
                                     .trim()
                             } />
                         </div>
                     )}
 
-                    {actionsPart && (
+                    {displayActionsPart && (
                         <>
                             {/* Section label */}
                             <div style={{
@@ -746,7 +756,7 @@ const UserQuestionForm = ({
                                         maxHeight: 300,
                                         overflowY: 'auto',
                                     }}>
-                                        <MarkdownRenderer content={actionsPart.trim()} />
+                                        <MarkdownRenderer content={displayActionsPart} />
                                     </div>
                                 )}
                             </div>

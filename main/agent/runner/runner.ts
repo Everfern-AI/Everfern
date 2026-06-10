@@ -576,6 +576,7 @@ export class AgentRunner {
       missionTracker.onStepUpdate((step, timeline) => {
         eventQueue.push({
           type: 'mission_step_update',
+          conversationId: convId,
           step,
           timeline,
         } as any); // Cast as any if type mismatch
@@ -584,6 +585,7 @@ export class AgentRunner {
       missionTracker.onPhaseChange((phase, timeline) => {
         eventQueue.push({
           type: 'mission_phase_change',
+          conversationId: convId,
           phase,
           timeline,
         } as any);
@@ -948,6 +950,7 @@ export class AgentRunner {
         const thinkingDuration = durationTracker.onMissionComplete();
         yield {
           type: 'mission_complete',
+          conversationId: convId,
           timeline: missionTracker.getTimeline(),
           steps: missionTracker.getSteps(),
           thinkingDuration,

@@ -47,9 +47,9 @@ export type StreamEvent =
   | { type: 'thought'; content: string }
   | { type: 'chunk'; content: string }
   | { type: 'tool_call'; toolCall: any }
-  | { type: 'mission_complete'; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration?: ThinkingDuration }
-  | { type: 'mission_step_update'; step: MissionStep; timeline: MissionTimeline | null }
-  | { type: 'mission_phase_change'; phase: string; timeline: MissionTimeline | null }
+  | { type: 'mission_complete'; conversationId?: string; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration?: ThinkingDuration }
+  | { type: 'mission_step_update'; conversationId?: string; step: MissionStep; timeline: MissionTimeline | null }
+  | { type: 'mission_phase_change'; conversationId?: string; phase: string; timeline: MissionTimeline | null }
   | { type: 'parallel_group_start'; groupIndex: number; stepCount: number }
   | { type: 'parallel_group_end'; groupIndex: number; durationMs: number }
   | { type: 'usage'; promptTokens: number; completionTokens: number; totalTokens: number }
@@ -60,12 +60,12 @@ export type StreamEvent =
   | BaseStreamEvent; // Fallback for other event types
 
 // Type guard for mission_complete events
-export function isMissionCompleteEvent(event: StreamEvent): event is { type: 'mission_complete'; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration?: ThinkingDuration } {
+export function isMissionCompleteEvent(event: StreamEvent): event is { type: 'mission_complete'; conversationId?: string; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration?: ThinkingDuration } {
   return event.type === 'mission_complete';
 }
 
 // Type guard for events with thinking duration
-export function hasThinkingDuration(event: StreamEvent): event is { type: 'mission_complete'; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration: ThinkingDuration } {
+export function hasThinkingDuration(event: StreamEvent): event is { type: 'mission_complete'; conversationId?: string; timeline: MissionTimeline | null; steps: MissionStep[]; thinkingDuration: ThinkingDuration } {
   return isMissionCompleteEvent(event) && event.thinkingDuration !== undefined;
 }
 

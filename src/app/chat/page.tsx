@@ -349,6 +349,36 @@ export default function ChatPage() {
         };
     };
 
+    const getToolDetailPayloadKey = (toolCall: any) => {
+        const data = toolCall?.data || {};
+        const sheets = Array.isArray(data.sheets) ? data.sheets : [];
+        const images = Array.isArray(data.images) ? data.images : [];
+        const fileNames = Array.isArray(data.fileNames) ? data.fileNames : [];
+        const results = Array.isArray(data.results) ? data.results : [];
+        const screenshot = data.screenshot;
+        return [
+            toolCall?.id || '',
+            toolCall?.status || '',
+            toolCall?.output || '',
+            toolCall?.duration ?? toolCall?.durationMs ?? '',
+            data.imageCount ?? '',
+            data.sheetCount ?? '',
+            data.directory || '',
+            data.outputDir || '',
+            data.manifestPath || '',
+            data.base64Image ? String(data.base64Image).length : 0,
+            toolCall?.base64Image ? String(toolCall.base64Image).length : 0,
+            Array.isArray(screenshot) ? screenshot.length : (screenshot ? 1 : 0),
+            sheets.length,
+            sheets.map((sheet: any) => `${sheet?.path || ''}:${sheet?.dataUrl ? String(sheet.dataUrl).length : 0}`).join('|'),
+            images.length,
+            images.map((img: any) => `${img?.path || img?.fileName || ''}:${img?.dataUrl ? String(img.dataUrl).length : 0}`).join('|'),
+            fileNames.length,
+            fileNames.join('|'),
+            results.length,
+        ].join('\n');
+    };
+
     const openToolDetailTab = (mappedToolCall: any) => {
         setSelectedToolCall(mappedToolCall);
         setActiveToolDetailTabId(mappedToolCall.id);
@@ -917,6 +947,8 @@ export default function ChatPage() {
 
     const selectedToolCallRef = useRef<any>(null);
     selectedToolCallRef.current = selectedToolCall;
+    const activeToolDetailTabIdRef = useRef<string | null>(null);
+    activeToolDetailTabIdRef.current = activeToolDetailTabId;
 
     useEffect(() => {
         const current = selectedToolCallRef.current;
@@ -925,8 +957,8 @@ export default function ChatPage() {
         for (const msg of messages) {
             const updatedTc = msg.toolCalls?.find(tc => tc.id === current.id);
             if (updatedTc) {
-                if (updatedTc.status !== current.status || updatedTc.output !== current.output) {
-                    const mappedToolCall = mapToolCallForDetail(updatedTc);
+                const mappedToolCall = mapToolCallForDetail(updatedTc);
+                if (getToolDetailPayloadKey(mappedToolCall) !== getToolDetailPayloadKey(current)) {
                     setSelectedToolCall(mappedToolCall);
                     setToolDetailTabs(prev => prev.map(tab => (
                         tab.id === mappedToolCall.id ? { ...tab, ...mappedToolCall } : tab
@@ -939,6 +971,26 @@ export default function ChatPage() {
     // subAgentProgressVersion replaces subAgentProgress in the dep array — it's a counter that
     // only increments when the tool detail panel is open, preventing spurious re-renders.
     }, [messages, isToolDetailOpen, subAgentProgressVersion]);
+
+    useEffect(() => {
+        const current = selectedToolCallRef.current;
+        if (!current || !isToolDetailOpen) return;
+
+        const activeId = activeToolDetailTabIdRef.current || current.id;
+        const liveTc = liveToolCalls.find(tc => tc.id === activeId);
+        if (!liveTc) return;
+
+        const mappedToolCall = mapToolCallForDetail(liveTc);
+        if (getToolDetailPayloadKey(mappedToolCall) === getToolDetailPayloadKey(current)) return;
+
+        setSelectedToolCall(mappedToolCall);
+        setToolDetailTabs(prev => prev.map(tab => (
+            tab.id === mappedToolCall.id ? { ...tab, ...mappedToolCall } : tab
+        )));
+    // Keep an open details tab in sync with live tool updates, including result.data
+    // payloads such as visual classification sheets.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [liveToolCalls, isToolDetailOpen, activeToolDetailTabId]);
 
     useEffect(() => {
         const handleProgress = (_: any, data: any) => {
@@ -1130,6 +1182,10 @@ export default function ChatPage() {
     }, []);
 
     const resetConversationUiState = (nextConversationId: string | null, options?: { clearInput?: boolean; clearAttachments?: boolean }) => {
+        // Detach per-run stream listeners when changing the visible chat. The backend may
+        // continue saving the old run, but stale chunks must not mutate the new chat view.
+        (window as any).electronAPI?.acp?.removeStreamListeners?.();
+
         messagesRef.current = [];
         setMessages([]);
         activeConversationIdRef.current = nextConversationId;
@@ -1668,7 +1724,11 @@ export default function ChatPage() {
         const acpApi = (window as any).electronAPI?.acp;
         if (!acpApi) return;
 
-        acpApi.onMissionStepUpdate(({ step, timeline }: { step: any; timeline: MissionTimelineType }) => {
+        acpApi.onMissionStepUpdate(({ conversationId, step, timeline }: { conversationId?: string; step: any; timeline: MissionTimelineType }) => {
+            if (conversationId && conversationId !== activeConversationIdRef.current) {
+                setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
+                return;
+            }
             console.log('[Mission] Step update received (persistent):', step?.name, step?.status);
             setMissionTimeline(timeline);
             missionTimelineRef.current = timeline;
@@ -1678,7 +1738,11 @@ export default function ChatPage() {
             }
         });
 
-        acpApi.onMissionPhaseChange(({ phase, timeline }: { phase: string; timeline: MissionTimelineType }) => {
+        acpApi.onMissionPhaseChange(({ conversationId, phase, timeline }: { conversationId?: string; phase: string; timeline: MissionTimelineType }) => {
+            if (conversationId && conversationId !== activeConversationIdRef.current) {
+                setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
+                return;
+            }
             console.log('[Mission] Phase change received (persistent):', phase);
             setMissionTimeline(timeline);
             missionTimelineRef.current = timeline;
@@ -1686,7 +1750,14 @@ export default function ChatPage() {
             setCurrentPhase(phase as any);
         });
 
-        acpApi.onMissionComplete(({ thinkingDuration, title }: { timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
+        acpApi.onMissionComplete(({ conversationId, thinkingDuration, title }: { conversationId?: string; timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
+            if (conversationId && conversationId !== activeConversationIdRef.current) {
+                console.log('[Mission] Ignoring completion for background conversation:', conversationId);
+                setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
+                setNotification({ id: conversationId, title: title || 'Chat task' });
+                setTimeout(() => setNotification(prev => prev?.id === conversationId ? null : prev), 8000);
+                return;
+            }
             console.log('[Mission] Mission complete received (persistent)');
 
             // CRITICAL: Check __activeHitl flag BEFORE processing mission_complete
