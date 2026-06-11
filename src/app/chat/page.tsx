@@ -837,7 +837,14 @@ export default function ChatPage() {
     const [streamingToolCalls, setStreamingToolCalls] = useState<LiveToolCall[]>([]);
     const [streamingContent, setStreamingContent] = useState("");
     const [streamingThought, setStreamingThought] = useState("");
-    const [activePlanSteps, setActivePlanSteps] = useState<Array<{ id: string; description: string; tool?: string }> | null>(null);
+    const [activePlanSteps, setActivePlanSteps] = useState<Array<{
+        id: string;
+        title?: string;
+        description: string;
+        tool?: string;
+        status?: "pending" | "in_progress" | "in-progress" | "completed" | "failed" | "skipped" | "blocked";
+        dependencies?: string[];
+    }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
 
     // ── EverFern Dispatch: broadcast state back to the web UI ─────────────────

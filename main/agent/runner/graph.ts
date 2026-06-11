@@ -62,6 +62,42 @@ const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
   return /\b(project|app|website|site|dashboard|clone|scaffold|create[- ]next[- ]app|next\.?js|react app|full[- ]stack|frontend|backend|multi[- ]file|folder|directory|downloads|desktop|feature(?:s)?|build (?:a|an|the)|make (?:a|an|the)|create (?:a|an|the))\b/.test(text);
 };
 
+const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use']);
+
+const getToolCallArgs = (call: any): Record<string, any> => {
+  const raw = call?.arguments ?? call?.args ?? {};
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return raw && typeof raw === 'object' ? raw : {};
+};
+
+const isInteractiveAutomationCall = (call: any): boolean => {
+  const name = String(call?.name || call?.toolName || '').trim();
+  if (!INTERACTIVE_AUTOMATION_TOOLS.has(name)) return false;
+  return !toolApprovalStore.isApproved(name, getToolCallArgs(call));
+};
+
+const shouldRequireInteractiveAutomationApproval = (state: GraphStateType): boolean => {
+  if (state.isScheduledTaskRun || state.currentIntent === 'background_task') return false;
+  return (state.pendingToolCalls || []).some(isInteractiveAutomationCall);
+};
+
+const routePendingToolsWithAutomationApproval = (
+  state: GraphStateType,
+  source: string,
+): 'hitl_approval' | 'multi_tool_orchestrator' => {
+  if (shouldRequireInteractiveAutomationApproval(state)) {
+    console.log(`[Graph] 🔐 ${source} wants Navis/computer_use → hitl_approval`);
+    return 'hitl_approval';
+  }
+  return 'multi_tool_orchestrator';
+};
+
 export const buildGraph = (
   runner: AgentRunner,
   toolDefs: any[],
@@ -142,7 +178,11 @@ export const buildGraph = (
         ? toolsToDisplay.map(formatToolCallSummary).join('\n')
         : buildFallbackActionSummary();
 
-      const hitlRationale = state.completionSignal?.hitlRationale || 'High-risk operation detected';
+      const hasInteractiveAutomation = toolsToDisplay.some((tc: any) => INTERACTIVE_AUTOMATION_TOOLS.has(tc.name));
+      const hitlRationale = state.completionSignal?.hitlRationale ||
+        (hasInteractiveAutomation
+          ? 'Interactive browser or desktop automation requires your permission before EverFern can control Navis or the computer.'
+          : 'High-risk operation detected');
       const reasoning = hitlRationale;
       const requestId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
@@ -550,8 +590,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
 
         // If brain has tools to execute, execute them directly
         if (hasTools) {
-            console.log('[Graph] 🔀 Brain has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
+            const route = routePendingToolsWithAutomationApproval(state, 'Brain');
+            console.log(`[Graph] 🔀 Brain has tools → ${route}`);
+            return route;
         }
 
         // If brain made a routing decision to specialized agents
@@ -609,8 +650,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Coding specialist has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
+            const route = routePendingToolsWithAutomationApproval(state, 'Coding specialist');
+            console.log(`[Graph] 🔀 Coding specialist has tools → ${route}`);
+            return route;
         }
 
         // Keep specialist in control if not complete
@@ -622,6 +664,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Coding specialist complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
         return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
+        hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         brain: 'brain',
@@ -632,8 +675,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Data analyst has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
+            const route = routePendingToolsWithAutomationApproval(state, 'Data analyst');
+            console.log(`[Graph] 🔀 Data analyst has tools → ${route}`);
+            return route;
         }
 
         // Keep specialist in control if not complete
@@ -645,6 +689,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Data analyst complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
         return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
+        hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         data_analyst: 'data_analyst',
         brain: 'brain',
@@ -656,8 +701,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Web explorer has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
+            const route = routePendingToolsWithAutomationApproval(state, 'Web explorer');
+            console.log(`[Graph] 🔀 Web explorer has tools → ${route}`);
+            return route;
         }
 
         // Bug 5: Iteration limit for web_explorer self-loop
@@ -680,6 +726,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         return 'web_explorer';
 
     }, {
+        hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         brain: 'brain',
         web_explorer: 'web_explorer',
@@ -691,8 +738,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
         if (hasTools) {
-            console.log('[Graph] 🔀 Deep research has tools → multi_tool_orchestrator');
-            return 'multi_tool_orchestrator';
+            const route = routePendingToolsWithAutomationApproval(state, 'Deep research');
+            console.log(`[Graph] 🔀 Deep research has tools → ${route}`);
+            return route;
         }
 
         // Keep specialist in control if not complete
@@ -704,6 +752,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         console.log('[Graph] 🔀 Deep research complete → brain');
         return 'brain';
     }, {
+        hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         deep_research: 'deep_research',
         brain: 'brain',

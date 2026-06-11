@@ -453,6 +453,7 @@ export function createVisualClassificationSheetTool(mainClient: AIClient): Agent
             height: rendered.height,
             dataUrl: firstSheetDataUrl,
           });
+          onUpdate?.(`Sheet ready ${idx + 1}/${chunks.length}: ${sheetPath} (IDs ${sheetImages[0].id}-${sheetImages[sheetImages.length - 1].id})`);
         }
 
         const manifest = {
@@ -462,7 +463,16 @@ export function createVisualClassificationSheetTool(mainClient: AIClient): Agent
           createdAt: new Date().toISOString(),
           recursive,
           imageCount: images.length,
-          sheets: sheets.map(({ dataUrl, ...sheet }) => sheet),
+          sheets: sheets.map(sheet => ({
+            sheetIndex: sheet.sheetIndex,
+            path: sheet.path,
+            fileName: sheet.fileName,
+            firstId: sheet.firstId,
+            lastId: sheet.lastId,
+            imageCount: sheet.imageCount,
+            width: sheet.width,
+            height: sheet.height,
+          })),
           images: images.map(img => ({
             id: img.id,
             path: img.path,

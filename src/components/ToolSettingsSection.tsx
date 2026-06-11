@@ -271,14 +271,6 @@ export function ToolSettingsSection() {
         }
     };
 
-    const handleOpenBrowser = async () => {
-        try {
-            await (window as any).electronAPI?.toolSettings?.openDebugBrowser?.();
-        } catch (e) {
-            console.error('[ToolSettingsSection] Failed to open debug browser:', e);
-        }
-    };
-
     const handlePrepareMainProfileExtension = async () => {
         setIsPreparingMainProfileExtension(true);
         setExtensionMessage('');
@@ -289,10 +281,10 @@ export function ToolSettingsSection() {
                 connectedExtensions: result?.connected ? 1 : 0,
                 extensionPath: result?.extensionPath,
             });
-            setExtensionMessage(result?.message || 'Navis companion extension preparation finished.');
+            setExtensionMessage(result?.message || 'Navis extension install folder is ready.');
         } catch (e) {
-            console.error('[ToolSettingsSection] Failed to prepare Navis companion extension:', e);
-            setExtensionMessage(e instanceof Error ? e.message : 'Failed to prepare Navis companion extension.');
+            console.error('[ToolSettingsSection] Failed to prepare Navis extension:', e);
+            setExtensionMessage(e instanceof Error ? e.message : 'Failed to prepare Navis extension.');
         } finally {
             setIsPreparingMainProfileExtension(false);
         }
@@ -424,7 +416,7 @@ export function ToolSettingsSection() {
                                 </div>
                                 <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 330 }}>
                                     {config.navis.useChromeProfile
-                                        ? 'Uses the Navis companion extension for fast logged-in Chromium control'
+                                        ? 'Uses the installed Navis extension for fast logged-in Chrome/Firefox control'
                                         : 'Runs Navis in its own Playwright Chromium session'}
                                 </div>
                             </div>
@@ -462,31 +454,15 @@ export function ToolSettingsSection() {
                                         cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
                                     }}
                                 >
-                                    {isPreparingMainProfileExtension ? 'Preparing extension...' : 'Prepare extension'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleOpenBrowser}
-                                    style={{
-                                        padding: '9px 12px',
-                                        borderRadius: 10,
-                                        border: '1px solid #ddd9cb',
-                                        backgroundColor: '#ffffff',
-                                        color: '#111111',
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    Prepare CDP profile
+                                    {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
                                 </button>
                             </div>
                             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
                                 <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
-                                {extensionStatus?.connected ? 'Browser extension connected' : 'Browser extension not connected'}
+                                {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
                             </div>
                             {extensionMessage && (
-                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.45 }}>
+                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
                                     {extensionMessage}
                                 </div>
                             )}
@@ -525,7 +501,7 @@ export function ToolSettingsSection() {
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#4a4846' }}>About Tool Modes</span>
                 </div>
                 <p style={{ fontSize: 12, color: '#8a8886', margin: 0, lineHeight: 1.6 }}>
-                    <strong>Local</strong> mode uses a Playwright-controlled Chromium browser. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> can attach to CDP on port 9222, try the selected browser profile when closed, or use a reusable EverFern profile when Chrome blocks default-profile debugging. <strong>Navis Vision</strong> sends screenshots to a vision AI model for precise page understanding. Changes take effect immediately — no restart required.
+                    <strong>Local</strong> mode uses a Playwright-controlled isolated browser. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> uses the installed Navis extension for Chrome/Chromium or Firefox when profile mode is enabled. <strong>Navis Vision</strong> sends screenshots to a vision AI model only when visual grounding is needed. Changes take effect immediately.
                 </p>
             </div>
         </div>

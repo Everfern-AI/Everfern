@@ -8,15 +8,12 @@ import { chromium as pwChromium, firefox as pwFirefox, type Browser, type Browse
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawn, execFile } from 'child_process';
 import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
 import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
 
 const chromium = pwChromium;
-const DEFAULT_CDP_PORT = 9222;
-const CDP_LAUNCH_TIMEOUT_MS = 20000;
 
 export interface SessionConfig {
   headless?: boolean;
@@ -34,12 +31,6 @@ export interface TabInfo {
   isActive: boolean;
 }
 
-interface ChromeProfileLaunchConfig {
-  executablePath: string;
-  userDataDir: string;
-  profileDirectory: string;
-}
-
 export interface NavisDebugBrowserLaunchResult {
   success: boolean;
   message: string;
@@ -49,69 +40,6 @@ export interface NavisDebugBrowserLaunchResult {
   command?: string;
   usedExistingEndpoint?: boolean;
   usingReusableProfile?: boolean;
-}
-
-async function isProcessRunning(exePath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const processName = path.basename(exePath);
-    if (process.platform === 'win32') {
-      execFile('tasklist', ['/FI', `IMAGENAME eq ${processName}`], (err, stdout) => {
-        if (!stdout) return resolve(false);
-        resolve(stdout.toLowerCase().includes(processName.toLowerCase()));
-      });
-    } else {
-      execFile('pgrep', ['-f', processName], (err, stdout) => {
-        if (!stdout) return resolve(false);
-        resolve(!!stdout.trim());
-      });
-    }
-  });
-}
-
-function normalizePathForCompare(value: string | undefined): string {
-  if (!value) return '';
-  return path.normalize(value).replace(/[\\\/]+$/, '').toLowerCase();
-}
-
-function isStandardGoogleChromeUserDataDir(executablePath?: string, userDataDir?: string): boolean {
-  if (!executablePath || !userDataDir) return false;
-  const exe = executablePath.toLowerCase();
-  if (!exe.includes('google') || !exe.includes('chrome')) return false;
-
-  const home = os.homedir();
-  const standard =
-    process.platform === 'win32'
-      ? path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data')
-      : process.platform === 'darwin'
-        ? path.join(home, 'Library', 'Application Support', 'Google', 'Chrome')
-        : path.join(home, '.config', 'google-chrome');
-
-  return normalizePathForCompare(userDataDir) === normalizePathForCompare(standard);
-}
-
-function chromeDefaultProfileRemoteDebuggingNote(): string {
-  return 'Google Chrome 136+ ignores --remote-debugging-port for the default Chrome user data directory. ' +
-    'To automate logged-in Chrome tabs, Chrome must already be running with a reachable CDP endpoint, or Navis must use a non-default automation profile / isolated browser.';
-}
-
-function defaultProfileDebuggingBypassNote(): string {
-  return 'Navis will first try Chrome with --disable-features=DevToolsDebuggingRestrictions because the user explicitly selected browser-profile automation. ' +
-    'If Chrome still refuses CDP, Navis falls back to the reusable EverFern profile.';
-}
-
-function safeProfileSlug(value: string | undefined): string {
-  return (value || 'chromium').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'chromium';
-}
-
-function getEverFernCdpProfileDir(browserInfo?: BrowserInfo | null): string {
-  const profileDir = path.join(
-    os.homedir(),
-    '.everfern',
-    'navis-cdp-profiles',
-    safeProfileSlug(browserInfo?.id || browserInfo?.name || 'chrome'),
-  );
-  fs.mkdirSync(profileDir, { recursive: true });
-  return profileDir;
 }
 
 async function resolveSelectedBrowserInfo(selectedBrowserId?: string): Promise<BrowserInfo | undefined> {
@@ -140,457 +68,11 @@ async function resolveSelectedBrowserInfo(selectedBrowserId?: string): Promise<B
   }
 }
 
-function formatCdpRestartCommand(executablePath: string, userDataDir?: string, profileDirectory?: string, debugPort: number = DEFAULT_CDP_PORT): string {
-  const quotedExe = `"${executablePath}"`;
-  const args = [
-    `--remote-debugging-port=${debugPort}`,
-    '--remote-debugging-address=127.0.0.1',
-    userDataDir ? `--user-data-dir="${userDataDir}"` : '',
-    profileDirectory ? `--profile-directory="${profileDirectory}"` : '',
-    '--new-window',
-    'about:blank',
-  ].filter(Boolean).join(' ');
-  return `${quotedExe} ${args}`;
-}
-
-/**
- * Attempts to get the Chrome DevTools Protocol (CDP) endpoint from a running browser instance.
- * Returns the WebSocket URL for remote debugging, or null if not found.
- */
-async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<any | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function getCDPEndpoint(port: number = DEFAULT_CDP_PORT): Promise<string | null> {
-  const hosts = ['127.0.0.1', 'localhost'];
-  for (const host of hosts) {
-    const version = await fetchJsonWithTimeout(`http://${host}:${port}/json/version`, 750);
-    if (typeof version?.webSocketDebuggerUrl === 'string' && version.webSocketDebuggerUrl.includes('/devtools/browser/')) {
-      return version.webSocketDebuggerUrl;
-    }
-
-    const list = await fetchJsonWithTimeout(`http://${host}:${port}/json/list`, 750);
-    if (Array.isArray(list)) {
-      const target = list.find((item: any) =>
-        typeof item?.webSocketDebuggerUrl === 'string' &&
-        item.webSocketDebuggerUrl.includes('/devtools/browser/')
-      );
-      if (target?.webSocketDebuggerUrl) {
-        return target.webSocketDebuggerUrl;
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Launches a browser (Chrome/Firefox) with remote debugging enabled on a specific port.
- * Returns the WebSocket debugging URL.
- */
-function launchBrowserWithDebugPort(
-  executablePath: string,
-  engine: 'chromium' | 'firefox',
-  userDataDir?: string,
-  profileDirectory?: string,
-  debugPort: number = DEFAULT_CDP_PORT,
-  extraArgs: string[] = [],
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const resolveOnce = (value: string) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-    const rejectOnce = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    };
-
-    try {
-      let args: string[] = [];
-
-      if (engine === 'firefox') {
-        args = [
-          `--remote-debugging-port=${debugPort}`,
-          '--remote-debugging-address=127.0.0.1',
-          '--start-debugger-server',
-          '-no-remote',
-        ];
-        if (userDataDir) args.push(`-profile`, userDataDir);
-      } else {
-        args = [
-          `--remote-debugging-port=${debugPort}`,
-          '--remote-debugging-address=127.0.0.1',
-          '--remote-allow-origins=*',
-          ...extraArgs,
-          `--load-extension=${ensureNavisTabGroupExtension()}`,
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--new-window',
-          'about:blank',
-        ];
-        if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
-        if (profileDirectory) args.push(`--profile-directory=${profileDirectory}`);
-      }
-
-      console.log(`[Navis] Launching ${engine} with remote debugging on port ${debugPort}...`);
-
-      const child = spawn(executablePath, args, {
-        detached: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
-        windowsHide: false,
-      });
-      let stderr = '';
-
-      child.stderr?.on('data', chunk => {
-        stderr = `${stderr}${String(chunk)}`.slice(-4000);
-      });
-      child.once('error', err => {
-        rejectOnce(new Error(`Failed to launch browser with debug port: ${err.message}`));
-      });
-      child.once('exit', (code, signal) => {
-        if (settled) return;
-        const details = stderr.trim() ? ` Stderr: ${stderr.trim()}` : '';
-        rejectOnce(new Error(`Browser exited before exposing CDP (code=${code}, signal=${signal}).${details}`));
-      });
-      child.unref();
-
-      // Wait a moment for the browser to start and listen
-      const maxAttempts = Math.ceil(CDP_LAUNCH_TIMEOUT_MS / 250);
-      let attempts = 0;
-
-      const checkEndpoint = async () => {
-        const endpoint = await getCDPEndpoint(debugPort);
-        if (endpoint) {
-          console.log(`[Navis] CDP endpoint found: ${endpoint}`);
-          child.stderr?.destroy();
-          resolveOnce(endpoint);
-          return;
-        }
-
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(checkEndpoint, 250);
-        } else {
-          const details = stderr.trim() ? ` Browser stderr: ${stderr.trim()}` : '';
-          rejectOnce(new Error(`Failed to get CDP endpoint after ${CDP_LAUNCH_TIMEOUT_MS}ms.${details}`));
-        }
-      };
-
-      checkEndpoint();
-    } catch (err) {
-      rejectOnce(new Error(`Failed to launch browser with debug port: ${err instanceof Error ? err.message : String(err)}`));
-    }
-  });
-}
-
-function getChromeProfileLaunchConfig(): ChromeProfileLaunchConfig {
-  const home = os.homedir();
-
-  const candidates =
-    process.platform === 'win32'
-      ? [
-          {
-            executablePath: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
-          },
-          {
-            executablePath: path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
-          },
-          {
-            executablePath: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            userDataDir: path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Google', 'Chrome', 'User Data'),
-          },
-        ]
-      : process.platform === 'darwin'
-      ? [
-          {
-            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            userDataDir: path.join(home, 'Library', 'Application Support', 'Google', 'Chrome'),
-          },
-        ]
-      : [
-          {
-            executablePath: '/usr/bin/google-chrome',
-            userDataDir: path.join(home, '.config', 'google-chrome'),
-          },
-          {
-            executablePath: '/usr/bin/google-chrome-stable',
-            userDataDir: path.join(home, '.config', 'google-chrome'),
-          },
-        ];
-
-  const match = candidates.find(candidate => fs.existsSync(candidate.executablePath) && fs.existsSync(candidate.userDataDir));
-  if (!match) {
-    throw new Error('Google Chrome profile not found. Install Chrome or turn off "Run on your Chrome profile" in Navis settings.');
-  }
-
+export async function openNavisDebugBrowser(_selectedBrowserId: string = 'chrome'): Promise<NavisDebugBrowserLaunchResult> {
   return {
-    ...match,
-    profileDirectory: getLastUsedChromeProfile(match.userDataDir),
+    success: false,
+    message: 'Navis profile automation now requires the companion extension. Install it for logged-in Chrome/Firefox control, or switch Navis to isolated browser mode.',
   };
-}
-
-function getLastUsedChromeProfile(userDataDir: string): string {
-  const localStatePath = path.join(userDataDir, 'Local State');
-  try {
-    const localState = JSON.parse(fs.readFileSync(localStatePath, 'utf-8'));
-    const lastUsed = localState?.profile?.last_used;
-    if (typeof lastUsed === 'string' && fs.existsSync(path.join(userDataDir, lastUsed))) {
-      return lastUsed;
-    }
-  } catch {}
-
-  if (fs.existsSync(path.join(userDataDir, 'Default'))) return 'Default';
-  if (fs.existsSync(path.join(userDataDir, 'Profile 1'))) return 'Profile 1';
-  return 'Default';
-}
-
-function getGenericChromiumUserDataDir(browserInfo: any): string | undefined {
-  if (!browserInfo) return undefined;
-
-  const id = browserInfo.id.toLowerCase();
-  const home = os.homedir();
-  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-
-  if (process.platform === 'win32') {
-    if (id.includes('brave')) return path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data');
-    if (id.includes('msedge') || id.includes('edge')) return path.join(localAppData, 'Microsoft', 'Edge', 'User Data');
-    if (id.includes('vivaldi')) return path.join(localAppData, 'Vivaldi', 'User Data');
-    if (id.includes('arc')) {
-      const packagesDir = path.join(localAppData, 'Packages');
-      if (fs.existsSync(packagesDir)) {
-        const folders = fs.readdirSync(packagesDir);
-        const arcFolder = folders.find(f => f.toLowerCase().startsWith('thebrowsercompany.arc'));
-        if (arcFolder) {
-          return path.join(packagesDir, arcFolder, 'LocalCache', 'Local', 'Arc', 'User Data');
-        }
-      }
-      return path.join(localAppData, 'Packages', 'TheBrowserCompany.Arc_ttt1ap7aakyb4', 'LocalCache', 'Local', 'Arc', 'User Data');
-    }
-    if (id.includes('shift')) return path.join(localAppData, 'ShiftData', 'UserData');
-  } else if (process.platform === 'darwin') {
-    const appSupport = path.join(home, 'Library', 'Application Support');
-    if (id.includes('brave')) return path.join(appSupport, 'BraveSoftware', 'Brave-Browser');
-    if (id.includes('msedge') || id.includes('edge')) return path.join(appSupport, 'Microsoft Edge');
-    if (id.includes('vivaldi')) return path.join(appSupport, 'Vivaldi');
-    if (id.includes('arc')) return path.join(appSupport, 'Arc', 'User Data');
-  } else {
-    const config = path.join(home, '.config');
-    if (id.includes('brave')) return path.join(config, 'BraveSoftware', 'Brave-Browser');
-    if (id.includes('msedge') || id.includes('edge')) return path.join(config, 'microsoft-edge');
-    if (id.includes('vivaldi')) return path.join(config, 'vivaldi');
-  }
-
-  return undefined;
-}
-
-function getFirefoxProfileDir(engineName: string = 'firefox'): string | null {
-  const home = os.homedir();
-
-  // 1. Determine base folder based on OS and engine
-  let baseFolder = '';
-  const isZen = engineName.toLowerCase().includes('zen');
-
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-    baseFolder = isZen ? path.join(appData, 'Zen') : path.join(appData, 'Mozilla', 'Firefox');
-  } else if (process.platform === 'darwin') {
-    const appSupport = path.join(home, 'Library', 'Application Support');
-    baseFolder = isZen ? path.join(appSupport, 'Zen') : path.join(appSupport, 'Firefox');
-  } else {
-    // Linux
-    baseFolder = isZen ? path.join(home, '.zen') : path.join(home, '.mozilla', 'firefox');
-  }
-
-  const profilesIniPath = path.join(baseFolder, 'profiles.ini');
-  if (!fs.existsSync(profilesIniPath)) return null;
-
-  try {
-    const content = fs.readFileSync(profilesIniPath, 'utf-8');
-    const lines = content.split('\n');
-    let currentPath = '';
-    let currentIsDefault = false;
-    let bestPath = '';
-
-    for (const line of lines) {
-      const tLine = line.trim();
-      if (tLine.startsWith('[Profile')) {
-        if (currentIsDefault && currentPath) {
-           bestPath = currentPath;
-           break;
-        }
-        currentPath = '';
-        currentIsDefault = false;
-      } else if (tLine.startsWith('Path=')) {
-        currentPath = tLine.substring(5).trim();
-      } else if (tLine.startsWith('Default=1')) {
-        currentIsDefault = true;
-      }
-    }
-
-    if (currentIsDefault && currentPath) bestPath = currentPath;
-    if (!bestPath && currentPath) bestPath = currentPath; // Fallback to last found
-
-    if (bestPath) {
-      if (path.isAbsolute(bestPath)) return bestPath;
-      return path.join(baseFolder, bestPath);
-    }
-  } catch (e) {
-    console.warn('[Navis] Failed to parse Firefox profiles.ini', e);
-  }
-  return null;
-}
-
-export async function openNavisDebugBrowser(selectedBrowserId: string = 'chrome'): Promise<NavisDebugBrowserLaunchResult> {
-  const cdpPort = DEFAULT_CDP_PORT;
-  const existingEndpoint = await getCDPEndpoint(cdpPort);
-  if (existingEndpoint) {
-    return {
-      success: true,
-      endpoint: existingEndpoint,
-      usedExistingEndpoint: true,
-      usingReusableProfile: false,
-      message: `Chrome DevTools Protocol is already reachable on port ${cdpPort}. Navis will attach to this browser.`,
-    };
-  }
-
-  const resolvedBrowserInfo = await resolveSelectedBrowserInfo(selectedBrowserId);
-  const isGoogleChrome =
-    !resolvedBrowserInfo ||
-    resolvedBrowserInfo.id.startsWith('chrome') ||
-    resolvedBrowserInfo.id.startsWith('google') ||
-    resolvedBrowserInfo.name.toLowerCase().includes('chrome');
-
-  if (resolvedBrowserInfo && resolvedBrowserInfo.engine !== 'chromium') {
-    return {
-      success: false,
-      browserName: resolvedBrowserInfo.name,
-      message: `${resolvedBrowserInfo.name} is not a Chromium CDP browser. Choose Chrome, Edge, Brave, or the isolated browser option for Navis CDP preparation.`,
-    };
-  }
-
-  let chromeProfile: ChromeProfileLaunchConfig | null = null;
-  if (isGoogleChrome) {
-    try {
-      chromeProfile = getChromeProfileLaunchConfig();
-    } catch {
-      chromeProfile = null;
-    }
-  }
-
-  const executablePath = resolvedBrowserInfo?.path || chromeProfile?.executablePath || findChromiumExecutable() || undefined;
-  if (!executablePath) {
-    return {
-      success: false,
-      message: 'No Chromium browser executable was found for Navis CDP preparation.',
-    };
-  }
-
-  const reusableCdpProfileDir = getEverFernCdpProfileDir(resolvedBrowserInfo || {
-    id: isGoogleChrome ? 'chrome' : 'chromium',
-    name: isGoogleChrome ? 'Chrome' : 'Chromium',
-    engine: 'chromium',
-    path: executablePath,
-    logo: '',
-    supportsCDP: true,
-  });
-
-  const realUserDataDir = chromeProfile?.userDataDir || getGenericChromiumUserDataDir(resolvedBrowserInfo);
-  const realProfileDirectory = chromeProfile?.profileDirectory;
-  const isDefaultChromeProfile = isStandardGoogleChromeUserDataDir(executablePath, realUserDataDir);
-  const browserAlreadyRunning = await isProcessRunning(executablePath);
-
-  let launchUserDataDir = realUserDataDir;
-  let launchProfileDirectory = realProfileDirectory;
-  let usingReusableProfile = false;
-  let extraArgs: string[] = [];
-
-  if (browserAlreadyRunning) {
-    launchUserDataDir = reusableCdpProfileDir;
-    launchProfileDirectory = undefined;
-    usingReusableProfile = true;
-  } else if (isDefaultChromeProfile) {
-    extraArgs = ['--disable-features=DevToolsDebuggingRestrictions'];
-  }
-
-  try {
-    const endpoint = await launchBrowserWithDebugPort(
-      executablePath,
-      'chromium',
-      launchUserDataDir,
-      launchProfileDirectory,
-      cdpPort,
-      extraArgs,
-    );
-    return {
-      success: true,
-      endpoint,
-      browserName: resolvedBrowserInfo?.name || 'Chrome',
-      profileDir: launchUserDataDir,
-      command: formatCdpRestartCommand(executablePath, launchUserDataDir, launchProfileDirectory, cdpPort),
-      usingReusableProfile,
-      usedExistingEndpoint: false,
-      message: usingReusableProfile
-        ? `Opened the reusable EverFern Navis CDP profile on port ${cdpPort}. Your normal browser was already running, so Navis did not try to reuse its locked profile.`
-        : `Opened ${resolvedBrowserInfo?.name || 'Chrome'} with CDP on port ${cdpPort}. Navis will attach to this browser.`,
-    };
-  } catch (firstErr: any) {
-    if (!usingReusableProfile) {
-      try {
-        const endpoint = await launchBrowserWithDebugPort(
-          executablePath,
-          'chromium',
-          reusableCdpProfileDir,
-          undefined,
-          cdpPort,
-        );
-        return {
-          success: true,
-          endpoint,
-          browserName: resolvedBrowserInfo?.name || 'Chrome',
-          profileDir: reusableCdpProfileDir,
-          command: formatCdpRestartCommand(executablePath, reusableCdpProfileDir, undefined, cdpPort),
-          usingReusableProfile: true,
-          usedExistingEndpoint: false,
-          message: `Chrome did not expose CDP for the selected profile, so EverFern opened its reusable Navis CDP profile on port ${cdpPort}. ${chromeDefaultProfileRemoteDebuggingNote()}`,
-        };
-      } catch (fallbackErr: any) {
-        return {
-          success: false,
-          browserName: resolvedBrowserInfo?.name || 'Chrome',
-          profileDir: reusableCdpProfileDir,
-          command: formatCdpRestartCommand(executablePath, reusableCdpProfileDir, undefined, cdpPort),
-          usingReusableProfile: true,
-          usedExistingEndpoint: false,
-          message: `Failed to open Navis CDP browser. First attempt: ${firstErr?.message || firstErr}. Reusable profile attempt: ${fallbackErr?.message || fallbackErr}.`,
-        };
-      }
-    }
-
-    return {
-      success: false,
-      browserName: resolvedBrowserInfo?.name || 'Chrome',
-      profileDir: launchUserDataDir,
-      command: formatCdpRestartCommand(executablePath, launchUserDataDir, launchProfileDirectory, cdpPort),
-      usingReusableProfile,
-      usedExistingEndpoint: false,
-      message: `Failed to open Navis CDP browser: ${firstErr?.message || firstErr}`,
-    };
-  }
 }
 
 function ensureNavisTabGroupExtension(): string {
@@ -1185,8 +667,24 @@ export class BrowserSession {
   }
 
   async launch(config: SessionConfig = {}): Promise<void> {
-    const { headless = false, startUrl, logger, useChromeProfile = false, selectedBrowserId = 'chrome', useIsolatedBrowser = true } = config;
+    const {
+      headless = false,
+      startUrl,
+      logger,
+      useChromeProfile: requestedUseChromeProfile = false,
+      selectedBrowserId = 'chrome',
+      useIsolatedBrowser: requestedUseIsolatedBrowser = true,
+    } = config;
+    let useChromeProfile = requestedUseChromeProfile;
+    let useIsolatedBrowser = requestedUseIsolatedBrowser;
     this.logger = logger || null;
+
+    if (useChromeProfile || !useIsolatedBrowser) {
+      console.warn('[Navis] Browser profile automation now requires the Navis extension. BrowserSession is falling back to isolated Playwright mode.');
+      this.logger?.browserLaunch('Profile automation requires the Navis extension; using isolated Playwright mode');
+      useChromeProfile = false;
+      useIsolatedBrowser = true;
+    }
 
     // Resolve browser info from the selectedBrowserId if not using isolated mode
     let resolvedBrowserInfo: BrowserInfo | undefined;
@@ -1236,271 +734,7 @@ export class BrowserSession {
         '--window-size=1280,1024',
       ];
 
-      // Determine if we should use a system browser (via new selection or legacy useChromeProfile)
-      // Note: CDP and profile copying only work for chromium-based browsers.
-      const isChromiumSystem = resolvedBrowserInfo ? resolvedBrowserInfo.engine === 'chromium' : true;
-      const useSystemBrowser = !headless && (useChromeProfile || !useIsolatedBrowser);
-
-      if (useSystemBrowser && isChromiumSystem) {
-        // Use the resolved browser path if available, otherwise fall back to Chrome profile detection
-        const systemBrowserPath = resolvedBrowserInfo?.path;
-        const isGoogleChrome = !resolvedBrowserInfo || resolvedBrowserInfo.id.startsWith('chrome') || resolvedBrowserInfo.id.startsWith('google');
-
-        console.log(`[Navis] 🌐 System browser mode: ${resolvedBrowserInfo?.name || 'Chrome Profile'} (engine: chromium)`);
-
-        let activeUserDataDir: string | undefined;
-        let launchArgsToUse: string[] = [...launchArgs];
-        let attemptedRealProfileAttach = false;
-        let cdpProfileLabel = 'existing CDP browser';
-
-        try {
-          const chromeProfile = isGoogleChrome ? getChromeProfileLaunchConfig() : null;
-          const executablePath = systemBrowserPath || chromeProfile?.executablePath || findChromiumExecutable() || undefined;
-
-          activeUserDataDir = chromeProfile?.userDataDir || getGenericChromiumUserDataDir(resolvedBrowserInfo);
-
-          const isDefaultChromeProfile = isStandardGoogleChromeUserDataDir(executablePath, activeUserDataDir);
-          const cdpPort = DEFAULT_CDP_PORT;
-          const reusableCdpProfileDir = getEverFernCdpProfileDir(resolvedBrowserInfo || {
-            id: isGoogleChrome ? 'chrome' : 'chromium',
-            name: 'Chrome',
-            engine: 'chromium',
-            path: executablePath || '',
-            logo: '',
-            supportsCDP: true,
-          });
-
-          // TRY 1: Connect to existing browser via CDP
-          console.log(`[Navis] 🔌 CDP MODE: Attempting to connect to existing instance on port ${cdpPort}...`);
-          let cdpEndpoint = await getCDPEndpoint(cdpPort);
-          attemptedRealProfileAttach = Boolean(cdpEndpoint && executablePath && activeUserDataDir);
-
-          if (!cdpEndpoint) {
-            console.log(`[Navis] ❌ No instance found with CDP enabled on port ${cdpPort}`);
-
-            const browserAlreadyRunning = executablePath ? await isProcessRunning(executablePath) : false;
-            let cdpLaunchUserDataDir = activeUserDataDir;
-            let cdpLaunchProfileDirectory = chromeProfile?.profileDirectory;
-            let cdpLaunchExtraArgs: string[] = [];
-
-            if (browserAlreadyRunning) {
-              console.log(
-                `[Navis] ⚠️ ${resolvedBrowserInfo?.name || 'Chrome'} is already running without CDP. ` +
-                'A running browser cannot be retrofitted with remote debugging, so Navis will use its reusable CDP profile instead.'
-              );
-              cdpLaunchUserDataDir = reusableCdpProfileDir;
-              cdpLaunchProfileDirectory = undefined;
-              cdpProfileLabel = 'reusable EverFern CDP profile';
-            } else if (isDefaultChromeProfile) {
-              console.log(`[Navis] ⚠️ ${chromeDefaultProfileRemoteDebuggingNote()}`);
-              console.log(`[Navis] ${defaultProfileDebuggingBypassNote()}`);
-              cdpLaunchExtraArgs = ['--disable-features=DevToolsDebuggingRestrictions'];
-              cdpProfileLabel = 'selected Chrome profile';
-            } else {
-              cdpProfileLabel = 'selected browser profile';
-            }
-
-            console.log(`[Navis] 🚀 Auto-launching browser with CDP for you...`);
-
-            try {
-              cdpEndpoint = await launchBrowserWithDebugPort(
-                executablePath!,
-                'chromium',
-                cdpLaunchUserDataDir,
-                cdpLaunchProfileDirectory,
-                cdpPort,
-                cdpLaunchExtraArgs,
-              );
-            } catch (launchErr: any) {
-              console.warn(`[Navis] ⚠️ Failed to auto-launch browser with CDP: ${launchErr.message}`);
-              if (isDefaultChromeProfile && !browserAlreadyRunning && cdpLaunchUserDataDir === activeUserDataDir) {
-                console.warn(`[Navis] ⚠️ Default Chrome profile did not expose CDP. Retrying with reusable EverFern profile: ${reusableCdpProfileDir}`);
-                try {
-                  cdpProfileLabel = 'reusable EverFern CDP profile';
-                  cdpEndpoint = await launchBrowserWithDebugPort(
-                    executablePath!,
-                    'chromium',
-                    reusableCdpProfileDir,
-                    undefined,
-                    cdpPort,
-                  );
-                } catch (fallbackLaunchErr: any) {
-                  const command = executablePath
-                    ? formatCdpRestartCommand(executablePath, reusableCdpProfileDir, undefined, cdpPort)
-                    : '';
-                  throw new Error(
-                    `${fallbackLaunchErr.message} ${chromeDefaultProfileRemoteDebuggingNote()} ` +
-                    `Try launching the reusable EverFern Navis profile manually: ${command}`
-                  );
-                }
-              } else {
-                const command = executablePath
-                  ? formatCdpRestartCommand(executablePath, reusableCdpProfileDir, undefined, cdpPort)
-                  : '';
-                const chrome136Note = isDefaultChromeProfile ? ` ${chromeDefaultProfileRemoteDebuggingNote()}` : '';
-                throw new Error(
-                  `${launchErr.message}${chrome136Note} ` +
-                  `Try launching the reusable EverFern Navis profile manually: ${command}`
-                );
-              }
-            }
-          } else {
-            console.log(`[Navis] ✅ Found existing browser with CDP at: ${cdpEndpoint}`);
-          }
-
-          // Connect to browser via CDP
-          try {
-            this.browser = await chromium.connectOverCDP(cdpEndpoint);
-            this.attachedToExternalBrowser = true;
-            this.attachedProfileLabel = cdpProfileLabel;
-            this.context = this.browser.contexts()[0] || await this.browser.newContext({
-              viewport: { width: 1280, height: 1024 },
-              userAgent: realUA,
-              locale: 'en-US',
-              timezoneId: 'America/New_York',
-              acceptDownloads: true,
-            });
-            this.logger?.browserLaunch(`Connected via CDP to ${cdpProfileLabel}`);
-          } catch (cdpErr: any) {
-            throw cdpErr;
-          }
-        } catch (err: any) {
-          if (
-            err.message &&
-            (err.message.includes('Please close') || err.message.includes('already running without a remote debugging endpoint'))
-          ) {
-            throw err;
-          }
-          if (attemptedRealProfileAttach) {
-            throw new Error(
-              `Navis could not attach to ${resolvedBrowserInfo?.name || 'your browser'} using the real profile. ` +
-              `Close all ${resolvedBrowserInfo?.name || 'browser'} windows and try again, or launch it with --remote-debugging-port=9222. ` +
-              `Navis will not create a copied/photocopy profile. Original error: ${err?.message || String(err)}`
-            );
-          }
-          console.warn(`[Navis] ⚠️ CDP connection failed, falling back to isolated browser...`);
-
-          const fallbackUserDataDir = getEverFernCdpProfileDir(resolvedBrowserInfo);
-          try {
-            this.context = await chromium.launchPersistentContext(fallbackUserDataDir, {
-              headless: false,
-              executablePath: systemBrowserPath || findChromiumExecutable() || undefined,
-              args: launchArgsToUse,
-              viewport: { width: 1280, height: 1024 },
-              userAgent: realUA,
-              locale: 'en-US',
-              timezoneId: 'America/New_York',
-              acceptDownloads: true,
-            });
-          } catch (persistentErr: any) {
-            console.warn(`[Navis] ⚠️ Safe profile persistent launch failed: ${persistentErr?.message || persistentErr}. Retrying with bundled Chromium.`);
-            this.browser = await chromium.launch({
-              headless: false,
-              args: launchArgsToUse,
-            });
-
-            this.context = await this.browser.newContext({
-              viewport: { width: 1280, height: 1024 },
-              userAgent: realUA,
-              locale: 'en-US',
-              timezoneId: 'America/New_York',
-              acceptDownloads: true,
-            });
-          }
-          this.logger?.browserLaunch(`Isolated Chromium browser (safe fallback)`);
-        }
-
-        if (this.context) {
-          this.browser = this.context.browser();
-        }
-      } else if (useSystemBrowser && !isChromiumSystem) {
-        // Firefox / Zen system browser mode via CDP
-        const systemBrowserPath = resolvedBrowserInfo?.path;
-        console.log(`[Navis] 🌐 System browser mode: ${resolvedBrowserInfo?.name || 'Firefox/Zen Profile'} (engine: firefox)`);
-
-        try {
-          const userProfileDir = getFirefoxProfileDir(resolvedBrowserInfo?.name || 'firefox');
-
-          // TRY 1: Connect to existing Firefox browser via CDP
-          console.log(`[Navis] 🔌 CDP MODE: Attempting to connect to existing Firefox instance on port 9222...`);
-          let cdpEndpoint = await getCDPEndpoint(9222);
-
-          if (!cdpEndpoint) {
-            console.log(`[Navis] ❌ No instance found with CDP enabled on port 9222`);
-            console.log(`[Navis] 🚀 Auto-launching Firefox with CDP for you...`);
-
-            try {
-              if (await isProcessRunning(systemBrowserPath!)) {
-                throw new Error(`${resolvedBrowserInfo?.name || 'Firefox/Zen'} is already running without a remote debugging endpoint. Close it and try again, or launch it with remote debugging enabled.`);
-              }
-
-              cdpEndpoint = await launchBrowserWithDebugPort(
-                systemBrowserPath!,
-                'firefox',
-                userProfileDir || undefined,
-                undefined,
-                9222
-              );
-            } catch (launchErr: any) {
-              console.warn(`[Navis] ⚠️ Failed to auto-launch Firefox with CDP: ${launchErr.message}`);
-              throw launchErr;
-            }
-          } else {
-            console.log(`[Navis] ✅ Found existing Firefox with CDP at: ${cdpEndpoint}`);
-          }
-
-          // Connect to browser via Chromium CDP (Playwright CDP client works with Firefox BiDi/CDP too)
-          try {
-            this.browser = await chromium.connectOverCDP(cdpEndpoint);
-            this.attachedToExternalBrowser = true;
-            this.context = this.browser.contexts()[0] || await this.browser.newContext({
-              viewport: { width: 1280, height: 1024 },
-              userAgent: realUA,
-              locale: 'en-US',
-              timezoneId: 'America/New_York',
-              acceptDownloads: true,
-            });
-            this.logger?.browserLaunch(`Connected via CDP to Firefox system browser`);
-          } catch (cdpErr: any) {
-            throw cdpErr;
-          }
-        } catch (err: any) {
-          if (err.message && err.message.includes('Please close')) {
-            throw err;
-          }
-          console.warn(`[Navis] ⚠️ Firefox CDP connection failed: ${err.message}. Falling back to isolated browser...`);
-
-          ensureNavisTabGroupExtension();
-          const firefoxExtDir = path.join(os.homedir(), '.everfern', 'extensions', 'firefox-tab-group');
-          const firefoxProfileDir = path.join(os.homedir(), '.everfern', 'navis-firefox-profile');
-
-          fs.mkdirSync(firefoxProfileDir, { recursive: true });
-
-          this.context = await pwFirefox.launchPersistentContext(firefoxProfileDir, {
-            headless: false,
-            // DO NOT pass executablePath here to avoid Playwright protocol mismatch errors with custom Zen/Firefox binaries
-            args: [
-              '--no-remote',
-              `--load-extension=${firefoxExtDir}`,
-            ],
-            firefoxUserPrefs: {
-              'xpinstall.signatures.required': false,
-              'extensions.autoDisableScopes': 0,
-              'extensions.enableScopes': 15,
-            },
-            viewport: { width: 1280, height: 1024 },
-            userAgent: realUA,
-            locale: 'en-US',
-            timezoneId: 'America/New_York',
-            acceptDownloads: true,
-          });
-          this.logger?.browserLaunch(`Isolated Firefox browser (fallback)`);
-
-          if (this.context) {
-            this.browser = this.context.browser();
-          }
-        }
-      } else {
+      {
         const engine = resolvedBrowserInfo?.engine || 'chromium';
         const executablePath = resolvedBrowserInfo?.path || findChromiumExecutable() || undefined;
 
@@ -1576,7 +810,7 @@ export class BrowserSession {
       }
 
     if (this.attachedToExternalBrowser) {
-      console.log(`[Navis] Attached via CDP to ${this.attachedProfileLabel}; overlay will be injected only into Navis-owned tabs`);
+      console.log(`[Navis] Attached to ${this.attachedProfileLabel}; overlay will be injected only into Navis-owned tabs`);
       this.context.on('page', async (newPage: Page) => {
         const opener = await newPage.opener().catch(() => null);
         if (opener && this.navisPages.has(opener)) {
@@ -1663,7 +897,7 @@ export class BrowserSession {
       await this.openTab('about:blank');
     }
 
-    // Only log generic message if we haven't already logged a specific one (CDP vs isolated)
+    // Only log generic message if we haven't already logged a specific one.
     if (!this.logger) {
       console.log(`[Navis] Browser ready: headless=${useChromeProfile ? false : headless}, 1280x1024`);
     }
@@ -1827,7 +1061,7 @@ export class BrowserSession {
         this.attachedProfileLabel = 'browser profile';
 
         const totalCloseTime = Date.now() - closeStartTime;
-        console.log(`[Navis] ✅ Detached from CDP browser without closing profile (${totalCloseTime}ms)`);
+        console.log(`[Navis] ✅ Detached from external browser without closing profile (${totalCloseTime}ms)`);
         return;
       }
 

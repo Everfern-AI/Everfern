@@ -389,8 +389,6 @@ export function ToolSettingsSection() {
     const [config, setConfig] = useState<ToolSettingsConfig>(DEFAULT_TOOL_SETTINGS);
     const [browsers, setBrowsers] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [debugBrowserStatus, setDebugBrowserStatus] = useState<string>('');
-    const [isOpeningDebugBrowser, setIsOpeningDebugBrowser] = useState(false);
     const [extensionStatus, setExtensionStatus] = useState<any>(null);
     const [extensionMessage, setExtensionMessage] = useState<string>('');
     const [isPreparingMainProfileExtension, setIsPreparingMainProfileExtension] = useState(false);
@@ -438,20 +436,6 @@ export function ToolSettingsSection() {
         }
     };
 
-    const handleOpenBrowser = async () => {
-        setIsOpeningDebugBrowser(true);
-        setDebugBrowserStatus('');
-        try {
-            const result = await (window as any).electronAPI?.toolSettings?.openDebugBrowser?.();
-            setDebugBrowserStatus(result?.message || 'Navis CDP browser is ready.');
-        } catch (e) {
-            console.error('[ToolSettingsSection] Failed to open debug browser:', e);
-            setDebugBrowserStatus(e instanceof Error ? e.message : 'Failed to prepare Navis CDP browser.');
-        } finally {
-            setIsOpeningDebugBrowser(false);
-        }
-    };
-
     const handlePrepareMainProfileExtension = async () => {
         setIsPreparingMainProfileExtension(true);
         setExtensionMessage('');
@@ -462,10 +446,10 @@ export function ToolSettingsSection() {
                 connectedExtensions: result?.connected ? 1 : 0,
                 extensionPath: result?.extensionPath,
             });
-            setExtensionMessage(result?.message || 'Navis companion extension preparation finished.');
+            setExtensionMessage(result?.message || 'Navis extension install folder is ready.');
         } catch (e) {
-            console.error('[ToolSettingsSection] Failed to prepare Navis companion extension:', e);
-            setExtensionMessage(e instanceof Error ? e.message : 'Failed to prepare Navis companion extension.');
+            console.error('[ToolSettingsSection] Failed to prepare Navis extension:', e);
+            setExtensionMessage(e instanceof Error ? e.message : 'Failed to prepare Navis extension.');
         } finally {
             setIsPreparingMainProfileExtension(false);
         }
@@ -582,8 +566,7 @@ export function ToolSettingsSection() {
                             if (val === 'isolated') {
                                 handleNavisChange({ ...config.navis, useIsolatedBrowser: true, useChromeProfile: false, automationMode: 'playwright' });
                             } else {
-                                const b = browsers.find((b: any) => b.id === val);
-                                handleNavisChange({ ...config.navis, useIsolatedBrowser: false, selectedBrowserId: val, useChromeProfile: b?.engine === 'chromium', automationMode: b?.engine === 'chromium' ? 'extension-first' : 'playwright' });
+                                handleNavisChange({ ...config.navis, useIsolatedBrowser: false, selectedBrowserId: val, useChromeProfile: true, automationMode: 'extension-first' });
                             }
                         }}
                     />
@@ -591,19 +574,22 @@ export function ToolSettingsSection() {
                     {!config.navis.useIsolatedBrowser && (
                         <div style={{ marginTop: 8, padding: '0 4px' }}>
                             <div style={{ fontSize: 12, color: '#8a8886', lineHeight: 1.5 }}>
-                                Use browser extension controls your real Chromium profile directly when connected. Playwright fallback stays isolated and avoids default-profile CDP.
+                                Use the installed Navis extension to control your real Chrome/Chromium or Firefox profile directly when connected. Playwright mode stays isolated.
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
                                 {[
                                     { mode: 'extension-first' as const, title: 'Use browser extension', detail: 'Fast, logged-in, no copied profile' },
-                                    { mode: 'playwright' as const, title: 'Playwright fallback', detail: 'Use isolated automation' },
+                                    { mode: 'playwright' as const, title: 'Isolated Playwright', detail: 'Separate automation browser' },
                                 ].map(item => {
                                     const selected = config.navis.automationMode === item.mode;
                                     return (
                                         <button
                                             key={item.mode}
                                             type="button"
-                                            onClick={() => handleNavisChange({ ...config.navis, automationMode: item.mode })}
+                                            onClick={() => handleNavisChange(item.mode === 'playwright'
+                                                ? { ...config.navis, automationMode: 'playwright', useIsolatedBrowser: true, useChromeProfile: false }
+                                                : { ...config.navis, automationMode: 'extension-first', useIsolatedBrowser: false, useChromeProfile: true }
+                                            )}
                                             style={{
                                                 textAlign: 'left',
                                                 padding: '10px 12px',
@@ -638,34 +624,16 @@ export function ToolSettingsSection() {
                                         boxShadow: '0 2px 5px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
                                     }}
                                 >
-                                    {isPreparingMainProfileExtension ? 'Preparing extension...' : 'Prepare extension'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleOpenBrowser}
-                                    disabled={isOpeningDebugBrowser}
-                                    style={{
-                                        padding: '9px 12px',
-                                        borderRadius: 10,
-                                        border: '1px solid #ddd9cb',
-                                        backgroundColor: isOpeningDebugBrowser ? '#f4f2ea' : '#ffffff',
-                                        color: '#111111',
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        cursor: isOpeningDebugBrowser ? 'wait' : 'pointer',
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
-                                    }}
-                                >
-                                    {isOpeningDebugBrowser ? 'Preparing CDP profile...' : 'Prepare CDP profile'}
+                                    {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
                                 </button>
                             </div>
                             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
                                 <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
-                                {extensionStatus?.connected ? 'Browser extension connected' : 'Browser extension not connected'}
+                                {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
                             </div>
-                            {(extensionMessage || debugBrowserStatus) && (
-                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.45 }}>
-                                    {extensionMessage || debugBrowserStatus}
+                            {extensionMessage && (
+                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                                    {extensionMessage}
                                 </div>
                             )}
                         </div>
@@ -703,7 +671,7 @@ export function ToolSettingsSection() {
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#4a4846' }}>About Tool Modes</span>
                 </div>
                 <p style={{ fontSize: 12, color: '#8a8886', margin: 0, lineHeight: 1.6 }}>
-                    <strong>Local</strong> mode uses local browser automation. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> prefers the companion extension for fast logged-in Chromium control, then falls back to isolated Playwright when the extension is unavailable. <strong>Navis Vision</strong> is an on-demand fallback for pages where DOM refs are not enough. Changes take effect immediately — no restart required.
+                    <strong>Local</strong> mode uses local isolated browser automation. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> uses the installed Navis extension for Chrome/Chromium or Firefox profile control. <strong>Navis Vision</strong> is an on-demand fallback for pages where DOM refs are not enough. Changes take effect immediately.
                 </p>
             </div>
         </div>

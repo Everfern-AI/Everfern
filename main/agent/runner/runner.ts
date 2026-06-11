@@ -827,6 +827,7 @@ export class AgentRunner {
                 currentStepId: 'step:triage',
                 decompositionAttempts: 0,
                 currentIntent: isBackground ? 'background_task' as any : undefined,
+                isScheduledTaskRun: !!isBackground,
                 operatorMode: !!operatorMode,
               }, threadConfig);
             }

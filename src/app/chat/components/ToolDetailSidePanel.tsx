@@ -4957,6 +4957,44 @@ function extractImagePathsFromText(value: string): string[] {
   return Array.from(new Set(matches.map(match => match.trim()).filter(hasImageExtension)));
 }
 
+function extractVisualSheetProgressStats(value: string): { imageCount?: number; sheetCount?: number } {
+  const text = String(value || '');
+  const successMatch = text.match(/Success:\s*created\s+(\d+)\s+visual classification sheets?\s+for\s+(\d+)\s+images?/i);
+  if (successMatch) {
+    return {
+      sheetCount: Number(successMatch[1]) || undefined,
+      imageCount: Number(successMatch[2]) || undefined,
+    };
+  }
+
+  let sheetCount = 0;
+  const imageCountsBySheet = new Map<number, number>();
+  const renderRe = /Rendering sheet\s+(\d+)\/(\d+)\s+\((\d+)\s+images?\)/gi;
+  let renderMatch: RegExpExecArray | null;
+  while ((renderMatch = renderRe.exec(text))) {
+    const sheetIndex = Number(renderMatch[1]);
+    const totalSheets = Number(renderMatch[2]);
+    const imagesInSheet = Number(renderMatch[3]);
+    if (Number.isFinite(totalSheets)) sheetCount = Math.max(sheetCount, totalSheets);
+    if (Number.isFinite(sheetIndex) && Number.isFinite(imagesInSheet)) {
+      imageCountsBySheet.set(sheetIndex, imagesInSheet);
+    }
+  }
+
+  const readyRe = /Sheet ready\s+(\d+)\/(\d+):/gi;
+  let readyMatch: RegExpExecArray | null;
+  while ((readyMatch = readyRe.exec(text))) {
+    const totalSheets = Number(readyMatch[2]);
+    if (Number.isFinite(totalSheets)) sheetCount = Math.max(sheetCount, totalSheets);
+  }
+
+  const imageCount = Array.from(imageCountsBySheet.values()).reduce((sum, count) => sum + count, 0);
+  return {
+    sheetCount: sheetCount || undefined,
+    imageCount: imageCount || undefined,
+  };
+}
+
 function getImageAnalysisPayloadKey(tc: any): string {
   const data = tc?.data || tc?.result?.data || {};
   const sheets = Array.isArray(data.sheets) ? data.sheets : [];
@@ -5048,6 +5086,60 @@ function ImageViewer({ image, variant = 'image' }: { image: ImagePreviewItem; va
             <span style={{ fontSize: 11, fontFamily: T.sans }}>Failed to load</span>
           </div>
         )}
+      </div>
+      <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 400, color: T.text, fontFamily: T.mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {fileName}
+          </div>
+          {(image.subtitle || image.path) && (
+            <div style={{ fontSize: 10.5, color: T.textMuted, fontFamily: T.sans, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+              {image.subtitle || image.path}
+            </div>
+          )}
+        </div>
+        {image.badge && (
+          <span style={{
+            flexShrink: 0,
+            fontSize: 10,
+            color: T.textSecondary,
+            background: T.surfaceRaised,
+            border: `1px solid ${T.border}`,
+            borderRadius: 999,
+            padding: '3px 8px',
+            fontFamily: T.sans,
+          }}>
+            {image.badge}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImagePreviewPlaceholder({ image, variant = 'image' }: { image: ImagePreviewItem; variant?: 'image' | 'sheet' }) {
+  const fileName = image.fileName || imagePathBasename(image.path || 'Image');
+  const isSheet = variant === 'sheet';
+
+  return (
+    <div style={{
+      borderRadius: T.r10,
+      background: T.surface,
+      border: `1px solid ${T.border}`,
+      boxShadow: CLAY.shadow,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        minHeight: isSheet ? 190 : 130,
+        background: isSheet ? '#f4efe6' : T.surfaceRaised,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: T.textMuted,
+        fontFamily: T.sans,
+        fontSize: 12,
+      }}>
+        Loading preview…
       </div>
       <div style={{ padding: '10px 14px', borderTop: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
@@ -5223,7 +5315,9 @@ function ImageAnalysisView({
               {localImages.map((img, i) => (
                 img.dataUrl ? (
                   <ImageViewer key={`${img.fileName}-${i}`} image={img} variant={isSheet ? 'sheet' : 'image'} />
-                ) : null
+                ) : (
+                  <ImagePreviewPlaceholder key={`${img.fileName}-${i}`} image={img} variant={isSheet ? 'sheet' : 'image'} />
+                )
               ))}
             </div>
           </div>
@@ -5288,6 +5382,7 @@ function extractImageAnalysisData(tc: any) {
     const data = tc.data || tc.result?.data || {};
     const args = tc.args || {};
     const outputText = tc.output || tc.result?.output || data.visionOutput || '';
+    const progressStats = isSheet ? extractVisualSheetProgressStats(outputText) : {};
     const outputImagePaths = extractImagePathsFromText(outputText);
     const images: ImagePreviewItem[] = [];
     const rawImages = data.images || [];
@@ -5347,8 +5442,8 @@ function extractImageAnalysisData(tc: any) {
       title: isSheet ? 'Visual Classification Sheet' : 'Image Analysis',
       question: args.question || '',
       output: outputText,
-      imageCount: data.imageCount || images.length || args.images?.length || (args.imagePath ? 1 : 0),
-      sheetCount: data.sheetCount || (sheets.length || undefined),
+      imageCount: (Number(data.imageCount) > 0 ? Number(data.imageCount) : undefined) || progressStats.imageCount || (isSheet ? undefined : images.length || args.images?.length || (args.imagePath ? 1 : 0)),
+      sheetCount: (Number(data.sheetCount) > 0 ? Number(data.sheetCount) : undefined) || progressStats.sheetCount || (sheets.length || (isSheet && images.length ? images.length : undefined)),
       directory: data.directory || args.directory || '',
       outputDir: data.outputDir || '',
       manifestPath: data.manifestPath || '',

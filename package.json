@@ -60,6 +60,17 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../extension-navis",
+        "to": "extension-navis",
+        "filter": [
+          "dist/**/*",
+          "src/**/*",
+          "manifest.*.json",
+          "package.json",
+          "README.md"
+        ]
       }
     ],
     "win": {

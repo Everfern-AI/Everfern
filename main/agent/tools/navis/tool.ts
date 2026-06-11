@@ -90,7 +90,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         automationMode: {
           type: 'string',
           enum: ['extension-first', 'playwright'],
-          description: 'Optional manual override. extension-first uses the companion browser extension when connected; playwright uses the isolated/CDP fallback.',
+          description: 'Optional manual override. extension-first uses the installed Navis browser extension; playwright uses an isolated automation browser.',
         },
         startUrl: {
           type: 'string',
@@ -199,11 +199,27 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         if (shouldUseExtensionFirst) {
           const status = getNavisCompanionStatus();
           if (!status.connected) {
-            onUpdate?.('Preparing Navis companion extension for fast main-profile control...');
+            onUpdate?.('Preparing Navis extension install folder for fast main-profile control...');
             const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
             onUpdate?.(extensionResult.message);
+            if (!extensionResult.connected) {
+              const executionTime = Date.now() - toolStartTime;
+              console.log(`[Navis Tool] Extension not connected after ${executionTime}ms; stopping instead of profile-browser fallback.`);
+              return {
+                success: false,
+                output: extensionResult.message,
+                data: {
+                  steps: 0,
+                  screenshots,
+                  automationMode: 'extension-first',
+                  extensionPath: extensionResult.extensionPath,
+                  browserEngine: extensionResult.browserEngine,
+                  installInstructions: extensionResult.installInstructions,
+                },
+              };
+            }
           } else {
-            onUpdate?.('Navis companion extension is connected. Using extension-first browser control.');
+            onUpdate?.('Navis extension is connected. Using extension-first browser control.');
           }
 
           if (getNavisCompanionStatus().connected) {
@@ -232,11 +248,26 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
               };
             }
 
-            onUpdate?.('Extension-first path could not complete this action. Falling back to isolated Playwright automation.');
-            logger.thinking(undefined, undefined, 'Extension-first fallback triggered; switching to isolated Playwright automation.', { mode: 'playwright-fallback' });
+            onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
+            return {
+              success: false,
+              output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
+              data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
+            };
           } else {
-            onUpdate?.('Navis companion extension is not connected. Falling back to isolated Playwright automation.');
-            logger.thinking(undefined, undefined, 'Companion extension unavailable; using isolated Playwright fallback.', { mode: 'playwright-fallback' });
+            const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
+            return {
+              success: false,
+              output: extensionResult.message,
+              data: {
+                steps: 0,
+                screenshots,
+                automationMode: 'extension-first',
+                extensionPath: extensionResult.extensionPath,
+                browserEngine: extensionResult.browserEngine,
+                installInstructions: extensionResult.installInstructions,
+              },
+            };
           }
         }
 
@@ -252,9 +283,9 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           // is requested or the DOM snapshot is weak.
           useVision: Boolean(navisSettings.useVision),
           forceVision: Boolean(safeArgs.forceVision),
-          useChromeProfile: automationMode === 'playwright' ? navisSettings.useChromeProfile : false,
+          useChromeProfile: false,
           selectedBrowserId: navisSettings.selectedBrowserId,
-          useIsolatedBrowser: automationMode === 'playwright' ? navisSettings.useIsolatedBrowser : true,
+          useIsolatedBrowser: true,
         });
 
         const executionTime = Date.now() - toolStartTime;
@@ -264,7 +295,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         return {
           success: result.success,
           output: result.output,
-          data: { steps: result.steps, screenshots, automationMode: automationMode === 'playwright' ? 'playwright' : 'playwright-fallback' },
+          data: { steps: result.steps, screenshots, automationMode: 'playwright-isolated' },
         };
       } catch (toolErr) {
         const executionTime = Date.now() - toolStartTime;

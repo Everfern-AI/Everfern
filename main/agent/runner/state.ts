@@ -143,6 +143,8 @@ export const GraphState = Annotation.Root({
   // Operator Mode State
   operatorMode: Annotation<boolean>(),
   operatorSession: Annotation<any>(),
+  // Background/scheduled execution state
+  isScheduledTaskRun: Annotation<boolean>(),
   // Specialized Agent State
   webExplorerComplete: Annotation<boolean>(),
   webExplorerSelfLoopCount: Annotation<number>(),

@@ -10,7 +10,7 @@ export interface BrowserInfo {
   engine: 'chromium' | 'firefox';
   path: string;        // Absolute executable path
   logo: string;        // base64 data URL
-  supportsCDP: boolean; 
+  supportsExtension: boolean; 
 }
 
 function getSubKeys(hive: string, key: string): Promise<Registry.Registry[]> {
@@ -99,7 +99,7 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
               engine,
               path: exePath,
               logo,
-              supportsCDP: true
+              supportsExtension: true
             });
           }
         }
@@ -162,7 +162,7 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
           engine: item.engine,
           path: resolved,
           logo,
-          supportsCDP: true
+          supportsExtension: true
         });
       }
     }
@@ -198,7 +198,7 @@ async function getMacBrowsers(): Promise<BrowserInfo[]> {
         engine: item.engine,
         path: item.exe,
         logo,
-        supportsCDP: true
+        supportsExtension: true
       });
     }
   }
@@ -238,7 +238,7 @@ async function getLinuxBrowsers(): Promise<BrowserInfo[]> {
           engine: item.engine,
           path: exePath,
           logo,
-          supportsCDP: true
+          supportsExtension: true
         });
       }
     } catch (e) {

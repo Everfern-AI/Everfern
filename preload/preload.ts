@@ -485,7 +485,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: () => ipcRenderer.invoke('tool-settings:get'),
     set: (config: ToolSettingsConfig) => ipcRenderer.invoke('tool-settings:set', config),
     getBrowsers: () => ipcRenderer.invoke('tool-settings:get-browsers'),
-    openDebugBrowser: () => ipcRenderer.invoke('debug:open-browser'),
     prepareNavisMainProfileExtension: (startUrl?: string) => ipcRenderer.invoke('navis-extension:prepare-main-profile', startUrl),
     getNavisExtensionStatus: () => ipcRenderer.invoke('navis-extension:status'),
   },
@@ -548,7 +547,7 @@ export interface BrowserInfo {
   engine: 'chromium' | 'firefox';
   path: string;
   logo: string;
-  supportsCDP: boolean;
+  supportsExtension: boolean;
 }
 
 export interface ToolSettingsConfig {
@@ -807,27 +806,14 @@ export type ElectronAPI = {
     get: () => Promise<ToolSettingsConfig>;
     set: (config: ToolSettingsConfig) => Promise<{ success: boolean }>;
     getBrowsers: () => Promise<BrowserInfo[]>;
-    openDebugBrowser: () => Promise<{
-      success: boolean;
-      message: string;
-      endpoint?: string;
-      browserName?: string;
-      profileDir?: string;
-      command?: string;
-      usedExistingEndpoint?: boolean;
-      usingReusableProfile?: boolean;
-    }>;
     prepareNavisMainProfileExtension: (startUrl?: string) => Promise<{
       success: boolean;
       message: string;
       extensionPath: string;
       connected: boolean;
       browserName?: string;
-      executablePath?: string;
-      userDataDir?: string;
-      profileDirectory?: string;
-      needsBrowserRestart?: boolean;
-      command?: string;
+      browserEngine?: 'chrome' | 'firefox';
+      installInstructions?: string[];
     }>;
     getNavisExtensionStatus: () => Promise<{
       listening: boolean;
@@ -835,6 +821,9 @@ export type ElectronAPI = {
       connectedExtensions: number;
       connected: boolean;
       extensionPath: string;
+      chromeExtensionPath?: string;
+      firefoxExtensionPath?: string;
+      sourceDir?: string;
     }>;
   };
   chat: {
