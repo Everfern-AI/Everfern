@@ -269,6 +269,7 @@ const HitlApprovalForm = ({
     request,
     onApprove,
     onReject,
+    isInline,
 }: {
     request: {
         question: string;
@@ -281,6 +282,7 @@ const HitlApprovalForm = ({
     };
     onApprove: (sendMessage?: boolean) => void;
     onReject: (sendMessage?: boolean) => void;
+    isInline?: boolean;
 }) => {
     const [followUpQuestion, setFollowUpQuestion] = useState('');
     const [showFollowUpInput, setShowFollowUpInput] = useState(false);
@@ -343,21 +345,25 @@ const HitlApprovalForm = ({
 
     return (
         <div style={{
-            background: "#ececea",
-            boxShadow: [
-                "inset 0 1px 0 rgba(255,255,255,0.72)",
-                "inset 0 -1px 0 rgba(0,0,0,0.06)",
-                "inset 1px 0 rgba(255,255,255,0.50)",
-                "inset -1px 0 rgba(0,0,0,0.04)",
-                "0 1px 3px rgba(0,0,0,0.07)",
-            ].join(", "),
-            border: "0.5px solid rgba(0,0,0,0.10)",
+            background: isInline ? "rgba(255, 255, 255, 0.85)" : "#ececea",
+            backdropFilter: isInline ? "blur(12px)" : "none",
+            boxShadow: isInline 
+                ? "0 8px 30px rgba(99, 102, 241, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
+                : [
+                    "inset 0 1px 0 rgba(255,255,255,0.72)",
+                    "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                    "inset 1px 0 rgba(255,255,255,0.50)",
+                    "inset -1px 0 rgba(0,0,0,0.04)",
+                    "0 1px 3px rgba(0,0,0,0.07)",
+                ].join(", "),
+            border: isInline ? "1px solid rgba(99, 102, 241, 0.18)" : "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
-            padding: 24,
-            margin: '24px 0',
+            padding: isInline ? 20 : 24,
+            margin: isInline ? '16px 0' : '24px 0',
             fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            width: '100%',
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: '#111111', fontSize: 14, fontWeight: 600 }}>
                 <div style={{
@@ -486,6 +492,7 @@ const UserQuestionForm = ({
     questions,
     onSubmit,
     previewMarkdown,
+    isInline,
 }: {
     questions: Array<{
         question: string;
@@ -494,6 +501,7 @@ const UserQuestionForm = ({
     }>;
     onSubmit: (answers: Record<string, string[]>, attachedFiles?: Array<{ name: string; content?: string; base64?: string; mimeType?: string }>) => void;
     previewMarkdown?: string;
+    isInline?: boolean;
 }) => {
     const [currentIndex, setCurrentIndex] = React.useState(0);
     const [answers, setAnswers] = React.useState<Record<string, string[]>>({});
@@ -651,11 +659,11 @@ const UserQuestionForm = ({
             <div style={{ margin: '0 0 20px 0' }}>
                 {/* Warning header */}
                 <div style={{
-                    backgroundColor: '#fff3cd',
-                    border: '1px solid #ffeaa7',
+                    backgroundColor: isInline ? '#fffbeb' : '#fff3cd',
+                    border: isInline ? '1px solid #fde68a' : '1px solid #ffeaa7',
                     borderRadius: '12px 12px 0 0',
                     padding: '12px 16px',
-                    color: '#856404',
+                    color: isInline ? '#b45309' : '#856404',
                     fontSize: 14,
                     fontWeight: 600,
                     display: 'flex',
@@ -671,8 +679,8 @@ const UserQuestionForm = ({
 
                 {/* Body */}
                 <div style={{
-                    backgroundColor: '#fefefe',
-                    border: '1px solid #ffeaa7',
+                    backgroundColor: '#ffffff',
+                    border: isInline ? '1px solid #fde68a' : '1px solid #ffeaa7',
                     borderTop: 'none',
                     borderRadius: '0 0 12px 12px',
                     padding: 16,
@@ -769,19 +777,23 @@ const UserQuestionForm = ({
 
     return (
         <div style={{
-            background: "#ececea",
-            boxShadow: [
-                "inset 0 1px 0 rgba(255,255,255,0.72)",
-                "inset 0 -1px 0 rgba(0,0,0,0.06)",
-                "inset 1px 0 rgba(255,255,255,0.50)",
-                "inset -1px 0 rgba(0,0,0,0.04)",
-                "0 1px 3px rgba(0,0,0,0.07)",
-            ].join(", "),
-            border: "0.5px solid rgba(0,0,0,0.10)",
+            background: isInline ? "rgba(255, 255, 255, 0.85)" : "#ececea",
+            backdropFilter: isInline ? "blur(12px)" : "none",
+            boxShadow: isInline 
+                ? "0 8px 30px rgba(99, 102, 241, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
+                : [
+                    "inset 0 1px 0 rgba(255,255,255,0.72)",
+                    "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                    "inset 1px 0 rgba(255,255,255,0.50)",
+                    "inset -1px 0 rgba(0,0,0,0.04)",
+                    "0 1px 3px rgba(0,0,0,0.07)",
+                ].join(", "),
+            border: isInline ? "1px solid rgba(99, 102, 241, 0.18)" : "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
-            padding: 24,
-            margin: '24px 0',
+            padding: isInline ? 20 : 24,
+            margin: isInline ? '16px 0' : '24px 0',
             fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
+            width: '100%',
         }}>
             {/* Hidden file input */}
             <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} />
@@ -965,15 +977,21 @@ const UserQuestionForm = ({
                                 style={{
                                     padding: '14px 16px',
                                     borderRadius: 10,
-                                    border: selected ? '1px solid #111111' : '1px solid rgba(0,0,0,0.06)',
-                                    backgroundColor: selected ? '#ffffff' : '#fcfcfb',
+                                    border: selected 
+                                        ? (isInline ? '1px solid #6366f1' : '1px solid #111111') 
+                                        : '1px solid rgba(0,0,0,0.06)',
+                                    backgroundColor: selected 
+                                        ? (isInline ? '#f5f6ff' : '#ffffff') 
+                                        : '#fcfcfb',
                                     color: '#111111',
                                     cursor: 'pointer',
                                     textAlign: 'left',
                                     fontSize: 14,
                                     fontWeight: option.isRecommended ? 600 : 500,
-                                    transition: 'all 0.2s ease',
-                                    boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    boxShadow: selected 
+                                        ? (isInline ? '0 2px 8px rgba(99, 102, 241, 0.12)' : '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111') 
+                                        : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
                                 }}
                                 onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
                                 onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#fcfcfb'; }}
@@ -983,7 +1001,9 @@ const UserQuestionForm = ({
                                         width: 18, height: 18,
                                         borderRadius: current.multiSelect ? 4 : '50%',
                                         border: selected ? 'none' : '1px solid #cbd5e1',
-                                        backgroundColor: selected ? '#111111' : '#ffffff',
+                                        backgroundColor: selected 
+                                            ? (isInline ? '#6366f1' : '#111111') 
+                                            : '#ffffff',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
                                     }}>
@@ -1050,12 +1070,12 @@ const UserQuestionForm = ({
                 )}
                 {currentIndex < total - 1 ? (
                     <button onClick={handleNext} disabled={!isAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? '#111111' : '#c5c5c2', color: isAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? (isInline ? '#6366f1' : '#111111') : '#c5c5c2', color: isAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
                         Next
                     </button>
                 ) : (
                     <button onClick={handleSubmit} disabled={!allAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? '#111111' : '#c5c5c2', color: allAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? (isInline ? '#6366f1' : '#111111') : '#c5c5c2', color: allAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
                         Submit {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
                     </button>
                 )}

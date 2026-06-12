@@ -248,9 +248,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:plan-created', (_e, data) => cb(data));
     },
     onHitlRequest: (cb: (data: any) => void) => {
-      console.log('[Preload] 🔧 Setting up HITL request listener');
+      ipcRenderer.removeAllListeners('acp:hitl-request');
       ipcRenderer.on('acp:hitl-request', (_e, data) => {
-        console.log('[Preload] ✅ HITL request received from main process:', data);
         cb(data);
       });
     },
@@ -259,9 +258,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.send('acp:hitl-response', response);
     },
     onHitlResponseProcessed: (cb: (data: { message: string; shouldSendAsMessage: boolean }) => void) => {
-      console.log('[Preload] 🔧 Setting up HITL response processed listener');
+      ipcRenderer.removeAllListeners('acp:hitl-response-processed');
       ipcRenderer.on('acp:hitl-response-processed', (_e, data) => {
-        console.log('[Preload] ✅ HITL response processed received from main process:', data);
         cb(data);
       });
     },

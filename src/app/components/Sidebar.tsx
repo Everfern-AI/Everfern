@@ -19,6 +19,7 @@ interface SidebarProps {
     onIntegrationClick?: () => void;
     onProjectsClick?: () => void;
     onAnalyticsClick?: () => void;
+    titlebarInset?: number;
 }
 
 interface ConversationSummary {
@@ -29,7 +30,7 @@ interface ConversationSummary {
     projectName?: string;
 }
 
-export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick }: SidebarProps) {
+export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick, titlebarInset = 0 }: SidebarProps) {
     const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
     const [username, setUsername] = useState<string>("User");
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -151,10 +152,10 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
         >
             {/* Top Control Bar - Toggle + Account */}
             <div style={{
-                height: 48,
+                height: 48 + titlebarInset,
                 display: "flex",
                 alignItems: "center",
-                padding: "0 16px",
+                padding: `${titlebarInset}px 16px 0`,
                 justifyContent: isOpen ? "space-between" : "center",
                 flexShrink: 0,
                 WebkitAppRegion: "drag",

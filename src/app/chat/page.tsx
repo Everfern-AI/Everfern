@@ -442,10 +442,39 @@ const SuggestedFollowUpsComponent = ({
     );
 };
 
+const isNavisHitl = (request: any) => {
+    if (!request) return false;
+    const tools = request.details?.tools || [];
+    const hasNavisTool = tools.some((t: any) => {
+        const name = (t.name || t.toolName || '').toLowerCase();
+        return name.includes('navis');
+    });
+    const reasoning = (request.details?.reasoning || '').toLowerCase();
+    const question = (request.question || '').toLowerCase();
+    return hasNavisTool || reasoning.includes('navis') || question.includes('navis');
+};
+
+const isNavisQuestion = (questions: any[]) => {
+    if (!questions || questions.length === 0) return false;
+    return questions.some((q: any) => {
+        const questionText = (q.question || '').toLowerCase();
+        const toolId = (q.toolCallId || '').toLowerCase();
+        return questionText.includes('navis') || toolId.includes('navis');
+    });
+};
+
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
+    const lastAssistantIdx = useMemo(() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'assistant') {
+                return i;
+            }
+        }
+        return -1;
+    }, [messages]);
     const [inputValue, setInputValue] = useState("");
     const [modelInfo, setModelInfo] = useState<{
         contextLength: number;
@@ -4835,7 +4864,7 @@ export default function ChatPage() {
                                                 )}
 
                                                 {/* User Question Form (single or multiple questions) */}
-                                                {activeUserQuestions.length > 0 && (
+                                                {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
                                                     <UserQuestionForm
                                                         questions={activeUserQuestions}
                                                         onSubmit={handleQuestionSubmit}
@@ -4844,7 +4873,7 @@ export default function ChatPage() {
                                                 )}
 
                                                 {/* HITL Approval Form */}
-                                                {showHitlApproval && hitlRequest && (
+                                                {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
                                                     <HitlApprovalForm
                                                         request={hitlRequest}
                                                         onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
@@ -4856,7 +4885,13 @@ export default function ChatPage() {
                                                 <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
                                                     {renderSubagentSpawnAttachment()}
                                                     {renderAttachmentStrip()}
-                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
+                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                        activeUserQuestions.length > 0 
+                                                            ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above") 
+                                                            : showHitlApproval 
+                                                                ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above") 
+                                                                : "How can I help you today?"
+                                                    } rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
                                                         className="placeholder-[#a5a3a0]"
                                                         style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
@@ -5117,6 +5152,26 @@ export default function ChatPage() {
                                                                 />
                                                             ))}
                                                             <RateLimitContinueButton content={msg.content} onContinue={() => handleSend("continue")} />
+                                                            {idx === lastAssistantIdx && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
+                                                                <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                    <UserQuestionForm
+                                                                        questions={activeUserQuestions}
+                                                                        onSubmit={handleQuestionSubmit}
+                                                                        previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                                        isInline={true}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                            {idx === lastAssistantIdx && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
+                                                                <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                    <HitlApprovalForm
+                                                                        request={hitlRequest}
+                                                                        onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                                        onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                                        isInline={true}
+                                                                    />
+                                                                </div>
+                                                            )}
 
                                                             <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 12 }}>
                                                                 <button
@@ -5483,7 +5538,7 @@ export default function ChatPage() {
                                             )}
 
                                             {/* User Question Form (single or multiple questions) */}
-                                            {activeUserQuestions.length > 0 && (
+                                            {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
                                                 <div style={{ padding: '16px 20px 0' }}>
                                                     <UserQuestionForm
                                                         questions={activeUserQuestions}
@@ -5494,7 +5549,7 @@ export default function ChatPage() {
                                             )}
 
                                             {/* HITL Approval Form */}
-                                            {showHitlApproval && hitlRequest && (
+                                            {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
                                                 <div style={{ padding: '16px 20px 0' }}>
                                                     <HitlApprovalForm
                                                         request={hitlRequest}
@@ -5508,7 +5563,13 @@ export default function ChatPage() {
                                             {renderAttachmentStrip()}
                                             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                                                 <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
-                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeUserQuestions.length > 0 ? "Please answer the question above" : showHitlApproval ? "Please approve or reject the operation above" : "How can I help you today?"} rows={1}
+                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                        activeUserQuestions.length > 0 
+                                                            ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above") 
+                                                            : showHitlApproval 
+                                                                ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above") 
+                                                                : "How can I help you today?"
+                                                    } rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
                                                         style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
                                                 </div>

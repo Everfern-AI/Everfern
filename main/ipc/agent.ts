@@ -31,6 +31,17 @@ import { reflectAndRemember } from '../store/memory-manager';
 import { getAllModelsFlat, FlatModelEntry, PROVIDER_REGISTRY } from '../lib/providers';
 import { requestDebateSkip } from '../agent/runner/debate-skip';
 
+function scopedLocalModelId(provider: string, model: string): string {
+  return provider === 'ollama' || provider === 'lmstudio' ? `${provider}:${model}` : model;
+}
+
+function normalizeRequestedModel(providerType?: string, model?: string): string | undefined {
+  if (!model) return model;
+  if (providerType === 'ollama' && model.startsWith('ollama:')) return model.slice('ollama:'.length);
+  if (providerType === 'lmstudio' && model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length);
+  return model;
+}
+
 export function registerAgentHandlers() {
   // Event-based channels (one-way communication via sender.send):
   // - acp:sub-agent-progress: Sub-agent progress streaming events
@@ -130,7 +141,7 @@ export function registerAgentHandlers() {
         const ollamaClient = new AIClient({ provider: 'ollama' });
         const rawOllama = await ollamaClient.listModels();
         ollamaModels = rawOllama.map((m: string) => ({
-          id: m,
+          id: scopedLocalModelId('ollama', m),
           name: m,
           provider: 'Ollama',
           providerType: 'ollama' as any
@@ -148,7 +159,7 @@ export function registerAgentHandlers() {
         const lmClient = new AIClient({ provider: 'lmstudio' });
         const rawLm = await lmClient.listModels();
         lmstudioModels = rawLm.map((m: string) => ({
-          id: m,
+          id: scopedLocalModelId('lmstudio', m),
           name: m,
           provider: 'LM Studio',
           providerType: 'lmstudio' as any
@@ -163,7 +174,7 @@ export function registerAgentHandlers() {
       // Deduplicate and combine
       const merged = [...activeModels];
       for (const om of [...ollamaModels, ...lmstudioModels]) {
-         if (!merged.find(m => m.id === om.id)) merged.push(om);
+         if (!merged.find(m => m.id === om.id && m.providerType === om.providerType)) merged.push(om);
       }
 
       if (merged.length === 0) {
@@ -287,6 +298,7 @@ export function registerAgentHandlers() {
   }) => {
     let client = acpManager.getClient();
     const config = loadConfigSync();
+    const requestedModel = normalizeRequestedModel(request.providerType, request.model);
 
     if (request.providerType) {
       const currentProvider = acpManager.getActiveConfig()?.provider;
@@ -294,11 +306,11 @@ export function registerAgentHandlers() {
         const apiKey = config?.keys?.[request.providerType] || '';
         client = new AIClient({
           provider: request.providerType as any,
-          model: request.model,
+          model: requestedModel,
           apiKey,
         });
-      } else if (request.model) {
-        client.setModel(request.model);
+      } else if (requestedModel) {
+        client.setModel(requestedModel);
       }
     }
 
@@ -307,7 +319,7 @@ export function registerAgentHandlers() {
     try {
       const response = await client.chat({
         messages: request.messages,
-        model: request.model,
+        model: requestedModel,
       });
       return { success: true, response };
     } catch (error) {
@@ -329,37 +341,55 @@ export function registerAgentHandlers() {
     const streamSender = event.sender;
     const config = loadConfigSync();
     let client = acpManager.getClient();
+    const requestedModel = normalizeRequestedModel(request.providerType, request.model);
+    let activeConfigForRequest = acpManager.getActiveConfig();
 
     // Dynamic provider switch
     if (request.providerType) {
-      const currentProvider = acpManager.getActiveConfig()?.provider;
+      const currentProvider = activeConfigForRequest?.provider;
       if (request.providerType !== currentProvider || !client) {
         const apiKey = config?.keys?.[request.providerType] || request.apiKey || '';
+        const baseUrl = request.providerType === 'lmstudio'
+          ? (config?.lmstudioBaseUrl || config?.baseUrls?.lmstudio || 'http://localhost:1234/v1')
+          : request.providerType === 'ollama'
+            ? (config?.ollamaBaseUrl || config?.baseUrls?.ollama || 'http://localhost:11434')
+            : undefined;
         client = new AIClient({
           provider: request.providerType as any,
-          model: request.model,
+          model: requestedModel,
           apiKey,
+          baseUrl,
         });
-      } else if (request.model) {
-        client.setModel(request.model);
+        activeConfigForRequest = {
+          ...(activeConfigForRequest || {}),
+          provider: request.providerType as any,
+          model: requestedModel,
+          apiKey,
+          baseUrl,
+        } as any;
+      } else if (requestedModel) {
+        client.setModel(requestedModel);
+        activeConfigForRequest = {
+          ...(activeConfigForRequest || {}),
+          model: requestedModel,
+        } as any;
       }
     }
 
     if (!client) throw new Error('No AI provider configured');
 
     // Construct AgentRunnerConfig from active ACP config
-    const activeConfig = acpManager.getActiveConfig();
     console.log('[AgentIPC] Active ACP Config:', {
-      provider: activeConfig?.provider,
-      model: activeConfig?.model,
-      hasVlm: !!activeConfig?.vlm,
-      vlmModel: activeConfig?.vlm?.model
+      provider: activeConfigForRequest?.provider,
+      model: activeConfigForRequest?.model,
+      hasVlm: !!activeConfigForRequest?.vlm,
+      vlmModel: activeConfigForRequest?.vlm?.model
     });
 
     const runnerConfig = {
-      visionModel: activeConfig?.vlm?.model,
-      vlm: activeConfig?.vlm,
-      ollamaBaseUrl: activeConfig?.baseUrl, // Fallback
+      visionModel: activeConfigForRequest?.vlm?.model,
+      vlm: activeConfigForRequest?.vlm,
+      ollamaBaseUrl: activeConfigForRequest?.baseUrl, // Fallback
     };
 
     console.log('[AgentIPC] Initializing AgentRunner with config:', JSON.stringify(runnerConfig, null, 2));
@@ -501,7 +531,7 @@ export function registerAgentHandlers() {
           await dbOps.run(
             `INSERT OR IGNORE INTO conversations (id, title, provider, model, created_at, updated_at)
              VALUES (?, '[In Progress]', 'everfern', ?, ?, ?)`,
-            [convId, request.model || 'unknown',
+            [convId, requestedModel || 'unknown',
              new Date().toISOString(), new Date().toISOString()]
           );
         } catch { /* DB may not have draft_messages table yet */ }
@@ -518,7 +548,7 @@ export function registerAgentHandlers() {
       // ── End draft setup ──────────────────────────────────────────────────
 
       let fullResponse = '';
-      for await (const streamEvent of runner.runStream(userInput, history, request.model, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode)) {
+      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode)) {
         if (globalAbortManager.streamAborted) {
           flushBuffers();
           try {

@@ -1782,7 +1782,16 @@ export class AIClient {
       const res = await this._fetchWithRetry(`${this.config.baseUrl}/models`, { headers: this._oaiHeaders }, 2);
       if (!res.ok) return [];
       const data = await res.json();
-      return (data.data as any[]).map((m: any) => m.id as string);
+      const rawModels = Array.isArray(data.data)
+        ? data.data
+        : Array.isArray(data.models)
+          ? data.models
+          : Array.isArray(data)
+            ? data
+            : [];
+      return rawModels
+        .map((m: any) => typeof m === 'string' ? m : m?.id || m?.name || m?.model)
+        .filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0);
     } catch { return []; }
   }
 
