@@ -1340,7 +1340,7 @@ const TaskGroupRow = ({
 }) => {
     const hasRunning = toolCalls.some(tc => tc.status === "running");
     const hasFailed = toolCalls.some(tc => tc.status === "error");
-    const allDone = toolCalls.every(tc => tc.status === "complete" || tc.status === "error");
+    const allDone = toolCalls.every(tc => tc.status === "done" || tc.status === "error");
     const effectiveStatus: MissionStep["status"] = hasRunning
         ? "in-progress"
         : hasFailed
