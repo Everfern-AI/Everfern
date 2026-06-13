@@ -38,3 +38,10 @@ jobs:
         run: npm run build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Everfern-${{ matrix.os }}
+          path: release/*
+          if-no-files-found: error
