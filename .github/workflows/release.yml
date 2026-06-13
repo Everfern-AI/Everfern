@@ -1,5 +1,10 @@
-Create a .github/workflows/release.yml file to handle automated cross-compilation matching the proper host operating system platforms:yamlname: Build and Release
-on: [push]
+name: Build and Release
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
 
 jobs:
   release:
