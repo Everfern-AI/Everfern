@@ -23,6 +23,10 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Install macOS Dependencies
+        if: matrix.os == 'macos-latest'
+        run: brew install vips
+
       - name: Install Node Modules
         run: npm install
 
