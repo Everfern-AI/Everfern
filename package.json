@@ -74,18 +74,6 @@
         ]
       }
     ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "public/images/logos/everfern.ico",
-      "requestedExecutionLevel": "asInvoker"
-    },
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
@@ -93,24 +81,6 @@
         "zip"
       ],
       "icon": "public/images/logos/everfern.icns"
-    },
-    "nativeRebuilder": "legacy",
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "EverFern",
-      "installerIcon": "public/images/logos/everfern.ico",
-      "uninstallerIcon": "public/images/logos/everfern.ico",
-      "installerHeaderIcon": "public/images/logos/everfern.ico",
-      "installerSidebar": "build/installerSidebar.bmp",
-      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
-      "installerHeader": "build/installerHeader.bmp",
-      "license": "build/license.txt",
-      "include": "build/installer.nsh"
     }
   },
   "dependencies": {
