@@ -356,23 +356,126 @@ const HitlApprovalForm = ({
         });
     };
 
+    // ── Navis-specific clean inline authorization card ──────────────────────
+    if (isInline) {
+        const toolNames = (request.details?.tools || []).map((t: any) => (t.name || t.toolName || '').toLowerCase());
+        const hasBrowser = toolNames.some(n => n.includes('navis') || n.includes('browser') || n.includes('tab'));
+        const actionLabel = hasBrowser
+            ? 'use a new tab from My Browser'
+            : request.details?.summary || 'perform this action';
+
+        return (
+            <div style={{
+                background: '#ffffff',
+                border: '1px solid #e8e6e1',
+                borderRadius: 16,
+                padding: '20px 24px',
+                margin: '16px 0',
+                fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
+                width: '100%',
+                maxWidth: 520,
+            }}>
+                {userDecision ? (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        borderRadius: 10,
+                        background: userDecision === 'approved' ? '#f0fdf4' : '#fef2f2',
+                        border: `1px solid ${userDecision === 'approved' ? '#bbf7d0' : '#fecaca'}`,
+                    }}>
+                        <span style={{ fontSize: 15 }}>{userDecision === 'approved' ? '✓' : '✕'}</span>
+                        <span style={{
+                            fontSize: 13.5, fontWeight: 600,
+                            color: userDecision === 'approved' ? '#166534' : '#991b1b',
+                        }}>
+                            {userDecision === 'approved' ? 'Authorized — Navis is working' : 'Declined — Navis will continue without browser'}
+                        </span>
+                        {isProcessing && (
+                            <div style={{
+                                marginLeft: 'auto', width: 14, height: 14,
+                                border: '2px solid transparent',
+                                borderTop: `2px solid ${userDecision === 'approved' ? '#16a34a' : '#dc2626'}`,
+                                borderRadius: '50%', animation: 'spin 1s linear infinite',
+                            }} />
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                            <div style={{
+                                width: 32, height: 32, borderRadius: 10,
+                                background: 'linear-gradient(135deg, #f0f0ee 0%, #e8e6e1 100%)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                </svg>
+                            </div>
+                            <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4 }}>
+                                Authorize Navis to {actionLabel} to complete your task
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                            <button
+                                onClick={handleReject}
+                                disabled={isProcessing}
+                                style={{
+                                    flex: 1, padding: '10px 0', borderRadius: 10,
+                                    border: '1px solid #d6d3ce', backgroundColor: '#ffffff',
+                                    color: '#555', fontSize: 13.5, fontWeight: 600,
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    opacity: isProcessing ? 0.5 : 1,
+                                    transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#f8f8f6'; } }}
+                                onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#ffffff'; } }}
+                            >
+                                No thanks
+                            </button>
+                            <button
+                                onClick={handleApprove}
+                                disabled={isProcessing}
+                                style={{
+                                    flex: 1, padding: '10px 0', borderRadius: 10,
+                                    border: 'none', backgroundColor: '#1a1a1a',
+                                    color: '#ffffff', fontSize: 13.5, fontWeight: 600,
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    opacity: isProcessing ? 0.5 : 1,
+                                    transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#333'; }}
+                                onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                            >
+                                Authorize
+                            </button>
+                        </div>
+                        <p style={{
+                            margin: 0, fontSize: 12, color: '#999', textAlign: 'center',
+                            lineHeight: 1.4,
+                        }}>
+                            Navis will continue working after your reply
+                        </p>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    // ── Generic (non-Navis) HITL form ────────────────────────────────────────
     return (
         <div style={{
-            background: isInline ? "rgba(255, 255, 255, 0.85)" : "#ececea",
-            backdropFilter: isInline ? "blur(12px)" : "none",
-            boxShadow: isInline 
-                ? "0 8px 30px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
-                : [
-                    "inset 0 1px 0 rgba(255,255,255,0.72)",
-                    "inset 0 -1px 0 rgba(0,0,0,0.06)",
-                    "inset 1px 0 rgba(255,255,255,0.50)",
-                    "inset -1px 0 rgba(0,0,0,0.04)",
-                    "0 1px 3px rgba(0,0,0,0.07)",
-                ].join(", "),
-            border: isInline ? "1px solid rgba(0, 0, 0, 0.12)" : "0.5px solid rgba(0,0,0,0.10)",
+            background: "#ececea",
+            boxShadow: [
+                "inset 0 1px 0 rgba(255,255,255,0.72)",
+                "inset 0 -1px 0 rgba(0,0,0,0.06)",
+                "inset 1px 0 rgba(255,255,255,0.50)",
+                "inset -1px 0 rgba(0,0,0,0.04)",
+                "0 1px 3px rgba(0,0,0,0.07)",
+            ].join(", "),
+            border: "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
-            padding: isInline ? 20 : 24,
-            margin: isInline ? '16px 0' : '24px 0',
+            padding: 24,
+            margin: '24px 0',
             fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
             display: 'flex',
             flexDirection: 'column',
@@ -415,7 +518,6 @@ const HitlApprovalForm = ({
                 <div style={{ fontWeight: 600, marginBottom: 12, color: '#111111', fontSize: 14 }}>
                     Actions to execute:
                 </div>
-                {/* Scrollable tools list */}
                 <div style={{ maxHeight: 380, overflowY: 'auto', paddingRight: 2 }}>
                     {request.details.tools && request.details.tools.length > 0 ? (
                         renderToolDetails(request.details.tools)

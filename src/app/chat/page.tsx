@@ -752,7 +752,7 @@ export default function ChatPage() {
                 base64Image: tc.base64Image || tc.data?.base64Image,
                 results: tc.data?.results,
             },
-            agentName: tc.displayName || 'Fern',
+            agentName: tc.displayName || (tc.toolName?.toLowerCase().includes('navis') ? 'Navis' : 'Fern'),
         };
     };
 
@@ -2591,7 +2591,7 @@ export default function ChatPage() {
                     description: narrativeText || undefined,
                     orderIndex: inheritedOrderIndex,
                     subAgentProgress: inheritedSubAgentProgress,
-                    displayName: 'Fern'
+                    displayName: toolName.toLowerCase().includes('navis') ? 'Navis' : 'Fern'
                 };
 
                 const filtered = liveToolCallsRef.current.filter(t =>
@@ -3114,7 +3114,7 @@ export default function ChatPage() {
                         description: narrativeText || undefined,
                         orderIndex: inheritedOrderIndex,
                         subAgentProgress: inheritedSubAgentProgress,
-                        displayName: 'Fern'
+                        displayName: toolName.toLowerCase().includes('navis') ? 'Navis' : 'Fern'
                     };
                     const mapKey = toolCallId || (toolName + '_running');
 

@@ -44,6 +44,12 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       return { icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#6366f1' };
     }
 
+    case 'navis': {
+      const task = typeof args?.task === 'string' ? args.task.trim() : '';
+      const label = task ? truncate(task, 80) : 'Controlling browser';
+      return { icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#6366f1' };
+    }
+
     case 'take_screenshot':
       return { icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }), label: 'Taking screenshot', color: '#8b5cf6' };
 

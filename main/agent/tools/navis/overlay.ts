@@ -114,15 +114,31 @@ const RAW_SCRIPT = `
         100% { opacity: 0.7; transform: scale(1);    } \
       } \
       \
-      /* ── Purple / pink neon border glow ── */ \
+      /* ── Orange / pink neon border glow ── */ \
       .border-glow { \
         position: absolute; \
         inset: 0; \
         box-shadow: \
-          inset 0  0 60px rgba(190, 60, 255, 0.25), \
-          inset 0  0 20px rgba(220, 80, 255, 0.15); \
-        border: 1.5px solid rgba(200, 80, 255, 0.35); \
+          inset 0 0 24px rgba(255, 120, 40, 0.4), \
+          inset 0 0 48px rgba(236, 72, 153, 0.28), \
+          inset 0 0 72px rgba(190, 60, 255, 0.15) !important; \
+        border: none !important; \
         pointer-events: none; \
+        animation: border-glow-pulse 4s infinite ease-in-out; \
+      } \
+      @keyframes border-glow-pulse { \
+        0%, 100% { \
+          box-shadow: \
+            inset 0 0 24px rgba(255, 120, 40, 0.4), \
+            inset 0 0 48px rgba(236, 72, 153, 0.28), \
+            inset 0 0 72px rgba(190, 60, 255, 0.15) !important; \
+        } \
+        50% { \
+          box-shadow: \
+            inset 0 0 40px rgba(255, 120, 40, 0.6), \
+            inset 0 0 72px rgba(236, 72, 153, 0.45), \
+            inset 0 0 96px rgba(190, 60, 255, 0.25) !important; \
+        } \
       } \
       \
       /* ── Pill indicator — center bottom ── */ \
