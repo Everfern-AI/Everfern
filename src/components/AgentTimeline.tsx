@@ -1609,6 +1609,17 @@ export const AgentTimeline = ({
         [toolCalls, visibleSteps]
     );
 
+    // Group orphan tools by taskName
+    const groupedOrphans = useMemo(() => {
+        const groups = new Map<string, ToolCallDisplay[]>();
+        for (const tc of orphanTools) {
+            const tName = (tc.args?.taskName as string) || "General Execution";
+            if (!groups.has(tName)) groups.set(tName, []);
+            groups.get(tName)!.push(tc);
+        }
+        return Array.from(groups.entries());
+    }, [orphanTools]);
+
     const hasAnything = visibleSteps.length > 0 || orphanTools.length > 0 || narrative || isLive;
     if (!hasAnything) return null;
 
@@ -1740,15 +1751,36 @@ export const AgentTimeline = ({
                 </div>
             )}
 
-            {/* ── Orphan tool calls (no steps yet) ─────── */}
-            {orphanTools.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                    {orphanTools.length > 50 && (
-                        <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
-                            ... {orphanTools.length - 50} older actions hidden for performance
+            {/* ── Orphan tool calls (grouped by taskName) ─────── */}
+            {groupedOrphans.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
+                    {groupedOrphans.map(([taskName, toolsInTask]) => (
+                        <div key={taskName} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {taskName !== "General Execution" && (
+                                <div style={{
+                                    fontSize: 11.5,
+                                    fontWeight: 600,
+                                    color: "#6b7280",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.05em",
+                                    marginBottom: 4,
+                                    marginLeft: 4,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6
+                                }}>
+                                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#a1a1aa" }} />
+                                    {taskName}
+                                </div>
+                            )}
+                            {toolsInTask.length > 50 && (
+                                <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                                    ... {toolsInTask.length - 50} older actions hidden for performance
+                                </div>
+                            )}
+                            {renderToolGroups(toolsInTask.slice(-50), onPillClick, subAgentProgress)}
                         </div>
-                    )}
-                    {renderToolGroups(orphanTools.slice(-50), onPillClick, subAgentProgress)}
+                    ))}
                 </div>
             )}
         </motion.div>

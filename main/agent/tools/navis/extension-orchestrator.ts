@@ -200,6 +200,7 @@ export class NavisExtensionOrchestrator {
           temperature: 0.1,
           responseFormat: 'json',
           jsonSchema: NAVIS_DECISION_SCHEMA,
+          abortSignal: globalAbortManager.abortController.signal,
         });
         const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
         decision = extractJson(raw);

@@ -104,7 +104,7 @@ export const askUserTool: AgentTool = {
     try {
       const { Notification, BrowserWindow } = require('electron');
       const now = Date.now();
-      const isDuplicate = formatted === lastNotifBody && (now - lastNotifTime < 15000);
+      const isDuplicate = formatted === lastNotifBody && (now - lastNotifTime < 300000);
 
       if (!isDuplicate && Notification.isSupported()) {
         lastNotifTime = now;

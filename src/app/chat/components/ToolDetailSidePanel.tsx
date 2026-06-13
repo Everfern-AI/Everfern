@@ -5850,8 +5850,9 @@ export default function ToolDetailSidePanel({
   };
 
   const activeId = activeTabId || toolCall?.id || openTabs[0]?.id;
-  const panelWidth = 920;
-  const panelWidthCss = isDesktop ? `min(${panelWidth}px, 54vw)` : `min(100%, ${panelWidth}px)`;
+  const isComputerUse = String(toolCall?.toolName || '').toLowerCase().includes('computer');
+  const panelWidth = isComputerUse ? 1400 : 920;
+  const panelWidthCss = isDesktop ? `min(${panelWidth}px, ${isComputerUse ? '85vw' : '54vw'})` : `min(100%, ${panelWidth}px)`;
   const hasBrowserTab = surfaceMode === 'browser' || Boolean(browserUrl);
   const hasCrowdedTabs = openTabs.length + (hasBrowserTab ? 1 : 0) >= 3;
 

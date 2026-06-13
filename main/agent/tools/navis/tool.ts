@@ -5,6 +5,9 @@
  * Emits progress events as subagent-progress format for frontend timeline visualization.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import type { AgentTool, ToolResult } from '../../runner/types';
 import { NavisOrchestrator } from './orchestrator';
 import { NavisExtensionOrchestrator } from './extension-orchestrator';
@@ -119,6 +122,22 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         };
       }
 
+      let navisReportMd = `# Navis Execution Report\n\n**Task:** ${task}\n**Status:** ⏳ Running\n**Started:** ${new Date().toLocaleString()}\n\n## Activity Log\n`;
+      const navisDir = path.join(os.homedir(), '.everfern', 'navis');
+      try {
+        fs.mkdirSync(navisDir, { recursive: true });
+      } catch (e) {
+        console.error('[Navis Tool] Failed to create navis directory:', e);
+      }
+      const reportFileName = `${toolCallId || `run_${Date.now()}`}.md`;
+      const reportFilePath = path.join(navisDir, reportFileName);
+
+      fs.writeFile(reportFilePath, navisReportMd, 'utf8', (err) => {
+        if (err) console.error('[Navis Tool] Error writing initial report:', err);
+      });
+
+      let currentStepNumber = -1;
+
       const unsubscribe = logger.on((event: NavisEvent) => {
         if (event.type === 'screenshot' && event.base64) {
           screenshots.push({
@@ -146,6 +165,63 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
 
         onUpdate?.(label);
 
+        // Update markdown report
+        if (event.step !== undefined && event.step !== currentStepNumber) {
+          currentStepNumber = event.step;
+          navisReportMd += `\n### Step ${currentStepNumber}\n`;
+        }
+
+        switch (event.type) {
+          case 'browser_launch':
+            navisReportMd += `- 🚀 **Browser Launch:** ${event.detail || 'Success'}\n`;
+            break;
+          case 'thinking':
+            navisReportMd += `- 🧠 **Thinking:** ${event.detail || event.action || 'Analyzing page...'}\n`;
+            break;
+          case 'page_navigate':
+            navisReportMd += `- 🌐 **Navigate:** [${event.url}](${event.url})\n`;
+            break;
+          case 'element_click':
+            navisReportMd += `- 👆 **Click:** Clicked "${event.target || 'element'}" \`${event.selector || ''}\`\n`;
+            break;
+          case 'element_input':
+            navisReportMd += `- ⌨️ **Input:** Typed into "${event.target || 'input'}": \`${event.action || ''}\`\n`;
+            break;
+          case 'scroll':
+            navisReportMd += `- 📜 **Scroll:** Scrolled ${event.action || 'down'}\n`;
+            break;
+          case 'tab_change':
+            navisReportMd += `- 📑 **Tab Change:** ${event.action || ''}\n`;
+            break;
+          case 'extract':
+            navisReportMd += `- 📋 **Extracted Content:**\n\n\`\`\`\n${event.detail || ''}\n\`\`\`\n`;
+            break;
+          case 'wait':
+            navisReportMd += `- ⏳ **Wait:** ${event.detail || ''}\n`;
+            break;
+          case 'ai_decision':
+            navisReportMd += `- 🧠 **AI Decision:** ${event.action || ''}\n`;
+            break;
+          case 'step_complete':
+            navisReportMd += `- ✅ **Step Complete:** ${event.detail || ''}\n`;
+            break;
+          case 'screenshot':
+            navisReportMd += `- 🖼️ **Screenshot Captured**\n`;
+            break;
+          case 'task_complete':
+            navisReportMd += `\n## 🏁 Task Complete\n${event.detail || ''}\n`;
+            navisReportMd = navisReportMd.replace('**Status:** ⏳ Running', '**Status:** ✅ Completed');
+            break;
+          case 'error':
+            navisReportMd += `\n## ❌ Error\n${event.detail || ''}\n`;
+            navisReportMd = navisReportMd.replace('**Status:** ⏳ Running', '**Status:** ❌ Failed');
+            break;
+        }
+
+        fs.writeFile(reportFilePath, navisReportMd, 'utf8', (err) => {
+          if (err) console.error('[Navis Tool] Error writing report update:', err);
+        });
+
         const progressType = mapNavisToProgressType(event.type);
         const actionPayload = buildActionPayload(event);
         const compactProgressData = {
@@ -164,6 +240,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             taskDescription: task,
           },
           metadata: event.metadata,
+          navisReport: navisReportMd,
         };
 
         broadcastNavisCompanionProgress(compactProgressData);
@@ -177,6 +254,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
               ...compactProgressData,
               content: event.type === 'screenshot' ? event.base64 : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
               screenshot: event.type === 'screenshot' ? { base64: event.base64, width: 1280, height: 720 } : undefined,
+              navisReport: navisReportMd,
             }
           });
         }
@@ -243,7 +321,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
               console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
               return {
                 success: extensionResult.success,
-                output: extensionResult.output,
+                output: extensionResult.output + '\n\n' + navisReportMd,
                 data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
               };
             }
@@ -251,7 +329,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
             return {
               success: false,
-              output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
+              output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:') + '\n\n' + navisReportMd,
               data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
             };
           } else {
@@ -294,7 +372,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
 
         return {
           success: result.success,
-          output: result.output,
+          output: result.output + '\n\n' + navisReportMd,
           data: { steps: result.steps, screenshots, automationMode: 'playwright-isolated' },
         };
       } catch (toolErr) {

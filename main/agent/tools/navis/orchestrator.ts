@@ -775,6 +775,7 @@ Provide the report now.`;
         messages,
         model: this.model,
         temperature: 0.3,
+        abortSignal: globalAbortManager.abortController.signal,
       });
 
       return typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
@@ -929,6 +930,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
         responseFormat: 'json',
         jsonSchema: NAVIS_DECISION_SCHEMA,
         temperature: 0.1,
+        abortSignal: globalAbortManager.abortController.signal,
       });
 
       const elapsed = Date.now() - aiStart;

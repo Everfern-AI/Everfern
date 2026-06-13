@@ -39,8 +39,10 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
   ipcMain.handle('hitl:get-pending', async (_event, conversationId: string) => {
     try {
       const records = listHitlRecords(conversationId);
-      const pending = records.find(r => r.status === 'pending');
-      return pending ?? null;
+      if (records.length > 0 && records[0].status === 'pending') {
+        return records[0];
+      }
+      return null;
     } catch {
       return null;
     }

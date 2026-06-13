@@ -361,9 +361,15 @@ const HitlApprovalForm = ({
         // Derive a friendly action description from tools
         const toolNames = (request.details?.tools || []).map((t: any) => (t.name || t.toolName || '').toLowerCase());
         const hasBrowser = toolNames.some(n => n.includes('navis') || n.includes('browser') || n.includes('tab'));
+        const hasComputerUse = toolNames.some(n => n.includes('computer') || n.includes('mouse') || n.includes('click') || n.includes('keyboard'));
+        
         const actionLabel = hasBrowser
             ? 'use a new tab from My Browser'
-            : request.details?.summary || 'perform this action';
+            : hasComputerUse
+                ? 'control your computer'
+                : request.details?.summary || 'perform this action';
+
+        const agentName = hasBrowser ? 'Navis' : 'EverFern';
 
         return (
             <div style={{
@@ -389,7 +395,7 @@ const HitlApprovalForm = ({
                             fontSize: 13.5, fontWeight: 600,
                             color: userDecision === 'approved' ? '#166534' : '#991b1b',
                         }}>
-                            {userDecision === 'approved' ? 'Authorized — Navis is working' : 'Declined — Navis will continue without browser'}
+                            {userDecision === 'approved' ? `Authorized — ${agentName} is working` : `Declined — ${agentName} will continue without action`}
                         </span>
                         {isProcessing && (
                             <div style={{
@@ -402,7 +408,7 @@ const HitlApprovalForm = ({
                     </div>
                 ) : (
                     <>
-                        {/* Shield icon row */}
+                        {/* Icon row */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                             <div style={{
                                 width: 32, height: 32, borderRadius: 10,
@@ -410,12 +416,24 @@ const HitlApprovalForm = ({
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 flexShrink: 0,
                             }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                                </svg>
+                                {hasBrowser ? (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <circle cx="12" cy="12" r="4"></circle>
+                                        <line x1="21.17" y1="8" x2="12" y2="8"></line>
+                                        <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+                                        <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+                                    </svg>
+                                ) : (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                                    </svg>
+                                )}
                             </div>
                             <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4 }}>
-                                Authorize Navis to {actionLabel} to complete your task
+                                Authorize {agentName} to {actionLabel} to complete your task
                             </span>
                         </div>
 
@@ -460,7 +478,7 @@ const HitlApprovalForm = ({
                             margin: 0, fontSize: 12, color: '#999', textAlign: 'center',
                             lineHeight: 1.4,
                         }}>
-                            Navis will continue working after your reply
+                            {agentName} will continue working after your reply
                         </p>
                     </>
                 )}
@@ -772,6 +790,103 @@ const UserQuestionForm = ({
         current.question.includes('High-risk action requires your approval') ||
         current.question.includes('Security Check Required') ||
         current.question.includes('Actions to execute:');
+
+    const isNavisSecurityCheck = isHighRisk && (current.question.toLowerCase().includes('navis') || current.question.toLowerCase().includes('browser') || current.question.toLowerCase().includes('tab'));
+    const isComputerSecurityCheck = isHighRisk && (current.question.toLowerCase().includes('computer') || current.question.toLowerCase().includes('mouse') || current.question.toLowerCase().includes('click') || current.question.toLowerCase().includes('keyboard'));
+
+    if ((isNavisSecurityCheck || isComputerSecurityCheck) && isInline) {
+        const actionLabel = isNavisSecurityCheck ? 'use a new tab from My Browser' : 'control your computer';
+        const agentName = isNavisSecurityCheck ? 'Navis' : 'EverFern';
+        
+        return (
+            <div style={{
+                background: '#ffffff',
+                border: '1px solid #e8e6e1',
+                borderRadius: 16,
+                padding: '20px 24px',
+                margin: '16px 0',
+                fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
+                width: '100%',
+                maxWidth: 520,
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <div style={{
+                        width: 32, height: 32, borderRadius: 10,
+                        background: 'linear-gradient(135deg, #f0f0ee 0%, #e8e6e1 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                    }}>
+                        {isNavisSecurityCheck ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <circle cx="12" cy="12" r="4"></circle>
+                                <line x1="21.17" y1="8" x2="12" y2="8"></line>
+                                <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+                                <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+                            </svg>
+                        ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                        )}
+                    </div>
+                    <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4 }}>
+                        Authorize {agentName} to {actionLabel} to complete your task
+                    </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <button
+                        onClick={() => {
+                            if (isProcessing) return;
+                            setIsProcessing(true);
+                            onSubmit({ [current.question]: ['[HITL_REJECTED]'] }, undefined);
+                        }}
+                        disabled={isProcessing}
+                        style={{
+                            flex: 1, padding: '10px 0', borderRadius: 10,
+                            border: '1px solid #d6d3ce', backgroundColor: '#ffffff',
+                            color: '#555', fontSize: 13.5, fontWeight: 600,
+                            cursor: isProcessing ? 'not-allowed' : 'pointer',
+                            opacity: isProcessing ? 0.5 : 1,
+                            transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#f8f8f6'; } }}
+                        onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#ffffff'; } }}
+                    >
+                        No thanks
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (isProcessing) return;
+                            setIsProcessing(true);
+                            onSubmit({ [current.question]: ['[HITL_APPROVED_ALWAYS]'] }, undefined);
+                        }}
+                        disabled={isProcessing}
+                        style={{
+                            flex: 1, padding: '10px 0', borderRadius: 10,
+                            border: 'none', backgroundColor: '#1a1a1a',
+                            color: '#ffffff', fontSize: 13.5, fontWeight: 600,
+                            cursor: isProcessing ? 'not-allowed' : 'pointer',
+                            opacity: isProcessing ? 0.5 : 1,
+                            transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#333'; }}
+                        onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                    >
+                        Authorize
+                    </button>
+                </div>
+                <p style={{
+                    margin: 0, fontSize: 12, color: '#999', textAlign: 'center',
+                    lineHeight: 1.4,
+                }}>
+                    {agentName} will continue working after your reply
+                </p>
+            </div>
+        );
+    }
 
     // ── Render the high-risk approval section ──────────────────────────────
     const renderHighRiskContent = () => {

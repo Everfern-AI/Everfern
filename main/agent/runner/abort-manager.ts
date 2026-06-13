@@ -186,8 +186,7 @@ export class AbortSignalManager {
         console.log('[Cleanup] Starting browser session closure...');
         try {
           const { BrowserSession } = await import('../tools/navis/session');
-          const session = new BrowserSession();
-          await session.close(true);
+          await BrowserSession.closeAll(true);
         } catch (err) {
           console.error('[Cleanup] Browser session close error:', err);
           throw err;

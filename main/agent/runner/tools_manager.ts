@@ -139,6 +139,22 @@ export const getBaseTools = (runner: any): AgentTool[] => {
   const mcpTools = mcpRegistry.listAllTools().map(name => mcpRegistry.getTool(name)).filter(Boolean) as AgentTool[];
   tools.push(...mcpTools);
 
+  // Add taskName to all tool schemas to enforce mandatory task grouping
+  for (const tool of tools) {
+    if (tool.parameters && tool.parameters.properties) {
+      tool.parameters.properties['taskName'] = {
+        type: 'string',
+        description: 'MANDATORY: The name of the task this tool call belongs to. If you are starting a new logical task, provide a concise name for it. Tools with the same taskName will be grouped together in the UI.'
+      };
+      if (!tool.parameters.required) {
+        tool.parameters.required = [];
+      }
+      if (!tool.parameters.required.includes('taskName')) {
+        tool.parameters.required.push('taskName');
+      }
+    }
+  }
+
   console.log(`[ToolsManager] Registered ${tools.length} base tools: ${tools.map(t => t.name).join(', ')}`);
 
   return tools;

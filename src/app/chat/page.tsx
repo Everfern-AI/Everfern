@@ -659,6 +659,7 @@ export default function ChatPage() {
     const [notification, setNotification] = useState<{ id: string; title: string } | null>(null);
     const [projects, setProjects] = useState<any[]>([]);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+    const [showNotificationMenu, setShowNotificationMenu] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Computer Pane State
@@ -4810,10 +4811,64 @@ export default function ChatPage() {
 
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as any}>
-                            <button type="button" style={{ position: "relative", background: "transparent", border: "none", color: "#73716e", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }} onMouseEnter={e => e.currentTarget.style.color = "#111111"} onMouseLeave={e => e.currentTarget.style.color = "#73716e"}>
-                                <BellIcon width={20} height={20} />
-                                <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "#ef4444", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #f5f4f0", fontWeight: 700 }}>2</span>
-                            </button>
+                            <div style={{ position: "relative" }}>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowNotificationMenu(!showNotificationMenu)}
+                                    style={{ position: "relative", background: "transparent", border: "none", color: "#73716e", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }} 
+                                    onMouseEnter={e => e.currentTarget.style.color = "#111111"} 
+                                    onMouseLeave={e => e.currentTarget.style.color = "#73716e"}
+                                >
+                                    <BellIcon width={20} height={20} />
+                                    {(activeTaskIds.length > 0 || notification) && (
+                                        <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "#ef4444", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #f5f4f0", fontWeight: 700 }}>
+                                            {activeTaskIds.length + (notification ? 1 : 0)}
+                                        </span>
+                                    )}
+                                </button>
+                                
+                                {showNotificationMenu && (
+                                    <>
+                                        <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setShowNotificationMenu(false)} />
+                                        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, backgroundColor: "#ffffff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", border: "1px solid #e8e6e1", zIndex: 100, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                                            <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                                <span style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>Activity & Notifications</span>
+                                                {(activeTaskIds.length > 0 || notification) && (
+                                                    <span style={{ fontSize: 11, color: "#666", backgroundColor: "#f5f5f5", padding: "2px 8px", borderRadius: 10 }}>
+                                                        {activeTaskIds.length + (notification ? 1 : 0)} new
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
+                                                {notification && (
+                                                    <div style={{ padding: "10px 16px", borderBottom: activeTaskIds.length > 0 ? "1px solid #f5f5f5" : "none", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                                                        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#ef4444", marginTop: 6, flexShrink: 0 }} />
+                                                        <div>
+                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "#111" }}>{notification.title}</div>
+                                                            <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>Click to view details</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {activeTaskIds.map(taskId => (
+                                                    <div key={taskId} style={{ padding: "10px 16px", display: "flex", gap: 12, alignItems: "center", cursor: "pointer" }} onClick={() => { setActiveConversationId(taskId); setShowNotificationMenu(false); }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f9f9f9"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                                                        <div style={{ width: 16, height: 16, border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Agent working in background</div>
+                                                            <div style={{ fontSize: 12, color: "#666" }}>Task ID: {taskId.substring(0, 8)}...</div>
+                                                        </div>
+                                                        <button onClick={(e) => { e.stopPropagation(); setActiveConversationId(taskId); setShowNotificationMenu(false); }} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#3b82f6", backgroundColor: "#eff6ff", border: "none", borderRadius: 6, cursor: "pointer" }}>View</button>
+                                                    </div>
+                                                ))}
+                                                {activeTaskIds.length === 0 && !notification && (
+                                                    <div style={{ padding: "20px", textAlign: "center", color: "#888", fontSize: 13 }}>
+                                                        No active tasks or notifications
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                             <div style={{ marginLeft: 8 }}><WindowControls /></div>
                         </div>
                     </header>

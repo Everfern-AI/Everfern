@@ -601,6 +601,9 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 }
 
 export class BrowserSession {
+  /** Registry of all active BrowserSession instances for forced cleanup */
+  private static activeSessions = new Set<BrowserSession>();
+
   private static sharedBrowser: any | null = null;
   private static sharedContext: any | null = null;
   private static sharedActivePage: any | null = null;
@@ -678,6 +681,9 @@ export class BrowserSession {
     let useChromeProfile = requestedUseChromeProfile;
     let useIsolatedBrowser = requestedUseIsolatedBrowser;
     this.logger = logger || null;
+
+    // Register this session for global cleanup tracking
+    BrowserSession.activeSessions.add(this);
 
     if (useChromeProfile || !useIsolatedBrowser) {
       console.warn('[Navis] Browser profile automation now requires the Navis extension. BrowserSession is falling back to isolated Playwright mode.');
@@ -1147,7 +1153,26 @@ export class BrowserSession {
       const totalCloseTime = Date.now() - closeStartTime;
       console.error(`[Navis] ❌ CLOSURE FAILED - Unexpected error during cleanup (${totalCloseTime}ms):`, err);
       this.activePage = null;
+    } finally {
+      // Always unregister from the global session registry
+      BrowserSession.activeSessions.delete(this);
     }
+  }
+
+  /**
+   * Forcefully closes ALL active BrowserSession instances.
+   * Called by the AbortSignalManager cleanup sequence to ensure
+   * no Playwright browsers are left running after the main agent stops.
+   */
+  public static async closeAll(force: boolean = false): Promise<void> {
+    const sessions = Array.from(BrowserSession.activeSessions);
+    if (sessions.length === 0) {
+      console.log('[Navis] closeAll: No active sessions to close');
+      return;
+    }
+    console.log(`[Navis] closeAll: Closing ${sessions.length} active session(s)...`);
+    await Promise.allSettled(sessions.map(s => s.close(force)));
+    console.log('[Navis] closeAll: All sessions closed');
   }
 
   async setOverlayStatus(text: string): Promise<void> {

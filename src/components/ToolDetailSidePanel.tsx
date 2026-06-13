@@ -633,13 +633,14 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolName: string }) {
+function NavisView({ screenshots = [], toolName, navisReport = '' }: { screenshots: any[]; toolName: string; navisReport?: string }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
+  const [activeTab, setActiveTab] = useState<'report' | 'screenshots'>('report');
 
   useEffect(() => {
     let interval: any;
@@ -671,16 +672,94 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
     }
   }, [safe.length, currentIndex]);
 
+  const renderTabs = () => (
+    <div style={{
+      display: 'flex',
+      gap: 4,
+      padding: '4px',
+      background: '#ececea',
+      borderRadius: T.r10,
+      alignSelf: 'flex-start',
+      marginBottom: 16,
+      border: '0.5px solid rgba(0,0,0,0.08)',
+      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
+    }}>
+      <button
+        onClick={() => setActiveTab('report')}
+        style={{
+          padding: '6px 16px',
+          borderRadius: T.r8,
+          fontSize: 12,
+          fontWeight: activeTab === 'report' ? 600 : 500,
+          color: activeTab === 'report' ? T.text : T.textSecondary,
+          background: activeTab === 'report' ? T.surface : 'transparent',
+          border: 'none',
+          boxShadow: activeTab === 'report' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }}
+      >
+        Live Report
+      </button>
+      <button
+        onClick={() => setActiveTab('screenshots')}
+        style={{
+          padding: '6px 16px',
+          borderRadius: T.r8,
+          fontSize: 12,
+          fontWeight: activeTab === 'screenshots' ? 600 : 500,
+          color: activeTab === 'screenshots' ? T.text : T.textSecondary,
+          background: activeTab === 'screenshots' ? T.surface : 'transparent',
+          border: 'none',
+          boxShadow: activeTab === 'screenshots' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }}
+      >
+        Screenshots ({safe.length})
+      </button>
+    </div>
+  );
+
+  if (activeTab === 'report') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <SectionLabel>Live Execution Report</SectionLabel>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+          {renderTabs()}
+          <div style={{
+            background: T.surface,
+            borderRadius: T.r12,
+            border: `1px solid ${T.border}`,
+            padding: '24px',
+            flex: 1,
+          }}>
+            {navisReport ? (
+              <MarkdownViewer content={navisReport} />
+            ) : (
+              <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
+                ⏳ Awaiting report content...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (safe.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
         <SectionLabel>Browser session</SectionLabel>
-        <EmptyState
-          icon={CameraOff}
-          title="No captures yet"
-          description={`${toolName} ran but didn't produce screenshots during this session.`}
-          note="Frames appear here in real-time as the browser navigates."
-        />
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+          {renderTabs()}
+          <EmptyState
+            icon={CameraOff}
+            title="No captures yet"
+            description={`${toolName} ran but didn't produce screenshots during this session.`}
+            note="Frames appear here in real-time as the browser navigates."
+          />
+        </div>
       </div>
     );
   }
@@ -691,6 +770,7 @@ function NavisView({ screenshots = [], toolName }: { screenshots: any[]; toolNam
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+        {renderTabs()}
         <div style={{
           background: T.surface,
           borderRadius: T.r12,
@@ -1887,7 +1967,28 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
     const slicedScreenshots = screenshots.slice(-12);
-    return { screenshots: slicedScreenshots, screenshotPaths, url: tc.args?.url, action: tc.args?.action };
+
+    let navisReport = '';
+    if (Array.isArray(progressEvents)) {
+      for (let i = progressEvents.length - 1; i >= 0; i--) {
+        const e = progressEvents[i];
+        if (e.data?.navisReport) {
+          navisReport = e.data.navisReport;
+          break;
+        }
+      }
+    }
+
+    if (!navisReport) {
+      const output = tc.output || tc.result?.output || '';
+      const marker = '# Navis Execution Report';
+      const idx = output.indexOf(marker);
+      if (idx !== -1) {
+        navisReport = output.substring(idx);
+      }
+    }
+
+    return { screenshots: slicedScreenshots, screenshotPaths, url: tc.args?.url, action: tc.args?.action, navisReport };
   } catch { return null; }
 }
 
