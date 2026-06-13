@@ -54,6 +54,17 @@ export class MissionTracker {
   }
 
   /**
+   * Restore timeline state from persisted state
+   */
+  restoreTimeline(timeline: MissionTimeline, steps: MissionStep[]): void {
+    this.timeline = { ...timeline };
+    this.stepMap.clear();
+    for (const step of steps) {
+      this.stepMap.set(step.id, step);
+    }
+  }
+
+  /**
    * Add a step to the mission timeline
    */
   addStep(step: Omit<MissionStep, 'status' | 'startTime' | 'endTime'>): MissionStep {

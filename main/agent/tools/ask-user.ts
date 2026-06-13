@@ -1,5 +1,8 @@
 import type { AgentTool, ToolResult } from '../runner/types';
 
+let lastNotifTime = 0;
+let lastNotifBody = '';
+
 export const askUserTool: AgentTool = {
   name: 'ask_user_question',
   description:
@@ -16,7 +19,7 @@ export const askUserTool: AgentTool = {
         items: {
           type: 'object',
           properties: {
-            question: { type: 'string', description: 'The question text (e.g. "To book your trip from Hyderabad to JFK, please provide the passenger full name and preferred dates:")' },
+            question: { type: 'string', description: 'The clarifying question or subjective text prompt to present to the user (e.g., "To configure the environment, should I use PostgreSQL or SQLite?")' },
             options: {
               type: 'array',
               items: {
@@ -100,7 +103,13 @@ export const askUserTool: AgentTool = {
     // Show system notification via Electron
     try {
       const { Notification, BrowserWindow } = require('electron');
-      if (Notification.isSupported()) {
+      const now = Date.now();
+      const isDuplicate = formatted === lastNotifBody && (now - lastNotifTime < 15000);
+
+      if (!isDuplicate && Notification.isSupported()) {
+        lastNotifTime = now;
+        lastNotifBody = formatted;
+
         const isSecurity = formatted.includes('Security Check Required') || formatted.includes('⚠️');
         const notif = new Notification({
           title: isSecurity ? 'EverFern Security Authorization' : 'EverFern Clarification Required',

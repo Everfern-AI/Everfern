@@ -11,7 +11,8 @@ import {
     CubeTransparentIcon,
     WrenchScrewdriverIcon,
     ChevronDownIcon,
-    ChevronUpIcon
+    ChevronUpIcon,
+    GlobeAltIcon
 } from "@heroicons/react/24/outline";
 
 // Add CSS animation for spinner
@@ -98,6 +99,9 @@ function getToolMeta(name: string) {
     if (n.includes("spawn") || n.includes("agent") || n.includes("sub") || n.includes("subagent"))
         return { icon: <CubeTransparentIcon style={s} /> };
 
+    if (n.includes("navis") || n.includes("browser") || n.includes("web") || n.includes("visit"))
+        return { icon: <GlobeAltIcon style={s} /> };
+
     return { icon: <WrenchScrewdriverIcon style={s} /> };
 }
 
@@ -119,7 +123,16 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
         return label;
     })();
 
-    const galliumSurface = {
+    const isNavis = tool.name.toLowerCase().includes("navis");
+    const galliumSurface = isNavis ? {
+        background: "rgba(99, 102, 241, 0.07)",
+        boxShadow: [
+            "inset 0 1px 0 rgba(255,255,255,0.40)",
+            "inset 0 -1px 0 rgba(99,102,241,0.08)",
+            "0 1px 3px rgba(99,102,241,0.04)",
+        ].join(", "),
+        border: "1px solid rgba(99, 102, 241, 0.22)",
+    } : {
         background: "#ececea",
         boxShadow: [
             "inset 0 1px 0 rgba(255,255,255,0.72)",
@@ -150,7 +163,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     padding: "7px 14px 7px 8px",
                     cursor: hasDetails ? "pointer" : "default",
                     fontSize: 12.5,
-                    color: "#333",
+                    color: isNavis ? "#4f46e5" : "#333",
                     lineHeight: 1.4,
                     userSelect: "none",
                 }}
@@ -160,8 +173,8 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     height: 24,
                     flexShrink: 0,
                     borderRadius: 7,
-                    background: "#d3d3d0",
-                    boxShadow: [
+                    background: isNavis ? "rgba(99, 102, 241, 0.16)" : "#d3d3d0",
+                    boxShadow: isNavis ? undefined : [
                         "inset 0 1px 0 rgba(255,255,255,0.70)",
                         "inset 0 -1px 0 rgba(0,0,0,0.08)",
                         "inset 1px 0 rgba(255,255,255,0.45)",
@@ -170,7 +183,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#555",
+                    color: isNavis ? "#4f46e5" : "#555",
                 }}>
                     {icon}
                 </div>
@@ -180,7 +193,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                     flex: 1,
-                    fontWeight: 500,
+                    fontWeight: isNavis ? 600 : 500,
                 }}>
                     {desc}
                 </span>
@@ -286,7 +299,7 @@ const HitlApprovalForm = ({
 }) => {
     const [followUpQuestion, setFollowUpQuestion] = useState('');
     const [showFollowUpInput, setShowFollowUpInput] = useState(false);
-    const [sendAsMessage, setSendAsMessage] = useState(false);
+    const [sendAsMessage, setSendAsMessage] = useState(true);
     const [userDecision, setUserDecision] = useState<'approved' | 'rejected' | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -348,7 +361,7 @@ const HitlApprovalForm = ({
             background: isInline ? "rgba(255, 255, 255, 0.85)" : "#ececea",
             backdropFilter: isInline ? "blur(12px)" : "none",
             boxShadow: isInline 
-                ? "0 8px 30px rgba(99, 102, 241, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
+                ? "0 8px 30px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
                 : [
                     "inset 0 1px 0 rgba(255,255,255,0.72)",
                     "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -356,7 +369,7 @@ const HitlApprovalForm = ({
                     "inset -1px 0 rgba(0,0,0,0.04)",
                     "0 1px 3px rgba(0,0,0,0.07)",
                 ].join(", "),
-            border: isInline ? "1px solid rgba(99, 102, 241, 0.18)" : "0.5px solid rgba(0,0,0,0.10)",
+            border: isInline ? "1px solid rgba(0, 0, 0, 0.12)" : "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
             padding: isInline ? 20 : 24,
             margin: isInline ? '16px 0' : '24px 0',
@@ -508,6 +521,11 @@ const UserQuestionForm = ({
     const [pendingFileOption, setPendingFileOption] = React.useState<string | null>(null);
     const [attachedFiles, setAttachedFiles] = React.useState<Array<{ name: string; content?: string; base64?: string; mimeType?: string }>>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [isProcessing, setIsProcessing] = React.useState(false);
+
+    React.useEffect(() => {
+        setIsProcessing(false);
+    }, [questions]);
 
     const [showBottomFade, setShowBottomFade] = React.useState(false);
     const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -587,6 +605,7 @@ const UserQuestionForm = ({
     }, [current, questions, answers]);
 
     const handleOptionClick = (value: string, requiresFileUpload?: boolean) => {
+        if (isProcessing) return;
         const q = current.question;
         if (requiresFileUpload) {
             setAnswers(prev => ({ ...prev, [q]: [value] }));
@@ -620,13 +639,16 @@ const UserQuestionForm = ({
     const handleNext = () => { if (currentIndex < total - 1) setCurrentIndex(i => i + 1); };
     const handleBack = () => { if (currentIndex > 0) setCurrentIndex(i => i - 1); };
     const handleSubmit = () => { 
-        if (allAnswered) {
+        if (allAnswered && !isProcessing) {
+            setIsProcessing(true);
             // Map labels to internal [HITL_APPROVED_ALWAYS] and [HITL_APPROVED_PREFIX] tags
             const processedAnswers = { ...answers };
             for (const q in processedAnswers) {
                 processedAnswers[q] = processedAnswers[q].map(val => {
                     if (val === '🚀 Approve & Allow Always — never ask for this specific command again') return '[HITL_APPROVED_ALWAYS]';
                     if (val === '📂 Approve & Allow Prefix — never ask for commands starting with this base (e.g. npm)') return '[HITL_APPROVED_PREFIX]';
+                    if (val === '✅ Approve — proceed once') return '[HITL_APPROVED]';
+                    if (val === '❌ Reject — cancel and do not proceed') return '[HITL_REJECTED]';
                     return val;
                 });
             }
@@ -718,7 +740,7 @@ const UserQuestionForm = ({
                                 <span>⚙️</span> Actions to execute
                                 {toolEntries.length > 0 && (
                                     <span style={{
-                                        backgroundColor: '#6366f1',
+                                        backgroundColor: '#6b7280',
                                         color: '#fff',
                                         borderRadius: 20,
                                         padding: '1px 7px',
@@ -780,7 +802,7 @@ const UserQuestionForm = ({
             background: isInline ? "rgba(255, 255, 255, 0.85)" : "#ececea",
             backdropFilter: isInline ? "blur(12px)" : "none",
             boxShadow: isInline 
-                ? "0 8px 30px rgba(99, 102, 241, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
+                ? "0 8px 30px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0,0,0,0.04)"
                 : [
                     "inset 0 1px 0 rgba(255,255,255,0.72)",
                     "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -788,7 +810,7 @@ const UserQuestionForm = ({
                     "inset -1px 0 rgba(0,0,0,0.04)",
                     "0 1px 3px rgba(0,0,0,0.07)",
                 ].join(", "),
-            border: isInline ? "1px solid rgba(99, 102, 241, 0.18)" : "0.5px solid rgba(0,0,0,0.10)",
+            border: isInline ? "1px solid rgba(0, 0, 0, 0.12)" : "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
             padding: isInline ? 20 : 24,
             margin: isInline ? '16px 0' : '24px 0',
@@ -978,19 +1000,20 @@ const UserQuestionForm = ({
                                     padding: '14px 16px',
                                     borderRadius: 10,
                                     border: selected 
-                                        ? (isInline ? '1px solid #6366f1' : '1px solid #111111') 
+                                        ? (isInline ? '1px solid #6b7280' : '1px solid #111111') 
                                         : '1px solid rgba(0,0,0,0.06)',
                                     backgroundColor: selected 
-                                        ? (isInline ? '#f5f6ff' : '#ffffff') 
+                                        ? (isInline ? '#f4f4f5' : '#ffffff') 
                                         : '#fcfcfb',
                                     color: '#111111',
-                                    cursor: 'pointer',
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    opacity: isProcessing ? 0.7 : 1,
                                     textAlign: 'left',
                                     fontSize: 14,
                                     fontWeight: option.isRecommended ? 600 : 500,
                                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                     boxShadow: selected 
-                                        ? (isInline ? '0 2px 8px rgba(99, 102, 241, 0.12)' : '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111') 
+                                        ? (isInline ? '0 2px 8px rgba(0, 0, 0, 0.08)' : '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111') 
                                         : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
                                 }}
                                 onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
@@ -1002,7 +1025,7 @@ const UserQuestionForm = ({
                                         borderRadius: current.multiSelect ? 4 : '50%',
                                         border: selected ? 'none' : '1px solid #cbd5e1',
                                         backgroundColor: selected 
-                                            ? (isInline ? '#6366f1' : '#111111') 
+                                            ? (isInline ? '#6b7280' : '#111111') 
                                             : '#ffffff',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                         boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
@@ -1063,20 +1086,20 @@ const UserQuestionForm = ({
             {/* Footer: back / next / submit */}
             <div style={{ display: 'flex', justifyContent: total > 1 ? 'space-between' : 'flex-end', gap: 8 }}>
                 {total > 1 && (
-                    <button onClick={handleBack} disabled={currentIndex === 0}
-                        style={{ padding: '10px 16px', borderRadius: 8, border: currentIndex === 0 ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(0,0,0,0.12)', backgroundColor: currentIndex === 0 ? 'transparent' : '#ffffff', color: currentIndex === 0 ? '#b5b2aa' : '#111111', fontSize: 14, fontWeight: currentIndex === 0 ? 500 : 600, cursor: currentIndex === 0 ? 'not-allowed' : 'pointer', boxShadow: currentIndex === 0 ? 'none' : '0 1px 2px rgba(0,0,0,0.04)' }}>
+                    <button onClick={handleBack} disabled={currentIndex === 0 || isProcessing}
+                        style={{ padding: '10px 16px', borderRadius: 8, border: (currentIndex === 0 || isProcessing) ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(0,0,0,0.12)', backgroundColor: (currentIndex === 0 || isProcessing) ? 'transparent' : '#ffffff', color: (currentIndex === 0 || isProcessing) ? '#b5b2aa' : '#111111', fontSize: 14, fontWeight: (currentIndex === 0 || isProcessing) ? 500 : 600, cursor: (currentIndex === 0 || isProcessing) ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1, boxShadow: (currentIndex === 0 || isProcessing) ? 'none' : '0 1px 2px rgba(0,0,0,0.04)' }}>
                         Back
                     </button>
                 )}
                 {currentIndex < total - 1 ? (
-                    <button onClick={handleNext} disabled={!isAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? (isInline ? '#6366f1' : '#111111') : '#c5c5c2', color: isAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
+                    <button onClick={handleNext} disabled={!isAnswered || isProcessing}
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered && !isProcessing ? (isInline ? '#6b7280' : '#111111') : '#c5c5c2', color: isAnswered && !isProcessing ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: (!isAnswered || isProcessing) ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}>
                         Next
                     </button>
                 ) : (
-                    <button onClick={handleSubmit} disabled={!allAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? (isInline ? '#6366f1' : '#111111') : '#c5c5c2', color: allAnswered ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
-                        Submit {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
+                    <button onClick={handleSubmit} disabled={!allAnswered || isProcessing}
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered && !isProcessing ? (isInline ? '#6b7280' : '#111111') : '#c5c5c2', color: allAnswered && !isProcessing ? '#ffffff' : '#f5f5f5', fontSize: 14, fontWeight: 600, cursor: (!allAnswered || isProcessing) ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}>
+                        {isProcessing ? 'Submitting...' : 'Submit'} {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
                     </button>
                 )}
             </div>

@@ -304,6 +304,48 @@ function generateFallbackTaskTitle(toolName: string, args: Record<string, unknow
     return toolName.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
 }
 
+function escapeControlCharsInStrings(str: string): string {
+    let inString = false;
+    let result = '';
+    let backslashCount = 0;
+    
+    for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+        if (char === '\\') {
+            backslashCount++;
+            result += char;
+        } else if (char === '"') {
+            const isEscaped = (backslashCount % 2 !== 0);
+            if (!isEscaped) {
+                inString = !inString;
+            }
+            backslashCount = 0;
+            result += char;
+        } else {
+            backslashCount = 0;
+            if (inString) {
+                if (char === '\n') {
+                    result += '\\n';
+                } else if (char === '\r') {
+                    result += '\\r';
+                } else if (char === '\t') {
+                    result += '\\t';
+                } else {
+                    const code = char.charCodeAt(0);
+                    if (code < 32) {
+                        result += '\\u' + ('0000' + code.toString(16)).slice(-4);
+                    } else {
+                        result += char;
+                    }
+                }
+            } else {
+                result += char;
+            }
+        }
+    }
+    return result;
+}
+
 function extractSuggestedFollowUps(content: string): { cleanContent: string; followUps: Array<{ icon: string; text: string }> } {
     if (!content) return { cleanContent: '', followUps: [] };
     const regex = /<suggested_follow_ups>([\s\S]*?)<\/suggested_follow_ups>/i;
@@ -314,26 +356,99 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
 
     const cleanContent = content.replace(regex, '').trim();
     let followUps: Array<{ icon: string; text: string }> = [];
+    
+    // Clean the inner content (strip markdown code blocks if present)
+    let innerText = match[1].trim();
+    innerText = innerText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    innerText = escapeControlCharsInStrings(innerText);
+
     try {
-        const parsed = JSON.parse(match[1].trim());
+        const parsed = JSON.parse(innerText);
         if (Array.isArray(parsed)) {
             followUps = parsed;
+        } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.followUps)) {
+                followUps = parsed.followUps;
+            } else if (parsed.icon && parsed.text) {
+                followUps = [parsed as { icon: string; text: string }];
+            }
         }
     } catch (e) {
-        console.error("Failed to parse suggested follow-ups JSON, falling back to line parsing", e);
-        const lines = match[1].split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        for (const line of lines) {
-            const cleanLine = line.replace(/^-\s*/, '').trim();
-            if (cleanLine) {
-                const emojiMatch = cleanLine.match(/^([\u2000-\u32FF\ud800-\udbff\udc00-\udfff\ud83c\ud83d\ud83e\u2600-\u27ff])\s*(.*)$/);
-                if (emojiMatch) {
-                    followUps.push({ icon: emojiMatch[1], text: emojiMatch[2] });
-                } else {
-                    followUps.push({ icon: '💬', text: cleanLine });
+        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting brace-matching extraction:", e);
+        
+        // 1. Try to extract valid JSON objects using brace-matching
+        let depth = 0;
+        let startIdx = -1;
+        const candidates: string[] = [];
+        
+        for (let i = 0; i < innerText.length; i++) {
+            if (innerText[i] === '{') {
+                if (depth === 0) {
+                    startIdx = i;
+                }
+                depth++;
+            } else if (innerText[i] === '}') {
+                depth--;
+                if (depth === 0 && startIdx !== -1) {
+                    candidates.push(innerText.slice(startIdx, i + 1));
+                    startIdx = -1;
+                } else if (depth < 0) {
+                    depth = 0;
+                    startIdx = -1;
+                }
+            }
+        }
+        
+        for (const candidate of candidates) {
+            try {
+                const parsedObj = JSON.parse(candidate.trim());
+                if (parsedObj && typeof parsedObj === 'object' && parsedObj.text) {
+                    followUps.push({
+                        icon: parsedObj.icon || '💬',
+                        text: parsedObj.text
+                    });
+                }
+            } catch (err) {
+                // Ignore parse errors on partial candidates
+            }
+        }
+        
+        // 2. If we got nothing, fall back to line parsing with aggressive JSON token scrubbing
+        if (followUps.length === 0) {
+            const lines = innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            for (const line of lines) {
+                const cleanLine = line.replace(/^[-\s*[\]{},"]+/, '').trim();
+                // Also ignore lines containing only json keys like "icon" or "text" or empty quotes
+                if (cleanLine && 
+                    !cleanLine.startsWith('"icon"') && 
+                    !cleanLine.startsWith('"text"') && 
+                    cleanLine !== '"' && 
+                    cleanLine !== '"[' && 
+                    cleanLine !== '"]'
+                ) {
+                    const emojiMatch = cleanLine.match(/^([\u2000-\u32FF\ud800-\udbff\udc00-\udfff\ud83c\ud83d\ud83e\u2600-\u27ff])\s*(.*)$/);
+                    if (emojiMatch) {
+                        followUps.push({ icon: emojiMatch[1], text: emojiMatch[2] });
+                    } else {
+                        followUps.push({ icon: '💬', text: cleanLine });
+                    }
                 }
             }
         }
     }
+
+    // Standardize follow-up objects and clean trailing/leading quotes or commas
+    followUps = followUps
+        .map(f => {
+            let text = String(f.text || '').trim();
+            text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+            return {
+                icon: String(f.icon || '💬').trim(),
+                text
+            };
+        })
+        .filter(f => f.text.length > 0);
+
     return { cleanContent, followUps };
 }
 
@@ -1029,6 +1144,10 @@ export default function ChatPage() {
         };
         options: string[];
     } | null>(null);
+
+    const isInlineFormActive = 
+        (activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions)) || 
+        (showHitlApproval && hitlRequest && isNavisHitl(hitlRequest));
 
     // Plan card state
     const [activePlan, setActivePlan] = useState<{ content: string; chatId: string } | null>(null);
@@ -2070,12 +2189,16 @@ export default function ChatPage() {
             setCurrentPhase(phase as any);
         });
 
-        acpApi.onMissionComplete(({ conversationId, thinkingDuration, title }: { conversationId?: string; timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
+        acpApi.onMissionComplete(({ conversationId, assistantMessageId, thinkingDuration, title }: { conversationId?: string; assistantMessageId?: string; timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
             if (conversationId && conversationId !== activeConversationIdRef.current) {
                 console.log('[Mission] Ignoring completion for background conversation:', conversationId);
                 setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
                 setNotification({ id: conversationId, title: title || 'Chat task' });
                 setTimeout(() => setNotification(prev => prev?.id === conversationId ? null : prev), 8000);
+                return;
+            }
+            if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) {
+                console.log('[Mission] Ignoring completion for stale session:', assistantMessageId, 'current active:', assistantMessageIdRef.current);
                 return;
             }
             console.log('[Mission] Mission complete received (persistent)');
@@ -2652,8 +2775,9 @@ export default function ChatPage() {
                 }
             });
 
-            acpApi.onStreamChunk(({ delta, done, conversationId }: { delta: string; done: boolean; conversationId?: string }) => {
+            acpApi.onStreamChunk(({ delta, done, conversationId, assistantMessageId }: { delta: string; done: boolean; conversationId?: string; assistantMessageId?: string }) => {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
+                if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) return;
                 if (isMessageCommittedRef.current) return;
                 if (!done) {
                     if (delta) {
@@ -2850,20 +2974,33 @@ export default function ChatPage() {
         }
     }, [revertTarget, messages, saveConversation]);
 
-    const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[]) => {
+    const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[], skipAddUserMessage?: boolean) => {
         if (loadPromiseRef.current) {
             await loadPromiseRef.current;
         }
-        console.log('[Frontend handleSend] CALLED - Starting new message send');
+        console.log('[Frontend handleSend] CALLED - Starting new message send', { skipAddUserMessage });
         const textToUse = typeof overrideValue === 'string' ? overrideValue : inputValue;
         if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || (isLoading && !bypassLoadingRef.current)) return;
         bypassLoadingRef.current = false;
+
+        let newMessages: Message[];
         const isProject = folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
-        const folderContextText = (folderContexts.length > 0 && !isProject) ? `\n\n[Shared folder context]\n${folderContexts.map(f => `- ${f.path}`).join('\n')}\n\nNote: This folder structure is provided as passive context. You do not need to process, scan, or organize these files automatically. However, if the user explicitly asks you to take an action on these files in this message, you MUST fulfill their request using your tools immediately without asking for extra confirmation.` : '';
-        const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
-        const newMessages = [...(currentMessages ?? messagesRef.current), userMessage];
-        messagesRef.current = newMessages;
-        setMessages(newMessages);
+        
+        if (skipAddUserMessage) {
+            // Silent approval/rejection: do NOT add a visible message to the chat or save it to database.
+            // We just append a temporary user message containing the approval command for the API stream.
+            const tempUserMessage: Message = { id: crypto.randomUUID(), role: "user", content: textToUse.trim(), timestamp: new Date() };
+            newMessages = [...(currentMessages ?? messagesRef.current), tempUserMessage];
+        } else {
+            const folderContextText = (folderContexts.length > 0 && !isProject) ? `\n\n[Shared folder context]\n${folderContexts.map(f => `- ${f.path}`).join('\n')}\n\nNote: This folder structure is provided as passive context. You do not need to process, scan, or organize these files automatically. However, if the user explicitly asks you to take an action on these files in this message, you MUST fulfill their request using your tools immediately without asking for extra confirmation.` : '';
+            const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
+            newMessages = [...(currentMessages ?? messagesRef.current), userMessage];
+            messagesRef.current = newMessages;
+            setMessages(newMessages);
+
+            // Immediately save the user message to prevent data loss
+            saveConversation(newMessages);
+        }
 
         // Ensure conversation ID is established synchronously before any async operations
         let currentConvId = activeConversationIdRef.current;
@@ -2872,9 +3009,6 @@ export default function ChatPage() {
             activeConversationIdRef.current = currentConvId;
             setActiveConversationId(currentConvId);
         }
-
-        // Immediately save the user message to prevent data loss
-        saveConversation(newMessages);
 
         if (typeof overrideValue !== 'string') setInputValue("");
         setAttachments([]);
@@ -2894,6 +3028,7 @@ export default function ChatPage() {
         setMissionComplete(false);
         setCurrentNode("");
         setActiveUserQuestions([]);
+        activeUserQuestionRef.current = false;
         setShowHitlApproval(false);
         setHitlRequest(null);
         (window as any).__activeHitl = false;
@@ -3049,7 +3184,7 @@ export default function ChatPage() {
                         console.log(`[Frontend] 📥 Received ${record.toolName} tool call`);
                         console.log('[Frontend] Tool call data:', JSON.stringify(record, null, 2));
                         console.log('[Frontend] Current activeUserQuestions length:', activeUserQuestions.length);
-                        console.log('[Frontend] Current __activeUserQuestion flag:', (window as any).__activeUserQuestion);
+                        console.log('[Frontend] Current __activeUserQuestion flag:', activeUserQuestionRef.current);
                     }
 
                     // CRITICAL: Handle ask_user_question or approve_actions FIRST, before checking existingId
@@ -3374,8 +3509,12 @@ export default function ChatPage() {
                     setStreamingToolCalls([...updated]);
                 });
 
-                api.onStreamChunk(({ delta, done, conversationId }: { delta: string; done: boolean; conversationId?: string }) => {
+                api.onStreamChunk(({ delta, done, conversationId, assistantMessageId }: { delta: string; done: boolean; conversationId?: string; assistantMessageId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
+                    if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) {
+                        console.log('[Frontend onStreamChunk] Ignoring chunk for stale session:', assistantMessageId);
+                        return;
+                    }
                     console.log(`[Frontend onStreamChunk] delta="${delta}", done=${done}, isMessageCommittedRef=${isMessageCommittedRef.current}`);
                     if (isMessageCommittedRef.current) {
                         console.log('[Frontend onStreamChunk] BLOCKED by isMessageCommittedRef guard');
@@ -3520,7 +3659,9 @@ export default function ChatPage() {
                 }
 
                 await api.stream({
-                    messages: newMessages.map(m => {
+                    messages: newMessages
+                        .filter(m => m.content || (m.attachments && m.attachments.length > 0))
+                        .map(m => {
                         if (m.attachments && m.attachments.length > 0 && m.role === 'user') {
                             const blocks: any[] = [];
                             if (m.content) blocks.push({ type: 'text', text: m.content });
@@ -3610,11 +3751,16 @@ export default function ChatPage() {
         // Commit the assistant's pending message (form content) before sending the user's response.
         // This ensures the AI's form questions survive in the conversation history.
         let finalHistory = messagesRef.current;
-        if (pendingContent.trim() || pendingThought || pendingToolCalls.length > 0) {
+        let assistantContent = pendingContent;
+        if (!assistantContent.trim() && activeUserQuestions.length > 0) {
+            assistantContent = activeUserQuestions[0].question || "";
+        }
+
+        if (assistantContent.trim() || pendingThought || pendingToolCalls.length > 0) {
             const assistantMsg: Message = {
                 id: assistantMessageIdRef.current || crypto.randomUUID(),
                 role: "assistant",
-                content: pendingContent,
+                content: assistantContent,
                 thought: pendingThought,
                 reasoning_content: pendingThought,
                 toolCalls: pendingToolCalls.length > 0 ? pendingToolCalls : undefined,
@@ -3688,7 +3834,7 @@ export default function ChatPage() {
 
                 // Trigger send after a brief delay to ensure state is updated
                 setTimeout(() => {
-                    handleSend();
+                    handleSend(data.message);
                 }, 100);
             }
         });
@@ -3704,9 +3850,10 @@ export default function ChatPage() {
         console.log('[HITL] User decision:', approved ? 'approved' : 'rejected', 'sendMessage:', sendMessage);
 
         // Persist the resolution to disk so it won't re-appear on next app launch
-        if (hitlRequest?.id && activeConversationId) {
+        const convId = activeConversationIdRef.current || activeConversationId;
+        if (hitlRequest?.id && convId) {
             (window as any).electronAPI?.history?.hitl?.resolve?.(
-                activeConversationId,
+                convId,
                 hitlRequest.id,
                 approved
             ).catch((e: any) => console.warn('[HITL] Failed to persist resolution:', e));
@@ -3720,124 +3867,81 @@ export default function ChatPage() {
         // Clear the active HITL flag
         (window as any).__activeHitl = false;
 
+        // Reset message committed flag and set loading state so streaming works when graph resumes
+        isMessageCommittedRef.current = false;
+        setIsLoading(true);
+
         // Send the approval response
         const responseText = approved ? '[HITL_APPROVED]' : '[HITL_REJECTED]';
 
+        // Commit the assistant's pending message (form content) before sending the user's response.
+        // This ensures the AI's form questions survive in the conversation history.
+        const pendingContent = streamingContentRef.current;
+        const pendingThought = streamingThoughtRef.current;
+        const pendingToolCalls = persistableToolCalls(
+            liveToolCallsRef.current,
+            t => t.status === 'running' ? 'done' : undefined
+        );
+
+        let finalHistory = messagesRef.current;
+        let assistantContent = pendingContent;
+        if (!assistantContent.trim() && hitlRequest) {
+            assistantContent = hitlRequest.question || "";
+        }
+
+        if (assistantContent.trim() || pendingThought || pendingToolCalls.length > 0) {
+            const assistantMsg: Message = {
+                id: assistantMessageIdRef.current || crypto.randomUUID(),
+                role: "assistant",
+                content: assistantContent,
+                thought: pendingThought,
+                reasoning_content: pendingThought,
+                toolCalls: pendingToolCalls.length > 0 ? pendingToolCalls : undefined,
+                missionTimeline: missionTimelineRef.current || undefined,
+                timestamp: new Date(),
+            };
+
+            const existingIdx = finalHistory.findIndex(m => m.id === assistantMsg.id);
+            if (existingIdx >= 0) {
+                finalHistory = [...finalHistory];
+                finalHistory[existingIdx] = assistantMsg;
+            } else {
+                finalHistory = [...finalHistory, assistantMsg];
+            }
+        }
+
+        // Mark HITL request ID as answered
+        if (hitlRequest?.id) {
+            console.log(`[Frontend] 📝 Marking HITL request ID as answered: ${hitlRequest.id}`);
+            answeredToolCallIdsRef.current.add(hitlRequest.id);
+        }
+
+        // Clear the active user question flag
+        activeUserQuestionRef.current = false;
+
+        // Commit to state and save
+        setMessages(finalHistory);
+        saveConversation(finalHistory);
+
         if (sendMessage) {
             // Send as a visible chat message
-            // IMPORTANT: Don't call handleSend() as it clears streaming content and may delete agent messages
-            // Instead, manually add the message and trigger the stream
             const messageText = approved
                 ? `[HITL_APPROVED] I have reviewed and approved the requested operation. Please proceed.`
                 : `[HITL_REJECTED] I have reviewed and rejected the requested operation. Please do not proceed.`;
 
-            // Create user message for the approval
-            const userMessage: Message = {
-                id: crypto.randomUUID(),
-                role: "user",
-                content: messageText,
-                timestamp: new Date()
-            };
-
-            // Add to messages array - this preserves all existing messages including agent messages
-            const newMessages = [...messages, userMessage];
-            setMessages(newMessages);
-
-            // Now trigger the agent stream with the approval message
-            // This is similar to handleSend but without clearing existing messages
-            setIsLoading(true);
-            setLiveToolCalls([]);
-            setStreamingToolCalls([]);
-            streamingToolCallsRef.current = [];
-            setStreamingContent("");
-            setStreamingThought("");
-            setMissionComplete(false);
-            liveToolCallsRef.current = [];
-            streamingContentRef.current = "";
-            streamingThoughtRef.current = "";
-            isMessageCommittedRef.current = false;
-
-            const acpApi = (window as any).electronAPI?.acp;
-            if (acpApi?.stream) {
-                // Remove old listeners
-                acpApi.removeStreamListeners();
-
-                // Prepare messages for streaming
-                const messagesToSend = newMessages.map(m => ({
-                    role: m.role,
-                    content: m.content
-                }));
-
-                // Start the stream
-                acpApi.stream({ messages: messagesToSend });
-            }
-        } else {
-            // Send approval response directly to backend without creating a chat message
-            const acpApi = (window as any).electronAPI?.acp;
-            if (acpApi?.sendHitlResponse) {
-                acpApi.sendHitlResponse(responseText);
-            } else {
-                // Fallback: send as a system message that won't appear in chat
-                console.log('[HITL] Sending response directly to backend:', responseText);
-                const event = new CustomEvent('hitl-response', {
-                    detail: { response: responseText, approved }
-                });
-                window.dispatchEvent(event);
-            }
-
-            // CRITICAL: After HITL is resolved without sending a message, complete the mission
-            // This ensures the UI updates properly and doesn't stay in loading state
+            // Now trigger handleSend with the user response and committed history
+            // This sets up the stream and registers all streaming event listeners correctly
             setTimeout(() => {
-                if (!isMessageCommittedRef.current) {
-                    console.log('[HITL] Completing mission after HITL resolution without new message');
-                    setMissionComplete(true);
-                    setIsLoading(false);
-
-                    // Commit any accumulated content
-                    const finalContent = streamingContentRef.current || "";
-                    const finalThought = streamingThoughtRef.current;
-                    const finalToolCalls = persistableToolCalls(
-                        liveToolCallsRef.current,
-                        t => t.status === 'running' ? 'done' : undefined
-                    );
-
-                        if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
-                        const assistantMsg: Message = {
-                            id: crypto.randomUUID(),
-                            role: "assistant",
-                            content: finalContent,
-                            thought: finalThought,
-                            reasoning_content: streamingThoughtRef.current,
-                            timestamp: new Date(),
-                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            missionTimeline: missionTimelineRef.current,
-                        };
-
-                        setStreamingContent("");
-                        setStreamingThought("");
-                        setLiveToolCalls([]);
-                        setStreamingToolCalls([]);
-                        streamingToolCallsRef.current = [];
-                        setMessages(prev => {
-                            const prevMsg = prev[prev.length - 1];
-                            if (prev.length > 0 && prevMsg.role === 'assistant' &&
-                                prevMsg.content === assistantMsg.content &&
-                                prevMsg.thought === assistantMsg.thought &&
-                                JSON.stringify(prevMsg.toolCalls) === JSON.stringify(assistantMsg.toolCalls)) {
-                                return prev;
-                            }
-                            const final = [...prev, assistantMsg];
-                            saveConversation(final);
-                            return final;
-                        });
-                    }
-
-                    isMessageCommittedRef.current = true;
-                    acpApi?.removeStreamListeners();
-                }
-            }, 200); // Small delay to ensure HITL response is sent first
+                handleSend(messageText, finalHistory);
+            }, 50);
+        } else {
+            // Silent approval/rejection: trigger handleSend with skipAddUserMessage=true
+            // This starts the backend stream to resume the graph but keeps the user message hidden.
+            setTimeout(() => {
+                handleSend(responseText, finalHistory, true);
+            }, 50);
         }
-    }, [hitlRequest, messages, saveConversation]);
+    }, [hitlRequest, messages, saveConversation, selectedModel, availableModels, pursueGoalMode, folderContexts, activeConversationId, handleSend]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -5152,7 +5256,7 @@ export default function ChatPage() {
                                                                 />
                                                             ))}
                                                             <RateLimitContinueButton content={msg.content} onContinue={() => handleSend("continue")} />
-                                                            {idx === lastAssistantIdx && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
+                                                            {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                 <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                     <UserQuestionForm
                                                                         questions={activeUserQuestions}
@@ -5162,7 +5266,7 @@ export default function ChatPage() {
                                                                     />
                                                                 </div>
                                                             )}
-                                                            {idx === lastAssistantIdx && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
+                                                            {idx === messages.length - 1 && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
                                                                 <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                     <HitlApprovalForm
                                                                         request={hitlRequest}
@@ -5303,10 +5407,31 @@ export default function ChatPage() {
                                                     );
                                                 })()}
 
+                                                {activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
+                                                    <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                        <UserQuestionForm
+                                                            questions={activeUserQuestions}
+                                                            onSubmit={handleQuestionSubmit}
+                                                            previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                            isInline={true}
+                                                        />
+                                                    </div>
+                                                )}
+                                                {showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
+                                                    <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                        <HitlApprovalForm
+                                                            request={hitlRequest}
+                                                            onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                            onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                            isInline={true}
+                                                        />
+                                                    </div>
+                                                )}
+
                                                 {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && !isDebating && (
                                                     <LoadingBreadcrumb text={getNodeDisplayName(currentNode)} />
                                                 )}
-                                                {(activeUserQuestions.length > 0 || showHitlApproval) && (
+                                                {(activeUserQuestions.length > 0 || showHitlApproval) && !isInlineFormActive && (
                                                     <div style={{
                                                         display: 'flex',
                                                         alignItems: 'center',

@@ -470,6 +470,13 @@ export class AgentRunner {
       const chatHistoryStore = new ChatHistoryStore();
       const textInput = typeof userInput === 'string' ? userInput : JSON.stringify(userInput);
 
+      if (!textInput || !textInput.trim()) {
+        console.warn('[AgentRunner] Empty textInput received — aborting stream to prevent blank LLM prompt');
+        yield { type: 'chunk', content: '⚠️ No message content received. Please try again.' };
+        yield { type: 'done' };
+        return;
+      }
+
       try {
         const existingConv = await chatHistoryStore.load(convId);
         if (!existingConv) {
@@ -496,10 +503,21 @@ export class AgentRunner {
       }
 
       // Check if this is a HITL approval/rejection response
-      const isHitlResponse = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_REJECTED]');
+      const isHitlResponse = textInput.includes('[HITL_APPROVED]') ||
+                             textInput.includes('[HITL_REJECTED]') ||
+                             textInput.includes('Approve — proceed once') ||
+                             textInput.includes('proceed once') ||
+                             textInput.includes('Approve & Allow Always') ||
+                             textInput.includes('Approve & Allow Prefix') ||
+                             textInput.includes('Reject — cancel and do not proceed') ||
+                             textInput.includes('Reject');
 
       if (isHitlResponse) {
-        const approved = textInput.includes('[HITL_APPROVED]');
+        const approved = textInput.includes('[HITL_APPROVED]') ||
+                         textInput.includes('Approve — proceed once') ||
+                         textInput.includes('proceed once') ||
+                         textInput.includes('Approve & Allow Always') ||
+                         textInput.includes('Approve & Allow Prefix');
         console.log(`[Runner] HITL response detected: ${approved ? 'APPROVED' : 'REJECTED'}`);
 
         // Try to find the request ID from state manager
@@ -785,8 +803,27 @@ export class AgentRunner {
             if (currentState && currentState.next && currentState.next.length > 0) {
               console.log('[AgentRunner] 🔄 Resuming interrupted session...');
               this.telemetry.info(`Resuming session ${convId} from interrupted state...`);
-              missionTracker.startStep('step:triage');
-              await graph.invoke(new Command({ resume: textInput }), threadConfig);
+
+              // Restore mission tracker timeline from persisted state if available
+              const persistedTimeline = currentState.values.missionTimeline;
+              const persistedSteps = currentState.values.missionSteps;
+              if (persistedTimeline && persistedSteps) {
+                missionTracker.restoreTimeline(persistedTimeline, persistedSteps);
+              }
+
+              // Create a resume config that sets isResuming flag in the execution context
+              const resumeConfig = {
+                ...threadConfig,
+                configurable: {
+                  ...threadConfig.configurable,
+                  executionContext: {
+                    ...threadConfig.configurable.executionContext,
+                    isResuming: true,
+                  }
+                }
+              };
+
+              await graph.invoke(new Command({ resume: textInput }), resumeConfig);
             } else {
               console.log('[AgentRunner] 🔄 Starting new graph invocation...');
 

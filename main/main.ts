@@ -1185,10 +1185,13 @@ ipcMain.handle('load-config', async () => {
 // ── IPC: Debug / JSON Viewer ───────────────────────────────────────────
 
 ipcMain.handle('debug:get-last-event', () => {
-  return lastStreamEvent;
+  return (globalThis as any).lastStreamEvent || null;
 });
 
 ipcMain.handle('debug:get-chat-history', () => {
+  const lastChatMessages = (globalThis as any).lastChatMessages || [];
+  const lastStreamEvent = (globalThis as any).lastStreamEvent || null;
+
   // Build full chat history from lastStreamEvent and stored messages
   const fullHistory: any[] = [];
 

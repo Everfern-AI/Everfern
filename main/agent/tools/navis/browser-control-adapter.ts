@@ -169,6 +169,7 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.logger.wait(step, maxSteps, `${timeoutMs}ms`);
         return normalizeResult(result, 'Waited for page change', Boolean(result?.stateChanged));
       }
+      case 'extract':
       case 'extract_content': {
         const result = await bridgeServer.sendRequest('extract_content', { tabId: this.activeTabId, ...args }, 12000);
         this.logger.extract(step, maxSteps, String(args.goal || 'page content'));

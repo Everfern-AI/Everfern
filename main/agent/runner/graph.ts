@@ -18,7 +18,7 @@ import { createOperatorCoordinatorNode } from '../operator/coordinator';
 import { AgentRunner } from './runner';
 import type { MissionTracker } from './mission-tracker';
 import { lightweightCheckpointer } from './custom-checkpointer';
-import { saveHitlRequest } from '../../store/hitl';
+import { saveHitlRequest, getHitlRecord, listHitlRecords } from '../../store/hitl';
 import { toolApprovalStore } from '../../store/tool-approvals';
 import * as crypto from 'crypto';
 
@@ -32,6 +32,7 @@ export interface ExecutionContext {
   missionTracker?: MissionTracker;
   conversationId?: string;
   shouldAbort?: () => boolean;
+  isResuming?: boolean;
 }
 
 /**
@@ -58,8 +59,7 @@ const getLatestUserText = (state: GraphStateType): string => {
 };
 
 const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
-  const text = getLatestUserText(state).toLowerCase();
-  return /\b(project|app|website|site|dashboard|clone|scaffold|create[- ]next[- ]app|next\.?js|react app|full[- ]stack|frontend|backend|multi[- ]file|folder|directory|downloads|desktop|feature(?:s)?|build (?:a|an|the)|make (?:a|an|the)|create (?:a|an|the))\b/.test(text);
+  return state.currentIntent === 'build';
 };
 
 const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use']);
@@ -112,7 +112,7 @@ export const buildGraph = (
   }
 
   const hitlNode = async (state: GraphStateType, config?: any) => {
-    const { runner, eventQueue, missionTracker, conversationId, shouldAbort } = getContext(config);
+    const { runner, eventQueue, missionTracker, conversationId, shouldAbort, isResuming } = getContext(config);
 
     if (shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
@@ -122,6 +122,22 @@ export const buildGraph = (
     if (missionTracker) missionTracker.startStep('step:hitl');
 
     try {
+      const { stateManager } = await import('./state-manager');
+
+      let originalRequest: any = null;
+      if (isResuming) {
+        originalRequest = stateManager.getInterruptData(conversationId || 'unknown');
+        if (!originalRequest && conversationId) {
+          const records = listHitlRecords(conversationId);
+          if (records.length > 0) {
+            originalRequest = records[0].request;
+            console.log(`[hitlNode] Found original request on disk: ${originalRequest.id}`);
+          }
+        }
+      }
+
+      const shouldSkipEvents = isResuming && !!originalRequest;
+
       const formatToolCallSummary = (call: any) => {
         const name = call.name;
         const args = call.arguments || {};
@@ -157,7 +173,7 @@ export const buildGraph = (
       };
 
       // If pendingToolCalls is empty but we're in HITL, check the message history for tool calls
-      let toolsToDisplay = state.pendingToolCalls || [];
+      let toolsToDisplay = originalRequest ? originalRequest.details.tools : (state.pendingToolCalls || []);
       if (toolsToDisplay.length === 0 && state.messages && state.messages.length > 0) {
         // Look for tool calls in the last assistant message
         for (let i = state.messages.length - 1; i >= 0; i--) {
@@ -174,20 +190,24 @@ export const buildGraph = (
         }
       }
 
-      const toolSummary = toolsToDisplay.length > 0
-        ? toolsToDisplay.map(formatToolCallSummary).join('\n')
-        : buildFallbackActionSummary();
+      const toolSummary = originalRequest ? originalRequest.details.summary : (
+        toolsToDisplay.length > 0
+          ? toolsToDisplay.map(formatToolCallSummary).join('\n')
+          : buildFallbackActionSummary()
+      );
 
       const hasInteractiveAutomation = toolsToDisplay.some((tc: any) => INTERACTIVE_AUTOMATION_TOOLS.has(tc.name));
-      const hitlRationale = state.completionSignal?.hitlRationale ||
+      const hitlRationale = originalRequest ? originalRequest.details.reasoning : (
+        state.completionSignal?.hitlRationale ||
         (hasInteractiveAutomation
           ? 'Interactive browser or desktop automation requires your permission before EverFern can control Navis or the computer.'
-          : 'High-risk operation detected');
+          : 'High-risk operation detected')
+      );
       const reasoning = hitlRationale;
-      const requestId = crypto.randomUUID();
-      const timestamp = new Date().toISOString();
+      const requestId = originalRequest ? originalRequest.id : crypto.randomUUID();
+      const timestamp = originalRequest ? originalRequest.timestamp : new Date().toISOString();
 
-      const approvalRequest = {
+      const approvalRequest = originalRequest || {
         id: requestId,
         conversationId: conversationId || 'unknown',
         timestamp,
@@ -200,54 +220,58 @@ export const buildGraph = (
         options: ['approve', 'reject', 'modify']
       };
 
-      if (conversationId) {
-        saveHitlRequest(approvalRequest);
-      }
+      if (!shouldSkipEvents) {
+        if (conversationId) {
+          saveHitlRequest(approvalRequest);
+        }
 
-      // Emit tool_start for approve_actions so frontend knows to expect a result
-      eventQueue?.push({
-        type: 'tool_start',
-        toolName: 'approve_actions',
-        toolArgs: { questions: reasoning }
-      });
-
-      const { askUserTool } = await import('../tools/ask-user');
-      const hitlResult = await askUserTool.execute({
-        questions: [
-          {
-            question: `⚠️ Security Check Required\n\n${reasoning}\n\nActions to execute:\n${toolSummary}`,
-            options: [
-              '✅ Approve — proceed once',
-              '🚀 Approve & Allow Always — never ask for this specific command again',
-              '📂 Approve & Allow Prefix — never ask for commands starting with this base (e.g. npm)',
-              '❌ Reject — cancel and do not proceed'
-            ],
-            multiSelect: false,
-          }
-        ]
-      }, (msg) => runner.telemetry.info(msg));
-
-      eventQueue?.push({
-        type: 'tool_call',
-        toolCall: {
+        // Emit tool_start for approve_actions so frontend knows to expect a result
+        eventQueue?.push({
+          type: 'tool_start',
           toolName: 'approve_actions',
-          args: { questions: (hitlResult.data as any)?.questions },
-          result: hitlResult,
-        },
-      } as any);
+          toolCallId: approvalRequest.id,
+          toolArgs: { questions: reasoning }
+        });
 
-      eventQueue?.push({
-        type: 'hitl_request',
-        request: approvalRequest,
-      } as any);
+        const { askUserTool } = await import('../tools/ask-user');
+        const hitlResult = await askUserTool.execute({
+          questions: [
+            {
+              question: `⚠️ Security Check Required\n\n${reasoning}\n\nActions to execute:\n${toolSummary}`,
+              options: [
+                '✅ Approve — proceed once',
+                '🚀 Approve & Allow Always — never ask for this specific command again',
+                '📂 Approve & Allow Prefix — never ask for commands starting with this base (e.g. npm)',
+                '❌ Reject — cancel and do not proceed'
+              ],
+              multiSelect: false,
+            }
+          ]
+        }, (msg) => runner.telemetry.info(msg));
 
-      // Register interruption in stateManager so runStream can find it upon resume
-      const { stateManager } = await import('./state-manager');
-      if (conversationId) {
-        stateManager.setInterrupted(conversationId, approvalRequest);
+        eventQueue?.push({
+          type: 'tool_call',
+          toolCall: {
+            id: approvalRequest.id,
+            toolCallId: approvalRequest.id,
+            toolName: 'approve_actions',
+            args: { questions: (hitlResult.data as any)?.questions },
+            result: hitlResult,
+          },
+        } as any);
+
+        eventQueue?.push({
+          type: 'hitl_request',
+          request: approvalRequest,
+        } as any);
+
+        // Register interruption in stateManager so runStream can find it upon resume
+        if (conversationId) {
+          stateManager.setInterrupted(conversationId, approvalRequest);
+        }
       }
 
-      runner.telemetry.info('HITL approval required — ending turn, user must respond');
+      runner.telemetry.info(shouldSkipEvents ? 'Resuming HITL approval — skipping request emission' : 'HITL approval required — ending turn, user must respond');
       if (missionTracker) missionTracker.completeStep('step:hitl');
 
       // Use interrupt() to pause the graph and wait for user response.
@@ -273,10 +297,19 @@ export const buildGraph = (
       const answerStr = String(answer);
       const isApproved = answerStr.includes('[HITL_APPROVED]') ||
                          answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
-                         answerStr.includes('[HITL_APPROVED_PREFIX]');
+                         answerStr.includes('[HITL_APPROVED_PREFIX]') ||
+                         answerStr.includes('Approve — proceed once') ||
+                         answerStr.includes('proceed once') ||
+                         answerStr.includes('Approve & Allow Always') ||
+                         answerStr.includes('Approve & Allow Prefix');
 
-      if (isApproved && (answerStr.includes('[HITL_APPROVED_ALWAYS]') || answerStr.includes('[HITL_APPROVED_PREFIX]'))) {
-        const type = answerStr.includes('[HITL_APPROVED_ALWAYS]') ? 'exact' : 'prefix';
+      if (isApproved && (
+        answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
+        answerStr.includes('[HITL_APPROVED_PREFIX]') ||
+        answerStr.includes('Approve & Allow Always') ||
+        answerStr.includes('Approve & Allow Prefix')
+      )) {
+        const type = (answerStr.includes('[HITL_APPROVED_ALWAYS]') || answerStr.includes('Approve & Allow Always')) ? 'exact' : 'prefix';
 
         // Register policies for all pending tools
         for (const tc of toolsToDisplay) {

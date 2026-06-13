@@ -1,0 +1,79 @@
+=== STEP 0 (2026-06-12T17:06:00Z) ===
+<USER_REQUEST>
+Can you make a custom form for Navis that will not be in prompt input but be in the chat history like a container bottom of the ai message
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-12T22:36:00+05:30.
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Gemini 3.5 Flash (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+
+=== STEP 108 (2026-06-12T17:08:49Z) ===
+<USER_REQUEST>
+yes
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-12T22:38:49+05:30.
+</ADDITIONAL_METADATA>
+
+=== STEP 281 (2026-06-13T04:59:07Z) ===
+<USER_REQUEST>
+as you can see there are duplicate messages and also in navis add a nice pill icon for navis
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-13T10:29:07+05:30.
+</ADDITIONAL_METADATA>
+
+=== STEP 342 (2026-06-13T05:12:53Z) ===
+<USER_REQUEST>
+when i hit submit again the same form comes in the before message, and it sends as an empty messsage
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-13T10:42:53+05:30.
+</ADDITIONAL_METADATA>
+
+=== STEP 416 (2026-06-13T05:18:39Z) ===
+<USER_REQUEST>
+Runtime ReferenceError
+
+
+
+Cannot access 'activeUserQuestions' before initialization
+src\app\chat\page.tsx (479:9) @ ChatPage
+
+
+  477 |     }, [messages]);
+  478 |     const isInlineFormActive = 
+> 479 |         (activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions)) || 
+      |         ^
+  480 |         (showHitlApproval && hitlRequest && isNavisHitl(hitlRequest));
+  481 |     const [inputValue, setInputValue] = useState("");
+  482 |     const [modelInfo, setModelInfo] = useState<{
+Call Stack
+13
+
+Show 12 ignore-listed frame(s)
+ChatPage
+src\app\chat\page.tsx (479:9)
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-13T10:48:39+05:30.
+</ADDITIONAL_METADATA>
+
+=== STEP 440 (2026-06-13T05:20:47Z) ===
+<USER_REQUEST>
+still u can see duplicate forms
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-13T10:50:47+05:30.
+</ADDITIONAL_METADATA>
+
+=== STEP 588 (2026-06-13T05:32:10Z) ===
+<USER_REQUEST>
+and it sends empty message i sen the json chat hisotryt
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-13T11:02:10+05:30.
+</ADDITIONAL_METADATA>
+

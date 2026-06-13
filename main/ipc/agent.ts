@@ -338,6 +338,7 @@ export function registerAgentHandlers() {
     assistantMessageId?: string,
     operatorMode?: boolean
   }) => {
+    (globalThis as any).lastChatMessages = request.messages;
     const streamSender = event.sender;
     const config = loadConfigSync();
     let client = acpManager.getClient();
@@ -404,16 +405,16 @@ export function registerAgentHandlers() {
 
     const flushBuffers = () => {
       if (chunkBuffer) {
-        try { streamSender.send('acp:stream-chunk', { delta: chunkBuffer, done: false, conversationId: request.conversationId }); } catch (e) {}
+        try { streamSender.send('acp:stream-chunk', { delta: chunkBuffer, done: false, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId }); } catch (e) {}
         chunkBuffer = '';
       }
       if (thoughtBuffer) {
-        try { streamSender.send('acp:thought', { content: thoughtBuffer, conversationId: request.conversationId }); } catch (e) {}
+        try { streamSender.send('acp:thought', { content: thoughtBuffer, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId }); } catch (e) {}
         thoughtBuffer = '';
       }
       if (toolCallChunkBuffer.length > 0) {
         for (const item of toolCallChunkBuffer) {
-          try { streamSender.send('acp:tool-call-chunk', { ...item, conversationId: request.conversationId }); } catch (e) {}
+          try { streamSender.send('acp:tool-call-chunk', { ...item, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId }); } catch (e) {}
         }
         toolCallChunkBuffer = [];
       }
@@ -433,6 +434,9 @@ export function registerAgentHandlers() {
         }));
         if (safeData && typeof safeData === 'object' && !Array.isArray(safeData)) {
           safeData.conversationId = request.conversationId;
+          if (request.assistantMessageId) {
+            safeData.assistantMessageId = request.assistantMessageId;
+          }
         }
         streamSender.send(channel, safeData);
       } catch (err) {
@@ -441,8 +445,14 @@ export function registerAgentHandlers() {
     };
 
     try {
-      const history = request.messages.slice(0, -1);
-      const userInput = request.messages[request.messages.length - 1].content;
+      // Filter out messages with empty/undefined content to prevent empty userInput
+      const validMessages = request.messages.filter((m: any) => m.content);
+      if (validMessages.length === 0) {
+        console.error('[AgentIPC] All messages have empty content — aborting stream');
+        throw new Error('No valid messages to send. All messages had empty content.');
+      }
+      const history = validMessages.slice(0, -1);
+      const userInput = validMessages[validMessages.length - 1].content;
 
       // ── In-progress draft persistence ────────────────────────────────────
       // Save a draft of the streaming message every ~3 seconds so that if
@@ -549,6 +559,7 @@ export function registerAgentHandlers() {
 
       let fullResponse = '';
       for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode)) {
+        (globalThis as any).lastStreamEvent = streamEvent;
         if (globalAbortManager.streamAborted) {
           flushBuffers();
           try {
@@ -557,7 +568,7 @@ export function registerAgentHandlers() {
           } catch (e) {
             console.error('[AgentIPC] Failed to hide overlay:', e);
           }
-          streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true, conversationId: request.conversationId });
+          streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
           break;
         }
 
@@ -723,7 +734,7 @@ export function registerAgentHandlers() {
         const { getComputerOverlayManager } = require('../computer-overlay');
         getComputerOverlayManager().hide();
       } catch (e) {}
-      streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId });
+      streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
     }
   });
 }
