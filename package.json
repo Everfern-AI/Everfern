@@ -94,15 +94,6 @@
       ],
       "icon": "public/images/logos/everfern.icns"
     },
-    "linux": {
-      "category": "Productivity",
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "icon": "public/images/logos/everfern.png"
-    },
     "nativeRebuilder": "legacy",
     "nsis": {
       "oneClick": false,
