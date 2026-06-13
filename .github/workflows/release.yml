@@ -1,0 +1,38 @@
+Create a .github/workflows/release.yml file to handle automated cross-compilation matching the proper host operating system platforms:yamlname: Build and Release
+on: [push]
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Linux requires specific compiler flags for robotjs and system hooks
+      - name: Install Linux Dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxtst-dev libpng-dev libx11-dev libxi-dev xserver-xorg-dev libxext-dev
+
+      - name: Install Node Modules
+        run: npm install
+
+      # Recompiles heavy binaries safely for the matching host architecture
+      - name: Compile Native Modules
+        run: npm run rebuild:electron
+
+      - name: Package NextJS & Electron Application
+        run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

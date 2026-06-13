@@ -1324,6 +1324,166 @@ const MissionStepRow = ({
     );
 };
 
+// ── Task Group Row (orphan tool calls, collapsible) ───────────────────────────
+const TaskGroupRow = ({
+    taskName,
+    toolCalls,
+    onPillClick,
+    subAgentProgress,
+    isLast,
+}: {
+    taskName: string;
+    toolCalls: ToolCallDisplay[];
+    onPillClick?: (tc: ToolCallDisplay) => void;
+    subAgentProgress?: Map<string, SubAgentProgressEvent[]>;
+    isLast: boolean;
+}) => {
+    const hasRunning = toolCalls.some(tc => tc.status === "running");
+    const hasFailed = toolCalls.some(tc => tc.status === "error");
+    const allDone = toolCalls.every(tc => tc.status === "complete" || tc.status === "error");
+    const effectiveStatus: MissionStep["status"] = hasRunning
+        ? "in-progress"
+        : hasFailed
+            ? "failed"
+            : allDone
+                ? "completed"
+                : "pending";
+    const isActive = effectiveStatus === "in-progress";
+    const isDone = effectiveStatus === "completed";
+
+    const [open, setOpen] = useState(isActive || !isDone);
+
+    useEffect(() => {
+        if (isActive) setOpen(true);
+    }, [isActive, toolCalls.length]);
+
+    const rawName = taskName.charAt(0).toUpperCase() + taskName.slice(1);
+    const displayName = rawName.length > 55 ? rawName.slice(0, 52) + "..." : rawName;
+    const isGeneral = taskName === "General Execution";
+
+    if (isGeneral) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {toolCalls.length > 50 && (
+                    <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                        ... {toolCalls.length - 50} older actions hidden for performance
+                    </div>
+                )}
+                {renderToolGroups(toolCalls.slice(-50), onPillClick, subAgentProgress)}
+            </div>
+        );
+    }
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ marginBottom: 4, position: "relative" }}
+        >
+            {/* Dashed connecting line */}
+            {!isLast && (
+                <div style={{
+                    position: "absolute",
+                    top: 14,
+                    bottom: -18,
+                    left: 7,
+                    borderLeft: "1.5px dashed #d4d4d8",
+                    zIndex: 0,
+                    pointerEvents: "none",
+                }} />
+            )}
+
+            {/* Header row */}
+            <div
+                onClick={() => setOpen(o => !o)}
+                style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "6px 0",
+                    cursor: "pointer",
+                    userSelect: "none",
+                }}
+            >
+                <StepStatusIcon status={effectiveStatus} />
+                <span style={{
+                    fontSize: 13, fontWeight: isActive ? 600 : 500,
+                    color: isDone ? "#9ca3af" : isActive ? "#111827" : "#6b7280",
+                    flex: 1, letterSpacing: "-0.01em",
+                }}>
+                    {displayName}
+                </span>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                        fontSize: 10.5, color: "#d1d5db", fontWeight: 500,
+                        background: "#f4f4f5", padding: "1px 6px", borderRadius: 4,
+                    }}>
+                        {toolCalls.length}
+                    </span>
+                    <span style={{ color: "#d1d5db", display: "flex" }}>
+                        {open
+                            ? <ChevronUpIcon style={{ width: 14, height: 14 }} />
+                            : <ChevronDownIcon style={{ width: 14, height: 14 }} />}
+                    </span>
+                </div>
+            </div>
+
+            {/* Collapsible content */}
+            <AnimatePresence initial={false}>
+                {open && (
+                    <motion.div
+                        key="task-group-content"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                        style={{ overflow: "hidden" }}
+                    >
+                        <div style={{
+                            paddingLeft: 24,
+                            paddingBottom: 10,
+                            marginLeft: 6,
+                        }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                {toolCalls.length > 50 && (
+                                    <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                                        ... {toolCalls.length - 50} older actions hidden for performance
+                                    </div>
+                                )}
+                                {renderToolGroups(toolCalls.slice(-50), onPillClick, subAgentProgress)}
+                            </div>
+
+                            {isActive && toolCalls.some(tc => tc.status === "running") && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                                    <motion.div
+                                        style={{
+                                            width: 6, height: 6, borderRadius: "50%",
+                                            background: "radial-gradient(circle at 35% 28%, #e0f2fe 0%, #7dd3fc 28%, #2563eb 68%, #1e3a8a 100%)",
+                                            boxShadow: "0 0 7px rgba(59,130,246,0.45), inset 0 0 2px rgba(255,255,255,0.85)",
+                                        }}
+                                        animate={{
+                                            scale: [1, 1.22, 1],
+                                            boxShadow: [
+                                                "0 0 6px rgba(59,130,246,0.38), inset 0 0 2px rgba(255,255,255,0.85)",
+                                                "0 0 11px rgba(56,189,248,0.58), inset 0 0 3px rgba(255,255,255,0.95)",
+                                                "0 0 6px rgba(59,130,246,0.38), inset 0 0 2px rgba(255,255,255,0.85)",
+                                            ],
+                                        }}
+                                        transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+                                    />
+                                    <span style={{ fontSize: 11, fontWeight: 500, color: "#2563eb" }}>
+                                        Executing...
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
+    );
+};
+
 // ── Thought text cleaner ───────────────────────────────────────────────────────
 const THOUGHT_NOISE_PATTERNS = [
     /🤖[^\n]*/g,
@@ -1753,33 +1913,16 @@ export const AgentTimeline = ({
 
             {/* ── Orphan tool calls (grouped by taskName) ─────── */}
             {groupedOrphans.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
-                    {groupedOrphans.map(([taskName, toolsInTask]) => (
-                        <div key={taskName} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            {taskName !== "General Execution" && (
-                                <div style={{
-                                    fontSize: 11.5,
-                                    fontWeight: 600,
-                                    color: "#6b7280",
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.05em",
-                                    marginBottom: 4,
-                                    marginLeft: 4,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6
-                                }}>
-                                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#a1a1aa" }} />
-                                    {taskName}
-                                </div>
-                            )}
-                            {toolsInTask.length > 50 && (
-                                <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
-                                    ... {toolsInTask.length - 50} older actions hidden for performance
-                                </div>
-                            )}
-                            {renderToolGroups(toolsInTask.slice(-50), onPillClick, subAgentProgress)}
-                        </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12 }}>
+                    {groupedOrphans.map(([taskName, toolsInTask], idx) => (
+                        <TaskGroupRow
+                            key={taskName}
+                            taskName={taskName}
+                            toolCalls={toolsInTask}
+                            onPillClick={onPillClick}
+                            subAgentProgress={subAgentProgress}
+                            isLast={idx === groupedOrphans.length - 1}
+                        />
                     ))}
                 </div>
             )}

@@ -347,6 +347,16 @@ export default function SetupPage() {
     const [pipEta, setPipEta] = useState("");
     const [overallPct, setOverallPct] = useState(0);
 
+    const [mockStep, setMockStep] = useState(0);
+
+    useEffect(() => {
+        if (step !== 6) return;
+        const interval = setInterval(() => {
+            setMockStep(prev => (prev + 1) % 6);
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [step]);
+
     // Ollama state
     const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
     const [modelInstalled, setModelInstalled] = useState<boolean | null>(null);
@@ -636,7 +646,7 @@ export default function SetupPage() {
                 </div>
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
-                {[1, 2, 3, 4, 5, 6].map(s => (
+                {[1, 2, 3, 4, 5, 6, 7].map(s => (
                     <div
                         key={s}
                         style={{
@@ -1236,7 +1246,7 @@ export default function SetupPage() {
                         </motion.div>
                     )}
 
-                    {/* ── Step 6: Privacy & Security ── */}
+                    {/* ── Step 6: Browser Extension (Navis) ── */}
                     {step === 6 && (
                         <motion.div
                             key="step6"
@@ -1245,10 +1255,722 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
-                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                            style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(5)} />
+                            </div>
+
+                            <div style={{ marginBottom: 16 }}>
+                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: "#201e24", marginBottom: 12, lineHeight: 1.1 }}>
+                                    Install Navis Extension
+                                </h2>
+                                <p style={{ fontSize: 13, color: "#8a8886", lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
+                                    Navis browses the web for you — booking flights, filling forms, and more. Install the extension to get started.
+                                </p>
+                            </div>
+
+                            {/* Browser UI Mockup */}
+                            <style>{`
+                                @keyframes pulseDot {
+                                    0% { opacity: 0.5; transform: scale(0.9); }
+                                    50% { opacity: 1; transform: scale(1.15); }
+                                    100% { opacity: 0.5; transform: scale(0.9); }
+                                }
+                            `}</style>
+                            <div style={{
+                                width: "100%",
+                                maxWidth: 520,
+                                background: "#ffffff",
+                                border: "1px solid rgba(32, 30, 36, 0.1)",
+                                borderRadius: 16,
+                                overflow: "hidden",
+                                margin: "20px auto 28px",
+                                boxShadow: "0 8px 32px rgba(32,30,36,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+                            }}>
+                                {/* Browser Tab Bar */}
+                                <div style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    padding: "10px 14px 0",
+                                    background: "#f7f7f6",
+                                    borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                }}>
+                                    {/* Window dots */}
+                                    <div style={{ display: "flex", gap: 6, marginRight: 14 }}>
+                                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff5f56" }} />
+                                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ffbd2e" }} />
+                                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#27c93f" }} />
+                                    </div>
+                                    {/* Tabs */}
+                                    <div style={{
+                                        display: "flex", gap: 2, flex: 1,
+                                    }}>
+                                        <div style={{
+                                            padding: "7px 14px",
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            color: "#201e24",
+                                            background: "#ffffff",
+                                            borderRadius: "8px 8px 0 0",
+                                            border: "1px solid rgba(32,30,36,0.08)",
+                                            borderBottom: "1px solid #ffffff",
+                                            position: "relative",
+                                            bottom: -1,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 6,
+                                        }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8a8886" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                            SkyBooker.com
+                                        </div>
+                                        <div style={{
+                                            padding: "7px 14px",
+                                            fontSize: 11,
+                                            fontWeight: 500,
+                                            color: "#a09f9c",
+                                            background: "#f0efed",
+                                            borderRadius: "8px 8px 0 0",
+                                            position: "relative",
+                                            bottom: -1,
+                                        }}>
+                                            Hotels
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* URL Bar */}
+                                <div style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    padding: "8px 14px",
+                                    gap: 8,
+                                    background: "#ffffff",
+                                    borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                }}>
+                                    {/* Nav buttons */}
+                                    <div style={{ display: "flex", gap: 10, color: "#8a8886", alignItems: "center" }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                                        {/* Reload icon */}
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                                        {/* Home icon */}
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                    </div>
+                                    <div style={{
+                                        flex: 1,
+                                        background: "#f5f4f2",
+                                        borderRadius: 8,
+                                        padding: "6px 12px",
+                                        fontSize: 11,
+                                        color: "#8a8886",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                            <span style={{ color: "#10b981", fontWeight: 500 }}>Secure |</span>
+                                            <span>skybooker.com/flights/NYC-to-LAX</span>
+                                        </div>
+                                        {/* Bookmark Star Icon */}
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a09f9c" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                    </div>
+                                    {/* Extension Icon & Navis icon in toolbar */}
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                        {/* Puzzle icon */}
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a8886" strokeWidth="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v12M6 12h12"/></svg>
+                                        {/* Navis extension icon */}
+                                        <div style={{
+                                            width: 22, height: 22, borderRadius: 6,
+                                            background: "#201e24",
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            boxShadow: "0 0 8px rgba(32,30,36,0.25)"
+                                        }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f5f4f0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Main Browser Body */}
+                                <div style={{
+                                    display: "flex",
+                                    background: "#fdfdfc",
+                                    height: 290,
+                                    position: "relative",
+                                    overflow: "hidden"
+                                }}>
+                                    {/* Webpage Area (Left) */}
+                                    <div style={{
+                                        flex: 1,
+                                        padding: "12px 14px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 8,
+                                        background: "#faf9f6",
+                                        height: "100%",
+                                        position: "relative",
+                                        overflow: "hidden",
+                                        transition: "all 0.3s ease",
+                                    }}>
+                                        {/* Webpage Header/Toolbar */}
+                                        <div style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                            borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                            paddingBottom: 6,
+                                            marginBottom: 2,
+                                        }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                                SkyBooker
+                                            </span>
+                                            {/* Page control buttons */}
+                                            <div style={{ display: "flex", gap: 6 }}>
+                                                {/* Aa Text Size Button */}
+                                                <div style={{
+                                                    position: "relative",
+                                                    padding: "3px 6px",
+                                                    fontSize: 10,
+                                                    fontWeight: 600,
+                                                    borderRadius: 4,
+                                                    background: mockStep >= 2 ? "#201e24" : "rgba(32,30,36,0.05)",
+                                                    color: mockStep >= 2 ? "#ffffff" : "#8a8886",
+                                                    border: "1px solid rgba(32,30,36,0.08)",
+                                                    transition: "all 0.2s ease",
+                                                    transform: mockStep === 2 ? "scale(0.9)" : "scale(1)",
+                                                    boxShadow: mockStep === 2 ? "0 0 8px rgba(32,30,36,0.2)" : "none",
+                                                }}>
+                                                    Aa
+                                                    {mockStep === 2 && (
+                                                        <motion.div
+                                                            style={{
+                                                                position: "absolute",
+                                                                width: 30,
+                                                                height: 30,
+                                                                borderRadius: "50%",
+                                                                background: "rgba(32,30,36,0.15)",
+                                                                border: "2px solid #201e24",
+                                                                pointerEvents: "none",
+                                                                left: "50%",
+                                                                top: "50%",
+                                                                marginLeft: -15,
+                                                                marginTop: -15,
+                                                            }}
+                                                            initial={{ scale: 0.3, opacity: 0.8 }}
+                                                            animate={{ scale: 1.5, opacity: 0 }}
+                                                            transition={{ duration: 0.6, repeat: Infinity }}
+                                                        />
+                                                    )}
+                                                </div>
+                                                {/* Layout Contrast Button */}
+                                                <div style={{
+                                                    position: "relative",
+                                                    padding: "3px 6px",
+                                                    fontSize: 10,
+                                                    fontWeight: 600,
+                                                    borderRadius: 4,
+                                                    background: mockStep >= 4 ? "#16a34a" : "rgba(32,30,36,0.05)",
+                                                    color: mockStep >= 4 ? "#ffffff" : "#8a8886",
+                                                    border: "1px solid rgba(32,30,36,0.08)",
+                                                    transition: "all 0.2s ease",
+                                                    transform: mockStep === 4 ? "scale(0.9)" : "scale(1)",
+                                                    boxShadow: mockStep === 4 ? "0 0 8px rgba(22,163,74,0.3)" : "none",
+                                                }}>
+                                                    ◐
+                                                    {mockStep === 4 && (
+                                                        <motion.div
+                                                            style={{
+                                                                position: "absolute",
+                                                                width: 30,
+                                                                height: 30,
+                                                                borderRadius: "50%",
+                                                                background: "rgba(22,163,74,0.15)",
+                                                                border: "2px solid #16a34a",
+                                                                pointerEvents: "none",
+                                                                left: "50%",
+                                                                top: "50%",
+                                                                marginLeft: -15,
+                                                                marginTop: -15,
+                                                            }}
+                                                            initial={{ scale: 0.3, opacity: 0.8 }}
+                                                            animate={{ scale: 1.5, opacity: 0 }}
+                                                            transition={{ duration: 0.6, repeat: Infinity }}
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Flight Search Params (Full UI look) */}
+                                        <div style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            background: "rgba(32,30,36,0.03)",
+                                            borderRadius: 8,
+                                            padding: "4px 8px",
+                                            fontSize: 8.5,
+                                            color: "#6b7280",
+                                            marginBottom: 2,
+                                        }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <span style={{ fontWeight: 600, color: "#374151" }}>JFK</span>
+                                                <span style={{ color: "#9ca3af" }}>⇄</span>
+                                                <span style={{ fontWeight: 600, color: "#374151" }}>LAX</span>
+                                            </div>
+                                            <div>June 15 • 1 Adult • Economy</div>
+                                        </div>
+
+                                        {/* Filters row */}
+                                        <div style={{
+                                            display: "flex",
+                                            gap: 4,
+                                            marginBottom: 2,
+                                        }}>
+                                            {["Stops", "Price", "Times", "Airlines"].map((filter, i) => (
+                                                <div key={i} style={{
+                                                    fontSize: 7.5,
+                                                    padding: "2px 6px",
+                                                    background: "#ffffff",
+                                                    border: "1px solid #e5e7eb",
+                                                    borderRadius: 4,
+                                                    color: "#4b5563",
+                                                }}>
+                                                    {filter}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Card 1 (Targeted & Dynamic) */}
+                                        <div style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: mockStep >= 3 ? 10 : 6,
+                                            padding: mockStep >= 3 ? "12px 14px" : "8px 10px",
+                                            background: mockStep >= 4 ? "#ffffff" : "#fafaf9",
+                                            borderRadius: 10,
+                                            border: mockStep >= 4 ? "1.5px solid #201e24" : "1px solid rgba(32,30,36,0.06)",
+                                            boxShadow: mockStep >= 4 ? "0 4px 12px rgba(32,30,36,0.06)" : "none",
+                                            transition: "all 0.3s ease",
+                                        }}>
+                                            {/* Flight header */}
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                                <span style={{
+                                                    fontSize: mockStep >= 3 ? 13 : 10,
+                                                    fontWeight: 700,
+                                                    color: "#201e24",
+                                                    transition: "font-size 0.3s ease"
+                                                }}>
+                                                    JFK → LAX (JetStream)
+                                                </span>
+                                                <span style={{
+                                                    fontSize: mockStep >= 3 ? 9 : 7.5,
+                                                    fontWeight: 600,
+                                                    color: mockStep >= 4 ? "#15803d" : "#16a34a",
+                                                    background: mockStep >= 4 ? "#dcfce7" : "#f0fdf4",
+                                                    padding: "1px 5px",
+                                                    borderRadius: 4,
+                                                    transition: "all 0.3s ease"
+                                                }}>
+                                                    Best Price
+                                                </span>
+                                            </div>
+
+                                            {/* Flight details row */}
+                                            <div style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "1fr auto 1fr",
+                                                gap: 6,
+                                                alignItems: "center",
+                                            }}>
+                                                <div>
+                                                    <div style={{
+                                                        fontSize: mockStep >= 3 ? 17 : 13,
+                                                        fontWeight: 800,
+                                                        color: "#201e24",
+                                                        transition: "font-size 0.3s ease"
+                                                    }}>06:30 AM</div>
+                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: "#8a8886" }}>JFK</div>
+                                                </div>
+                                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                                    <div style={{ fontSize: 7.5, color: "#a09f9c" }}>5h 20m</div>
+                                                    <div style={{ width: 35, height: 1.5, background: "#e2e1de", position: "relative" }}>
+                                                        <motion.div
+                                                            style={{
+                                                                position: "absolute", top: -2.5, left: 0,
+                                                                width: 6, height: 6, borderRadius: "50%",
+                                                                background: "#201e24",
+                                                            }}
+                                                            animate={{ left: ["0%", "90%"] }}
+                                                            transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+                                                        />
+                                                    </div>
+                                                    <div style={{ fontSize: 7, color: "#16a34a", fontWeight: 500 }}>Non-stop</div>
+                                                </div>
+                                                <div style={{ textAlign: "right" }}>
+                                                    <div style={{
+                                                        fontSize: mockStep >= 3 ? 17 : 13,
+                                                        fontWeight: 800,
+                                                        color: "#201e24",
+                                                        transition: "font-size 0.3s ease"
+                                                    }}>11:50 AM</div>
+                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: "#8a8886" }}>LAX</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Price and Book button */}
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+                                                <div style={{
+                                                    fontSize: mockStep >= 3 ? 16 : 12,
+                                                    fontWeight: 800,
+                                                    color: "#201e24",
+                                                    transition: "font-size 0.3s ease"
+                                                }}>$127</div>
+                                                <div style={{
+                                                    padding: mockStep >= 3 ? "5px 10px" : "3px 6px",
+                                                    background: mockStep >= 4 ? "#16a34a" : "#201e24",
+                                                    color: "#f5f4f0",
+                                                    borderRadius: 5,
+                                                    fontSize: mockStep >= 3 ? 9.5 : 8,
+                                                    fontWeight: 600,
+                                                    transition: "all 0.3s ease"
+                                                }}>
+                                                    Book Now
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Card 2 (Alternative Option, Static) */}
+                                        <div style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 5,
+                                            padding: "8px 10px",
+                                            background: "#fafaf9",
+                                            borderRadius: 10,
+                                            border: "1px solid rgba(32,30,36,0.04)",
+                                            opacity: 0.5,
+                                            transition: "all 0.3s ease",
+                                        }}>
+                                            {/* Flight header */}
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                                <span style={{ fontSize: 9.5, fontWeight: 600, color: "#4b5563" }}>
+                                                    JFK → LAX (United Airlines)
+                                                </span>
+                                            </div>
+
+                                            {/* Flight details row */}
+                                            <div style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "1fr auto 1fr",
+                                                gap: 6,
+                                                alignItems: "center",
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>08:15 AM</div>
+                                                    <div style={{ fontSize: 7.5, color: "#9ca3af" }}>JFK</div>
+                                                </div>
+                                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                                    <div style={{ fontSize: 7, color: "#9ca3af" }}>6h 40m</div>
+                                                    <div style={{ width: 35, height: 1, background: "#e5e7eb" }} />
+                                                    <div style={{ fontSize: 6.5, color: "#9ca3af" }}>1 stop (ORD)</div>
+                                                </div>
+                                                <div style={{ textAlign: "right" }}>
+                                                    <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>02:55 PM</div>
+                                                    <div style={{ fontSize: 7.5, color: "#9ca3af" }}>LAX</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Price */}
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 1 }}>
+                                                <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>$154</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Scanner Overlay during scanning step */}
+                                        {mockStep === 1 && (
+                                            <motion.div
+                                                style={{
+                                                    position: "absolute",
+                                                    left: 0,
+                                                    right: 0,
+                                                    height: 3,
+                                                    background: "linear-gradient(90deg, rgba(32,30,36,0) 0%, rgba(32,30,36,0.3) 50%, rgba(32,30,36,0) 100%)",
+                                                }}
+                                                animate={{ top: ["0%", "100%"] }}
+                                                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                                            />
+                                        )}
+
+                                        {/* Mouse Cursor */}
+                                        <motion.div
+                                            style={{
+                                                position: "absolute",
+                                                pointerEvents: "none",
+                                                zIndex: 50,
+                                            }}
+                                            animate={{
+                                                x: mockStep === 0 ? 300 : mockStep === 1 ? 170 : mockStep === 2 ? 285 : mockStep === 3 ? 220 : mockStep === 4 ? 313 : 300,
+                                                y: mockStep === 0 ? 180 : mockStep === 1 ? 130 : mockStep === 2 ? 24 : mockStep === 3 ? 80 : mockStep === 4 ? 24 : 180,
+                                                opacity: (mockStep === 0 || mockStep === 5) ? 0 : 1,
+                                            }}
+                                            transition={{ duration: 0.8, ease: "easeInOut" }}
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                                <path d="M4 4l7.67 18.25 2.55-7.7 7.7-2.55L4 4z" fill="#201e24" stroke="#ffffff" strokeWidth="2.5" />
+                                            </svg>
+                                        </motion.div>
+                                    </div>
+
+                                    {/* Navis AI Panel Sidebar (Right) */}
+                                    <div style={{
+                                        width: 180,
+                                        background: "#201e24",
+                                        color: "#f5f4f0",
+                                        borderLeft: "1px solid rgba(255,255,255,0.08)",
+                                        padding: "12px 10px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 10,
+                                        height: "100%",
+                                        textAlign: "left",
+                                    }}>
+                                        {/* AI Header */}
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                            <span style={{
+                                                width: 6, height: 6, borderRadius: "50%",
+                                                background: mockStep === 5 ? "#10b981" : "#a78bfa",
+                                                boxShadow: mockStep === 5 ? "0 0 6px #10b981" : "0 0 6px #a78bfa",
+                                                animation: "pulseDot 1.5s infinite"
+                                            }} />
+                                            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: "#a1a1aa", textTransform: "uppercase" }}>
+                                                Navis AI Panel
+                                            </span>
+                                        </div>
+
+                                        {/* User prompt box */}
+                                        <div style={{
+                                            background: "rgba(255,255,255,0.05)",
+                                            border: "1px solid rgba(255,255,255,0.08)",
+                                            borderRadius: 6,
+                                            padding: "6px 8px",
+                                        }}>
+                                            <div style={{ fontSize: 7, color: "#8a8886", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 2 }}>
+                                                User Request
+                                            </div>
+                                            <div style={{ fontSize: 9.5, color: "#ffffff", fontWeight: 500, lineHeight: 1.3 }}>
+                                                "make booking page better, increase size"
+                                            </div>
+                                        </div>
+
+                                        {/* Steps list */}
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, marginTop: 4 }}>
+                                            {[
+                                                { text: "Scanning page structure...", doneText: "Scanned page structure" },
+                                                { text: "Increasing text size...", doneText: "Clicked 'Increase Size'" },
+                                                { text: "Optimizing contrast...", doneText: "Optimized contrast & layout" },
+                                                { text: "Completing changes...", doneText: "Done! Page optimized" }
+                                            ].map((item, idx) => {
+                                                const stepNum = idx + 1;
+                                                const isActive = mockStep === stepNum;
+                                                const isDone = mockStep > stepNum;
+                                                const isPending = mockStep < stepNum;
+
+                                                if (isPending) return null;
+
+                                                return (
+                                                    <div key={idx} style={{
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 6,
+                                                        fontSize: 9,
+                                                        fontWeight: isActive ? 600 : 400,
+                                                        color: isDone ? "#a1a1aa" : isActive ? "#ffffff" : "#8a8886",
+                                                        transition: "all 0.3s ease",
+                                                    }}>
+                                                        {isDone ? (
+                                                            <span style={{ color: "#10b981", fontWeight: "bold" }}>✓</span>
+                                                        ) : (
+                                                            <span style={{
+                                                                display: "inline-block",
+                                                                width: 5, height: 5, borderRadius: "50%",
+                                                                background: "#a78bfa",
+                                                            }} />
+                                                        )}
+                                                        <span>{isDone ? item.doneText : item.text}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Store Buttons */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, width: "100%", maxWidth: 420, marginBottom: 18 }}>
+                                <button
+                                    onClick={async () => {
+                                        const url = "https://chromewebstore.google.com/search/Everfern%20Navis";
+                                        if ((window as any).electronAPI?.shell?.openExternal) {
+                                            await (window as any).electronAPI.shell.openExternal(url);
+                                        } else {
+                                            window.open(url, "_blank");
+                                        }
+                                    }}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 10,
+                                        padding: "14px 18px",
+                                        borderRadius: 14,
+                                        background: "#ffffff",
+                                        border: "1px solid rgba(32,30,36,0.1)",
+                                        cursor: "pointer",
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        color: "#201e24",
+                                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                                        transition: "all 0.15s ease",
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.background = "rgba(32,30,36,0.02)";
+                                        e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.background = "#ffffff";
+                                        e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
+                                    }}
+                                >
+                                    {/* Chrome Grey SVG */}
+                                    <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+                                        <circle cx="24" cy="24" r="22" fill="#d4d4d4"/>
+                                        <circle cx="24" cy="24" r="9" fill="#fff"/>
+                                        <circle cx="24" cy="24" r="5.5" fill="#a3a3a3"/>
+                                        <path d="M24 2C14 2 5.7 8.4 3 17l12.5.5L24 15a9 9 0 0 1 8.5 5H46A22 22 0 0 0 24 2z" fill="#b0b0b0"/>
+                                        <path d="M32.5 20A9 9 0 0 1 28 32.5L34 44A22 22 0 0 0 46 20H32.5z" fill="#c0c0c0"/>
+                                        <path d="M20 32.5A9 9 0 0 1 15.5 17L3 17a22 22 0 0 0 31 27l-6-11.5z" fill="#9a9a9a"/>
+                                    </svg>
+                                    Add to Chrome
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        const url = "https://addons.mozilla.org/en-US/firefox/addon/everfern-navis/";
+                                        if ((window as any).electronAPI?.shell?.openExternal) {
+                                            await (window as any).electronAPI.shell.openExternal(url);
+                                        } else {
+                                            window.open(url, "_blank");
+                                        }
+                                    }}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 10,
+                                        padding: "14px 18px",
+                                        borderRadius: 14,
+                                        background: "#ffffff",
+                                        border: "1px solid rgba(32,30,36,0.1)",
+                                        cursor: "pointer",
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        color: "#201e24",
+                                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                                        transition: "all 0.15s ease",
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.background = "rgba(32,30,36,0.02)";
+                                        e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.background = "#ffffff";
+                                        e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
+                                    }}
+                                >
+                                    {/* Firefox Grey SVG */}
+                                    <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+                                        <circle cx="24" cy="24" r="22" fill="#c8c8c8"/>
+                                        <path d="M42 16c.5-3-1-6.5-4-8-2 4-4.5 6.5-5.5 11.5-2 7-7 11-11 12-6 1.5-12-3-12-9 0-6 6-10 10-10 3 0 5 2 5 3s-2 2-3 0c-1-1.5-3-1-4 1s0 4 2 4c5 0 8-3 9-7C30 5 22 2 22 2s9-2 17 3c4 3 5 7 3 11z" fill="#a0a0a0"/>
+                                        <path d="M14 24c0 6 4 11 10 11s10-5 10-11-4-11-10-11-10 5-10 11z" fill="#b8b8b8" fillOpacity="0.4"/>
+                                    </svg>
+                                    Add to Firefox
+                                </button>
+                            </div>
+
+                            {/* GitHub Link */}
+                            <button
+                                onClick={async () => {
+                                    const url = "https://github.com/Everfern-AI/Navis-Extension";
+                                    if ((window as any).electronAPI?.shell?.openExternal) {
+                                        await (window as any).electronAPI.shell.openExternal(url);
+                                    } else {
+                                        window.open(url, "_blank");
+                                    }
+                                }}
+                                style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    fontSize: 12,
+                                    color: "#8a8886",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    textDecoration: "none",
+                                    marginBottom: 24,
+                                    fontWeight: 500,
+                                    transition: "color 0.15s",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.color = "#201e24"}
+                                onMouseLeave={e => e.currentTarget.style.color = "#8a8886"}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle" }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                                View source code on GitHub
+                            </button>
+
+                            {/* Continue button */}
+                            <button
+                                onClick={() => setStep(7)}
+                                style={{
+                                    width: "100%",
+                                    maxWidth: 420,
+                                    height: 52,
+                                    background: "#201e24",
+                                    color: "#f5f4f0",
+                                    borderRadius: 12,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 8,
+                                    cursor: "pointer",
+                                    border: "none",
+                                    transition: "background 0.15s",
+                                    letterSpacing: "0.01em",
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.background = "#111111")}
+                                onMouseLeave={e => (e.currentTarget.style.background = "#201e24")}
+                            >
+                                Continue <ArrowRight size={16} strokeWidth={2.5} />
+                            </button>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 7: Privacy & Security ── */}
+                    {step === 7 && (
+                        <motion.div
+                            key="step7"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(6)} />
                             </div>
 
                             {/* Static Padlock SVG */}

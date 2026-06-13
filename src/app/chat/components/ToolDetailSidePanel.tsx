@@ -2135,15 +2135,27 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
   }, [safe.length, currentIndex]);
 
   if (safe.length === 0) {
+    const isNavis = toolName.toLowerCase().includes('navis') || toolName.toLowerCase().includes('fern');
+    const isComputer = toolName.toLowerCase().includes('computer');
     return (
       <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-          <SectionLabel>Browser session</SectionLabel>
+          <SectionLabel>{isComputer ? 'Desktop session' : 'Browser session'}</SectionLabel>
           <EmptyState
             icon={CameraOff}
-            title={thoughts.length > 0 ? 'DOM-first run' : 'No captures yet'}
-            description={thoughts.length > 0 ? `${toolName} is using extension DOM control, so screenshots appear only when visual fallback is needed.` : `${toolName} ran but didn't produce screenshots during this session.`}
-            note={thoughts.length > 0 ? 'Watch the live thinking rail for current page state and actions.' : 'Frames appear here in real-time as the browser navigates.'}
+            title={isNavis && thoughts.length > 0 ? 'DOM-first run' : thoughts.length > 0 ? 'Session Active' : 'No captures yet'}
+            description={isNavis && thoughts.length > 0
+              ? `${toolName} is using extension DOM control, so screenshots appear only when visual fallback is needed.`
+              : thoughts.length > 0
+                ? `${toolName} is running in the background. Screenshots will appear as actions are executed.`
+                : `${toolName} ran but didn't produce screenshots during this session.`}
+            note={isNavis && thoughts.length > 0
+              ? 'Watch the live thinking rail for current page state and actions.'
+              : thoughts.length > 0
+                ? 'Watch the live thinking rail for current desktop actions.'
+                : isComputer 
+                  ? 'Screenshots appear here in real-time as the desktop is controlled.'
+                  : 'Frames appear here in real-time as the browser navigates.'}
           />
         </div>
         <NavisThinkingRail events={thoughts} />
