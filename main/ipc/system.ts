@@ -374,6 +374,28 @@ export function registerSystemHandlers() {
     return memorySaveTool.execute({ content, metadata });
   });
 
+  ipcMain.handle('memory:get-graph', async () => {
+    try {
+      const { loadMemoryGraph } = require('../agent/learning/memory/persistent-memory');
+      return loadMemoryGraph();
+    } catch (err: any) {
+      console.error('[IPC] memory:get-graph error:', err);
+      return { nodes: [], edges: [] };
+    }
+  });
+
+  ipcMain.handle('memory:delete-node', async (_event, id: string) => {
+    try {
+      const { deleteMemoryNode } = require('../agent/learning/memory/persistent-memory');
+      deleteMemoryNode(id);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[IPC] memory:delete-node error:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+
   ipcMain.handle('system:wipe-account', async () => {
     const everfernDir = path.join(os.homedir(), '.everfern');
     try {

@@ -2,6 +2,7 @@ import { AgentTool, ToolResult } from '../runner/types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { addOrUpdateMemory } from '../learning/memory/persistent-memory';
 
 function getMemoryDir(): string {
   const dir = path.join(os.homedir(), '.everfern', 'memory');
@@ -28,17 +29,7 @@ export const rememberFactTool: AgentTool = {
       const category = (args.category as string || 'General').trim();
       if (!fact) return { success: false, output: 'No fact provided.' };
 
-      const dir = getMemoryDir();
-      const filePath = path.join(dir, 'PROJECT_STATE.md');
-      
-      if (!fs.existsSync(filePath)) {
-        fs.writeFileSync(filePath, `# Project State & Memory\n\nThis file persists general facts, system rules, and design choices.\n\n`, 'utf-8');
-      }
-
-      const timestamp = new Date().toISOString();
-      const entry = `\n### [${category}] (${timestamp})\n- ${fact}\n`;
-
-      fs.appendFileSync(filePath, entry, 'utf-8');
+      addOrUpdateMemory('fact', category, fact, 'PROJECT_STATE.md');
       return {
         success: true,
         output: `Successfully saved fact under category "${category}" to PROJECT_STATE.md`
@@ -121,17 +112,7 @@ export const updateProfileTool: AgentTool = {
       const category = (args.category as string || 'General').trim();
       if (!preference) return { success: false, output: 'No preference details provided.' };
 
-      const dir = getMemoryDir();
-      const filePath = path.join(dir, 'USER_PROFILE.md');
-
-      if (!fs.existsSync(filePath)) {
-        fs.writeFileSync(filePath, `# User Profile & Preferences\n\nThis file persists user preferences, habits, and constraints across sessions.\n\n`, 'utf-8');
-      }
-
-      const timestamp = new Date().toISOString();
-      const entry = `\n### [${category}] (${timestamp})\n- ${preference}\n`;
-
-      fs.appendFileSync(filePath, entry, 'utf-8');
+      addOrUpdateMemory('preference', category, preference, 'USER_PROFILE.md');
       return {
         success: true,
         output: `Successfully updated user preference under category "${category}" in USER_PROFILE.md`

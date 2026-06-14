@@ -37,7 +37,7 @@ export class LightweightCheckpointer extends BaseCheckpointSaver {
         );
       } else {
         row = await dbOps.get(
-          'SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1',
+          'SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY rowid DESC LIMIT 1',
           [threadId]
         );
       }
@@ -69,7 +69,7 @@ export class LightweightCheckpointer extends BaseCheckpointSaver {
 
     try {
       const rows = await dbOps.all(
-        `SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC ${limit ? `LIMIT ${limit}` : ''}`,
+        `SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY rowid DESC ${limit ? `LIMIT ${limit}` : ''}`,
         [threadId]
       );
 

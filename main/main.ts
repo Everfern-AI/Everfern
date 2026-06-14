@@ -12,7 +12,7 @@
  *     └────────── ChatHistoryStore ─────────────┘
  */
 
-import { app, BrowserWindow, ipcMain, dialog, protocol, net, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, net, clipboard, Notification, Menu, shell } from 'electron';
 
 // Handle squirrel startup events for Windows
 if (process.platform === 'win32') {
@@ -68,7 +68,6 @@ import { listSites, readSiteFile, writeSiteFile, deleteSite } from './store/site
 import { searchChatVectors, getChatVectors, deleteChatVectors, getVectorStats, initChatVectorDb, getVectorStats as getVecStats } from './store/chat-vectors';
 import { registerContextEngine, setDefaultContextEngine } from './context-engine';
 import { VectorContextEngine } from './context-engine/vector';
-import { shell } from 'electron';
 import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
@@ -497,6 +496,84 @@ async function autoStartEnabledBots(): Promise<void> {
   }
 }
 
+/**
+ * Set up a standard macOS application menu to support native window management
+ * and keyboard shortcuts (Cmd+C, Cmd+V, Cmd+M, etc.).
+ */
+function setupMacOSMenu() {
+  if (process.platform !== 'darwin') return;
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' },
+        { type: 'separator' },
+        { role: 'window' }
+      ]
+    },
+    {
+      role: 'help',
+      submenu: [
+        {
+          label: 'Learn More',
+          click: async () => {
+            await shell.openExternal('https://everfern.com');
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 // ── App lifecycle ───────────────────────────────────────────────────
 
 import { VoiceOverlayManager } from './voice-overlay';
@@ -509,6 +586,9 @@ import { schedulerService } from './integrations/scheduler-service';
 
 app.whenReady().then(async () => {
   console.log('[App] App ready, starting initialization...');
+
+  // Set up macOS application menu
+  setupMacOSMenu();
 
   // Start the scheduler service
   schedulerService.start();
@@ -790,6 +870,11 @@ app.on('activate', () => {
   // On macOS, re-create the window when the dock icon is clicked and no windows are open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  } else if (mainWindow) {
+    // If the window exists but is hidden or minimized, show and focus it
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   }
 });
 

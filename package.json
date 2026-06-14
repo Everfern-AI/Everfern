@@ -14,6 +14,8 @@
     "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=4 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
     "build:next": "next build",
     "build:electron": "npm run build:electron-ts && electron-builder",
+    "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
+    "build:macos": "npm run build:next && npm run build:electron-ts && electron-builder --macos",
     "build": "npm run build:next && npm run build:electron-ts && electron-builder",
     "rebuild:electron": "cross-env npm_config_runtime=electron npm_config_target=41.0.3 npm_config_disturl=https://electronjs.org/headers npm rebuild better-sqlite3 sqlite-vec uiohook-napi @jitsi/robotjs sharp --build-from-source",
     "start": "electron-forge start",
@@ -30,6 +32,17 @@
     "copyright": "Copyright © 2026 EverFern",
     "npmRebuild": true,
     "icon": "public/images/logos/everfern.ico",
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/@jitsi/robotjs/**/*",
+      "**/node_modules/screenshot-desktop/**/*",
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/sqlite-vec/**/*",
+      "**/node_modules/uiohook-napi/**/*",
+      "**/node_modules/canvas/**/*"
+    ],
     "directories": {
       "output": "release"
     },
@@ -81,6 +94,15 @@
         "zip"
       ],
       "icon": "public/images/logos/everfern.icns"
+    },
+    "linux": {
+      "category": "Productivity",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "icon": "public/images/logos/everfern.png"
     }
   },
   "dependencies": {

@@ -374,28 +374,19 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
     } catch (e) {
-        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting brace-matching extraction:", e);
+        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
         
-        // 1. Try to extract valid JSON objects using brace-matching
-        let depth = 0;
+        // 1. Try to extract valid JSON objects using brace-matching with reset on new '{'
+        // Resetting startIdx on '{' allows us to skip unclosed/truncated JSON objects and capture subsequent valid ones.
         let startIdx = -1;
         const candidates: string[] = [];
         
         for (let i = 0; i < innerText.length; i++) {
             if (innerText[i] === '{') {
-                if (depth === 0) {
-                    startIdx = i;
-                }
-                depth++;
-            } else if (innerText[i] === '}') {
-                depth--;
-                if (depth === 0 && startIdx !== -1) {
-                    candidates.push(innerText.slice(startIdx, i + 1));
-                    startIdx = -1;
-                } else if (depth < 0) {
-                    depth = 0;
-                    startIdx = -1;
-                }
+                startIdx = i; // Reset startIdx to the newest '{'
+            } else if (innerText[i] === '}' && startIdx !== -1) {
+                candidates.push(innerText.slice(startIdx, i + 1));
+                startIdx = -1; // Reset after finding a match
             }
         }
         
@@ -413,12 +404,40 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
         
-        // 2. If we got nothing, fall back to line parsing with aggressive JSON token scrubbing
+        // 2. Salvage partially truncated/malformed JSON lines (e.g. unclosed quotes in fields)
+        const lines = innerText.split('\n');
+        for (const line of lines) {
+            // Match: "icon": "🔊", "text": "Turn up the
+            const hasIconAndText = line.match(/["']icon["']\s*:\s*["']([^"']+)["']\s*,\s*["']text["']\s*:\s*["']?([^"'\n}]+)/i);
+            if (hasIconAndText) {
+                const icon = hasIconAndText[1].trim();
+                let text = hasIconAndText[2].trim();
+                // Clean up any trailing quotes or commas
+                text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+                
+                if (text && !followUps.some(f => f.text.toLowerCase() === text.toLowerCase())) {
+                    followUps.push({ icon, text });
+                }
+                continue;
+            }
+            
+            // Match: "text": "Turn up the", "icon": "🔊"
+            const hasTextAndIcon = line.match(/["']text["']\s*:\s*["']([^"']+)["']\s*,\s*["']icon["']\s*:\s*["']?([^"'\n}]+)/i);
+            if (hasTextAndIcon) {
+                const textVal = hasTextAndIcon[1].trim();
+                let icon = hasTextAndIcon[2].trim();
+                icon = icon.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+                
+                if (textVal && !followUps.some(f => f.text.toLowerCase() === textVal.toLowerCase())) {
+                    followUps.push({ icon, text: textVal });
+                }
+            }
+        }
+        
+        // 3. Last fallback: line-by-line plain text parsing if we still got nothing
         if (followUps.length === 0) {
-            const lines = innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             for (const line of lines) {
                 const cleanLine = line.replace(/^[-\s*[\]{},"]+/, '').trim();
-                // Also ignore lines containing only json keys like "icon" or "text" or empty quotes
                 if (cleanLine && 
                     !cleanLine.startsWith('"icon"') && 
                     !cleanLine.startsWith('"text"') && 

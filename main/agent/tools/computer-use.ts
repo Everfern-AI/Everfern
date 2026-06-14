@@ -154,44 +154,40 @@ const COMPUTER_USE_OUTPUT_INSTRUCTIONS = [
 ].join("\n");
 
 function brainPrompt(objective: string): string {
-  return [
-    "You are a desktop task agent. Look at the screenshot and decide the next action.",
-    "",
-    "Rules:",
-    "1. If the task is COMPLETE (song playing, file saved, result displayed, app open), output ONLY: done",
-    "2. Otherwise output ONLY a plain-English instruction — no coords, no explanation.",
-    "3. Do NOT repeat failed actions.",
-    "4. Be specific: 'click the search bar' beats 'click something'.",
-    "",
-    `Task: ${objective}`,
-    "",
-    "Output done if complete, otherwise plain English action.",
-  ].join("\n");
+  return `You are a desktop task agent. Look at the screenshot and decide the next action.
+
+Rules:
+1. If the task is COMPLETE (song playing, file saved, result displayed, app open), output ONLY: done
+2. Otherwise output ONLY a plain-English instruction — no coords, no explanation.
+3. Do NOT repeat failed actions.
+4. Be specific: 'click the search bar' beats 'click something'.
+
+Task: ${objective}
+
+Output done if complete, otherwise plain English action.`;
 }
 
-const HAND_PROMPT = [
-  "Parse this instruction and output a JSON array of action strings.",
-  'Example: ["click(450,380)", "type(search query)", "drag([100,200], [300,400])", "hold(500,600, 1000)"]',
-  "Note: drag takes [start_x, start_y], [end_x, end_y]. hold takes x, y, time_ms.",
-  'Another example: ["click(200,500)", "press(space)", "hold_w", "release_w"]',
-  "Format rules:",
-  "- click(x,y) / move(x,y) / smooth(x,y) — TWO numbers only, no text. click(450,380) NOT click(start_box=...)",
-  "- type(text) — text in parentheses",
-  "- press(key) — single key name",
-  "- hold(x, y, ms) — hold mouse at x,y for ms",
-  "- drag([x1,y1], [x2,y2]) — drag mouse from x1,y1 to x2,y2",
-  "- Booleans/flags like start_box= are not allowed",
-  "Valid actions:",
-  "click(x,y) | move(x,y) | smooth(x,y) | double_click(x,y)",
-  "type(text) | press(key) | scroll(up/down)",
-  "right_click() | left_click()",
-  "ctrl_a() | ctrl_c() | ctrl_v() | win()",
-  "alt tab | alt f4",
-  "hold_w | release_w | hold_a | release_a | hold_d | release_d | hold_s | release_s",
-  "press(enter) | press(escape) | press(tab) | press(space)",
-  "press(1) through press(9) | sprint() | sneak() | interact() | center()",
-  "Output ONLY the JSON array. No explanation.",
-].join("\n");
+const HAND_PROMPT = `Parse this instruction and output a JSON array of action strings.
+Example: ["click(450,380)", "type(search query)", "drag([100,200], [300,400])", "hold(500,600, 1000)"]
+Note: drag takes [start_x, start_y], [end_x, end_y]. hold takes x, y, time_ms.
+Another example: ["click(200,500)", "press(space)", "hold_w", "release_w"]
+Format rules:
+- click(x,y) / move(x,y) / smooth(x,y) — TWO numbers only, no text. click(450,380) NOT click(start_box=...)
+- type(text) — text in parentheses
+- press(key) — single key name
+- hold(x, y, ms) — hold mouse at x,y for ms
+- drag([x1,y1], [x2,y2]) — drag mouse from x1,y1 to x2,y2
+- Booleans/flags like start_box= are not allowed
+Valid actions:
+click(x,y) | move(x,y) | smooth(x,y) | double_click(x,y)
+type(text) | press(key) | scroll(up/down)
+right_click() | left_click()
+ctrl_a() | ctrl_c() | ctrl_v() | win()
+alt tab | alt f4
+hold_w | release_w | hold_a | release_a | hold_d | release_d | hold_s | release_s
+press(enter) | press(escape) | press(tab) | press(space)
+press(1) through press(9) | sprint() | sneak() | interact() | center()
+Output ONLY the JSON array. No explanation.`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -366,25 +362,14 @@ class ComputerUseTool {
     const coords = parseXy(text);
 
     if (coords && has(/click/i, text)) {
-      let [x, y] = coords;
-
-      // Apply tars-test.py scaling logic
+      // Apply scaling logic
       if (!robot) {
         throw new Error(`robotjs unavailable - cannot execute click`);
       }
 
-      const screenSize = robot.getScreenSize();
-      const SCREEN_WIDTH = screenSize.width;
-      const SCREEN_HEIGHT = screenSize.height;
+      const [rx, ry] = this.absoluteXy(coords);
 
-      const rx = this.client?.provider === "everfern" 
-        ? (Math.abs(x) > SCREEN_WIDTH ? Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH) : x)
-        : Math.floor((Math.abs(x) / 1000.0) * SCREEN_WIDTH);
-      const ry = this.client?.provider === "everfern"
-        ? (Math.abs(y) > SCREEN_HEIGHT ? Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT) : y)
-        : Math.floor((Math.abs(y) / 1000.0) * SCREEN_HEIGHT);
-
-      console.log(`[ComputerUse] Click: input=(${x},${y}) screen=(${SCREEN_WIDTH}x${SCREEN_HEIGHT}) final=(${rx},${ry})`);
+      console.log(`[ComputerUse] Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
 
       robot.moveMouse(rx, ry);
       robot.mouseClick("left");
@@ -1041,13 +1026,15 @@ class ComputerUseTool {
     const iw     = vp.image_width;
     const ih     = vp.image_height;
 
+    const isNormalized = this.client?.provider === "openrouter";
+
     if (!dw || !dh) {
       console.warn("[Coord] Viewport not initialized - using offset-only fallback");
     }
 
     if (dw && dh) {
-      if (x <= 1000 && y <= 1000) {
-        // Normalised 0–1000 coords
+      if (isNormalized && x <= 1000 && y <= 1000) {
+        // Normalised 0–1000 coords (UI-TARS raw output via OpenRouter)
         const absX = left + Math.floor((x / 1000) * dw);
         const absY = top  + Math.floor((y / 1000) * dh);
         console.log(`[Coord] rel=(${x},${y}) display=(${dw}x${dh}) offset=(${left},${top}) → abs=(${absX},${absY})`);
@@ -1447,16 +1434,16 @@ class ComputerUseAgent {
       if (!line || line.length > 200) continue;
 
       // Ported normalization from tars-test.py
-      // Handle click(start_box='(896,1034)') -> click(1034,896)
+      // Handle click(start_box='(896,1034)') -> click(896,1034)
       const startBoxMatch = line.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
       if (startBoxMatch) {
-        line = `click(${startBoxMatch[2]},${startBoxMatch[1]})`;
+        line = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
       }
 
-      // Handle click((896,1034)) -> click(1034,896)
+      // Handle click((896,1034)) -> click(896,1034)
       const nestedMatch = line.match(/click\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)/i);
       if (nestedMatch) {
-        line = `click(${nestedMatch[2]},${nestedMatch[1]})`;
+        line = `click(${nestedMatch[1]},${nestedMatch[2]})`;
       }
 
       if (validPatterns.some(p => p.test(line))) {

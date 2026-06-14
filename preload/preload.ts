@@ -385,6 +385,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Memory ───────────────────────────────────────────────────────
   memory: {
     saveDirect: (content: string, metadata?: string) => ipcRenderer.invoke('memory:save-direct', content, metadata),
+    getGraph: () => ipcRenderer.invoke('memory:get-graph'),
+    deleteNode: (id: string) => ipcRenderer.invoke('memory:delete-node', id),
   },
 
   // ── Artifacts ────────────────────────────────────────────────
@@ -707,6 +709,8 @@ export type ElectronAPI = {
   };
   memory: {
     saveDirect: (content: string, metadata?: string) => Promise<{ success: boolean; output: string }>;
+    getGraph: () => Promise<any>;
+    deleteNode: (id: string) => Promise<{ success: boolean; error?: string }>;
   };
   artifacts: {
     list:   (chatId?: string) => Promise<any[]>;

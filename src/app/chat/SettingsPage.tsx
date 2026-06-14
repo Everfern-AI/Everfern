@@ -38,6 +38,7 @@ const navSections = [
     { id: 'voice', label: 'Voice Mode', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎤</span> },
     { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon },
     { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon },
+    { id: 'memory', label: 'Memory Graph', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧠</span> },
     { id: 'skills', label: 'Custom Skills', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧩</span> },
     { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
@@ -1869,6 +1870,619 @@ export default function SettingsPage({
         );
     };
 
+    const MemorySection = () => {
+        const [graph, setGraph] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
+        const [isLoading, setIsLoading] = useState(true);
+        const [selectedNode, setSelectedNode] = useState<any>(null);
+        const [filterType, setFilterType] = useState<string>('all');
+        const [searchQuery, setSearchQuery] = useState<string>('');
+        const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
+        const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+        const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+        const svgRef = React.useRef<SVGSVGElement>(null);
+
+        const fetchGraph = async () => {
+            setIsLoading(true);
+            try {
+                const res = await (window as any).electronAPI?.memory?.getGraph?.();
+                if (res) {
+                    setGraph(res);
+                }
+            } catch (e) {
+                console.error('Failed to load memory graph:', e);
+            }
+            setIsLoading(false);
+        };
+
+        useEffect(() => {
+            fetchGraph();
+        }, []);
+
+        const handleDeleteNode = async (nodeId: string) => {
+            if (!window.confirm('Are you sure you want EverFern to forget this memory?')) return;
+            try {
+                const res = await (window as any).electronAPI?.memory?.deleteNode?.(nodeId);
+                if (res?.success) {
+                    setSelectedNode(null);
+                    fetchGraph();
+                } else {
+                    alert('Failed to delete memory node.');
+                }
+            } catch (e) {
+                console.error('Delete error:', e);
+            }
+        };
+
+        const handleOpenFile = async (filePath: string) => {
+            try {
+                const res = await (window as any).electronAPI?.system?.openExternal?.("file://" + filePath);
+                if (res && !res.success) {
+                    alert(`Could not open file: ${res.error}`);
+                }
+            } catch (e) {
+                console.error('Open file error:', e);
+            }
+        };
+
+        const filteredNodes = graph.nodes.filter(n => {
+            const matchesType = filterType === 'all' || n.type === filterType;
+            const matchesSearch = !searchQuery || 
+                n.category.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (n.value && n.value.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (n.name && n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+            return matchesType && matchesSearch;
+        });
+
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredEdges = graph.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+
+        // Initialize positions
+        useEffect(() => {
+            if (filteredNodes.length === 0) return;
+            setNodePositions(prev => {
+                const next = { ...prev };
+                filteredNodes.forEach((node, idx) => {
+                    if (!next[node.id]) {
+                        const angle = (idx / filteredNodes.length) * 2 * Math.PI;
+                        const radius = 100 + Math.random() * 40;
+                        next[node.id] = {
+                            x: 300 + Math.cos(angle) * radius,
+                            y: 200 + Math.sin(angle) * radius
+                        };
+                    }
+                });
+                return next;
+            });
+        }, [filteredNodes]);
+
+        // Force simulation tick
+        useEffect(() => {
+            if (viewMode !== 'graph' || filteredNodes.length === 0) return;
+            let animationFrameId: number;
+
+            const tick = () => {
+                setNodePositions(prev => {
+                    const next = { ...prev };
+                    const k = 0.05;
+                    const length = 85;
+                    const repulsion = 400;
+                    const gravity = 0.02;
+
+                    const fx: Record<string, number> = {};
+                    const fy: Record<string, number> = {};
+                    filteredNodes.forEach(n => {
+                        fx[n.id] = 0;
+                        fy[n.id] = 0;
+                    });
+
+                    // Repulsion force
+                    for (let i = 0; i < filteredNodes.length; i++) {
+                        const u = filteredNodes[i];
+                        const posU = next[u.id];
+                        if (!posU) continue;
+
+                        for (let j = i + 1; j < filteredNodes.length; j++) {
+                            const v = filteredNodes[j];
+                            const posV = next[v.id];
+                            if (!posV) continue;
+
+                            const dx = posV.x - posU.x;
+                            const dy = posV.y - posU.y;
+                            const distSq = dx * dx + dy * dy || 1;
+                            const dist = Math.sqrt(distSq);
+
+                            const force = repulsion / distSq;
+                            const forceX = (dx / dist) * force;
+                            const forceY = (dy / dist) * force;
+
+                            fx[u.id] -= forceX;
+                            fy[u.id] -= forceY;
+                            fx[v.id] += forceX;
+                            fy[v.id] += forceY;
+                        }
+                    }
+
+                    // Attraction along edges
+                    filteredEdges.forEach(edge => {
+                        const posU = next[edge.source];
+                        const posV = next[edge.target];
+                        if (!posU || !posV) return;
+
+                        const dx = posV.x - posU.x;
+                        const dy = posV.y - posU.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+                        const force = k * (dist - length);
+                        const forceX = (dx / dist) * force;
+                        const forceY = (dy / dist) * force;
+
+                        fx[edge.source] += forceX;
+                        fy[edge.source] += forceY;
+                        fx[edge.target] -= forceX;
+                        fy[edge.target] -= forceY;
+                    });
+
+                    // Gravity
+                    filteredNodes.forEach(n => {
+                        const pos = next[n.id];
+                        if (!pos) return;
+                        fx[n.id] += (300 - pos.x) * gravity;
+                        fy[n.id] += (200 - pos.y) * gravity;
+                    });
+
+                    const updated = { ...next };
+                    filteredNodes.forEach(n => {
+                        if (n.id === draggedNodeId) return;
+                        const pos = updated[n.id];
+                        if (!pos) return;
+
+                        const vx = fx[n.id] * 0.85;
+                        const vy = fy[n.id] * 0.85;
+
+                        let newX = pos.x + vx;
+                        let newY = pos.y + vy;
+                        newX = Math.max(30, Math.min(570, newX));
+                        newY = Math.max(30, Math.min(370, newY));
+
+                        updated[n.id] = { x: newX, y: newY };
+                    });
+
+                    return updated;
+                });
+
+                animationFrameId = requestAnimationFrame(tick);
+            };
+
+            animationFrameId = requestAnimationFrame(tick);
+            return () => cancelAnimationFrame(animationFrameId);
+        }, [filteredNodes, filteredEdges, draggedNodeId, viewMode]);
+
+        const handleMouseDown = (nodeId: string, e: React.MouseEvent) => {
+            e.preventDefault();
+            setDraggedNodeId(nodeId);
+            setSelectedNode(graph.nodes.find(n => n.id === nodeId) || null);
+        };
+
+        const handleMouseMove = (e: React.MouseEvent) => {
+            if (!draggedNodeId || !svgRef.current) return;
+            const rect = svgRef.current.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            setNodePositions(prev => ({
+                ...prev,
+                [draggedNodeId]: { x, y }
+            }));
+        };
+
+        const handleMouseUp = () => {
+            setDraggedNodeId(null);
+        };
+
+        return (
+            <div>
+                <SectionTitle>Memory Graph</SectionTitle>
+                <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
+
+                {/* Summary counters */}
+                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e8e6d9' }}>
+                    {[
+                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: '#f59e0b' },
+                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: '#10b981' },
+                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: '#0ea5e9' },
+                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: '#64748b' }
+                    ].map(stat => (
+                        <div key={stat.label} style={{ fontSize: 12, color: '#4a4846', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stat.color }} />
+                            <strong>{stat.count}</strong> {stat.label}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Filters, Search, and Mode Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'preference', label: 'Preferences' },
+                            { id: 'habit', label: 'Habits' },
+                            { id: 'fact', label: 'Facts' },
+                            { id: 'file', label: 'Files' }
+                        ].map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => setFilterType(f.id)}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: '1px solid #e8e6d9',
+                                    backgroundColor: filterType === f.id ? '#111111' : '#ffffff',
+                                    color: filterType === f.id ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <Input
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            style={{ height: 34, padding: '4px 12px', borderRadius: 8, fontSize: 13, width: 150 }}
+                        />
+                        <div style={{ display: 'flex', border: '1px solid #e8e6d9', borderRadius: 8, overflow: 'hidden' }}>
+                            <button
+                                onClick={() => setViewMode('graph')}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: 'none',
+                                    backgroundColor: viewMode === 'graph' ? '#111111' : '#ffffff',
+                                    color: viewMode === 'graph' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Graph
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: 'none',
+                                    backgroundColor: viewMode === 'list' ? '#111111' : '#ffffff',
+                                    color: viewMode === 'list' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                List
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main View Area */}
+                {isLoading ? (
+                    <div style={{ textAlign: 'center', padding: 80, color: '#8a8886' }}>Loading Memory Graph...</div>
+                ) : graph.nodes.length === 0 ? (
+                    <Card style={{ padding: 40, textAlign: 'center', color: '#8a8886' }}>
+                        <span style={{ fontSize: 40 }}>🧠</span>
+                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: '#111111' }}>No memory established yet</h3>
+                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>As you chat with the agent and state your airline, payment, or general preferences, EverFern will automatically compile them here.</p>
+                    </Card>
+                ) : (
+                    <div style={{ display: 'flex', gap: 20, minHeight: 400 }}>
+                        {/* Graph/List container */}
+                        <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                            {viewMode === 'graph' ? (
+                                <svg
+                                    ref={svgRef}
+                                    width="100%"
+                                    height="400"
+                                    viewBox="0 0 600 400"
+                                    onMouseMove={handleMouseMove}
+                                    onMouseUp={handleMouseUp}
+                                    onMouseLeave={handleMouseUp}
+                                    style={{
+                                        border: '1px solid #e8e6d9',
+                                        borderRadius: 20,
+                                        backgroundColor: '#faf9f6',
+                                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.01)'
+                                    }}
+                                >
+                                    <defs>
+                                        <radialGradient id="graph-bg" cx="50%" cy="50%" r="50%">
+                                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
+                                            <stop offset="100%" stopColor="#faf9f6" stopOpacity="1" />
+                                        </radialGradient>
+                                    </defs>
+                                    <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
+
+                                    {/* Edges */}
+                                    {filteredEdges.map((edge, idx) => {
+                                        const sourcePos = nodePositions[edge.source];
+                                        const targetPos = nodePositions[edge.target];
+                                        if (!sourcePos || !targetPos) return null;
+                                        return (
+                                            <line
+                                                key={idx}
+                                                x1={sourcePos.x}
+                                                y1={sourcePos.y}
+                                                x2={targetPos.x}
+                                                y2={targetPos.y}
+                                                stroke="#e2e8f0"
+                                                strokeWidth="2"
+                                                strokeDasharray={edge.type === 'linked_to' ? '4,4' : 'none'}
+                                            />
+                                        );
+                                    })}
+
+                                    {/* Nodes */}
+                                    {filteredNodes.map(node => {
+                                        const pos = nodePositions[node.id];
+                                        if (!pos) return null;
+
+                                        const isSelected = selectedNode?.id === node.id;
+                                        let fill = '#f1f5f9';
+                                        let stroke = '#64748b';
+                                        let icon = '📄';
+
+                                        if (node.type === 'preference') {
+                                            fill = '#fef3c7';
+                                            stroke = '#f59e0b';
+                                            icon = '⭐️';
+                                        } else if (node.type === 'habit') {
+                                            fill = '#d1fae5';
+                                            stroke = '#10b981';
+                                            icon = '🔄';
+                                        } else if (node.type === 'fact') {
+                                            fill = '#e0f2fe';
+                                            stroke = '#0ea5e9';
+                                            icon = 'ℹ️';
+                                        }
+
+                                        return (
+                                            <g
+                                                key={node.id}
+                                                transform={`translate(${pos.x}, ${pos.y})`}
+                                                onMouseDown={(e) => handleMouseDown(node.id, e)}
+                                                style={{ cursor: draggedNodeId === node.id ? 'grabbing' : 'grab' }}
+                                            >
+                                                {isSelected && (
+                                                    <circle
+                                                        r="24"
+                                                        fill="none"
+                                                        stroke="#111111"
+                                                        strokeWidth="2"
+                                                        strokeDasharray="3,3"
+                                                    />
+                                                )}
+                                                <circle
+                                                    r="18"
+                                                    fill={fill}
+                                                    stroke={stroke}
+                                                    strokeWidth="2.5"
+                                                    style={{ filter: isSelected ? 'drop-shadow(0 4px 6px rgba(0,0,0,0.08))' : 'none' }}
+                                                />
+                                                <text
+                                                    textAnchor="middle"
+                                                    dy="4"
+                                                    style={{ fontSize: 13, userSelect: 'none' }}
+                                                >
+                                                    {icon}
+                                                </text>
+                                                <text
+                                                    y="28"
+                                                    textAnchor="middle"
+                                                    style={{
+                                                        fontSize: 10,
+                                                        fontWeight: 600,
+                                                        fill: isSelected ? '#111111' : '#71717a',
+                                                        userSelect: 'none',
+                                                        pointerEvents: 'none'
+                                                    }}
+                                                >
+                                                    {node.category.length > 15 ? `${node.category.slice(0, 12)}...` : node.category}
+                                                </text>
+                                            </g>
+                                        );
+                                    })}
+                                </svg>
+                            ) : (
+                                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e8e6d9', borderRadius: 20, backgroundColor: '#ffffff', maxHeight: 400 }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                        <thead>
+                                            <tr style={{ textAlign: 'left', borderBottom: '2px solid #e8e6d9', backgroundColor: '#faf9f6', position: 'sticky', top: 0, zIndex: 10 }}>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Type</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Category</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Value</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Linked File</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredNodes.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: '#8a8886' }}>
+                                                        No matching memories found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredNodes.map(node => {
+                                                    const isSelected = selectedNode?.id === node.id;
+                                                    return (
+                                                        <tr
+                                                            key={node.id}
+                                                            onClick={() => setSelectedNode(node)}
+                                                            style={{
+                                                                borderBottom: '1px solid #f0f0f0',
+                                                                cursor: 'pointer',
+                                                                backgroundColor: isSelected ? '#faf9f6' : 'transparent',
+                                                                transition: 'background-color 0.15s'
+                                                            }}
+                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = '#fbfbe6'; }}
+                                                            onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                        >
+                                                            <td style={{ padding: '12px 16px' }}>
+                                                                <span style={{
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: 8,
+                                                                    fontSize: 11,
+                                                                    fontWeight: 600,
+                                                                    textTransform: 'capitalize',
+                                                                    backgroundColor: node.type === 'preference' ? '#fef3c7' : node.type === 'habit' ? '#d1fae5' : node.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
+                                                                    color: node.type === 'preference' ? '#b45309' : node.type === 'habit' ? '#047857' : node.type === 'fact' ? '#0369a1' : '#475569'
+                                                                }}>
+                                                                    {node.type}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: '#111111' }}>{node.category}</td>
+                                                            <td style={{ padding: '12px 16px', color: '#4a4846', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {node.value}
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', color: '#8a8886', fontSize: 12 }}>
+                                                                {node.linkedFile || node.name || ''}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Details Sidebar panel */}
+                        <div style={{ width: 240, flexShrink: 0 }}>
+                            <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: '#e8e6d9', backgroundColor: '#fcfcfb', margin: 0 }}>
+                                {selectedNode ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
+                                        <div>
+                                            <span style={{
+                                                padding: '3px 8px',
+                                                borderRadius: 12,
+                                                fontSize: 10,
+                                                fontWeight: 700,
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                backgroundColor: selectedNode.type === 'preference' ? '#fef3c7' : selectedNode.type === 'habit' ? '#d1fae5' : selectedNode.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
+                                                color: selectedNode.type === 'preference' ? '#b45309' : selectedNode.type === 'habit' ? '#047857' : selectedNode.type === 'fact' ? '#0369a1' : '#475569'
+                                            }}>
+                                                {selectedNode.type}
+                                            </span>
+                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111', marginTop: 10, marginBottom: 4 }}>
+                                                {selectedNode.name || selectedNode.category}
+                                            </h3>
+                                            <span style={{ fontSize: 11, color: '#8a8886', fontFamily: 'monospace' }}>
+                                                ID: {selectedNode.id.split('_').slice(-1)[0]}
+                                            </span>
+                                        </div>
+                                        
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                            <div>
+                                                <Label>Value</Label>
+                                                <div style={{
+                                                    padding: 10,
+                                                    backgroundColor: '#ffffff',
+                                                    border: '1px solid #e8e6d9',
+                                                    borderRadius: 10,
+                                                    fontSize: 13,
+                                                    lineHeight: 1.4,
+                                                    color: '#201e24',
+                                                    wordBreak: 'break-word',
+                                                    maxHeight: 150,
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    {selectedNode.value}
+                                                </div>
+                                            </div>
+
+                                            {selectedNode.metadata && (
+                                                <div style={{ fontSize: 11, color: '#8a8886', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    {selectedNode.metadata.created && (
+                                                        <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>
+                                                    )}
+                                                    {selectedNode.metadata.lastUpdated && (
+                                                        <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+                                            {(selectedNode.linkedFile || selectedNode.type === 'file') && (
+                                                <button
+                                                    onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)}
+                                                    style={{
+                                                        padding: '8px 12px',
+                                                        backgroundColor: '#ffffff',
+                                                        color: '#111111',
+                                                        border: '1px solid #e8e6d9',
+                                                        borderRadius: 10,
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: 6,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                                >
+                                                    📄 Open File
+                                                </button>
+                                            )}
+                                            {selectedNode.type !== 'file' && (
+                                                <button
+                                                    onClick={() => handleDeleteNode(selectedNode.id)}
+                                                    style={{
+                                                        padding: '8px 12px',
+                                                        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                                        color: '#dc2626',
+                                                        border: '1px solid rgba(239, 68, 68, 0.15)',
+                                                        borderRadius: 10,
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: 6,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.14)'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'}
+                                                >
+                                                    🗑️ Forget Memory
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', textAlign: 'center', padding: '40px 10px' }}>
+                                        <span style={{ fontSize: 32, marginBottom: 12 }}>🧠</span>
+                                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                                            Click on a node in the graph or a row in the list to view its details.
+                                        </p>
+                                    </div>
+                                )}
+                            </Card>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const sectionContent: Record<string, React.ReactNode> = {
         general: GeneralSection(),
         openclaw: OpenClawSection(),
@@ -1877,6 +2491,7 @@ export default function SettingsPage({
         voice: VoiceSection(),
         vision: VisionSection(),
         embeddings: EmbeddingsSection(),
+        memory: <MemorySection />,
         skills: SkillsSection(),
         tools: (
             <div>

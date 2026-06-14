@@ -932,7 +932,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             {/* Plan notice */}
                             {isPlanFile && (
                                 <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, fontSize: 13, color: "#fbbf24", lineHeight: 1.5 }}>
-                                    âœï¸ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
+                                    ✍️ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
                                 </div>
                             )}
 

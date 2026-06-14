@@ -395,7 +395,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.displayName || tc.label || tc.toolName}`}
+                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.label || tc.displayName || tc.toolName}`}
                 className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
                     isSelected
                         ? 'bg-indigo-50 border border-indigo-200'
@@ -418,14 +418,14 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                         <img src="/assets/tool-search.svg" className="w-[18px] h-[18px] opacity-75" alt="Search" />
                     ) : statusIcon}
                 </div>
-
+ 
                 {/* Title and Results Count */}
                 <div className="flex items-center gap-2 flex-1 overflow-hidden">
                     {!isSearchTool && <span className="flex items-center text-[#6b7280]">{iconToDisplay}</span>}
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
                         <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[#888888]' : isError ? 'text-[#ef4444]' : 'text-[#111111]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
-                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.displayName || tc.label || tc.toolName)}
+                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.label || tc.displayName || tc.toolName)}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (
