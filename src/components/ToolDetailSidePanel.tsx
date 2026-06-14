@@ -8,7 +8,7 @@ import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
-  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image
+  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image, Brain
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
@@ -20,6 +20,7 @@ export const ToolType = {
   MCP_REGISTRY: 'mcp_registry',
   WEB_SEARCH: 'web_search',
   FERN: 'fern',
+  MEMORY: 'memory',
   TERMINAL: 'terminal',
   SKILL: 'skill',
   FILE_SYSTEM: 'file_system',
@@ -81,7 +82,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
-  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
+  if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
+  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
   if (n === 'todo_write') return ToolType.TODO_WRITE;
   if (n === 'analyze_image' || n.includes('analyze_image') || n === 'visual_classification_sheet') return ToolType.IMAGE_ANALYSIS;
@@ -110,7 +112,8 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n.includes('preview_live_url')) return { Icon: Globe, label: 'Live Preview' };
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return { Icon: Braces, label: 'MCP Registry' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
-  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
+  if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('fern') || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return { Icon: Brain, label: 'Memory' };
+  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
   if (n === 'todo_write') return { Icon: CheckCircle, label: 'Todo List' };
   if (n === 'visual_classification_sheet') return { Icon: Image, label: 'Visual Sheet' };
@@ -1696,6 +1699,140 @@ function CollapsibleSection({
   );
 }
 
+function MemoryView({ args, output, toolName }: { args?: any; output?: string; toolName?: string }) {
+  // Try to parse JSON memories (from memory_consolidator)
+  let memoriesList: any[] = [];
+  let parsedJson: any = null;
+  if (output) {
+    try {
+      const clean = output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (parsed && Array.isArray(parsed.newMemories)) {
+        memoriesList = parsed.newMemories;
+        parsedJson = parsed;
+      }
+    } catch { /* Not JSON */ }
+  }
+
+  // Parse plain-text recall results (from recall_fact / memory_search)
+  const plainBlocks: string[] = [];
+  if (output && !parsedJson) {
+    const noFoundPrefix = output.replace(/^Found matches:\s*/i, '').trim();
+    const noMatch = output.trim().toLowerCase().startsWith('no ') || output.trim().toLowerCase().startsWith('no facts');
+    if (!noMatch) {
+      const parts = noFoundPrefix.split(/\n---\n|\n---\s*\n/);
+      parts.forEach(p => { if (p.trim()) plainBlocks.push(p.trim()); });
+    }
+  }
+
+  const hasArgs = args && Object.keys(args).length > 0;
+  const query = args?.query || args?.fact || args?.content || args?.preference || args?.taskName || '';
+  const tname = (toolName || '').toLowerCase();
+  const opLabel = tname.includes('recall') ? 'Recall' : tname.includes('remember') || tname.includes('save') ? 'Save' : tname.includes('update') || tname.includes('profile') ? 'Update' : tname.includes('search') ? 'Search' : 'Consolidate';
+  const opColor = opLabel === 'Recall' ? '#6366f1' : opLabel === 'Save' || opLabel === 'Consolidate' ? '#22c55e' : opLabel === 'Update' ? '#f59e0b' : '#3b82f6';
+  const opBg = opLabel === 'Recall' ? 'rgba(99,102,241,0.1)' : opLabel === 'Save' || opLabel === 'Consolidate' ? 'rgba(34,197,94,0.1)' : opLabel === 'Update' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)';
+
+  const noResults = output && !parsedJson && memoriesList.length === 0 && plainBlocks.length === 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: VS.bg, color: VS.text }}>
+      {/* Header */}
+      <div style={{ padding: '16px 18px', borderBottom: `1px solid ${VS.border}`, background: VS.bg, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: opBg, border: `1px solid ${opColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Brain size={14} color={opColor} strokeWidth={2} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: VS.text, fontFamily: T.sans }}>Memory</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: opBg, color: opColor, fontFamily: T.sans, letterSpacing: '0.04em' }}>{opLabel}</span>
+            </div>
+            {query && <p style={{ fontSize: 11, color: VS.muted, margin: 0, fontFamily: T.mono, marginTop: 2 }}>"{String(query).slice(0, 60)}{String(query).length > 60 ? '…' : ''}"</p>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 24px', display: 'flex', flexDirection: 'column', gap: 10, background: VS.bg }}>
+
+        {/* Plain-text recall blocks (recall_fact / memory_search style) */}
+        {plainBlocks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
+              🔍 Matches Found ({plainBlocks.length})
+            </p>
+            {plainBlocks.map((block, i) => {
+              // Detect which file/source it came from
+              const srcMatch = block.match(/^\[(.*?)\]\s*\[(.*?)\]/);
+              const src = srcMatch ? `${srcMatch[1]} › ${srcMatch[2]}` : '';
+              const bodyText = srcMatch ? block.slice(srcMatch[0].length).trim() : block;
+              // Pick color by source
+              const isProfile = block.toLowerCase().includes('user profile');
+              const cardColor = isProfile ? '#6366f1' : '#22c55e';
+              const cardBg = isProfile ? 'rgba(99,102,241,0.07)' : 'rgba(34,197,94,0.07)';
+              return (
+                <div key={i} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: CLAY.shadow }}>
+                  {src && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: cardBg, color: cardColor, fontFamily: T.sans, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                        {src}
+                      </span>
+                    </div>
+                  )}
+                  <p style={{ margin: 0, color: VS.text, fontSize: 12.5, lineHeight: 1.6, fontFamily: T.sans, whiteSpace: 'pre-wrap' }}>
+                    {bodyText.replace(/^\[[\w\s]+\]\s*\([\d\w\-T:.Z]+\)\s*/m, '').trim()}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* JSON structured memories (memory_consolidator style) */}
+        {memoriesList.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
+              💾 Processed Memories ({memoriesList.length})
+            </p>
+            {memoriesList.map((mem: any, index: number) => (
+              <div key={index} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, boxShadow: CLAY.shadow, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'rgba(99,102,241,0.1)' : mem.type === 'habit' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)', color: mem.type === 'preference' ? '#6366f1' : mem.type === 'habit' ? '#f59e0b' : '#22c55e', textTransform: 'uppercase', fontFamily: T.sans }}>
+                    {mem.type || 'fact'}
+                  </span>
+                  {mem.linkedFile && <span style={{ fontSize: 10.5, color: VS.muted, fontFamily: T.mono }}>📁 {mem.linkedFile}</span>}
+                </div>
+                <p style={{ margin: 0, color: VS.text, fontSize: 13, lineHeight: 1.5, fontFamily: T.sans }}>{mem.value || JSON.stringify(mem)}</p>
+                {mem.category && <span style={{ fontSize: 10.5, color: VS.dim, fontFamily: T.sans }}>Category: {mem.category}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Query/args card */}
+        {hasArgs && (
+          <div style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', boxShadow: CLAY.shadow }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: VS.muted, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>Parameters</p>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: T.mono, fontSize: 11.5, color: VS.text }}><code>{JSON.stringify(args, null, 2)}</code></pre>
+          </div>
+        )}
+
+        {/* No results message */}
+        {noResults && (
+          <div style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: CLAY.shadow }}>
+            <p style={{ fontSize: 12, color: VS.muted, margin: 0, fontStyle: 'italic', fontFamily: T.sans }}>{output}</p>
+          </div>
+        )}
+
+        {!hasArgs && !output && (
+          <p style={{ fontSize: 12.5, color: VS.muted, fontStyle: 'italic', textAlign: 'center', marginTop: 20, fontFamily: T.sans }}>
+            No memories to display from this step.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GenericView({ toolName, args, output }: { toolName: string; args?: any; output?: string }) {
   const argEntries = Object.entries(args || {});
 
@@ -3184,6 +3321,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.MCP_REGISTRY) return <McpRegistryView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
     if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
+    if (toolType === ToolType.MEMORY) return <MemoryView {...toolData} toolName={toolCall?.toolName || ''} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;

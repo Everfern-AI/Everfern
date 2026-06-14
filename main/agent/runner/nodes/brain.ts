@@ -12,7 +12,7 @@ import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../
 import { loadSoul, loadAgents } from '../../personality-manager';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
-type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'complete_task';
+type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
 
 export function buildUserInputQuestion(explanation: string, responseContent: string, originalRequest: string): string {
   const cleanExplanation = explanation.replace(/\s+/g, ' ').trim();

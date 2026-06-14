@@ -14,6 +14,7 @@ export interface ToolConfig {
 
 export interface NavisConfig {
   useVision: boolean;
+  onlyVision: boolean;
   headless: boolean;
   maxSteps: number;
   useChromeProfile: boolean;
@@ -31,6 +32,7 @@ export interface ToolSettingsConfig {
 
 export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   useVision: false,
+  onlyVision: false,
   headless: false,
   maxSteps: 200,
   useChromeProfile: false,
@@ -84,6 +86,9 @@ export class ToolSettingsStore {
       };
 
       // Ensure new Navis fields are populated
+      if (loaded.navis?.onlyVision === undefined) {
+        config.navis.onlyVision = false;
+      }
       if (loaded.navis?.selectedBrowserId === undefined) {
         config.navis.selectedBrowserId = 'chrome';
       }

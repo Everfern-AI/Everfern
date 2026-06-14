@@ -387,6 +387,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveDirect: (content: string, metadata?: string) => ipcRenderer.invoke('memory:save-direct', content, metadata),
     getGraph: () => ipcRenderer.invoke('memory:get-graph'),
     deleteNode: (id: string) => ipcRenderer.invoke('memory:delete-node', id),
+    exportZip: () => ipcRenderer.invoke('memory:export-zip'),
+    importMerge: () => ipcRenderer.invoke('memory:import-merge-graph'),
   },
 
   // ── Artifacts ────────────────────────────────────────────────
@@ -556,6 +558,7 @@ export interface ToolSettingsConfig {
   browserUse: ToolConfig;
   navis: {
     useVision: boolean;
+    onlyVision: boolean;
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;

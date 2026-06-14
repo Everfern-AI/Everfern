@@ -22,6 +22,7 @@ interface ToolConfig {
 
 interface NavisConfig {
     useVision: boolean;
+    onlyVision: boolean;
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
@@ -39,6 +40,7 @@ interface ToolSettingsConfig {
 
 const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     useVision: false,
+    onlyVision: false,
     headless: false,
     maxSteps: 200,
     useChromeProfile: false,
@@ -546,6 +548,51 @@ export function ToolSettingsSection() {
                             <div style={{
                                 position: 'absolute', top: 3,
                                 left: config.navis.useVision ? 23 : 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                backgroundColor: '#ffffff',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Only Vision Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Only Vision</Label>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '12px 16px', backgroundColor: '#ffffff',
+                        border: 'none', borderRadius: 12,
+                        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.8), 0 2px 5px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ color: '#6366f1' }}>
+                                <EyeIcon width={18} height={18} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    {config.navis.onlyVision ? 'Only Vision Enabled' : 'Only Vision Disabled'}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                    {config.navis.onlyVision
+                                        ? 'Coordinates-only navigation via VLM (bypasses DOM structure completely)'
+                                        : 'Standard hybrid mode (prefer DOM structure, use vision on-demand)'}
+                                </div>
+                            </div>
+                        </div>
+                        {/* Custom Toggle Switch */}
+                        <div
+                            onClick={() => handleNavisChange({ ...config.navis, onlyVision: !config.navis.onlyVision })}
+                            style={{
+                                width: 44, height: 24, borderRadius: 12, position: 'relative',
+                                backgroundColor: config.navis.onlyVision ? '#6366f1' : '#e8e6d9',
+                                cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0,
+                            }}
+                        >
+                            <div style={{
+                                position: 'absolute', top: 3,
+                                left: config.navis.onlyVision ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: '#ffffff',
                                 transition: 'left 0.2s',

@@ -295,6 +295,8 @@ export const createExecuteToolsNode = (
       });
     }
 
+    const hasAskUserQuestion = newRecords.some(r => r.toolName === 'ask_user_question');
+
     const result = {
       messages: newMessages,
       toolCallRecords: [...(state.toolCallRecords ?? []), ...newRecords],
@@ -302,6 +304,7 @@ export const createExecuteToolsNode = (
       pauseGeneration: pauseGenFlag,
       userConfirmation: undefined,
       toolCallHistory: [...(state.toolCallHistory ?? [])],
+      ...(hasAskUserQuestion ? { returningFromSpecialist: null } : {})
     };
 
     // Log return to brain

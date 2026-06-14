@@ -395,6 +395,107 @@ export function registerSystemHandlers() {
     }
   });
 
+  ipcMain.handle('memory:export-zip', async () => {
+    try {
+      const { loadMemoryGraph, getMemoryDir } = require('../agent/learning/memory/persistent-memory');
+      const graph = loadMemoryGraph();
+      const memDir = getMemoryDir();
+
+      // Build an in-memory zip using only node built-ins (no extra dep)
+      // We'll produce a JSON export + any linked .md files, bundled as a zip
+      const JSZip = (() => {
+        try { return require('jszip'); } catch { return null; }
+      })();
+
+      let exportBuffer: Buffer;
+      let defaultName = `everfern-memory-${new Date().toISOString().slice(0, 10)}.json`;
+      let filters = [{ name: 'JSON', extensions: ['json'] }];
+
+      if (JSZip) {
+        const zip = new JSZip();
+        zip.file('memory_graph.json', JSON.stringify(graph, null, 2));
+        // Include linked markdown files
+        for (const node of graph.nodes) {
+          if (node.linkedFile) {
+            const mdPath = node.linkedFile.startsWith('/') || /^[A-Z]:/i.test(node.linkedFile)
+              ? node.linkedFile
+              : path.join(memDir, node.linkedFile);
+            if (fs.existsSync(mdPath)) {
+              zip.file(path.basename(mdPath), fs.readFileSync(mdPath));
+            }
+          }
+        }
+        exportBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+        defaultName = `everfern-memory-${new Date().toISOString().slice(0, 10)}.zip`;
+        filters = [{ name: 'ZIP Archive', extensions: ['zip'] }];
+      } else {
+        exportBuffer = Buffer.from(JSON.stringify(graph, null, 2), 'utf-8');
+      }
+
+      const mainWindow = (global as any).mainWindow;
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Export Memory Graph',
+        defaultPath: path.join(os.homedir(), 'Desktop', defaultName),
+        filters,
+      });
+      if (canceled || !filePath) return { success: false, reason: 'canceled' };
+      fs.writeFileSync(filePath, exportBuffer);
+      return { success: true, filePath };
+    } catch (err: any) {
+      console.error('[IPC] memory:export-zip error:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('memory:import-merge-graph', async () => {
+    try {
+      const { loadMemoryGraph, saveMemoryGraph } = require('../agent/learning/memory/persistent-memory');
+      const mainWindow = (global as any).mainWindow;
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Import & Merge Memory Graph',
+        filters: [
+          { name: 'Memory Files', extensions: ['json', 'zip'] },
+          { name: 'JSON', extensions: ['json'] },
+          { name: 'ZIP Archive', extensions: ['zip'] },
+        ],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths.length) return { success: false, reason: 'canceled' };
+
+      const filePath = filePaths[0];
+      let importedGraph: { nodes: any[]; edges: any[] } = { nodes: [], edges: [] };
+
+      if (filePath.endsWith('.zip')) {
+        const JSZip = require('jszip');
+        const data = fs.readFileSync(filePath);
+        const zip = await JSZip.loadAsync(data);
+        const jsonFile = zip.file('memory_graph.json');
+        if (!jsonFile) return { success: false, error: 'No memory_graph.json found in ZIP' };
+        const jsonStr = await jsonFile.async('string');
+        importedGraph = JSON.parse(jsonStr);
+      } else {
+        importedGraph = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      }
+
+      // Merge: add nodes/edges that don't already exist (by id / source+target)
+      const current = loadMemoryGraph();
+      const existingIds = new Set(current.nodes.map((n: any) => n.id));
+      const newNodes = (importedGraph.nodes || []).filter((n: any) => !existingIds.has(n.id));
+      const existingEdges = new Set(current.edges.map((e: any) => `${e.source}:${e.target}`));
+      const newEdges = (importedGraph.edges || []).filter((e: any) => !existingEdges.has(`${e.source}:${e.target}`));
+
+      const merged = {
+        nodes: [...current.nodes, ...newNodes],
+        edges: [...current.edges, ...newEdges],
+      };
+      saveMemoryGraph(merged);
+      return { success: true, addedNodes: newNodes.length, addedEdges: newEdges.length };
+    } catch (err: any) {
+      console.error('[IPC] memory:import-merge-graph error:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
 
   ipcMain.handle('system:wipe-account', async () => {
     const everfernDir = path.join(os.homedir(), '.everfern');

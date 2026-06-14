@@ -23,9 +23,8 @@ export const createMemoryConsolidatorNode = (
     runner.telemetry.info('Analyzing conversation to promote habits and preferences to persistent memory...');
 
     try {
-      // Format the conversation history for the Memory Agent
       const formattedHistory = state.messages.map(m => {
-        const role = m.role || (m as any).type || (m as any)._getType?.() || 'unknown';
+        const role = (m as any).role || (m as any).type || (m as any)._getType?.() || 'unknown';
         const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
         return `[${role.toUpperCase()}]: ${content}`;
       }).join('\n');
@@ -95,6 +94,84 @@ If no new memory should be saved, respond with:
         if (type && category && value && linkedFile) {
           addOrUpdateMemory(type, category, value, linkedFile);
           runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
+        }
+      }
+
+      if (newMemories.length === 0) {
+        console.log('[MemoryConsolidator] Primary agent found no memories. Invoking secondary auditor agent...');
+        runner.telemetry.info('Double-checking with Memory Auditor to ensure no important preferences or facts were missed...');
+        
+        const auditorSystemPrompt = `You are the EverFern Memory Auditor.
+Your job is to perform a rigorous secondary audit on the conversation history of the current interaction.
+The primary agent decided that no new or updated user preferences, habits, or facts should be stored.
+You must double-check this decision. Look very closely for:
+1. User Preferences: Travel details (airlines, flights), payment details (payment methods, credit cards), coding styles, general user preferences.
+2. Habits: Repeated actions or requirements requested by the user.
+3. General Facts: Any architectural choices, file structure, API details, paths, or settings explicitly stated or decided.
+
+Be extremely careful. Look for subtle details like:
+- Preferred names or tools.
+- Operating system or hardware environment choices.
+- Custom directories or layout preferences.
+- Billing, flight details, or travel choices.
+
+You MUST choose the correct linked file for the memory type:
+- Billing/payments/accounts -> Save to "PAYMENTS.md"
+- Travel/airlines/bookings -> Save to "TRAVEL.md"
+- Coding styles/frameworks/general preferences -> Save to "USER_PROFILE.md"
+- General facts about codebase/environment/project -> Save to "PROJECT_STATE.md"
+
+Respond with JSON only in the following format:
+{
+  "newMemories": [
+    {
+      "type": "preference" | "habit" | "fact",
+      "category": string,
+      "value": string,
+      "linkedFile": "PAYMENTS.md" | "TRAVEL.md" | "USER_PROFILE.md" | "PROJECT_STATE.md"
+    }
+  ]
+}
+
+If you agree that there is absolutely nothing to store, respond with:
+{
+  "newMemories": []
+}`;
+
+        const auditorResponse = await runner.client.chat({
+          messages: [
+            { role: 'system', content: auditorSystemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          responseFormat: 'json',
+          temperature: 0.2,
+          maxTokens: 1000,
+          abortSignal: globalAbortManager.abortController.signal,
+        }) as any;
+
+        let auditorContent = typeof auditorResponse.content === 'string' ? auditorResponse.content : JSON.stringify(auditorResponse.content);
+        auditorContent = auditorContent.replace(/<think>[\s\S]*?<\/think>/g, '');
+        auditorContent = auditorContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+        const firstBraceAud = auditorContent.indexOf('{');
+        const lastBraceAud = auditorContent.lastIndexOf('}');
+        if (firstBraceAud !== -1 && lastBraceAud > firstBraceAud) {
+          auditorContent = auditorContent.substring(firstBraceAud, lastBraceAud + 1);
+        }
+
+        const auditorResult = JSON.parse(auditorContent);
+        const auditorNewMemories = auditorResult.newMemories || [];
+
+        if (auditorNewMemories.length > 0) {
+          console.log(`[MemoryConsolidator] Auditor found ${auditorNewMemories.length} missed memory entries.`);
+          for (const mem of auditorNewMemories) {
+            const { type, category, value, linkedFile } = mem;
+            if (type && category && value && linkedFile) {
+              addOrUpdateMemory(type, category, value, linkedFile);
+              runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
+              newMemories.push(mem);
+            }
+          }
         }
       }
 

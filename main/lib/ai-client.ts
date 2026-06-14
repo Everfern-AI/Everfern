@@ -2495,12 +2495,13 @@ export class AIClient {
     history?: string[];
     apiBaseUrl?: string;
     token?: string;
+    onlyVision?: boolean;
   }): Promise<{ instruction: string; actions: string[]; screenshot: string }> {
     if (this.config.provider !== 'everfern') {
       throw new Error(`everfernCloudVisionGrounding() only works with provider='everfern', got '${this.config.provider}'`);
     }
 
-    const { screenshot, objective, dom = '', history = [], apiBaseUrl = 'http://localhost:5000', token } = params;
+    const { screenshot, objective, dom = '', history = [], apiBaseUrl = 'http://localhost:5000', token, onlyVision = false } = params;
 
     if (!screenshot) {
       throw new Error('screenshot is required');
@@ -2516,9 +2517,10 @@ export class AIClient {
         },
         body: JSON.stringify({
           screenshot,
-          dom,
+          dom: onlyVision ? '' : dom,
           objective,
-          history
+          history,
+          only_vision: onlyVision
         })
       });
 

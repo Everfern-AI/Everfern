@@ -104,6 +104,17 @@ const getToolMeta = (toolName: string | undefined | null, size = 13): { icon: Re
     const n = (toolName || "").toLowerCase();
     const s = { width: size, height: size, flexShrink: 0 as const };
 
+    if (n === "fern" || n === "recall_fact" || n === "remember_fact" || n === "update_profile" || n.includes("fern") || n.includes("memory") || n.includes("consolidator") || n.includes("confirm_preference") || n.includes("recall") || n.includes("remember")) {
+        return {
+            icon: (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1 0-3.12 3 3 0 0 1 0-4.88 2.5 2.5 0 0 1 0-3.12A2.5 2.5 0 0 1 9.5 2zM14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 0-3.12 3 3 0 0 0 0-4.88 2.5 2.5 0 0 0 0-3.12A2.5 2.5 0 0 0 14.5 2z" />
+                </svg>
+            ),
+            shape: "square"
+        };
+    }
+
     if (n === "search_mcp_registry" || n.includes("mcp"))
         return { icon: <CpuChipIcon style={s} />, shape: "square" };
 
@@ -448,9 +459,10 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
     const isDone = tc.status === "done";
     const isSkill = tc.toolName === 'skill' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill';
     const skillName = tc.args?.name as string | undefined;
-    const label = isSkill
+    const isMemory = tc.toolName === 'fern' || tc.toolName === 'recall_fact' || tc.toolName === 'remember_fact' || tc.toolName === 'update_profile' || String(tc.toolName || '').toLowerCase().includes('fern') || String(tc.toolName || '').toLowerCase().includes('memory') || String(tc.toolName || '').toLowerCase().includes('consolidator') || String(tc.toolName || '').toLowerCase().includes('confirm_preference') || String(tc.toolName || '').toLowerCase().includes('recall') || String(tc.toolName || '').toLowerCase().includes('remember');
+    const label = isMemory ? 'Memory' : (isSkill
         ? `Skill - ${skillName || tc.label || tc.toolName?.replace(/_/g, " ") || "Tool"}`
-        : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool"));
+        : (tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool")));
     let { icon, shape } = getToolMeta(tc.toolName);
 
     // system_files: pick action-specific icon at render time

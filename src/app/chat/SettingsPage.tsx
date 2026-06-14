@@ -1873,12 +1873,14 @@ export default function SettingsPage({
     const MemorySection = () => {
         const [graph, setGraph] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
         const [isLoading, setIsLoading] = useState(true);
+        const [isBusy, setIsBusy] = useState<string | null>(null);
         const [selectedNode, setSelectedNode] = useState<any>(null);
         const [filterType, setFilterType] = useState<string>('all');
         const [searchQuery, setSearchQuery] = useState<string>('');
         const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
         const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
         const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+        const [zoom, setZoom] = useState<number>(1);
         const svgRef = React.useRef<SVGSVGElement>(null);
 
         const fetchGraph = async () => {
@@ -1913,9 +1915,52 @@ export default function SettingsPage({
             }
         };
 
-        const handleOpenFile = async (filePath: string) => {
+        const handleExport = async () => {
+            setIsBusy('export');
             try {
-                const res = await (window as any).electronAPI?.system?.openExternal?.("file://" + filePath);
+                const res = await (window as any).electronAPI?.memory?.exportZip?.();
+                if (res?.success) {
+                    alert(`Memory exported successfully to:\n${res.filePath}`);
+                } else if (res?.reason !== 'canceled') {
+                    alert('Export failed: ' + (res?.error || 'Unknown error'));
+                }
+            } catch (e: any) {
+                alert('Export failed: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
+        const handleImportMerge = async () => {
+            setIsBusy('import');
+            try {
+                const res = await (window as any).electronAPI?.memory?.importMerge?.();
+                if (res?.success) {
+                    alert(`Memory merged! Added ${res.addedNodes} new nodes and ${res.addedEdges} new edges.`);
+                    fetchGraph();
+                } else if (res?.reason !== 'canceled') {
+                    alert('Import failed: ' + (res?.error || 'Unknown error'));
+                }
+            } catch (e: any) {
+                alert('Import failed: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
+        const handleOpenFile = async (filePath: string) => {
+            if (!filePath) return;
+            try {
+                let targetPath = filePath;
+                // If it's a relative filename (no path separator), resolve it using the file nodes in the graph
+                if (!filePath.includes('/') && !filePath.includes('\\')) {
+                    const fileNodeId = `file_${filePath.toLowerCase()}`;
+                    const fileNode = graph.nodes.find(n => n.id === fileNodeId);
+                    if (fileNode?.value) {
+                        targetPath = fileNode.value;
+                    }
+                }
+                const res = await (window as any).electronAPI?.system?.openExternal?.("file://" + targetPath);
                 if (res && !res.success) {
                     alert(`Could not open file: ${res.error}`);
                 }
@@ -1924,27 +1969,33 @@ export default function SettingsPage({
             }
         };
 
-        const filteredNodes = graph.nodes.filter(n => {
-            const matchesType = filterType === 'all' || n.type === filterType;
-            const matchesSearch = !searchQuery || 
-                n.category.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                (n.value && n.value.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                (n.name && n.name.toLowerCase().includes(searchQuery.toLowerCase()));
-            return matchesType && matchesSearch;
-        });
+        const filteredNodes = React.useMemo(() => {
+            return graph.nodes.filter(n => {
+                const matchesType = filterType === 'all' || n.type === filterType;
+                const matchesSearch = !searchQuery || 
+                    n.category.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                    (n.value && n.value.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                    (n.name && n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                return matchesType && matchesSearch;
+            });
+        }, [graph.nodes, filterType, searchQuery]);
 
-        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-        const filteredEdges = graph.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+        const filteredEdges = React.useMemo(() => {
+            const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+            return graph.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+        }, [graph.edges, filteredNodes]);
 
-        // Initialize positions
+        // Initialize positions — spread nodes wider; pin __user__ at center
         useEffect(() => {
             if (filteredNodes.length === 0) return;
             setNodePositions(prev => {
                 const next = { ...prev };
+                // Always pin the virtual root at center
+                next['__user__'] = { x: 300, y: 200 };
                 filteredNodes.forEach((node, idx) => {
                     if (!next[node.id]) {
                         const angle = (idx / filteredNodes.length) * 2 * Math.PI;
-                        const radius = 100 + Math.random() * 40;
+                        const radius = 220 + Math.random() * 80;
                         next[node.id] = {
                             x: 300 + Math.cos(angle) * radius,
                             y: 200 + Math.sin(angle) * radius
@@ -1963,10 +2014,10 @@ export default function SettingsPage({
             const tick = () => {
                 setNodePositions(prev => {
                     const next = { ...prev };
-                    const k = 0.05;
-                    const length = 85;
-                    const repulsion = 400;
-                    const gravity = 0.02;
+                    const k = 0.04;        // spring stiffness (softer)
+                    const length = 180;    // natural spring length (was 85)
+                    const repulsion = 2500; // much stronger repulsion (was 400)
+                    const gravity = 0.015; // lighter gravity
 
                     const fx: Record<string, number> = {};
                     const fy: Record<string, number> = {};
@@ -2031,6 +2082,8 @@ export default function SettingsPage({
                     });
 
                     const updated = { ...next };
+                    // Always re-pin __user__ at center, regardless of any forces
+                    updated['__user__'] = { x: 300, y: 200 };
                     filteredNodes.forEach(n => {
                         if (n.id === draggedNodeId) return;
                         const pos = updated[n.id];
@@ -2058,6 +2111,7 @@ export default function SettingsPage({
         }, [filteredNodes, filteredEdges, draggedNodeId, viewMode]);
 
         const handleMouseDown = (nodeId: string, e: React.MouseEvent) => {
+            if (nodeId === '__user__') return; // root node is not selectable/draggable
             e.preventDefault();
             setDraggedNodeId(nodeId);
             setSelectedNode(graph.nodes.find(n => n.id === nodeId) || null);
@@ -2080,8 +2134,65 @@ export default function SettingsPage({
 
         return (
             <div>
-                <SectionTitle>Memory Graph</SectionTitle>
-                <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
+                {/* Title row + action buttons */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div>
+                        <SectionTitle>Memory Graph</SectionTitle>
+                        <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+                        <button
+                            onClick={handleImportMerge}
+                            disabled={!!isBusy}
+                            title="Import a .json or .zip memory file and merge it with your current memory"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid #e8e6d9',
+                                backgroundColor: '#ffffff', color: '#111111', fontSize: 12.5, fontWeight: 600,
+                                cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy === 'import' ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#f4f4f4'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                        >
+                            {isBusy === 'import' ? '⏳' : '📥'} {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
+                        </button>
+                        <button
+                            onClick={handleExport}
+                            disabled={!!isBusy || graph.nodes.length === 0}
+                            title="Export your full memory graph as a ZIP file (includes linked markdown files)"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
+                                opacity: (isBusy === 'export' || graph.nodes.length === 0) ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                        >
+                            {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Help tip */}
+                <div style={{
+                    background: 'linear-gradient(135deg, rgba(20,184,166,0.06) 0%, rgba(99,102,241,0.04) 100%)',
+                    border: '1px solid rgba(20,184,166,0.2)',
+                    borderRadius: 12, padding: '12px 16px', marginBottom: 20,
+                    display: 'flex', gap: 10, alignItems: 'flex-start'
+                }}>
+                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
+                    <div>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: '#0d9488', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#4a4846' }}>
+                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable — click any node to see full details.
+                            Use <strong>Export ZIP</strong> to back up your memory, and <strong>Import &amp; Merge</strong> to restore or combine memories from another device.
+                        </p>
+                    </div>
+                </div>
 
                 {/* Summary counters */}
                 <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e8e6d9' }}>
@@ -2182,11 +2293,38 @@ export default function SettingsPage({
                         {/* Graph/List container */}
                         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                             {viewMode === 'graph' ? (
-                                <svg
+                                <div style={{ position: 'relative' }}>
+                                    {/* Zoom controls */}
+                                    <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {[
+                                            { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
+                                            { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
+                                            { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
+                                        ].map(btn => (
+                                            <button
+                                                key={btn.label}
+                                                title={btn.title}
+                                                onClick={btn.onClick}
+                                                style={{
+                                                    width: 30, height: 30, borderRadius: 8, border: '1px solid #e8e6d9',
+                                                    backgroundColor: '#ffffff', color: '#111111', fontSize: 16,
+                                                    fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)', transition: 'all 0.15s'
+                                                }}
+                                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f4'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                                            >
+                                                {btn.label}
+                                            </button>
+                                        ))}
+                                        <div style={{ fontSize: 10, textAlign: 'center', color: '#8a8886', marginTop: 2 }}>{Math.round(zoom * 100)}%</div>
+                                    </div>
+                                    <svg
                                     ref={svgRef}
                                     width="100%"
                                     height="400"
-                                    viewBox="0 0 600 400"
+                                    viewBox={`${300 - 300/zoom} ${200 - 200/zoom} ${600/zoom} ${400/zoom}`}
                                     onMouseMove={handleMouseMove}
                                     onMouseUp={handleMouseUp}
                                     onMouseLeave={handleMouseUp}
@@ -2205,7 +2343,26 @@ export default function SettingsPage({
                                     </defs>
                                     <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
 
-                                    {/* Edges */}
+                                    {/* Hub edges: root → every visible node */}
+                                    {filteredNodes.map(node => {
+                                        const targetPos = nodePositions[node.id];
+                                        const rootPos = nodePositions['__user__'];
+                                        if (!targetPos || !rootPos) return null;
+                                        return (
+                                            <line
+                                                key={`hub-${node.id}`}
+                                                x1={rootPos.x}
+                                                y1={rootPos.y}
+                                                x2={targetPos.x}
+                                                y2={targetPos.y}
+                                                stroke="rgba(99,102,241,0.18)"
+                                                strokeWidth="1.5"
+                                                strokeDasharray="none"
+                                            />
+                                        );
+                                    })}
+
+                                    {/* Regular edges */}
                                     {filteredEdges.map((edge, idx) => {
                                         const sourcePos = nodePositions[edge.source];
                                         const targetPos = nodePositions[edge.target];
@@ -2224,7 +2381,47 @@ export default function SettingsPage({
                                         );
                                     })}
 
-                                    {/* Nodes */}
+                                    {/* Root 'User' hub node — rendered after edges but before regular nodes */}
+                                    {(() => {
+                                        const rootPos = nodePositions['__user__'];
+                                        if (!rootPos || filteredNodes.length === 0) return null;
+                                        return (
+                                            <g key="__user__" transform={`translate(${rootPos.x}, ${rootPos.y})`} style={{ cursor: 'default' }}>
+                                                {/* Outer glow ring */}
+                                                <circle r="34" fill="rgba(99,102,241,0.06)" stroke="rgba(99,102,241,0.15)" strokeWidth="1" />
+                                                {/* Pulsing ring */}
+                                                <circle r="28" fill="rgba(99,102,241,0.08)" stroke="rgba(99,102,241,0.3)" strokeWidth="1.5" strokeDasharray="4,3" />
+                                                {/* Main node */}
+                                                <circle
+                                                    r="22"
+                                                    fill="linear-gradient(135deg,#6366f1,#818cf8)"
+                                                    style={{
+                                                        fill: '#6366f1',
+                                                        filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.35))'
+                                                    }}
+                                                    stroke="#ffffff"
+                                                    strokeWidth="3"
+                                                />
+                                                <text textAnchor="middle" dy="5" style={{ fontSize: 16, userSelect: 'none' }}>👤</text>
+                                                <text
+                                                    y="36"
+                                                    textAnchor="middle"
+                                                    style={{
+                                                        fontSize: 10,
+                                                        fontWeight: 700,
+                                                        fill: '#6366f1',
+                                                        userSelect: 'none',
+                                                        letterSpacing: '0.08em',
+                                                        textTransform: 'uppercase'
+                                                    }}
+                                                >
+                                                    You
+                                                </text>
+                                            </g>
+                                        );
+                                    })()}
+
+                                    {/* Regular nodes */}
                                     {filteredNodes.map(node => {
                                         const pos = nodePositions[node.id];
                                         if (!pos) return null;
@@ -2294,7 +2491,8 @@ export default function SettingsPage({
                                             </g>
                                         );
                                     })}
-                                </svg>
+                                    </svg>
+                                </div>
                             ) : (
                                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e8e6d9', borderRadius: 20, backgroundColor: '#ffffff', maxHeight: 400 }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -2491,7 +2689,7 @@ export default function SettingsPage({
         voice: VoiceSection(),
         vision: VisionSection(),
         embeddings: EmbeddingsSection(),
-        memory: <MemorySection />,
+        memory: MemorySection(),
         skills: SkillsSection(),
         tools: (
             <div>

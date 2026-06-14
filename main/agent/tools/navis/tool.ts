@@ -309,6 +309,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
               headless: safeArgs.headless ?? navisSettings.headless,
               startUrl: safeArgs.startUrl,
               useVision: Boolean(navisSettings.useVision),
+              onlyVision: Boolean(navisSettings.onlyVision),
               forceVision: Boolean(safeArgs.forceVision),
               useChromeProfile: true,
               selectedBrowserId: navisSettings.selectedBrowserId,
@@ -360,6 +361,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           // grounding, but the orchestrator still uses DOM unless visual context
           // is requested or the DOM snapshot is weak.
           useVision: Boolean(navisSettings.useVision),
+          onlyVision: Boolean(navisSettings.onlyVision),
           forceVision: Boolean(safeArgs.forceVision),
           useChromeProfile: false,
           selectedBrowserId: navisSettings.selectedBrowserId,
