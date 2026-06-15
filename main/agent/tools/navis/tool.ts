@@ -270,9 +270,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
 
       try {
         const shouldUseExtensionFirst =
-          automationMode === 'extension-first' &&
-          navisSettings.useChromeProfile &&
-          !navisSettings.useIsolatedBrowser;
+          automationMode === 'extension-first';
 
         if (shouldUseExtensionFirst) {
           const status = getNavisCompanionStatus();

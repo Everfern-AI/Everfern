@@ -1,4 +1,4 @@
-import { StateGraph, END, START, interrupt } from '@langchain/langgraph';
+import { StateGraph, END, START, interrupt, GraphInterrupt } from '@langchain/langgraph';
 import { GraphState, GraphStateType, StreamEvent } from './state';
 import { createTriageNode } from './nodes/triage';
 import { createPlannerNode } from './nodes/planner';
@@ -522,6 +522,85 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return node(state, config);
   };
 
+  const wasAskUserQuestionExecutedInLastTurn = (state: GraphStateType): boolean => {
+    const messages = state.messages || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      const role = msg.role || msg.type || msg._getType?.();
+      if (role === 'assistant' || role === 'ai') {
+        break;
+      }
+      if (role === 'tool' || role === 'function') {
+        const name = msg.name || msg.tool_name || msg.toolName || '';
+        if (name === 'ask_user_question') {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const askUserWaitNode = async (state: GraphStateType, config?: any) => {
+    const { runner, conversationId } = getContext(config);
+
+    runner.telemetry.transition('ask_user_wait');
+
+    // Find the ask_user_question tool call in records to know what we are waiting for
+    const askUserRecord = state.toolCallRecords?.find(r => r.toolName === 'ask_user_question');
+    const reasoning = askUserRecord?.result?.output || 'Awaiting clarification...';
+
+    const interruptRequest = {
+      id: askUserRecord?.id || crypto.randomUUID(),
+      conversationId: conversationId || 'unknown',
+      timestamp: new Date().toISOString(),
+      question: 'Clarification required:',
+      details: {
+        tools: [askUserRecord].filter(Boolean),
+        summary: reasoning,
+        reasoning,
+      },
+      options: []
+    };
+
+    // Register interruption in stateManager so runStream can find it upon resume
+    const { stateManager } = await import('./state-manager');
+    if (conversationId) {
+      stateManager.setInterrupted(conversationId, interruptRequest);
+    }
+
+    let answer: any;
+    try {
+      answer = interrupt(interruptRequest);
+    } catch (interruptErr: any) {
+      if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
+        throw interruptErr;
+      }
+      runner.telemetry.info('ask_user_wait interrupt() failed — ending graph turn');
+      return {
+        returningFromSpecialist: state.returningFromSpecialist,
+      };
+    }
+
+    const answerStr = String(answer);
+    console.log(`[ask_user_wait] Received user answer: ${answerStr}`);
+
+    // Clean up interrupted state in stateManager
+    if (conversationId) {
+      stateManager.resumeFromInterrupt(conversationId, null);
+    }
+
+    const userMessage = {
+      role: 'user',
+      content: answerStr,
+      id: `msg-user-ans-${Date.now()}`
+    };
+
+    return {
+      messages: [...(state.messages || []), userMessage],
+      returningFromSpecialist: state.returningFromSpecialist,
+    };
+  };
+
   const compiledGraph = new StateGraph(GraphState)
     .addNode('memory_check', memoryCheckNode)
     .addNode('intent_classifier', triageNode)
@@ -537,7 +616,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
 
     .addNode('hitl_approval', hitlNode)
     .addNode('multi_tool_orchestrator', orchestratorNode)
-    .addNode('memory_consolidator', memoryConsolidatorNode);
+    .addNode('memory_consolidator', memoryConsolidatorNode)
+    .addNode('ask_user_wait', askUserWaitNode);
 
   // New Brain-Centric Routing Architecture
   compiledGraph
@@ -840,6 +920,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const specialist = state.returningFromSpecialist;
         console.log(`[Graph] 🔀 multi_tool_orchestrator complete. returningFromSpecialist: ${specialist || 'None'}`);
 
+        if (wasAskUserQuestionExecutedInLastTurn(state)) {
+            console.log('[Graph] 🔀 ask_user_question tool executed → routing to ask_user_wait');
+            return 'ask_user_wait';
+        }
+
         if (specialist) {
             console.log(`[Graph] ⬅️ Returning to specialist: ${specialist}`);
             switch (specialist) {
@@ -850,6 +935,27 @@ If a specialized agent failed to complete a step, identify the issue and use you
             }
         }
         console.log('[Graph] ➡️ Returning to brain');
+        return 'brain';
+    }, {
+        coding_specialist: 'coding_specialist',
+        data_analyst: 'data_analyst',
+        web_explorer: 'web_explorer',
+        deep_research: 'deep_research',
+        brain: 'brain',
+        ask_user_wait: 'ask_user_wait',
+    })
+
+    .addConditionalEdges('ask_user_wait', (state) => {
+        const specialist = state.returningFromSpecialist;
+        console.log(`[ask_user_wait] Routing after user answer. Specialist: ${specialist || 'None'}`);
+        if (specialist) {
+            switch (specialist) {
+                case 'coding_specialist': return 'coding_specialist';
+                case 'data_analyst': return 'data_analyst';
+                case 'web_explorer': return 'web_explorer';
+                case 'deep_research': return 'deep_research';
+            }
+        }
         return 'brain';
     }, {
         coding_specialist: 'coding_specialist',

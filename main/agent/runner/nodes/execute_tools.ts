@@ -303,8 +303,7 @@ export const createExecuteToolsNode = (
       pendingToolCalls: nextPendingTools,
       pauseGeneration: pauseGenFlag,
       userConfirmation: undefined,
-      toolCallHistory: [...(state.toolCallHistory ?? [])],
-      ...(hasAskUserQuestion ? { returningFromSpecialist: null } : {})
+      toolCallHistory: [...(state.toolCallHistory ?? [])]
     };
 
     // Log return to brain

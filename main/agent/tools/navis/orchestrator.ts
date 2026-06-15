@@ -94,6 +94,17 @@ export const NAVIS_DECISION_SCHEMA = {
 // Prompt Loading
 // ─────────────────────────────────────────────────────────────────────────────
 
+const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
+Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
+Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
+
+const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
+Current URL: {url_placeholder}
+Tabs: {tabs_placeholder}
+Interactive elements with [index].
+Results: {results_placeholder}`;
+
 function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
   const rawPrompt = loadPrompt('NAVIS.md');
 
@@ -116,17 +127,6 @@ function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
 }
 
 const { systemPrompt: NAVIS_SYSTEM_PROMPT, nextStepPrompt: NEXT_STEP_PROMPT } = loadNavisPrompts();
-
-const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
-Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
-Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
-Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
-
-const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
-Current URL: {url_placeholder}
-Tabs: {tabs_placeholder}
-Interactive elements with [index].
-Results: {results_placeholder}`;
 
 function clampText(value: unknown, max = 220): string | undefined {
   if (value == null) return undefined;
