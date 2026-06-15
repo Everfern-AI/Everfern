@@ -1811,7 +1811,7 @@ export default function SetupPage() {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, width: "100%", maxWidth: 420, marginBottom: 18 }}>
                                 <button
                                     onClick={async () => {
-                                        const url = "https://chromewebstore.google.com/search/Everfern%20Navis";
+                                        const url = "https://chromewebstore.google.com/detail/everfern-navis/pipkiglicdhcacieghoinohgfibhkmgf?hl=en&authuser=0";
                                         if ((window as any).electronAPI?.shell?.openExternal) {
                                             await (window as any).electronAPI.shell.openExternal(url);
                                         } else {

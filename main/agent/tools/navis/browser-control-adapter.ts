@@ -27,6 +27,7 @@ export interface BrowserControlAdapter {
   isAvailable(): boolean;
   launch(options: { startUrl?: string; headless?: boolean; selectedBrowserId?: string }): Promise<void>;
   capture(): Promise<BrowserPageState>;
+  screenshot(options?: { quality?: number }): Promise<string>;
   executeAction(
     actionName: ActionName,
     actionArgs: Record<string, unknown>,
@@ -101,6 +102,19 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
     };
   }
 
+  async screenshot(options?: { quality?: number }): Promise<string> {
+    const result = await bridgeServer.sendRequest('screenshot', { tabId: this.activeTabId, quality: options?.quality || 70 }, 15000);
+    if (!result || !result.success || !result.dataUrl) {
+      throw new Error(result?.message || 'Failed to capture screenshot via extension');
+    }
+    let b64 = result.dataUrl;
+    if (b64.startsWith('data:')) {
+      const parts = b64.split(',');
+      b64 = parts[parts.length - 1];
+    }
+    return b64;
+  }
+
   async executeAction(
     actionName: ActionName,
     actionArgs: Record<string, unknown>,
@@ -133,11 +147,33 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.logger.elementClick(step, maxSteps, result?.target || String(args.text || args.target || 'text'));
         return normalizeResult(result, `Clicked ${args.text || args.target || 'text'}`, true);
       }
-      case 'smart_click':
-      case 'browser_click': {
+      case 'smart_click': {
         const result = await bridgeServer.sendRequest('smart_click', { tabId: this.activeTabId, ...args }, 12000);
         this.logger.elementClick(step, maxSteps, result?.target || String(args.text || args.target || args.ref || 'element'));
         return normalizeResult(result, 'Clicked element', true);
+      }
+      case 'browser_click': {
+        const result = await bridgeServer.sendRequest('browser_click', { tabId: this.activeTabId, ...args }, 12000);
+        const position = args.x !== undefined && args.y !== undefined ? { x: Number(args.x), y: Number(args.y) } : undefined;
+        this.logger.elementClick(step, maxSteps, position ? `(${args.x},${args.y})` : (result?.target || 'coordinates'), 'browser_click', position);
+        return normalizeResult(result, `Clicked at coordinates (${args.x}, ${args.y})`, true);
+      }
+      case 'browser_double_click': {
+        const result = await bridgeServer.sendRequest('browser_double_click', { tabId: this.activeTabId, ...args }, 12000);
+        const position = args.x !== undefined && args.y !== undefined ? { x: Number(args.x), y: Number(args.y) } : undefined;
+        this.logger.elementClick(step, maxSteps, position ? `(${args.x},${args.y})` : (result?.target || 'coordinates'), 'browser_double_click', position);
+        return normalizeResult(result, `Double-clicked at coordinates (${args.x}, ${args.y})`, true);
+      }
+      case 'browser_right_click': {
+        const result = await bridgeServer.sendRequest('browser_right_click', { tabId: this.activeTabId, ...args }, 12000);
+        const position = args.x !== undefined && args.y !== undefined ? { x: Number(args.x), y: Number(args.y) } : undefined;
+        this.logger.elementClick(step, maxSteps, position ? `(${args.x},${args.y})` : (result?.target || 'coordinates'), 'browser_right_click', position);
+        return normalizeResult(result, `Right-clicked at coordinates (${args.x}, ${args.y})`, true);
+      }
+      case 'browser_hover': {
+        const result = await bridgeServer.sendRequest('browser_hover', { tabId: this.activeTabId, ...args }, 10000);
+        this.logger.thinking(step, maxSteps, `Hovered coordinates (${args.x}, ${args.y})`, { actionName, mode: 'extension-first' });
+        return normalizeResult(result, `Hovered coordinates (${args.x}, ${args.y})`, true);
       }
       case 'input_text': {
         const result = await bridgeServer.sendRequest('input', { tabId: this.activeTabId, ...args }, 12000);
@@ -247,6 +283,11 @@ export class PlaywrightBrowserAdapter implements BrowserControlAdapter {
       tabs: this.session.allPages.map((p, index) => ({ id: index, url: p.url(), title: '' })),
       mode: 'playwright',
     };
+  }
+
+  async screenshot(options?: { quality?: number }): Promise<string> {
+    const buffer = await this.session.page.screenshot({ type: 'jpeg', quality: options?.quality || 75 });
+    return buffer.toString('base64');
   }
 
   async executeAction(

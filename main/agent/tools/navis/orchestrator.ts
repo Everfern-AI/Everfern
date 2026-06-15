@@ -6,6 +6,7 @@
  */
 
 import type { AIClient } from '../../../lib/ai-client';
+import sharp from 'sharp';
 import { BrowserSession } from './session';
 import {
   captureHtmlDomParserContext,
@@ -79,6 +80,9 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
           { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
+          { properties: { browser_double_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_double_click'], additionalProperties: false },
+          { properties: { browser_right_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_right_click'], additionalProperties: false },
+          { properties: { browser_hover: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_hover'], additionalProperties: false },
           { properties: { browser_type: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }, required: ['browser_type'], additionalProperties: false },
         ],
       },
@@ -1042,6 +1046,9 @@ Estimate the coordinates accurately relative to the image size.`;
       // If no screenshot, use a transparent 1x1 pixel to satisfy multimodal APIs that require an image
       const finalScreenshot = screenshotB64 || 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
+      // Get screenshot dimensions to scale coordinates
+      const dimensions = await getImageDimensions(screenshotB64);
+
       // Extract task objective from input context
       const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
       const objective = taskMatch ? taskMatch[1] : inputContext.substring(0, 200);
@@ -1105,7 +1112,7 @@ Estimate the coordinates accurately relative to the image size.`;
       }
 
       // Convert TARS actions to NAVIS decision format
-      return this._convertTarsActionsToNavisDecision(actions, objective, content);
+      return this._convertTarsActionsToNavisDecision(actions, objective, content, dimensions);
     } catch (err: any) {
       if (err.message === 'FALLBACK_TO_TEXT_ONLY') throw err;
       console.error('[Navis] EverFern Cloud vision grounding failed:', err);
@@ -1152,20 +1159,16 @@ Estimate the coordinates accurately relative to the image size.`;
   private _convertTarsActionsToNavisDecision(
     tarsActions: string[],
     objective: string,
-    instruction: string
+    instruction: string,
+    dimensions: { width: number; height: number } | null
   ): any {
     const navisActions: any[] = [];
 
     for (const actionStr of tarsActions) {
-      const action = this._parseTarsAction(actionStr);
+      const action = this._parseTarsAction(actionStr, dimensions);
       if (action) {
         navisActions.push(action);
       }
-    }
-
-    // If no valid actions, return null
-    if (navisActions.length === 0) {
-      return null;
     }
 
     // Return NAVIS decision format
@@ -1183,7 +1186,7 @@ Estimate the coordinates accurately relative to the image size.`;
    * Parse a single TARS action string into NAVIS action format
    * Supported: click(x,y), type(text), press(key), scroll(direction), double_click(x,y), right_click(x,y), move(x,y)
    */
-  private _parseTarsAction(actionStr: string): any | null {
+  private _parseTarsAction(actionStr: string, dimensions: { width: number; height: number } | null): any | null {
     actionStr = actionStr.trim();
 
     // 1. Coordinate-based actions: click(x,y), double_click(x,y), right_click(x,y), move(x,y)
@@ -1191,8 +1194,15 @@ Estimate the coordinates accurately relative to the image size.`;
     const coordMatch = actionStr.match(/(click|double_click|right_click|move|smooth|hover)\s*\((?:[^0-9-]*?(-?\d+)[^0-9-]*?,[^0-9-]*?(-?\d+)[^0-9-]*?)\)/i);
     if (coordMatch) {
       const type = coordMatch[1].toLowerCase();
-      const x = parseInt(coordMatch[2]);
-      const y = parseInt(coordMatch[3]);
+      let x = parseInt(coordMatch[2]);
+      let y = parseInt(coordMatch[3]);
+
+      if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+        // Tars coordinates are physical pixels in the screenshot image.
+        // We must normalize them to 0-1000 before sending to browser_click.
+        x = Math.max(0, Math.min(1000, Math.round((x / dimensions.width) * 1000)));
+        y = Math.max(0, Math.min(1000, Math.round((y / dimensions.height) * 1000)));
+      }
 
       switch (type) {
         case 'double_click':
@@ -1210,7 +1220,7 @@ Estimate the coordinates accurately relative to the image size.`;
 
     // 2. Simple coordinate-less clicks: right_click(), left_click()
     if (actionStr.match(/right_click\s*\(\s*\)/i)) {
-      return { browser_right_click: { x: 0, y: 0 } }; // Will use current pos if implemented
+      return { browser_right_click: { x: 0, y: 0 } };
     }
     if (actionStr.match(/left_click\s*\(\s*\)/i) || actionStr.match(/click\s*\(\s*\)/i)) {
       return { browser_click: { x: 0, y: 0 } };
@@ -1287,3 +1297,23 @@ Estimate the coordinates accurately relative to the image size.`;
     }
   }
 }
+
+async function getImageDimensions(screenshotB64: string | null): Promise<{ width: number; height: number } | null> {
+  if (!screenshotB64) return null;
+  try {
+    let cleanB64 = screenshotB64;
+    if (cleanB64.startsWith('data:')) {
+      const parts = cleanB64.split(',');
+      cleanB64 = parts[parts.length - 1];
+    }
+    const buffer = Buffer.from(cleanB64, 'base64');
+    const metadata = await sharp(buffer).metadata();
+    if (metadata.width && metadata.height) {
+      return { width: metadata.width, height: metadata.height };
+    }
+  } catch (err) {
+    console.error('[Navis] Failed to get image dimensions with sharp:', err);
+  }
+  return null;
+}
+
