@@ -75,6 +75,12 @@ class ExtensionBridgeServer extends EventEmitter {
         return;
       }
 
+      if (url.pathname === '/wake') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><head><title>Navis Wakeup</title></head><body style="font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #f9f9fa; color: #333;"><h3>Navis Wakeup Active</h3><p>Waking up companion extension...</p><p style="color: #888; font-size: 13px;">This tab will auto-close. You can manually close it if needed.</p><script>setTimeout(() => { try { window.close(); } catch(e) {} }, 800);</script></body></html>');
+        return;
+      }
+
       res.writeHead(404);
       res.end();
     });
@@ -106,7 +112,9 @@ class ExtensionBridgeServer extends EventEmitter {
       ws.on('message', (message) => {
         try {
           const payload = JSON.parse(message.toString());
-          console.log(`[BridgeServer] 📥 Message received [${payload.type}]`);
+          if (payload.type !== 'heartbeat') {
+            console.log(`[BridgeServer] 📥 Message received [${payload.type}]`);
+          }
 
           if (payload.type === 'response' && payload.requestId) {
             const pending = this.pendingRequests.get(payload.requestId);

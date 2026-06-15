@@ -90,11 +90,6 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           type: 'boolean',
           description: 'Last-resort visual fallback. Leave false for normal Navis runs; DOM extraction is much faster.',
         },
-        automationMode: {
-          type: 'string',
-          enum: ['extension-first', 'playwright'],
-          description: 'Optional manual override. extension-first uses the installed Navis browser extension; playwright uses an isolated automation browser.',
-        },
         startUrl: {
           type: 'string',
           description: 'URL to start at (default: about:blank)',
@@ -262,11 +257,16 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
 
       // Read Navis settings from the persistent store
       const navisSettings = toolSettingsStore.get().navis;
-      const requestedAutomationMode =
-        safeArgs.automationMode === 'playwright' || safeArgs.automationMode === 'extension-first'
-          ? safeArgs.automationMode
-          : navisSettings.automationMode;
-      const automationMode = requestedAutomationMode || (navisSettings.useChromeProfile && !navisSettings.useIsolatedBrowser ? 'extension-first' : 'playwright');
+      
+      // Lock down launcher mode to respect user settings:
+      // If extension-first is selected in settings, always force extension-first.
+      // Do not allow model/safeArgs override to switch to playwright.
+      const automationMode: 'extension-first' | 'playwright' =
+        navisSettings.automationMode === 'extension-first'
+          ? 'extension-first'
+          : (safeArgs.automationMode === 'extension-first' || safeArgs.automationMode === 'playwright'
+              ? safeArgs.automationMode
+              : navisSettings.automationMode);
 
       try {
         const shouldUseExtensionFirst =
