@@ -1805,6 +1805,21 @@ export class AIClient {
     const model = req.model ?? this.config.model;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.config.apiKey}`;
 
+    const stripAdditionalProperties = (schema: any): any => {
+      if (!schema || typeof schema !== 'object') return schema;
+      if (Array.isArray(schema)) {
+        return schema.map(stripAdditionalProperties);
+      }
+      const copy: any = {};
+      for (const key in schema) {
+        if (key === 'additionalProperties') {
+          continue;
+        }
+        copy[key] = stripAdditionalProperties(schema[key]);
+      }
+      return copy;
+    };
+
     const groupedMessages: { role: 'user' | 'model'; parts: any[] }[] = [];
     for (const m of req.messages) {
       if (m.role === 'system') continue;
@@ -1875,7 +1890,7 @@ export class AIClient {
       ?.map(t => ({
         name: t.name,
         description: t.description,
-        parameters: t.parameters
+        parameters: stripAdditionalProperties(t.parameters)
       }));
 
     const tools: any[] = [{ computer_use: { environment: 'ENVIRONMENT_BROWSER' } }];
