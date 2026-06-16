@@ -1106,6 +1106,7 @@ function normalizeVlmConfig(config: any) {
     if (provider === 'openai') return 'gpt-5.5';
     if (provider === 'anthropic') return 'claude-opus-4.6';
     if (provider === 'everfern') return 'fern-1';
+    if (provider === 'gemini') return 'gemini-2.5-computer-use-preview-10-2025';
     return 'qwen3-vl:235b-cloud';
   };
 

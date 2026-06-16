@@ -1162,7 +1162,7 @@ class ComputerUseTool {
     const iw     = vp.image_width;
     const ih     = vp.image_height;
 
-    const isNormalized = this.client && ["everfern", "openrouter", "ollama-cloud"].includes(this.client.provider);
+    const isNormalized = this.client && ["everfern", "openrouter", "ollama-cloud", "gemini"].includes(this.client.provider);
 
     if (!dw || !dh) {
       console.warn("[Coord] Viewport not initialized - using offset-only fallback");
@@ -1272,6 +1272,244 @@ class ComputerUseAgent {
     onProgress?: (event: SubAgentProgressEvent) => void,
   ): Promise<{ finalAnswer: string; lastScreenshot?: string }> {
 
+    const isGemini = this.client.provider === "gemini";
+
+    if (isGemini) {
+      let step = 0;
+      onUpdate?.("Starting Gemini Computer Use runner...");
+
+      this.messages = [];
+      if (SYSTEM_PROMPT) {
+        this.messages.push({ role: "system", content: SYSTEM_PROMPT });
+      }
+
+      const firstImg = await this.getScreenshotBase64();
+      this.messages.push({
+        role: "user",
+        content: [
+          { type: "text" as const, text: `Task: ${this.task}` },
+          { type: "image_url" as const, image_url: { url: firstImg } }
+        ]
+      });
+
+      while (step <= this.maxTurns) {
+        if (this.aborted || globalAbortManager.streamAborted) break;
+        step++;
+
+        console.log(`\n[Gemini Agent] Step ${step}/${this.maxTurns}`);
+        onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
+
+        let chatResponse;
+        try {
+          chatResponse = await this.client.chat({
+            messages: this.messages,
+            model: this.model,
+            temperature: 0.1,
+          });
+        } catch (err) {
+          console.error("[Gemini Agent] API error:", err);
+          if (step === this.maxTurns) break;
+          await sleep(3);
+          continue;
+        }
+
+        const content = typeof chatResponse.content === "string" ? chatResponse.content : "";
+        const toolCalls = chatResponse.toolCalls || [];
+
+        console.log(`[Gemini Agent] Content: ${content}`);
+        console.log(`[Gemini Agent] Tool Calls:`, JSON.stringify(toolCalls));
+
+        if (content) {
+          onProgress?.({
+            type: "reasoning",
+            toolCallId: this.toolCallId,
+            timestamp: new Date().toISOString(),
+            stepNumber: step,
+            content: content
+          });
+        }
+
+        this.messages.push({
+          role: "assistant" as const,
+          content: content,
+          tool_calls: toolCalls
+        });
+
+        if (toolCalls.length === 0) {
+          console.log("[Gemini Agent] No tool calls, task finished.");
+          this.finalAnswer = content || "Task finished.";
+          break;
+        }
+
+        const results = [];
+        for (const tc of toolCalls) {
+          if (this.aborted || globalAbortManager.streamAborted) break;
+          
+          console.log(`  Executing Gemini Action: ${tc.name}`);
+          onUpdate?.(`Executing action ${tc.name}...`);
+
+          onProgress?.({
+            type: "action",
+            toolCallId: this.toolCallId,
+            timestamp: new Date().toISOString(),
+            stepNumber: step,
+            action: { type: tc.name, params: tc.arguments, description: tc.name },
+          });
+
+          let actionResult = { status: "success", error: undefined as string | undefined };
+          try {
+            const fname = tc.name;
+            const args = (tc.arguments || {}) as Record<string, any>;
+
+            if (fname === "open_web_browser") {
+              // noop
+            } else if (fname === "wait_5_seconds") {
+              await this.tool.call({ action: "wait", time: 5 });
+            } else if (fname === "go_back") {
+              await this.tool.call({ action: "key", keys: ["alt", "left"] });
+            } else if (fname === "go_forward") {
+              await this.tool.call({ action: "key", keys: ["alt", "right"] });
+            } else if (fname === "search") {
+              const { shell } = require("electron");
+              await shell.openExternal("https://www.google.com");
+              await sleep(2);
+            } else if (fname === "navigate") {
+              const { shell } = require("electron");
+              if (args.url) {
+                await shell.openExternal(args.url);
+                await sleep(2);
+              } else {
+                throw new Error("url is required for navigate");
+              }
+            } else if (fname === "click_at") {
+              if (args.x != null && args.y != null) {
+                await this.tool.call({ action: "left_click", coordinate: [args.x, args.y] });
+              } else {
+                throw new Error("x and y are required for click_at");
+              }
+            } else if (fname === "hover_at") {
+              if (args.x != null && args.y != null) {
+                await this.tool.call({ action: "mouse_move", coordinate: [args.x, args.y] });
+              } else {
+                throw new Error("x and y are required for hover_at");
+              }
+            } else if (fname === "type_text_at") {
+              if (args.x != null && args.y != null && args.text != null) {
+                await this.tool.call({ action: "left_click", coordinate: [args.x, args.y] });
+                await sleep(0.5);
+                const clear = args.clear_before_typing !== false;
+                if (clear) {
+                  const isMac = process.platform === "darwin";
+                  const selectAllKey = isMac ? ["command", "a"] : ["control", "a"];
+                  await this.tool.call({ action: "key", keys: selectAllKey });
+                  await this.tool.call({ action: "key", keys: ["backspace"] });
+                  await sleep(0.2);
+                }
+                await this.tool.call({ action: "type", text: args.text });
+                const enter = args.press_enter !== false;
+                if (enter) {
+                  await sleep(0.2);
+                  await this.tool.call({ action: "key", keys: ["enter"] });
+                }
+              } else {
+                throw new Error("x, y, and text are required for type_text_at");
+              }
+            } else if (fname === "key_combination") {
+              if (args.keys) {
+                const keysList = args.keys.toLowerCase().split("+");
+                await this.tool.call({ action: "key", keys: keysList });
+              } else {
+                throw new Error("keys is required for key_combination");
+              }
+            } else if (fname === "scroll_document") {
+              const dir = typeof args.direction === "string" ? args.direction.toLowerCase() : "down";
+              if (dir === "up" || dir === "down") {
+                await this.tool.call({ action: "scroll", pixels: dir === "up" ? 500 : -500 });
+              } else {
+                await this.tool.call({ action: "hscroll", pixels: dir === "left" ? 500 : -500 });
+              }
+            } else if (fname === "scroll_at") {
+              if (args.x != null && args.y != null) {
+                await this.tool.call({ action: "mouse_move", coordinate: [args.x, args.y] });
+                await sleep(0.2);
+                const dir = typeof args.direction === "string" ? args.direction.toLowerCase() : "down";
+                const mag = args.magnitude != null ? Number(args.magnitude) : 800;
+                if (dir === "up" || dir === "down") {
+                  await this.tool.call({ action: "scroll", pixels: dir === "up" ? mag : -mag });
+                } else {
+                  await this.tool.call({ action: "hscroll", pixels: dir === "left" ? mag : -mag });
+                }
+              } else {
+                throw new Error("x and y are required for scroll_at");
+              }
+            } else if (fname === "drag_and_drop") {
+              if (args.x != null && args.y != null && args.destination_x != null && args.destination_y != null) {
+                await this.tool.call({
+                  action: "drag",
+                  start_coordinate: [args.x, args.y],
+                  coordinate: [args.destination_x, args.destination_y]
+                });
+              } else {
+                throw new Error("x, y, destination_x, and destination_y are required for drag_and_drop");
+              }
+            } else {
+              console.warn(`Warning: Unimplemented or custom function ${fname}`);
+              actionResult = { status: "error", error: `Unimplemented function ${fname}` };
+            }
+          } catch (e: any) {
+            console.error(`Error executing ${tc.name}:`, e);
+            actionResult = { status: "error", error: e.message || String(e) };
+          }
+
+          results.push({ name: tc.name, result: actionResult });
+          await sleep(1);
+        }
+
+        const newImg = await this.getScreenshotBase64();
+        onProgress?.({
+          type: "screenshot",
+          toolCallId: this.toolCallId,
+          timestamp: new Date().toISOString(),
+          stepNumber: step,
+          screenshot: {
+            base64: newImg?.split(",")?.[1] || "",
+            width: 1920,
+            height: 1080
+          }
+        });
+
+        const toolParts = results.map((r, i) => {
+          const tcId = toolCalls[i]?.id || ('tc-' + step + '-' + i);
+          return {
+            role: "tool" as const,
+            tool_call_id: tcId,
+            tool_name: r.name,
+            content: [
+              { type: "text" as const, text: JSON.stringify(r.result) }
+            ]
+          };
+        });
+
+        if (toolParts.length > 0) {
+          const lastPart = toolParts[toolParts.length - 1];
+          if (Array.isArray(lastPart.content)) {
+            (lastPart.content as any[]).push({ type: "image_url", image_url: { url: newImg } });
+          }
+        }
+
+        for (const tp of toolParts) {
+          this.messages.push(tp);
+        }
+
+        await sleep(1);
+      }
+
+      return {
+        finalAnswer: this.finalAnswer || `Task ended: ${this.terminated || "unknown"}`,
+        lastScreenshot: this.lastScreenshot,
+      };
+    }
+
     const isTars = ["everfern", "openrouter", "ollama-cloud"].includes(this.client.provider);
 
     if (isTars) {
@@ -1368,6 +1606,12 @@ class ComputerUseAgent {
         console.log(`\n[RAW OUTPUT]\n${rawResponse}\n`);
 
         let cleanResponse = stripThinking(rawResponse);
+        const trimmedLower = cleanResponse.toLowerCase().trim();
+        if (trimmedLower === "done" || trimmedLower === "done()" || trimmedLower === "finished" || trimmedLower === "finished()") {
+          console.log("\n[TASK COMPLETE — done/finished received]");
+          this.finalAnswer = "Task finished successfully";
+          break;
+        }
         let { thought, actions } = parseOutput(cleanResponse);
 
         const responseToolCalls = (chatResponse as any).toolCalls || [];
