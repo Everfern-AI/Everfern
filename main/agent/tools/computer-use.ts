@@ -268,7 +268,7 @@ function isStructuredAction(line: string): boolean {
 }
 
 function parseBox(s: string): [number, number] | null {
-  const m = s.match(/\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)/);
+  const m = s.match(/\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
   if (m) {
     return [parseInt(m[1], 10), parseInt(m[2], 10)];
   }
