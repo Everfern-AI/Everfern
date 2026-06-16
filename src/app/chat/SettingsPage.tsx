@@ -594,6 +594,7 @@ const settingsPrimaryProviders = [
 const visionProviders = [
     { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} /> },
     { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'gemini', name: 'Google Gemini', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} /> },
     { id: 'minimax', name: 'MiniMax API', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
     { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} /> },
     { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
@@ -608,6 +609,7 @@ const getVisionDefaultModel = (provider: string) => {
     if (provider === 'openai') return 'gpt-5.5';
     if (provider === 'anthropic') return 'claude-opus-4.6';
     if (provider === 'everfern') return 'fern-1';
+    if (provider === 'gemini') return 'gemini-2.5-computer-use-preview-10-2025';
     return 'qwen3-vl:235b-cloud';
 };
 

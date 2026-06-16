@@ -544,9 +544,13 @@ export class AIClient {
     switch (this.config.provider) {
       case 'anthropic': return this._anthropicChat(request);
       case 'ollama': return this._ollamaChat(request);
-      // All Gemini models (including gemini-2.5-computer-use-preview-10-2025) use
-      // the OpenAI-compatible v1beta/openai endpoint. The crosshair grounding loop
-      // does not require the proprietary Gemini native `computer_use` tool.
+      case 'gemini': {
+        const modelName = request.model ?? this.config.model;
+        if (modelName.includes('computer-use') || modelName.includes('gemini-3-flash-preview') || modelName.includes('gemini-3-flash')) {
+          return this._googleGeminiChat(request);
+        }
+        return this._openAICompatChat(request);
+      }
       default: return this._openAICompatChat(request);
     }
   }
@@ -1801,65 +1805,73 @@ export class AIClient {
     const model = req.model ?? this.config.model;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.config.apiKey}`;
 
-    const contents = req.messages
-      .filter(m => m.role !== 'system') // System instructions go in systemInstruction
-      .map(m => {
-        const parts: any[] = [];
-        if (m.role === 'tool') {
-          // Map to function_response part
-          parts.push({
-            function_response: {
-              name: (m as any).tool_name || 'unknown', // We might need to pass this down
-              response: {
-                result: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-                // If it was a computer_use tool, we might have safety_acknowledgement: "true"
-                ...(typeof m.content !== 'string' && (m.content as any).safety_acknowledgement ? { safety_acknowledgement: "true" } : {})
-              }
-            }
-          });
-          // Also append screenshots if present in tool content
-          if (Array.isArray(m.content)) {
-            for (const c of m.content) {
-              if (c.type === 'image_url') {
-                const b64 = c.image_url.url.split(',')[1];
-                // In Gemini CU, screenshots for function results can be inline_data parts
-                parts.push({ inline_data: { mime_type: 'image/jpeg', data: b64 } });
-              }
-            }
-          }
-        } else if (typeof m.content === 'string') {
-          if (m.content) parts.push({ text: m.content });
+    const groupedMessages: { role: 'user' | 'model'; parts: any[] }[] = [];
+    for (const m of req.messages) {
+      if (m.role === 'system') continue;
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      const parts: any[] = [];
+      if (m.role === 'tool') {
+        let responseVal: any = {};
+        if (typeof m.content === 'string') {
+          responseVal = { result: m.content };
+        } else if (Array.isArray(m.content)) {
+          const txt = (m.content.find((c: any) => c.type === 'text') as any)?.text;
+          responseVal = txt ? safeParseJSON(txt) : m.content;
         } else {
+          responseVal = m.content;
+        }
+
+        parts.push({
+          function_response: {
+            name: (m as any).tool_name || 'unknown',
+            response: responseVal
+          }
+        });
+        if (Array.isArray(m.content)) {
           for (const c of m.content) {
-            if (c.type === 'text' && c.text) parts.push({ text: c.text });
             if (c.type === 'image_url') {
-              const b64 = c.image_url.url.split(',')[1] || c.image_url.url;
+              const b64 = c.image_url.url.split(',')[1];
               parts.push({ inline_data: { mime_type: 'image/jpeg', data: b64 } });
             }
           }
         }
-
-        if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
-          for (const tc of m.tool_calls) {
-            parts.push({
-              function_call: {
-                name: tc.name,
-                args: safeParseJSON(tc.arguments)
-              }
-            });
+      } else if (typeof m.content === 'string') {
+        if (m.content) parts.push({ text: m.content });
+      } else {
+        for (const c of m.content) {
+          if (c.type === 'text' && c.text) parts.push({ text: c.text });
+          if (c.type === 'image_url') {
+            const b64 = c.image_url.url.split(',')[1] || c.image_url.url;
+            parts.push({ inline_data: { mime_type: 'image/jpeg', data: b64 } });
           }
         }
+      }
 
-        return { role: m.role === 'assistant' ? 'model' : 'user', parts };
-      });
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          parts.push({
+            function_call: {
+              name: tc.name,
+              args: safeParseJSON(tc.arguments)
+            }
+          });
+        }
+      }
+
+      const lastGroup = groupedMessages[groupedMessages.length - 1];
+      if (lastGroup && lastGroup.role === role) {
+        lastGroup.parts.push(...parts);
+      } else {
+        groupedMessages.push({ role, parts });
+      }
+    }
 
     const systemInstruction = req.messages
       .filter(m => m.role === 'system')
       .map(m => ({ parts: [{ text: typeof m.content === 'string' ? m.content : '' }] }))[0];
 
-    // Map regular tools to Google's function_declarations
     const functionDeclarations = req.tools
-      ?.filter(t => t.name !== 'computer_use') // Use the native computer_use tool instead
+      ?.filter(t => t.name !== 'computer_use')
       ?.map(t => ({
         name: t.name,
         description: t.description,
@@ -1872,7 +1884,7 @@ export class AIClient {
     }
 
     const body: any = {
-      contents,
+      contents: groupedMessages,
       tools,
       generationConfig: {
         temperature: req.temperature ?? this.config.temperature,
