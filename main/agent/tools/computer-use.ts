@@ -130,6 +130,25 @@ const COMPUTER_USE_TOOL_SPEC = {
   },
 };
 
+const GEMINI_SYSTEM_PROMPT = `You are operating a Windows computer.
+* To provide an answer to the user, *do not use any tools* and output your answer on a separate line. IMPORTANT: Do not add any formatting or additional punctuation/text, just output the answer by itself after two empty lines.
+* Make sure you scroll down to see everything before deciding something isn't available.
+* You can open an app from anywhere. The icon doesn't have to currently be on screen.
+* Unless explicitly told otherwise, make sure to save any changes you make.
+* If text is cut off or incomplete, scroll or click into the element to get the full text before providing an answer.
+* IMPORTANT: Complete the given task EXACTLY as stated. DO NOT make any assumptions that completing a similar task is correct.  If you can't find what you're looking for, SCROLL to find it.
+* If you want to edit some text, ONLY USE THE \`type_text_at\` tool.
+* The given task may already be completed. If so, there is no need to do anything.`;
+
+// Compact prompt for GPT-5.4 — saves ~200 tokens per turn vs the full Gemini prompt
+const GPT5_SYSTEM_PROMPT = `You are a Windows desktop automation agent. Use the provided tools to complete the task.
+Rules:
+- Use scroll_document/scroll_at if content may be below the fold before concluding something is missing.
+- Open apps using the Start menu (key: win) if not visible on screen.
+- Save changes unless explicitly told not to.
+- Do nothing if the task is already complete.
+- To answer the user, output ONLY the answer text (no tools, no formatting).`;
+
 const SYSTEM_PROMPT = `You are a GUI automation agent. You control a desktop by outputting structured actions.
 
 ## CRITICAL OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY
@@ -1272,15 +1291,33 @@ class ComputerUseAgent {
     onProgress?: (event: SubAgentProgressEvent) => void,
   ): Promise<{ finalAnswer: string; lastScreenshot?: string }> {
 
-    const isGemini = this.client.provider === "gemini";
+    const isGemini = this.client.provider === "gemini" || this.model.toLowerCase().includes("gemini");
+    const isGpt5 = this.model.toLowerCase().includes("gpt-5") || this.model.toLowerCase().includes("openai/gpt-5");
+    const useToolCallRunner = isGemini || isGpt5;
 
-    if (isGemini) {
+    if (useToolCallRunner) {
+      if (isGemini) {
+        // Validate model is supported for Gemini Computer Use
+        const isSupported = this.model.includes('computer-use') || 
+                            this.model.includes('gemini-3-flash-preview') || 
+                            this.model.includes('gemini-3-flash') ||
+                            this.model.includes('gemini-2.5-flash');
+        if (!isSupported) {
+          throw new Error(`Google Gemini Computer Use is not supported on "${this.model}". Supported: gemini-2.5-flash, gemini-3-flash-preview.`);
+        }
+      }
+
+      const agentName = isGpt5 ? "GPT-5" : "Gemini";
+      const systemPrompt = isGpt5 ? GPT5_SYSTEM_PROMPT : GEMINI_SYSTEM_PROMPT;
+      // Token budget: GPT-5.4 is expensive — cap to 512 per turn; Gemini uses default
+      const maxTokensPerTurn = isGpt5 ? 512 : undefined;
+
       let step = 0;
-      onUpdate?.("Starting Gemini Computer Use runner...");
+      onUpdate?.(`Starting ${agentName} Computer Use runner...`);
 
       this.messages = [];
-      if (SYSTEM_PROMPT) {
-        this.messages.push({ role: "system", content: SYSTEM_PROMPT });
+      if (systemPrompt) {
+        this.messages.push({ role: "system", content: systemPrompt });
       }
 
       const firstImg = await this.getScreenshotBase64();
@@ -1296,7 +1333,7 @@ class ComputerUseAgent {
         if (this.aborted || globalAbortManager.streamAborted) break;
         step++;
 
-        console.log(`\n[Gemini Agent] Step ${step}/${this.maxTurns}`);
+        console.log(`\n[${agentName} Agent] Step ${step}/${this.maxTurns}`);
         onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
 
         let chatResponse;
@@ -1305,9 +1342,10 @@ class ComputerUseAgent {
             messages: this.messages,
             model: this.model,
             temperature: 0.1,
+            ...(maxTokensPerTurn ? { maxTokens: maxTokensPerTurn } : {}),
           });
         } catch (err) {
-          console.error("[Gemini Agent] API error:", err);
+          console.error(`[${agentName} Agent] API error:`, err);
           if (step === this.maxTurns) break;
           await sleep(3);
           continue;
@@ -1341,6 +1379,43 @@ class ComputerUseAgent {
           break;
         }
 
+        // Check safety decision / user confirmation requirement
+        const safetyDecision = chatResponse.safetyDecision as any;
+        const requiresConfirmation = safetyDecision && (
+          safetyDecision === 'require_confirmation' ||
+          safetyDecision === 'OFF-NOMINAL' ||
+          (typeof safetyDecision === 'object' && (
+            safetyDecision.decision === 'require_confirmation' ||
+            safetyDecision.decision === 'OFF-NOMINAL'
+          ))
+        );
+
+        let userConfirmed = true;
+        if (requiresConfirmation) {
+          console.log("[Gemini Agent] Action requires confirmation. Prompting user...");
+          onUpdate?.("⚠️ Action requires security confirmation...");
+          try {
+            const { dialog, BrowserWindow } = require("electron");
+            const win = BrowserWindow.getAllWindows()[0];
+            const explanation = typeof safetyDecision === 'object' && (safetyDecision as any).explanation
+              ? `\n\nExplanation: ${(safetyDecision as any).explanation}`
+              : "";
+            const dialogResponse = await dialog.showMessageBox(win || undefined, {
+              type: "warning",
+              title: "EverFern Security Authorization",
+              message: `Gemini has requested an action that requires your confirmation.${explanation}\n\nDo you want to authorize this action?`,
+              buttons: ["Approve", "Deny"],
+              defaultId: 0,
+              cancelId: 1
+            });
+            userConfirmed = dialogResponse.response === 0;
+            console.log(`[Gemini Agent] User confirmation result: ${userConfirmed ? "Approved" : "Denied"}`);
+          } catch (dialogErr) {
+            console.error("[Gemini Agent] Failed to show confirmation dialog:", dialogErr);
+            userConfirmed = false;
+          }
+        }
+
         const results = [];
         for (const tc of toolCalls) {
           if (this.aborted || globalAbortManager.streamAborted) break;
@@ -1356,10 +1431,13 @@ class ComputerUseAgent {
             action: { type: tc.name, params: tc.arguments, description: tc.name },
           });
 
-          let actionResult = { status: "success", error: undefined as string | undefined };
-          try {
-            const fname = tc.name;
-            const args = (tc.arguments || {}) as Record<string, any>;
+          let actionResult: Record<string, any> = { status: "success", error: undefined as string | undefined };
+          if (!userConfirmed) {
+            actionResult = { status: "error", error: "User denied confirmation for this action." };
+          } else {
+            try {
+              const fname = tc.name;
+              const args = (tc.arguments || {}) as Record<string, any>;
 
             if (fname === "open_web_browser") {
               // noop
@@ -1460,10 +1538,15 @@ class ComputerUseAgent {
             console.error(`Error executing ${tc.name}:`, e);
             actionResult = { status: "error", error: e.message || String(e) };
           }
-
-          results.push({ name: tc.name, result: actionResult });
-          await sleep(1);
         }
+
+        if (requiresConfirmation && userConfirmed) {
+          actionResult.safety_acknowledgement = true;
+        }
+
+        results.push({ name: tc.name, result: actionResult });
+        await sleep(1);
+      }
 
         const newImg = await this.getScreenshotBase64();
         onProgress?.({
@@ -1573,7 +1656,7 @@ class ComputerUseAgent {
           `Current Screenshot:${finalTurnPrompt}`;
 
         const modelName = this.client.provider === "everfern"
-          ? "everfern-tars-v1"
+          ? (this.model && this.model !== "fern-1" ? this.model : "everfern-tars-v1")
           : (this.model || "everfern-tars-v1");
 
         console.log("[ComputerUse] Querying UI-TARS model...");

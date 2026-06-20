@@ -608,7 +608,7 @@ const getVisionDefaultModel = (provider: string) => {
     if (provider === 'ollama') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';
     if (provider === 'anthropic') return 'claude-opus-4.6';
-    if (provider === 'everfern') return 'fern-1';
+    if (provider === 'everfern') return 'everfern-tars-v1';
     if (provider === 'gemini') return 'gemini-2.5-computer-use-preview-10-2025';
     return 'qwen3-vl:235b-cloud';
 };
@@ -1212,6 +1212,24 @@ export default function SettingsPage({
                                 })}
                             </div>
                         </div>
+                        {settingsVlmCloudProvider === 'everfern' && (
+                            <div>
+                                <Label>Accuracy & Cost Options</Label>
+                                <Select
+                                    value={(settingsVlmCloudModel === 'openai/gpt-5.4' || settingsVlmCloudModel === 'google/gemini-3-flash-preview') ? 'accurate' : 'affordable'}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setSettingsVlmCloudModel(val === 'accurate' ? 'openai/gpt-5.4' : 'everfern-tars-v1');
+                                    }}
+                                >
+                                    <option value="affordable">Affordable (Fast & Economical — Qwen 3 VL)</option>
+                                    <option value="accurate">Accurate (High Precision — GPT-5.4)</option>
+                                </Select>
+                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 8 }}>
+                                    Affordable uses Qwen 3 VL. Accurate uses GPT-5.4 via EverFern Cloud — token-optimized for low cost.
+                                </p>
+                            </div>
+                        )}
                         {settingsVlmCloudProvider !== 'everfern' && (
                             <>
                                 <div>
