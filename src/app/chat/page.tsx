@@ -2101,7 +2101,7 @@ export default function ChatPage() {
             setSettingsShowuiUrl(config.showuiUrl || "http://127.0.0.1:7860");
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
-                loadedVlmProvider === "everfern" ? "fern-1" :
+                loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
                 loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
                 loadedVlmProvider === "minimax" ? "MiniMax-M3" :
                 loadedVlmProvider === "openai" ? "gpt-5.5" :
@@ -2126,6 +2126,16 @@ export default function ChatPage() {
     useEffect(() => {
         if (settingsProvider && config) setSettingsApiKey(config.keys?.[settingsProvider] || "");
     }, [settingsProvider, config]);
+
+    useEffect(() => {
+        if (settingsVlmCloudProvider && config) {
+            if (settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter') {
+                setSettingsVlmCloudKey('');
+            } else {
+                setSettingsVlmCloudKey(config.keys?.[`vlm-${settingsVlmCloudProvider}`] || config.keys?.[settingsVlmCloudProvider] || "");
+            }
+        }
+    }, [settingsVlmCloudProvider, config]);
 
     useEffect(() => {
         return () => {
@@ -4128,7 +4138,7 @@ export default function ChatPage() {
         const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
         const defaultVlmModel =
-          settingsVlmCloudProvider === 'everfern' ? 'fern-1' :
+          settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
           settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
           settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
           settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :

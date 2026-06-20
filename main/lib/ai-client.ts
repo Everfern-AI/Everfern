@@ -42,12 +42,12 @@ function safeParseJSON(input: string | Record<string, any>, fallback: any = {}):
       try {
         const match = repaired.match(/\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\})*)*\}))*\}/);
         if (match) return JSON.parse(match[0]);
-      } catch {}
+      } catch { }
       // Also try the original with stripped control chars
       try {
         const stripped = input.replace(/[\x00-\x1f\x7f]/g, '');
         return JSON.parse(stripped);
-      } catch {}
+      } catch { }
       console.warn(`[AIClient] Failed to parse JSON, using fallback. Input: "${input.slice(0, 200)}..."`);
       return fallback;
     }
@@ -261,6 +261,128 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   openrouter: 'openai/gpt-5.2',
 };
 
+const GEMINI_COMPUTER_USE_TOOLS = [
+  {
+    name: "open_web_browser",
+    description: "Opens the web browser.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "wait_5_seconds",
+    description: "Pauses execution for 5 seconds to allow dynamic content to load.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "go_back",
+    description: "Navigates to the previous page in history.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "go_forward",
+    description: "Navigates to the next page in history.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "search",
+    description: "Navigates to the default search engine's homepage.",
+    parameters: { type: "object", properties: {} }
+  },
+  {
+    name: "navigate",
+    description: "Navigates the browser directly to the specified URL.",
+    parameters: {
+      type: "object",
+      required: ["url"],
+      properties: { url: { type: "string" } }
+    }
+  },
+  {
+    name: "click_at",
+    description: "Clicks at a specific coordinate on the screen. x and y are 0-1000 normalized coordinates.",
+    parameters: {
+      type: "object",
+      required: ["x", "y"],
+      properties: {
+        x: { type: "integer", minimum: 0, maximum: 1000 },
+        y: { type: "integer", minimum: 0, maximum: 1000 }
+      }
+    }
+  },
+  {
+    name: "hover_at",
+    description: "Hovers the mouse at a specific coordinate on the screen. x and y are 0-1000 normalized coordinates.",
+    parameters: {
+      type: "object",
+      required: ["x", "y"],
+      properties: {
+        x: { type: "integer", minimum: 0, maximum: 1000 },
+        y: { type: "integer", minimum: 0, maximum: 1000 }
+      }
+    }
+  },
+  {
+    name: "type_text_at",
+    description: "Types text at a specific coordinate on the screen. x and y are 0-1000 normalized coordinates.",
+    parameters: {
+      type: "object",
+      required: ["x", "y", "text"],
+      properties: {
+        x: { type: "integer", minimum: 0, maximum: 1000 },
+        y: { type: "integer", minimum: 0, maximum: 1000 },
+        text: { type: "string" },
+        press_enter: { type: "boolean", default: true },
+        clear_before_typing: { type: "boolean", default: true }
+      }
+    }
+  },
+  {
+    name: "key_combination",
+    description: "Press keyboard keys or combinations, such as 'Control+C' or 'Enter'.",
+    parameters: {
+      type: "object",
+      required: ["keys"],
+      properties: { keys: { type: "string" } }
+    }
+  },
+  {
+    name: "scroll_document",
+    description: "Scrolls the entire webpage in the specified direction.",
+    parameters: {
+      type: "object",
+      required: ["direction"],
+      properties: { direction: { type: "string", enum: ["up", "down", "left", "right"] } }
+    }
+  },
+  {
+    name: "scroll_at",
+    description: "Scrolls at coordinate (x, y) in the specified direction. x and y are 0-1000 normalized coordinates.",
+    parameters: {
+      type: "object",
+      required: ["x", "y", "direction"],
+      properties: {
+        x: { type: "integer", minimum: 0, maximum: 1000 },
+        y: { type: "integer", minimum: 0, maximum: 1000 },
+        direction: { type: "string", enum: ["up", "down", "left", "right"] },
+        magnitude: { type: "integer", default: 800 }
+      }
+    }
+  },
+  {
+    name: "drag_and_drop",
+    description: "Drags an element from starting coordinate (x,y) and drops it at destination (destination_x, destination_y). All coordinates are 0-1000 normalized.",
+    parameters: {
+      type: "object",
+      required: ["x", "y", "destination_x", "destination_y"],
+      properties: {
+        x: { type: "integer", minimum: 0, maximum: 1000 },
+        y: { type: "integer", minimum: 0, maximum: 1000 },
+        destination_x: { type: "integer", minimum: 0, maximum: 1000 },
+        destination_y: { type: "integer", minimum: 0, maximum: 1000 }
+      }
+    }
+  }
+];
+
 // ── AIClient ─────────────────────────────────────────────────────────
 
 export class AIClient {
@@ -446,17 +568,80 @@ export class AIClient {
     return actions;
   }
 
+  private _maybeInjectComputerUseTools(options: any, req: ChatRequest): void {
+    const modelName = req.model ?? this.config.model;
+    const lower = modelName.toLowerCase();
+    const isGeminiModel = lower.includes('gemini');
+    const isGpt5Model = lower.includes('gpt-5') || lower.includes('openai/gpt-5');
+    const needsTools = (isGeminiModel || isGpt5Model) && !req.tools?.length &&
+      (this.config.provider === 'everfern' || this.config.provider === 'openrouter');
+    if (needsTools) {
+      options.tools = GEMINI_COMPUTER_USE_TOOLS.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
+      }));
+      options.tool_choice = 'auto';
+      // Token-saving: GPT-5.4 action responses are always short, cap to 512
+      if (isGpt5Model) {
+        options.max_tokens = Math.min(options.max_tokens ?? 4096, 512);
+      }
+    }
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     console.log(`[AIClient] chat() called: provider=${this.config.provider}, model=${request.model ?? this.config.model}, hasOnStreamChunk=${!!request.onStreamChunk}, messages=${request.messages.length}`);
     this.assertProviderAuthReady();
     // For EverFern Cloud, route vision requests using direct HTTP (not OpenAI SDK)
     if (this.config.provider === 'everfern') {
+      const modelName = request.model ?? this.config.model;
+      const isGeminiModel = modelName.toLowerCase().includes('gemini');
+      const isGpt5Model = modelName.toLowerCase().includes('gpt-5') || modelName.toLowerCase().includes('openai/gpt-5');
+      const isPassThroughModel = isGeminiModel || isGpt5Model;
+      if (isPassThroughModel) {
+        const isGemini3Flash = modelName.toLowerCase().includes('gemini-3-flash');
+        if (isGemini3Flash) {
+          // Gemini 3 Flash via EverFern Cloud: attempt primary, fall back to gemini-2.5-flash on failure
+          const FALLBACK_MODEL = 'google/gemini-2.5-flash';
+          try {
+            console.log(`[EverFern Gemini] Trying primary model: ${modelName}`);
+            const result = await this._openAISDKChat(request);
+            // If empty content returned, treat as a soft failure and fall back
+            const content = typeof result.content === 'string' ? result.content : '';
+            if (!content.trim() && result.finishReason !== 'tool_calls') {
+              console.warn(`[EverFern Gemini] Primary model ${modelName} returned empty content — falling back to ${FALLBACK_MODEL}`);
+              const fallbackRequest = { ...request, model: FALLBACK_MODEL };
+              return this._openAISDKChat(fallbackRequest);
+            }
+            return result;
+          } catch (err: any) {
+            console.warn(`[EverFern Gemini] Primary model ${modelName} failed (${err?.message ?? err}) — falling back to ${FALLBACK_MODEL}`);
+            const fallbackRequest = { ...request, model: FALLBACK_MODEL };
+            return this._openAISDKChat(fallbackRequest);
+          }
+        }
+        if (isGpt5Model) {
+          // GPT-5.4 via EverFern Cloud — token-optimized: cap to 512 tokens (actions are short)
+          console.log(`[EverFern GPT-5] Routing ${modelName} via OpenAI SDK (max_tokens capped to 512)`);
+          return this._openAISDKChat({ ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 512) });
+        }
+        return this._openAISDKChat(request);
+      }
+
       // Check if this is a vision request (has images)
       const hasImages = request.messages.some(m =>
         Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
       );
 
-      if (hasImages) {
+      // Only attempt the dedicated vision-grounding path for models that support it.
+      // Chat models like fern-1 do NOT support image input — strip images and fall through.
+      const modelLower = (request.model ?? this.config.model).toLowerCase();
+      const modelSupportsVision = modelLower.includes('tars') || modelLower.startsWith('everfern-tars');
+
+      if (hasImages && modelSupportsVision) {
         // Extract screenshot and objective from messages
         const lastMsg = request.messages[request.messages.length - 1];
         if (Array.isArray(lastMsg.content)) {
@@ -532,6 +717,22 @@ export class AIClient {
         }
       }
 
+      if (hasImages && !modelSupportsVision) {
+        // Model doesn't support images — strip image_url parts and send text-only
+        console.warn(`[EverFern] Model ${request.model ?? this.config.model} does not support image input. Stripping images and continuing with text-only.`);
+        const textOnlyMessages = request.messages.map(m => {
+          if (!Array.isArray(m.content)) return m;
+          const textParts = m.content.filter(c => c.type !== 'image_url');
+          return {
+            ...m,
+            content: textParts.length === 1 && textParts[0]?.type === 'text'
+              ? textParts[0].text  // flatten to plain string
+              : textParts.length > 0 ? textParts : m.content
+          };
+        });
+        return this._openAISDKChat({ ...request, messages: textOnlyMessages });
+      }
+
       // For non-vision requests, use OpenAI SDK
       return this._openAISDKChat(request);
     }
@@ -557,8 +758,30 @@ export class AIClient {
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
     this.assertProviderAuthReady();
+    const modelName = request.model ?? this.config.model;
+    const isGeminiModel = modelName.toLowerCase().includes('gemini');
+
     // For EverFern Cloud, route vision requests to /api/tars/vision
     if (this.config.provider === 'everfern') {
+      if (isGeminiModel) {
+        const isGemini3Flash = modelName.toLowerCase().includes('gemini-3-flash');
+        if (isGemini3Flash) {
+          // Gemini 3 Flash via EverFern Cloud: try primary, fall back to gemini-2.5-flash on error
+          const FALLBACK_MODEL = 'google/gemini-2.5-flash';
+          try {
+            console.log(`[EverFern Gemini Stream] Trying primary model: ${modelName}`);
+            yield* this._openAISDKStream(request);
+            return;
+          } catch (err: any) {
+            console.warn(`[EverFern Gemini Stream] Primary model ${modelName} failed (${err?.message ?? err}) — falling back to ${FALLBACK_MODEL}`);
+            const fallbackRequest = { ...request, model: FALLBACK_MODEL };
+            yield* this._openAISDKStream(fallbackRequest);
+            return;
+          }
+        }
+        yield* this._openAISDKStream(request);
+        return;
+      }
       // Check if this is a vision request (has images)
       const hasImages = request.messages.some(m =>
         Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
@@ -942,6 +1165,8 @@ export class AIClient {
       stream: isStreaming
     };
 
+    this._maybeInjectComputerUseTools(options, req);
+
     // Helper function for retrying with exponential backoff
     const retryWithBackoff = async <T>(
       fn: () => Promise<T>,
@@ -1156,6 +1381,8 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: true
     };
+
+    this._maybeInjectComputerUseTools(options, req);
 
     if (req.tools?.length) {
       options.tools = req.tools.map(t => {
@@ -1382,6 +1609,9 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: isStreaming,
     };
+
+    this._maybeInjectComputerUseTools(body, req);
+
     if (this.config.provider === 'nvidia') {
       const modelName = req.model ?? this.config.model;
       if (modelName?.includes('qwen')) {
@@ -1627,6 +1857,9 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: true,
     };
+
+    this._maybeInjectComputerUseTools(streamBody, req);
+
     if (this.config.provider === 'nvidia') {
       const modelName = req.model ?? this.config.model;
       if (modelName?.includes('glm')) {
