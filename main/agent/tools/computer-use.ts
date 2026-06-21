@@ -1329,6 +1329,7 @@ class ComputerUseAgent {
         ]
       });
 
+      let consecutiveErrors = 0;
       while (step <= this.maxTurns) {
         if (this.aborted || globalAbortManager.streamAborted) break;
         step++;
@@ -1344,8 +1345,14 @@ class ComputerUseAgent {
             temperature: 0.1,
             ...(maxTokensPerTurn ? { maxTokens: maxTokensPerTurn } : {}),
           });
-        } catch (err) {
+          consecutiveErrors = 0;
+        } catch (err: any) {
           console.error(`[${agentName} Agent] API error:`, err);
+          consecutiveErrors++;
+          if (consecutiveErrors >= 3) {
+            this.finalAnswer = `Unable to reach VLM provider. Please verify that the API endpoint is running and reachable. Error: ${err.message || err}`;
+            break;
+          }
           if (step === this.maxTurns) break;
           await sleep(3);
           continue;
@@ -1862,6 +1869,7 @@ class ComputerUseAgent {
       let step = 0;
       const history: any[] = [];
       let noActionRetries = 0;
+      let consecutiveErrors = 0;
 
       while (step <= this.maxTurns) {
         if (this.aborted || globalAbortManager.streamAborted) break;
@@ -1910,6 +1918,7 @@ class ComputerUseAgent {
               await this.dispatchAll(actions, onUpdate, onProgress, step);
               this.history.push(`${instruction} -> ${actions.join(", ")}`);
               if (this.history.length > this.historyWindow) this.history = this.history.slice(-this.historyWindow);
+              consecutiveErrors = 0;
               if (this.terminated || this.finalAnswer) break;
               await sleep(1);
               continue;
@@ -1919,6 +1928,7 @@ class ComputerUseAgent {
             if (noActionRetries <= 2 && !isFinalTurn) {
               console.warn(`[Dumb-Agent] Brain/HAND produced no executable action; retrying (${noActionRetries}/2)`);
               await sleep(1);
+              consecutiveErrors = 0;
               continue;
             }
             console.warn("[Dumb-Agent] No actions received from brain/hand path");
@@ -1948,8 +1958,14 @@ class ComputerUseAgent {
             tools: [COMPUTER_USE_ACTION_TOOL],
             toolChoice: isFinalTurn ? "auto" : "required",
           });
+          consecutiveErrors = 0;
         } catch (err: any) {
           console.error("[Dumb-Agent] API error:", err);
+          consecutiveErrors++;
+          if (consecutiveErrors >= 3) {
+            this.finalAnswer = `Unable to reach VLM provider. Please verify that the API endpoint is running and reachable. Error: ${err.message || err}`;
+            break;
+          }
           if (step === this.maxTurns) break;
           continue;
         }

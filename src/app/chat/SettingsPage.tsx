@@ -1898,10 +1898,31 @@ export default function SettingsPage({
         const [filterType, setFilterType] = useState<string>('all');
         const [searchQuery, setSearchQuery] = useState<string>('');
         const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
-        const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-        const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+        const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number; z: number }>>({});
         const [zoom, setZoom] = useState<number>(1);
+        const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+        const node3DPositionsRef = React.useRef<Record<string, { x: number; y: number; z: number }>>({});
+        const rotationRef = React.useRef({ yaw: 0, pitch: 0.2 });
+        const isDraggingRef = React.useRef(false);
+        const lastMouseRef = React.useRef({ x: 0, y: 0 });
         const svgRef = React.useRef<SVGSVGElement>(null);
+
+        const rotate3D = (x: number, y: number, z: number, yaw: number, pitch: number) => {
+            // Yaw (around Y axis)
+            const cosY = Math.cos(yaw);
+            const sinY = Math.sin(yaw);
+            const x1 = x * cosY - z * sinY;
+            const z1 = x * sinY + z * cosY;
+
+            // Pitch (around X axis)
+            const cosX = Math.cos(pitch);
+            const sinX = Math.sin(pitch);
+            const y2 = y * cosX - z1 * sinX;
+            const z2 = y * sinX + z1 * cosX;
+
+            return { x: x1, y: y2, z: z2 };
+        };
 
         const fetchGraph = async () => {
             setIsLoading(true);
@@ -1951,6 +1972,191 @@ export default function SettingsPage({
             }
         };
 
+        const handleShareMemoryGraph = async () => {
+            if (!svgRef.current) return;
+            setIsBusy('share');
+            try {
+                // Wait for custom fonts to load
+                try {
+                    await document.fonts.ready;
+                    await Promise.all([
+                        document.fonts.load('bold 36px "EB Garamond"'),
+                        document.fonts.load('500 18px "Figtree"'),
+                        document.fonts.load('bold 36px "Figtree"'),
+                        document.fonts.load('16px "JetBrains Mono"')
+                    ]);
+                } catch (e) {
+                    console.warn("Fonts load warning:", e);
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 1200;
+                canvas.height = 1200;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error("Could not get canvas context");
+
+                // 1. Draw cream background gradient
+                const bgGrad = ctx.createRadialGradient(600, 600, 50, 600, 600, 800);
+                bgGrad.addColorStop(0, '#fdfbf7');
+                bgGrad.addColorStop(1, '#FEFAEF');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(0, 0, 1200, 1200);
+
+                // 2. Draw card container with light glassmorphism
+                ctx.save();
+                ctx.strokeStyle = 'rgba(32, 30, 36, 0.08)';
+                ctx.lineWidth = 2;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.shadowColor = 'rgba(32, 30, 36, 0.05)';
+                ctx.shadowBlur = 40;
+                
+                ctx.beginPath();
+                ctx.roundRect(60, 60, 1080, 1080, 24);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+
+                // 3. Draw Branding Header
+                let logoImg: HTMLImageElement | null = null;
+                try {
+                    logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                        const img = new window.Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject();
+                        img.src = '/images/logos/black-logo-withoutbg.png';
+                    });
+                } catch (e) {
+                    console.warn("Logo failed to load");
+                }
+
+                const headerY = 120;
+                if (logoImg) {
+                    ctx.drawImage(logoImg, 100, headerY, 64, 64);
+                } else {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(132, headerY + 32, 32, 0, Math.PI * 2);
+                    ctx.fillStyle = '#10b981';
+                    ctx.shadowColor = '#10b981';
+                    ctx.shadowBlur = 15;
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 24px "Figtree", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('EF', 132, headerY + 32);
+                }
+
+                ctx.fillStyle = '#201e24';
+                ctx.font = '700 36px "Figtree", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText('EverFern AI', 184, headerY);
+
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '500 18px "Figtree", sans-serif';
+                ctx.fillText('My Personal Memory & Knowledge Graph', 184, headerY + 44);
+
+                // 4. Serialize, modify, and Draw the SVG Globe in light theme
+                const serializer = new XMLSerializer();
+                let svgString = serializer.serializeToString(svgRef.current);
+                
+                // Modify SVG string to convert dark theme to cream light theme
+                svgString = svgString.replace(/fill="url\(#graph-bg\)"/g, 'fill="transparent"');
+                svgString = svgString.replace(/stopColor="#090d16"/g, 'stopColor="#FEFAEF"');
+                svgString = svgString.replace(/stopColor="#1e293b"/g, 'stopColor="#FEFAEF"');
+                
+                // Convert grid line strokes from indigo/white to dark/subtle
+                svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.04\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.12\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.015\)"/g, 'stroke="rgba(32,30,36,0.03)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.03\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.04\)"/g, 'stroke="rgba(32,30,36,0.08)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.1\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                
+                // Convert white nodes to dark slate to be visible on cream
+                svgString = svgString.replace(/fill="#ffffff" opacity/g, 'fill="#4f46e5" opacity');
+                
+                // Tooltip and brain core text colors
+                svgString = svgString.replace(/fill="#0f172a"/g, 'fill="#FEFAEF"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.15\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/fill="#ffffff"/g, 'fill="#201e24"');
+
+                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                const blobURL = URL.createObjectURL(svgBlob);
+
+                const svgImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                    const img = new window.Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject();
+                    img.src = blobURL;
+                });
+                URL.revokeObjectURL(blobURL);
+
+                ctx.drawImage(svgImg, 150, 240, 900, 600);
+
+                // 5. Draw Statistics Dashboard
+                const stats = [
+                    { label: 'Preferences', value: graph.nodes.filter(n => n.type === 'preference').length.toString(), color: '#10b981' },
+                    { label: 'Habits', value: graph.nodes.filter(n => n.type === 'habit').length.toString(), color: '#059669' },
+                    { label: 'Facts', value: graph.nodes.filter(n => n.type === 'fact').length.toString(), color: '#0ea5e9' },
+                    { label: 'Files Linked', value: graph.nodes.filter(n => n.type === 'file').length.toString(), color: '#64748b' }
+                ];
+
+                const startX = 100;
+                const totalWidth = 1000;
+                const boxWidth = 220;
+                const gap = (totalWidth - boxWidth * 4) / 3;
+
+                stats.forEach((stat, i) => {
+                    const x = startX + i * (boxWidth + gap);
+                    const y = 900;
+
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#e8e6d9';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, boxWidth, 120, 16);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = stat.color;
+                    ctx.beginPath();
+                    ctx.roundRect(x + 12, y + 12, 6, 24, 3);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#201e24';
+                    ctx.font = 'bold 36px "Figtree", sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(stat.value, x + 30, y + 46);
+
+                    ctx.fillStyle = '#8a8886';
+                    ctx.font = '600 14px "Figtree", sans-serif';
+                    ctx.fillText(stat.label.toUpperCase(), x + 12, y + 90);
+                    ctx.restore();
+                });
+
+                // 6. Draw Footer Text
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '16px "JetBrains Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('flexed with everfern.app', 600, 1090);
+
+                // 7. Trigger download
+                const url = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = 'everfern-memory-graph.png';
+                link.href = url;
+                link.click();
+            } catch (e: any) {
+                alert('Failed to generate sharing image: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
         const handleImportMerge = async () => {
             setIsBusy('import');
             try {
@@ -1972,7 +2178,6 @@ export default function SettingsPage({
             if (!filePath) return;
             try {
                 let targetPath = filePath;
-                // If it's a relative filename (no path separator), resolve it using the file nodes in the graph
                 if (!filePath.includes('/') && !filePath.includes('\\')) {
                     const fileNodeId = `file_${filePath.toLowerCase()}`;
                     const fileNode = graph.nodes.find(n => n.id === fileNodeId);
@@ -2005,152 +2210,323 @@ export default function SettingsPage({
             return graph.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
         }, [graph.edges, filteredNodes]);
 
-        // Initialize positions — spread nodes wider; pin __user__ at center
-        useEffect(() => {
-            if (filteredNodes.length === 0) return;
-            setNodePositions(prev => {
-                const next = { ...prev };
-                // Always pin the virtual root at center
-                next['__user__'] = { x: 300, y: 200 };
-                filteredNodes.forEach((node, idx) => {
-                    if (!next[node.id]) {
-                        const angle = (idx / filteredNodes.length) * 2 * Math.PI;
-                        const radius = 220 + Math.random() * 80;
-                        next[node.id] = {
-                            x: 300 + Math.cos(angle) * radius,
-                            y: 200 + Math.sin(angle) * radius
-                        };
-                    }
-                });
-                return next;
+        const init3DPositions = () => {
+            const current = { ...node3DPositionsRef.current };
+            const R = 140;
+
+            current['__user__'] = { x: 0, y: 0, z: 0 };
+
+            const otherNodes = filteredNodes.filter(n => n.id !== '__user__');
+            const N = otherNodes.length;
+
+            otherNodes.forEach((node, idx) => {
+                if (!current[node.id]) {
+                    const y = N > 1 ? 1 - (idx / (N - 1)) * 2 : 0;
+                    const rad = Math.sqrt(Math.max(0, 1 - y * y));
+                    const theta = 2.399963229728653 * idx;
+
+                    current[node.id] = {
+                        x: Math.cos(theta) * rad * R,
+                        y: y * R,
+                        z: Math.sin(theta) * rad * R
+                    };
+                }
             });
+
+            const activeIds = new Set(filteredNodes.map(n => n.id));
+            Object.keys(current).forEach(id => {
+                if (id !== '__user__' && !activeIds.has(id)) {
+                    delete current[id];
+                }
+            });
+
+            node3DPositionsRef.current = current;
+        };
+
+        useEffect(() => {
+            init3DPositions();
         }, [filteredNodes]);
 
-        // Force simulation tick
         useEffect(() => {
             if (viewMode !== 'graph' || filteredNodes.length === 0) return;
             let animationFrameId: number;
 
             const tick = () => {
-                setNodePositions(prev => {
-                    const next = { ...prev };
-                    const k = 0.04;        // spring stiffness (softer)
-                    const length = 180;    // natural spring length (was 85)
-                    const repulsion = 2500; // much stronger repulsion (was 400)
-                    const gravity = 0.015; // lighter gravity
+                const vx: Record<string, number> = {};
+                const vy: Record<string, number> = {};
+                const vz: Record<string, number> = {};
 
-                    const fx: Record<string, number> = {};
-                    const fy: Record<string, number> = {};
-                    filteredNodes.forEach(n => {
-                        fx[n.id] = 0;
-                        fy[n.id] = 0;
-                    });
+                filteredNodes.forEach(n => {
+                    vx[n.id] = 0;
+                    vy[n.id] = 0;
+                    vz[n.id] = 0;
+                });
 
-                    // Repulsion force
-                    for (let i = 0; i < filteredNodes.length; i++) {
-                        const u = filteredNodes[i];
-                        const posU = next[u.id];
-                        if (!posU) continue;
+                const R = 140;
+                const repulsion = 10000;
 
-                        for (let j = i + 1; j < filteredNodes.length; j++) {
-                            const v = filteredNodes[j];
-                            const posV = next[v.id];
-                            if (!posV) continue;
+                for (let i = 0; i < filteredNodes.length; i++) {
+                    const u = filteredNodes[i];
+                    if (u.id === '__user__') continue;
+                    const posU = node3DPositionsRef.current[u.id];
+                    if (!posU) continue;
 
-                            const dx = posV.x - posU.x;
-                            const dy = posV.y - posU.y;
-                            const distSq = dx * dx + dy * dy || 1;
-                            const dist = Math.sqrt(distSq);
-
-                            const force = repulsion / distSq;
-                            const forceX = (dx / dist) * force;
-                            const forceY = (dy / dist) * force;
-
-                            fx[u.id] -= forceX;
-                            fy[u.id] -= forceY;
-                            fx[v.id] += forceX;
-                            fy[v.id] += forceY;
-                        }
-                    }
-
-                    // Attraction along edges
-                    filteredEdges.forEach(edge => {
-                        const posU = next[edge.source];
-                        const posV = next[edge.target];
-                        if (!posU || !posV) return;
+                    for (let j = i + 1; j < filteredNodes.length; j++) {
+                        const v = filteredNodes[j];
+                        if (v.id === '__user__') continue;
+                        const posV = node3DPositionsRef.current[v.id];
+                        if (!posV) continue;
 
                         const dx = posV.x - posU.x;
                         const dy = posV.y - posU.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const dz = posV.z - posU.z;
+                        const distSq = dx * dx + dy * dy + dz * dz || 1;
+                        const dist = Math.sqrt(distSq);
 
-                        const force = k * (dist - length);
+                        const force = repulsion / distSq;
                         const forceX = (dx / dist) * force;
                         const forceY = (dy / dist) * force;
+                        const forceZ = (dz / dist) * force;
 
-                        fx[edge.source] += forceX;
-                        fy[edge.source] += forceY;
-                        fx[edge.target] -= forceX;
-                        fy[edge.target] -= forceY;
-                    });
+                        vx[u.id] -= forceX;
+                        vy[u.id] -= forceY;
+                        vz[u.id] -= forceZ;
+                        vx[v.id] += forceX;
+                        vy[v.id] += forceY;
+                        vz[v.id] += forceZ;
+                    }
+                }
 
-                    // Gravity
-                    filteredNodes.forEach(n => {
-                        const pos = next[n.id];
-                        if (!pos) return;
-                        fx[n.id] += (300 - pos.x) * gravity;
-                        fy[n.id] += (200 - pos.y) * gravity;
-                    });
+                const k = 0.03;
+                const length = 75;
 
-                    const updated = { ...next };
-                    // Always re-pin __user__ at center, regardless of any forces
-                    updated['__user__'] = { x: 300, y: 200 };
-                    filteredNodes.forEach(n => {
-                        if (n.id === draggedNodeId) return;
-                        const pos = updated[n.id];
-                        if (!pos) return;
+                filteredEdges.forEach(edge => {
+                    if (edge.source === '__user__' || edge.target === '__user__') return;
+                    const posU = node3DPositionsRef.current[edge.source];
+                    const posV = node3DPositionsRef.current[edge.target];
+                    if (!posU || !posV) return;
 
-                        const vx = fx[n.id] * 0.85;
-                        const vy = fy[n.id] * 0.85;
+                    const dx = posV.x - posU.x;
+                    const dy = posV.y - posU.y;
+                    const dz = posV.z - posU.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
 
-                        let newX = pos.x + vx;
-                        let newY = pos.y + vy;
-                        newX = Math.max(30, Math.min(570, newX));
-                        newY = Math.max(30, Math.min(370, newY));
+                    const force = k * (dist - length);
+                    const forceX = (dx / dist) * force;
+                    const forceY = (dy / dist) * force;
+                    const forceZ = (dz / dist) * force;
 
-                        updated[n.id] = { x: newX, y: newY };
-                    });
-
-                    return updated;
+                    vx[edge.source] += forceX;
+                    vy[edge.source] += forceY;
+                    vz[edge.source] += forceZ;
+                    vx[edge.target] -= forceX;
+                    vy[edge.target] -= forceY;
+                    vz[edge.target] -= forceZ;
                 });
+
+                filteredNodes.forEach(n => {
+                    if (n.id === '__user__') return;
+                    const pos = node3DPositionsRef.current[n.id];
+                    if (!pos) return;
+
+                    const newX = pos.x + vx[n.id];
+                    const newY = pos.y + vy[n.id];
+                    const newZ = pos.z + vz[n.id];
+
+                    const d = Math.sqrt(newX * newX + newY * newY + newZ * newZ) || 1;
+                    node3DPositionsRef.current[n.id] = {
+                        x: (newX / d) * R,
+                        y: (newY / d) * R,
+                        z: (newZ / d) * R
+                    };
+                });
+
+                if (!isDraggingRef.current) {
+                    rotationRef.current.yaw += 0.0015;
+                }
+
+                const { yaw, pitch } = rotationRef.current;
+                const projected: Record<string, { x: number; y: number; z: number }> = {};
+
+                filteredNodes.forEach(n => {
+                    const pos = node3DPositionsRef.current[n.id];
+                    if (!pos) return;
+
+                    const rot = rotate3D(pos.x, pos.y, pos.z, yaw, pitch);
+                    projected[n.id] = {
+                        x: 300 + rot.x,
+                        y: 200 + rot.y,
+                        z: rot.z
+                    };
+                });
+
+                setNodePositions(projected);
 
                 animationFrameId = requestAnimationFrame(tick);
             };
 
             animationFrameId = requestAnimationFrame(tick);
             return () => cancelAnimationFrame(animationFrameId);
-        }, [filteredNodes, filteredEdges, draggedNodeId, viewMode]);
+        }, [filteredNodes, filteredEdges, viewMode]);
 
-        const handleMouseDown = (nodeId: string, e: React.MouseEvent) => {
-            if (nodeId === '__user__') return; // root node is not selectable/draggable
-            e.preventDefault();
-            setDraggedNodeId(nodeId);
-            setSelectedNode(graph.nodes.find(n => n.id === nodeId) || null);
+        const handleMouseDownSvg = (e: React.MouseEvent) => {
+            const target = e.target as SVGElement;
+            const nodeIdAttr = target.getAttribute('data-node-id');
+            if (nodeIdAttr) {
+                if (nodeIdAttr !== '__user__') {
+                    const node = graph.nodes.find(n => n.id === nodeIdAttr);
+                    if (node) setSelectedNode(node);
+                }
+            }
+            isDraggingRef.current = true;
+            lastMouseRef.current = { x: e.clientX, y: e.clientY };
         };
 
-        const handleMouseMove = (e: React.MouseEvent) => {
-            if (!draggedNodeId || !svgRef.current) return;
-            const rect = svgRef.current.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            setNodePositions(prev => ({
-                ...prev,
-                [draggedNodeId]: { x, y }
-            }));
+        const handleMouseMoveSvg = (e: React.MouseEvent) => {
+            if (!isDraggingRef.current) return;
+            const dx = e.clientX - lastMouseRef.current.x;
+            const dy = e.clientY - lastMouseRef.current.y;
+
+            rotationRef.current.yaw += dx * 0.005;
+            rotationRef.current.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, rotationRef.current.pitch + dy * 0.005));
+
+            lastMouseRef.current = { x: e.clientX, y: e.clientY };
         };
 
-        const handleMouseUp = () => {
-            setDraggedNodeId(null);
+        const handleMouseUpSvg = () => {
+            isDraggingRef.current = false;
         };
+
+        const getGlobeGridPaths = (yaw: number, pitch: number) => {
+            const R = 140;
+            const paths: { path: string; isFront: boolean }[] = [];
+
+            const getPathString = (pts: { x: number; y: number }[]) => {
+                if (pts.length === 0) return '';
+                return `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} ` +
+                       pts.slice(1).map(p => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+            };
+
+            // Latitude circles
+            const latDivisions = [-0.7, -0.35, 0, 0.35, 0.7];
+            latDivisions.forEach(latVal => {
+                const y = latVal * R;
+                const radiusAtY = Math.sqrt(Math.max(0, R * R - y * y));
+
+                const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
+                let currentSegment: { x: number; y: number }[] = [];
+                let currentIsFront: boolean | null = null;
+
+                const steps = 64;
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * 2 * Math.PI;
+                    const px = Math.cos(theta) * radiusAtY;
+                    const pz = Math.sin(theta) * radiusAtY;
+
+                    const rot = rotate3D(px, y, pz, yaw, pitch);
+                    const isFront = rot.z >= -10;
+
+                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+
+                    if (currentIsFront === null) {
+                        currentIsFront = isFront;
+                        currentSegment.push(screenPt);
+                    } else if (currentIsFront === isFront) {
+                        currentSegment.push(screenPt);
+                    } else {
+                        currentSegment.push(screenPt);
+                        segments.push({ pts: currentSegment, isFront: currentIsFront });
+                        currentSegment = [screenPt];
+                        currentIsFront = isFront;
+                    }
+                }
+                if (currentSegment.length > 0) {
+                    segments.push({ pts: currentSegment, isFront: !!currentIsFront });
+                }
+
+                segments.forEach(seg => {
+                    paths.push({
+                        path: getPathString(seg.pts),
+                        isFront: seg.isFront
+                    });
+                });
+            });
+
+            // Longitude circles
+            const longDivisions = [0, 30, 60, 90, 120, 150];
+            longDivisions.forEach(angleDeg => {
+                const phi = (angleDeg * Math.PI) / 180;
+
+                const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
+                let currentSegment: { x: number; y: number }[] = [];
+                let currentIsFront: boolean | null = null;
+
+                const steps = 64;
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * 2 * Math.PI;
+                    const px = R * Math.cos(theta) * Math.cos(phi);
+                    const py = R * Math.sin(theta);
+                    const pz = R * Math.cos(theta) * Math.sin(phi);
+
+                    const rot = rotate3D(px, py, pz, yaw, pitch);
+                    const isFront = rot.z >= -10;
+
+                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+
+                    if (currentIsFront === null) {
+                        currentIsFront = isFront;
+                        currentSegment.push(screenPt);
+                    } else if (currentIsFront === isFront) {
+                        currentSegment.push(screenPt);
+                    } else {
+                        currentSegment.push(screenPt);
+                        segments.push({ pts: currentSegment, isFront: currentIsFront });
+                        currentSegment = [screenPt];
+                        currentIsFront = isFront;
+                    }
+                }
+                if (currentSegment.length > 0) {
+                    segments.push({ pts: currentSegment, isFront: !!currentIsFront });
+                }
+
+                segments.forEach(seg => {
+                    paths.push({
+                        path: getPathString(seg.pts),
+                        isFront: seg.isFront
+                    });
+                });
+            });
+
+            return paths;
+        };
+
+        const gridPaths = getGlobeGridPaths(rotationRef.current.yaw, rotationRef.current.pitch);
+
+        const sortedEdges = React.useMemo(() => {
+            return filteredEdges.map(edge => {
+                const posU = nodePositions[edge.source];
+                const posV = nodePositions[edge.target];
+                const z = posU && posV ? (posU.z + posV.z) / 2 : 0;
+                return { edge, z };
+            });
+        }, [filteredEdges, nodePositions]);
+
+        const backEdges = sortedEdges.filter(se => se.z < 0).map(se => se.edge);
+        const frontEdges = sortedEdges.filter(se => se.z >= 0).map(se => se.edge);
+
+        const sortedHubNodes = React.useMemo(() => {
+            return filteredNodes.map(node => {
+                const pos = nodePositions[node.id];
+                const z = pos ? pos.z / 2 : 0;
+                return { node, z };
+            });
+        }, [filteredNodes, nodePositions]);
+
+        const backHubNodes = sortedHubNodes.filter(sh => sh.z < 0).map(sh => sh.node);
+        const frontHubNodes = sortedHubNodes.filter(sh => sh.z >= 0).map(sh => sh.node);
+
+        const backNodes = filteredNodes.filter(n => n.id !== '__user__' && (nodePositions[n.id]?.z || 0) < 0);
+        const frontNodes = filteredNodes.filter(n => n.id !== '__user__' && (nodePositions[n.id]?.z || 0) >= 0);
 
         return (
             <div>
@@ -2194,6 +2570,23 @@ export default function SettingsPage({
                         >
                             {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
                         </button>
+                        <button
+                            onClick={handleShareMemoryGraph}
+                            disabled={!!isBusy || graph.nodes.length === 0}
+                            title="Generate a beautiful image of your memory globe to share"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
+                                opacity: (isBusy || graph.nodes.length === 0) ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                        >
+                            {isBusy === 'share' ? '⏳' : '✨'} {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
+                        </button>
                     </div>
                 </div>
 
@@ -2217,7 +2610,7 @@ export default function SettingsPage({
                 {/* Summary counters */}
                 <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e8e6d9' }}>
                     {[
-                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: '#f59e0b' },
+                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: '#10b981' },
                         { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: '#10b981' },
                         { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: '#0ea5e9' },
                         { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: '#64748b' }
@@ -2314,204 +2707,368 @@ export default function SettingsPage({
                         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                             {viewMode === 'graph' ? (
                                 <div style={{ position: 'relative' }}>
-                                    {/* Zoom controls */}
-                                    <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        {[
-                                            { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
-                                            { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
-                                            { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
-                                        ].map(btn => (
-                                            <button
-                                                key={btn.label}
-                                                title={btn.title}
-                                                onClick={btn.onClick}
-                                                style={{
-                                                    width: 30, height: 30, borderRadius: 8, border: '1px solid #e8e6d9',
-                                                    backgroundColor: '#ffffff', color: '#111111', fontSize: 16,
-                                                    fontWeight: 600, cursor: 'pointer', display: 'flex',
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)', transition: 'all 0.15s'
-                                                }}
-                                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f4'; }}
-                                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
-                                            >
-                                                {btn.label}
-                                            </button>
-                                        ))}
-                                        <div style={{ fontSize: 10, textAlign: 'center', color: '#8a8886', marginTop: 2 }}>{Math.round(zoom * 100)}%</div>
-                                    </div>
-                                    <svg
-                                    ref={svgRef}
-                                    width="100%"
-                                    height="400"
-                                    viewBox={`${300 - 300/zoom} ${200 - 200/zoom} ${600/zoom} ${400/zoom}`}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseLeave={handleMouseUp}
-                                    style={{
-                                        border: '1px solid #e8e6d9',
-                                        borderRadius: 20,
-                                        backgroundColor: '#faf9f6',
-                                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.01)'
-                                    }}
-                                >
-                                    <defs>
-                                        <radialGradient id="graph-bg" cx="50%" cy="50%" r="50%">
-                                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
-                                            <stop offset="100%" stopColor="#faf9f6" stopOpacity="1" />
-                                        </radialGradient>
-                                    </defs>
-                                    <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
+                                {/* Zoom controls */}
+                                <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {[
+                                        { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
+                                        { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
+                                        { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
+                                    ].map(btn => (
+                                        <button
+                                            key={btn.label}
+                                            title={btn.title}
+                                            onClick={btn.onClick}
+                                            style={{
+                                                width: 28, height: 28, borderRadius: 8, border: '1px solid #e8e6d9',
+                                                backgroundColor: '#ffffff', color: '#4a4846', fontSize: 14,
+                                                fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.15s'
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f4'; e.currentTarget.style.color = '#111111'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.color = '#4a4846'; }}
+                                        >
+                                            {btn.label}
+                                        </button>
+                                    ))}
+                                    <div style={{ fontSize: 10, textAlign: 'center', color: '#8a8886', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
+                                </div>
+                                <svg
+                                        ref={svgRef}
+                                        width="100%"
+                                        height="400"
+                                        viewBox={`${300 - 300/zoom} ${200 - 200/zoom} ${600/zoom} ${400/zoom}`}
+                                        onMouseDown={handleMouseDownSvg}
+                                        onMouseMove={handleMouseMoveSvg}
+                                        onMouseUp={handleMouseUpSvg}
+                                        onMouseLeave={handleMouseUpSvg}
+                                        style={{
+                                            border: '1px solid #e8e6d9',
+                                            borderRadius: 20,
+                                            backgroundColor: '#FEFAEF',
+                                            boxShadow: '0 4px 20px rgba(32, 30, 36, 0.04), inset 0 2px 10px rgba(255,255,255,0.6)',
+                                        }}
+                                    >
+                                        <defs>
+                                            <radialGradient id="graph-bg" cx="50%" cy="50%" r="60%">
+                                                <stop offset="0%" stopColor="#fdfbf7" stopOpacity="0.8" />
+                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="1" />
+                                            </radialGradient>
+                                            
+                                            <radialGradient id="globe-shading" cx="50%" cy="50%" r="50%">
+                                                <stop offset="85%" stopColor="#FEFAEF" stopOpacity="0" />
+                                                <stop offset="98%" stopColor="#FEFAEF" stopOpacity="0.75" />
+                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="0.95" />
+                                            </radialGradient>
 
-                                    {/* Hub edges: root → every visible node */}
-                                    {filteredNodes.map(node => {
-                                        const targetPos = nodePositions[node.id];
-                                        const rootPos = nodePositions['__user__'];
-                                        if (!targetPos || !rootPos) return null;
-                                        return (
-                                            <line
-                                                key={`hub-${node.id}`}
-                                                x1={rootPos.x}
-                                                y1={rootPos.y}
-                                                x2={targetPos.x}
-                                                y2={targetPos.y}
-                                                stroke="rgba(99,102,241,0.18)"
-                                                strokeWidth="1.5"
-                                                strokeDasharray="none"
-                                            />
-                                        );
-                                    })}
+                                            <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                                                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                            <filter id="glow-strong" x="-60%" y="-60%" width="220%" height="220%">
+                                                <feGaussianBlur stdDeviation="4.5" result="blur" />
+                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                        </defs>
+                                        <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
 
-                                    {/* Regular edges */}
-                                    {filteredEdges.map((edge, idx) => {
-                                        const sourcePos = nodePositions[edge.source];
-                                        const targetPos = nodePositions[edge.target];
-                                        if (!sourcePos || !targetPos) return null;
-                                        return (
-                                            <line
-                                                key={idx}
-                                                x1={sourcePos.x}
-                                                y1={sourcePos.y}
-                                                x2={targetPos.x}
-                                                y2={targetPos.y}
-                                                stroke="#e2e8f0"
-                                                strokeWidth="2"
-                                                strokeDasharray={edge.type === 'linked_to' ? '4,4' : 'none'}
-                                            />
-                                        );
-                                    })}
-
-                                    {/* Root 'User' hub node — rendered after edges but before regular nodes */}
-                                    {(() => {
-                                        const rootPos = nodePositions['__user__'];
-                                        if (!rootPos || filteredNodes.length === 0) return null;
-                                        return (
-                                            <g key="__user__" transform={`translate(${rootPos.x}, ${rootPos.y})`} style={{ cursor: 'default' }}>
-                                                {/* Outer glow ring */}
-                                                <circle r="34" fill="rgba(99,102,241,0.06)" stroke="rgba(99,102,241,0.15)" strokeWidth="1" />
-                                                {/* Pulsing ring */}
-                                                <circle r="28" fill="rgba(99,102,241,0.08)" stroke="rgba(99,102,241,0.3)" strokeWidth="1.5" strokeDasharray="4,3" />
-                                                {/* Main node */}
-                                                <circle
-                                                    r="22"
-                                                    fill="linear-gradient(135deg,#6366f1,#818cf8)"
-                                                    style={{
-                                                        fill: '#6366f1',
-                                                        filter: 'drop-shadow(0 4px 12px rgba(99,102,241,0.35))'
-                                                    }}
-                                                    stroke="#ffffff"
-                                                    strokeWidth="3"
+                                        {/* 1. Back Globe Grid Lines */}
+                                        <g opacity="0.3" pointerEvents="none">
+                                            {gridPaths.filter(p => !p.isFront).map((gp, idx) => (
+                                                <path
+                                                    key={`bg-grid-back-${idx}`}
+                                                    d={gp.path}
+                                                    fill="none"
+                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    strokeWidth="0.75"
+                                                    strokeDasharray="2,2"
                                                 />
-                                                <text textAnchor="middle" dy="5" style={{ fontSize: 16, userSelect: 'none' }}>👤</text>
-                                                <text
-                                                    y="36"
-                                                    textAnchor="middle"
-                                                    style={{
-                                                        fontSize: 10,
-                                                        fontWeight: 700,
-                                                        fill: '#6366f1',
-                                                        userSelect: 'none',
-                                                        letterSpacing: '0.08em',
-                                                        textTransform: 'uppercase'
-                                                    }}
+                                            ))}
+                                        </g>
+
+                                        {/* 2. Back Hub lines (root to back nodes) */}
+                                        {backHubNodes.map(node => {
+                                            const targetPos = nodePositions[node.id];
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!targetPos || !rootPos) return null;
+                                            return (
+                                                <line
+                                                    key={`hub-back-${node.id}`}
+                                                    x1={rootPos.x}
+                                                    y1={rootPos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.02)"
+                                                    strokeWidth="0.5"
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 3. Back Regular Edges */}
+                                        {backEdges.map((edge, idx) => {
+                                            const sourcePos = nodePositions[edge.source];
+                                            const targetPos = nodePositions[edge.target];
+                                            if (!sourcePos || !targetPos) return null;
+                                            return (
+                                                <line
+                                                    key={`edge-back-${idx}`}
+                                                    x1={sourcePos.x}
+                                                    y1={sourcePos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.04)"
+                                                    strokeWidth="0.75"
+                                                    strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 4. Back Nodes */}
+                                        {backNodes.map(node => {
+                                            const pos = nodePositions[node.id];
+                                            if (!pos) return null;
+
+                                            const isSelected = selectedNode?.id === node.id;
+                                            const isHovered = hoveredNodeId === node.id;
+                                            const isFocused = isSelected || isHovered;
+
+                                            let nodeColor = '#94a3b8';
+                                            if (node.type === 'preference') {
+                                                nodeColor = '#10b981';
+                                            } else if (node.type === 'habit') {
+                                                nodeColor = '#059669';
+                                            } else if (node.type === 'fact') {
+                                                nodeColor = '#6366f1';
+                                            }
+
+                                            const zDepth = pos.z;
+                                            const op = 0.15 + 0.25 * ((zDepth + 140) / 140);
+                                            const size = 3;
+
+                                            return (
+                                                <g
+                                                    key={node.id}
+                                                    transform={`translate(${pos.x}, ${pos.y})`}
+                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                                    style={{ cursor: 'pointer' }}
                                                 >
-                                                    You
-                                                </text>
-                                            </g>
-                                        );
-                                    })()}
-
-                                    {/* Regular nodes */}
-                                    {filteredNodes.map(node => {
-                                        const pos = nodePositions[node.id];
-                                        if (!pos) return null;
-
-                                        const isSelected = selectedNode?.id === node.id;
-                                        let fill = '#f1f5f9';
-                                        let stroke = '#64748b';
-                                        let icon = '📄';
-
-                                        if (node.type === 'preference') {
-                                            fill = '#fef3c7';
-                                            stroke = '#f59e0b';
-                                            icon = '⭐️';
-                                        } else if (node.type === 'habit') {
-                                            fill = '#d1fae5';
-                                            stroke = '#10b981';
-                                            icon = '🔄';
-                                        } else if (node.type === 'fact') {
-                                            fill = '#e0f2fe';
-                                            stroke = '#0ea5e9';
-                                            icon = 'ℹ️';
-                                        }
-
-                                        return (
-                                            <g
-                                                key={node.id}
-                                                transform={`translate(${pos.x}, ${pos.y})`}
-                                                onMouseDown={(e) => handleMouseDown(node.id, e)}
-                                                style={{ cursor: draggedNodeId === node.id ? 'grabbing' : 'grab' }}
-                                            >
-                                                {isSelected && (
                                                     <circle
-                                                        r="24"
-                                                        fill="none"
-                                                        stroke="#111111"
-                                                        strokeWidth="2"
-                                                        strokeDasharray="3,3"
+                                                        data-node-id={node.id}
+                                                        r={isFocused ? size * 1.5 : size}
+                                                        fill={nodeColor}
+                                                        opacity={op}
+                                                        stroke="#e8e6d9"
+                                                        strokeWidth={0.5}
+                                                        style={{ transition: 'all 0.15s ease' }}
                                                     />
-                                                )}
-                                                <circle
-                                                    r="18"
-                                                    fill={fill}
-                                                    stroke={stroke}
-                                                    strokeWidth="2.5"
-                                                    style={{ filter: isSelected ? 'drop-shadow(0 4px 6px rgba(0,0,0,0.08))' : 'none' }}
+                                                </g>
+                                            );
+                                        })}
+
+                                        {/* Globe atmosphere & shading overlay */}
+                                        <circle cx="300" cy="200" r="140" fill="url(#globe-shading)" pointerEvents="none" />
+                                        <circle cx="300" cy="200" r="140" fill="none" stroke="rgba(32, 30, 36, 0.12)" strokeWidth="1" pointerEvents="none" />
+
+                                        {/* 5. Front Globe Grid Lines */}
+                                        <g opacity="0.3" pointerEvents="none">
+                                            {gridPaths.filter(p => p.isFront).map((gp, idx) => (
+                                                <path
+                                                    key={`bg-grid-front-${idx}`}
+                                                    d={gp.path}
+                                                    fill="none"
+                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    strokeWidth="0.75"
                                                 />
-                                                <text
-                                                    textAnchor="middle"
-                                                    dy="4"
-                                                    style={{ fontSize: 13, userSelect: 'none' }}
+                                            ))}
+                                        </g>
+
+                                        {/* 6. Root User Hub Node (center z=0) */}
+                                        {(() => {
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!rootPos || filteredNodes.length === 0) return null;
+                                            const isHovered = hoveredNodeId === '__user__';
+                                            return (
+                                                <g 
+                                                    key="__user__" 
+                                                    transform={`translate(${rootPos.x}, ${rootPos.y})`} 
+                                                    style={{ cursor: 'pointer' }}
+                                                    onMouseEnter={() => setHoveredNodeId('__user__')}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
                                                 >
-                                                    {icon}
-                                                </text>
-                                                <text
-                                                    y="28"
-                                                    textAnchor="middle"
-                                                    style={{
-                                                        fontSize: 10,
-                                                        fontWeight: 600,
-                                                        fill: isSelected ? '#111111' : '#71717a',
-                                                        userSelect: 'none',
-                                                        pointerEvents: 'none'
-                                                    }}
+                                                    <motion.circle 
+                                                        r="16" 
+                                                        fill="rgba(16,185,129,0.08)" 
+                                                        stroke="rgba(16,185,129,0.15)" 
+                                                        strokeWidth="1" 
+                                                        animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
+                                                        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                                                    />
+                                                    <circle
+                                                        r={isHovered ? 8 : 6}
+                                                        fill="#10b981"
+                                                        filter="url(#glow-strong)"
+                                                        stroke="#ffffff"
+                                                        strokeWidth="1.5"
+                                                        style={{ transition: 'all 0.2s ease' }}
+                                                    />
+                                                    {isHovered && (
+                                                        <g transform="translate(0, -20)" style={{ pointerEvents: 'none', zIndex: 100 }}>
+                                                            <rect
+                                                                x="-45"
+                                                                y="-14"
+                                                                width="90"
+                                                                height="18"
+                                                                rx="6"
+                                                                fill="#FEFAEF"
+                                                                stroke="rgba(32,30,36,0.15)"
+                                                                strokeWidth="1"
+                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
+                                                            />
+                                                            <text
+                                                                textAnchor="middle"
+                                                                dy="-2"
+                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                            >
+                                                                EverFern Brain
+                                                            </text>
+                                                        </g>
+                                                    )}
+                                                </g>
+                                            );
+                                        })()}
+
+                                        {/* 7. Front Hub lines (root to front nodes) */}
+                                        {frontHubNodes.map(node => {
+                                            const targetPos = nodePositions[node.id];
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!targetPos || !rootPos) return null;
+                                            return (
+                                                <line
+                                                    key={`hub-front-${node.id}`}
+                                                    x1={rootPos.x}
+                                                    y1={rootPos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    strokeWidth="0.75"
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 8. Front Regular Edges */}
+                                        {frontEdges.map((edge, idx) => {
+                                            const sourcePos = nodePositions[edge.source];
+                                            const targetPos = nodePositions[edge.target];
+                                            if (!sourcePos || !targetPos) return null;
+                                            return (
+                                                <line
+                                                    key={`edge-front-${idx}`}
+                                                    x1={sourcePos.x}
+                                                    y1={sourcePos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    strokeWidth="1.25"
+                                                    strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 9. Front Nodes */}
+                                        {frontNodes.map(node => {
+                                            const pos = nodePositions[node.id];
+                                            if (!pos) return null;
+
+                                            const isSelected = selectedNode?.id === node.id;
+                                            const isHovered = hoveredNodeId === node.id;
+                                            const isFocused = isSelected || isHovered;
+
+                                            let nodeColor = '#94a3b8';
+                                            let useGlow = false;
+
+                                            if (node.type === 'preference') {
+                                                nodeColor = '#10b981';
+                                                useGlow = true;
+                                            } else if (node.type === 'habit') {
+                                                nodeColor = '#059669';
+                                                useGlow = true;
+                                            } else if (node.type === 'fact') {
+                                                nodeColor = '#6366f1';
+                                                useGlow = true;
+                                            }
+
+                                            const zDepth = pos.z;
+                                            const op = 0.5 + 0.5 * (zDepth / 140);
+                                            const size = isFocused ? 7 : 5;
+
+                                            const labelText = node.category.length > 20 ? `${node.category.slice(0, 17)}...` : node.category;
+                                            const tooltipWidth = Math.max(70, labelText.length * 6.5);
+
+                                            return (
+                                                <g
+                                                    key={node.id}
+                                                    transform={`translate(${pos.x}, ${pos.y})`}
+                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                                    style={{ cursor: 'pointer' }}
                                                 >
-                                                    {node.category.length > 15 ? `${node.category.slice(0, 12)}...` : node.category}
-                                                </text>
-                                            </g>
-                                        );
-                                    })}
-                                    </svg>
+                                                    {isSelected && (
+                                                        <circle
+                                                            r="12"
+                                                            fill="none"
+                                                            stroke="rgba(32,30,36,0.4)"
+                                                            strokeWidth="1.5"
+                                                            strokeDasharray="2,2"
+                                                        />
+                                                    )}
+
+                                                    {isHovered && (
+                                                        <circle
+                                                            r="10"
+                                                            fill="none"
+                                                            stroke="rgba(16,185,129,0.25)"
+                                                            strokeWidth="2"
+                                                        />
+                                                    )}
+
+                                                    <circle
+                                                        data-node-id={node.id}
+                                                        r={size}
+                                                        fill={nodeColor}
+                                                        opacity={op}
+                                                        filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'}
+                                                        stroke="#ffffff"
+                                                        strokeWidth={isFocused ? 1.5 : 1}
+                                                        style={{ transition: 'all 0.15s ease' }}
+                                                    />
+
+                                                    {isFocused && (
+                                                        <g transform="translate(0, -18)" style={{ pointerEvents: 'none', zIndex: 100 }}>
+                                                            <rect
+                                                                x={-tooltipWidth / 2}
+                                                                y="-13"
+                                                                width={tooltipWidth}
+                                                                height={18}
+                                                                rx="6"
+                                                                fill="#FEFAEF"
+                                                                stroke="rgba(32,30,36,0.15)"
+                                                                strokeWidth="1"
+                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
+                                                            />
+                                                            <text
+                                                                textAnchor="middle"
+                                                                dy="-1"
+                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                            >
+                                                                {labelText}
+                                                            </text>
+                                                        </g>
+                                                    )}
+                                                </g>
+                                             );
+                                         })}
+                                     </svg>
                                 </div>
                             ) : (
                                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e8e6d9', borderRadius: 20, backgroundColor: '#ffffff', maxHeight: 400 }}>

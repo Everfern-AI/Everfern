@@ -189,7 +189,7 @@ export function registerSystemHandlers() {
             }
           }
           const wslUsername = (os.userInfo().username || 'user').toLowerCase();
-          const wslAttachmentsDir = `/home/${wslUsername}/.everfern/attachments`;
+          const wslAttachmentsDir = `/everfern`;
           // Build WSL path from Windows path — keep drive letter lowercase, rest preserves case (WSL mounts /mnt/c/ case-sensitively)
           const driveLetter = path.parse(newFilePath).root.replace(':', '').toLowerCase();
           const wslRelPath = newFilePath.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
@@ -749,9 +749,9 @@ export function registerSystemHandlers() {
     try {
       const { execSync } = require('child_process');
       const wslUsername = (os.userInfo().username || 'user').toLowerCase();
-      const wslAttachmentsDir = `/home/${wslUsername}/.everfern/attachments`;
+      const wslAttachmentsDir = `/everfern`;
       const safeFileName = path.basename(filePath);
-      const existingTarget = `\\\\wsl.localhost\\Ubuntu\\home\\${wslUsername}\\.everfern\\attachments\\${safeFileName}`;
+      const existingTarget = `\\\\wsl.localhost\\Ubuntu\\everfern\\${safeFileName}`;
 
       // Skip if already cloned
       if (fs.existsSync(existingTarget)) return { success: true };

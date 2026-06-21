@@ -146,6 +146,9 @@ export function parseTextToToolCalls(
         if (parsedArgs.cmd && !parsedArgs.command) {
           parsedArgs.command = parsedArgs.cmd;
         }
+        if (parsedArgs.Cwd && !parsedArgs.cwd) {
+          parsedArgs.cwd = parsedArgs.Cwd;
+        }
       }
 
       toolCalls.push({

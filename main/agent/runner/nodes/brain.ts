@@ -188,6 +188,11 @@ Respond with JSON only:
           provider: runner.client.provider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
           promptTokens: response.usage.promptTokens ?? 0,
           completionTokens: response.usage.completionTokens ?? 0,
+          promptTokensCost: response.usage.promptTokensCost,
+          completionTokensCost: response.usage.completionTokensCost,
+          imageInputCost: response.usage.imageInputCost,
+          imageOutputCost: response.usage.imageOutputCost,
+          totalCost: response.usage.totalCost,
         }).catch(() => { /* never throw */ });
       } catch { /* ignore */ }
     }
@@ -343,6 +348,11 @@ Respond with JSON only:
           provider: runner.client.provider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
           promptTokens: response.usage.promptTokens ?? 0,
           completionTokens: response.usage.completionTokens ?? 0,
+          promptTokensCost: response.usage.promptTokensCost,
+          completionTokensCost: response.usage.completionTokensCost,
+          imageInputCost: response.usage.imageInputCost,
+          imageOutputCost: response.usage.imageOutputCost,
+          totalCost: response.usage.totalCost,
         }).catch(() => { /* never throw */ });
       } catch { /* ignore */ }
     }

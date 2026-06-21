@@ -81,13 +81,19 @@ Available coding tools include:
 - `read`, `grep`, `find`, `ls` for inspection
 - `write` for new files or full rewrites
 - `edit` for targeted edits
-- `executePwsh` for host commands, scaffolding, installs, builds, and safe multi-file scripts
+- `executePwsh` for synchronous shell commands. On Windows, host commands (npm, git, pwsh) run in PowerShell on the host, but commands referencing Linux paths or virtual environment scripts are automatically routed to run in the Linux VM (WSL).
+- `terminal_execute` for executing terminal commands asynchronously. Use `target: 'main'` to execute on the host (PowerShell on Windows) and `target: 'vm'` to execute in the Linux VM (WSL on Windows, Docker on macOS).
+- `terminal_status` for checking the status and output of active terminal processes
 - `todo_write` for tracking decomposed coding work
 - `spawn_agent` for independent coding lanes
 
-For validation commands that can run longer than one minute (`npm install`, `npm run build`, `npx tsc --noEmit`, test suites), set an explicit timeout:
+### Linux VM and Python Venv Guidelines
+- The Linux VM runs in a Python virtual environment pre-configured at `~/.everfern/venv`.
+- The venv's `bin/` path is already prepended to the shell `PATH` in the VM. Do NOT try to activate it manually using `source venv/bin/activate`.
+- Use `python` or `pip` directly inside VM contexts (`target: 'vm'`); they will automatically use the correct virtual environment with pre-installed packages (such as `python-docx`, `pypdf`, `pandas`, `openpyxl`, `reportlab`).
+- For validation commands that can run longer than one minute (`npm install`, `npm run build`, `npx tsc --noEmit`, test suites), set an explicit timeout:
 
-- `terminal_execute`: use `timeoutMs: 180000` to `300000`, or `timeoutSeconds: 180` to `300`
+- `terminal_execute`: use `timeoutMs: 180000` to `300000`
 - `executePwsh`: use `timeout: 180000` to `300000`
 
 If a command times out with no output, rerun it with a longer timeout before treating it as a failure.

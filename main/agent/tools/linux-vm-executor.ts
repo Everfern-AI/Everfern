@@ -102,13 +102,13 @@ export async function ensureWSLSetup(): Promise<void> {
     } else {
       console.log('[ensureWSLSetup] python3 not found, installing via root...');
       // Use --user root because apt-get needs root in WSL
-      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv curl wget"`, { timeout: 180000 });
+      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv curl wget pandoc poppler-utils libreoffice"`, { timeout: 180000 });
     }
   } catch (err) {
     // First attempt failed (e.g., wsl --user root unavailable). Try sudo approach.
     console.log('[ensureWSLSetup] Root attempt failed, trying sudo...', err);
     try {
-      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv curl wget"`, { timeout: 180000 });
+      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv curl wget pandoc poppler-utils libreoffice"`, { timeout: 180000 });
     } catch (err2) {
       // Both install attempts failed — log and continue without python3
       console.error('[ensureWSLSetup] Failed to install python3:', err2);
@@ -119,11 +119,14 @@ export async function ensureWSLSetup(): Promise<void> {
   try {
     const setupScript = [
       'mkdir -p ~/.everfern',
-      'if [ ! -d ~/.everfern/venv ] && command -v python3 &>/dev/null; then',
-      '  python3 -m venv ~/.everfern/venv',
+      'if command -v python3 &>/dev/null; then',
+      '  if [ ! -d ~/.everfern/venv ]; then',
+      '    python3 -m venv ~/.everfern/venv',
+      '  fi',
       '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
+      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx -q',
       'fi'
-    ].join(' && ');
+    ].join('\n');
     await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 60000 });
   } catch (err) {
     console.error('[ensureWSLSetup] Failed to create venv:', err);
@@ -163,9 +166,9 @@ async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string
   // If a working directory is specified, prepend cd command
   let fullCommand = command;
   if (linuxCwd) {
-    fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
+    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
   } else {
-    fullCommand = `export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
+    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
   }
 
   return executeCommand(wslCmd, ['--exec', 'bash', '-c', fullCommand], onUpdate);
@@ -185,9 +188,9 @@ async function runInDocker(command: string, cwd?: string, onUpdate?: (chunk: str
   }
 
   // If a working directory is specified, prepend cd command
-  let fullCommand = command;
+  let fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
   if (dockerCwd) {
-    fullCommand = `cd "${dockerCwd}" && ${command}`;
+    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${dockerCwd}" && ${command}`;
   }
 
   return executeCommand('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', fullCommand], onUpdate);
@@ -271,49 +274,57 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
  */
 function executeCommand(cmd: string, args: string[], onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, {
-      shell: process.platform === 'win32', // Use shell on Windows to ensure WSL runs properly in Electron
-      env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } // Force WSL to output UTF-8
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    const MAX_OUTPUT_LENGTH = 50000;
-
-    proc.stdout?.on('data', (data) => {
-      const decoded = decodeBuffer(data);
-      stdout += decoded;
-      if (onUpdate) onUpdate(decoded);
-      if (stdout.length > MAX_OUTPUT_LENGTH) {
-        stdout = '...[Output truncated]...\n' + stdout.slice(-MAX_OUTPUT_LENGTH);
-      }
-    });
-
-    proc.stderr?.on('data', (data) => {
-      const decoded = decodeBuffer(data);
-      stderr += decoded;
-      if (onUpdate) onUpdate(decoded);
-      if (stderr.length > MAX_OUTPUT_LENGTH) {
-        stderr = '...[Output truncated]...\n' + stderr.slice(-MAX_OUTPUT_LENGTH);
-      }
-    });
-
-    proc.on('close', (code) => {
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code ?? -1
+    try {
+      const proc = spawn(cmd, args, {
+        shell: false,
+        env: { ...process.env, WSL_UTF8: '1', WSLENV: '' } // Force WSL to output UTF-8
       });
-    });
 
-    proc.on('error', (err) => {
+      let stdout = '';
+      let stderr = '';
+
+      const MAX_OUTPUT_LENGTH = 50000;
+
+      proc.stdout?.on('data', (data) => {
+        const decoded = decodeBuffer(data);
+        stdout += decoded;
+        if (onUpdate) onUpdate(decoded);
+        if (stdout.length > MAX_OUTPUT_LENGTH) {
+          stdout = '...[Output truncated]...\n' + stdout.slice(-MAX_OUTPUT_LENGTH);
+        }
+      });
+
+      proc.stderr?.on('data', (data) => {
+        const decoded = decodeBuffer(data);
+        stderr += decoded;
+        if (onUpdate) onUpdate(decoded);
+        if (stderr.length > MAX_OUTPUT_LENGTH) {
+          stderr = '...[Output truncated]...\n' + stderr.slice(-MAX_OUTPUT_LENGTH);
+        }
+      });
+
+      proc.on('close', (code) => {
+        resolve({
+          stdout,
+          stderr,
+          exitCode: code ?? -1
+        });
+      });
+
+      proc.on('error', (err) => {
+        resolve({
+          stdout,
+          stderr: stderr + `\nError: ${err.message}`,
+          exitCode: -1
+        });
+      });
+    } catch (err: any) {
       resolve({
-        stdout,
-        stderr: stderr + `\nError: ${err.message}`,
+        stdout: '',
+        stderr: `Spawn error: ${err.message}`,
         exitCode: -1
       });
-    });
+    }
   });
 }
 
@@ -342,10 +353,10 @@ export async function ensureDockerContainer(): Promise<void> {
 
       // Install basic tools in the container
       await execAsync('docker exec everfern-ubuntu apt-get update');
-      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm');
+      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm pandoc poppler-utils');
 
       // Create ~/.everfern/ directory and Python venv
-      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && python3 -m venv ~/.everfern/venv && ~/.everfern/venv/bin/pip install --upgrade pip -q"');
+      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab -q"');
     } else {
       // Check if container is running
       const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');
