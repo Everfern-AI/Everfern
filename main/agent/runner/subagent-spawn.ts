@@ -288,10 +288,23 @@ class SubagentSpawner {
         const parentEvents = getAgentEvents(agent.parentSessionId);
 
         try {
-            const cappedHistory = parentHistory.slice(-40).map((msg: any) => ({
-                role: msg.role || (msg._getType?.() === 'human' ? 'user' : 'assistant'),
-                content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-            }));
+            const cappedHistory = parentHistory.slice(-40).map((msg: any) => {
+                const role = msg.role || (msg._getType?.() === 'human' ? 'user' : 'assistant');
+                const mapped: any = {
+                    role,
+                    content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+                };
+                if (msg.tool_calls) {
+                    mapped.tool_calls = msg.tool_calls;
+                }
+                if (msg.tool_call_id) {
+                    mapped.tool_call_id = msg.tool_call_id;
+                }
+                if (msg.reasoning_content) {
+                    mapped.reasoning_content = msg.reasoning_content;
+                }
+                return mapped;
+            });
 
             // SWARM SYNC: Prepend existing swarm knowledge to the task
             const existingMemory = swarm.getMemory(agent.parentSessionId)

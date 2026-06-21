@@ -650,6 +650,11 @@ export async function runAgentStep(
           provider: clientProvider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
           promptTokens: usage.promptTokens ?? 0,
           completionTokens: usage.completionTokens ?? 0,
+          promptTokensCost: (usage as any).promptTokensCost,
+          completionTokensCost: (usage as any).completionTokensCost,
+          imageInputCost: (usage as any).imageInputCost,
+          imageOutputCost: (usage as any).imageOutputCost,
+          totalCost: (usage as any).totalCost,
         }).catch(() => { /* never throw */ });
       } catch { /* analytics never blocks execution */ }
     }

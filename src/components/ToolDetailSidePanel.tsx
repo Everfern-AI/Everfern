@@ -72,6 +72,31 @@ const T = {
   mono: '"Geist Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, monospace',
 };
 
+const VS = {
+  bg: '#f5f4f0',
+  bg2: '#faf9f7',
+  tab: '#f0eee7',
+  tabActive: '#ffffff',
+  border: '#e7e2d6',
+  borderStrong: '#d8d1c2',
+  text: '#201e24',
+  muted: '#77716b',
+  dim: '#aaa39a',
+  green: '#22c55e',
+  red: '#ef4444',
+  yellow: '#f59e0b',
+  blue: '#6366f1',
+};
+
+const CLAY = {
+  card: '#ffffff',
+  cardMuted: '#faf9f7',
+  hover: '#efede6',
+  active: '#ffffff',
+  shadow: '0 1px 2px rgba(32,30,36,0.05), inset 0 1px 0 rgba(255,255,255,0.72)',
+  panelShadow: '-12px 0 30px rgba(32,30,36,0.08)',
+};
+
 /* ============================================================
    UTILITIES
    ============================================================ */
@@ -1095,6 +1120,7 @@ export function TerminalView({
   duration,
   shellType,
   cwd,
+  status,
 }: {
   command: string;
   output: string;
@@ -1102,12 +1128,14 @@ export function TerminalView({
   duration?: number;
   shellType?: 'windows' | 'linux';
   cwd?: string;
+  status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
   const hasOutput = hasVisibleTerminalOutput(output);
-  const looksLikePS = shellType === 'windows' || /powershell\.exe/i.test(command) || /^pwsh/i.test(command);
+  const looksLikePS = shellType === 'windows';
 
-  const showExit = exitCode !== undefined || duration !== undefined;
+  const isFinished = status === 'done' || status === 'error' || exitCode !== undefined || duration !== undefined;
+  const showExit = isFinished;
 
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
@@ -2132,14 +2160,46 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
 function extractTerminalData(tc: any) {
   const command = tc.args?.command || tc.args?.CommandLine || '';
   const toolName = (tc.toolName || '').toLowerCase();
-  const isWindows = toolName.includes('pwsh') || toolName.includes('powershell') || command.includes('powershell.exe') || command.includes('pwsh') || command.startsWith('powershell');
+  const args = tc.args || tc.arguments || {};
+  const data = tc.data || tc.result?.data || {};
+  
+  const requestedShell = String(args.shellType || data.shellType || data.shell || '').toLowerCase();
+  const target = String(args.target || data.target || tc.result?.target || tc.result?.data?.target || '').toLowerCase();
+  
+  const normalizedCmd = command.trim().toLowerCase();
+  const hasLinuxIndicators = normalizedCmd.includes('/mnt/') ||
+    normalizedCmd.includes('/home/') ||
+    normalizedCmd.includes('/tmp/') ||
+    /\bsource\b/.test(normalizedCmd) ||
+    /\bpython3\b/.test(normalizedCmd) ||
+    /\b(apt-get|apt)\b/.test(normalizedCmd) ||
+    target === 'vm';
+
+  const isExplicitLinux = toolName.includes('linux') || 
+    requestedShell.includes('bash') || 
+    requestedShell.includes('sh') || 
+    target === 'vm' ||
+    hasLinuxIndicators;
+
+  const isWindows = !isExplicitLinux && (
+    toolName.includes('pwsh') || 
+    toolName.includes('powershell') || 
+    command.includes('powershell.exe') || 
+    command.includes('pwsh') || 
+    command.startsWith('powershell') ||
+    requestedShell.includes('powershell') ||
+    requestedShell.includes('pwsh') ||
+    requestedShell === 'cmd'
+  );
+
   return {
     command,
     output: tc.output || tc.result?.output || tc.result?.error || tc.error || '',
-    exitCode: tc.data?.exitCode || tc.result?.data?.exitCode,
+    exitCode: tc.data?.exitCode ?? tc.result?.data?.exitCode ?? tc.result?.exitCode,
     duration: tc.duration || tc.result?.duration,
     shellType: isWindows ? 'windows' : 'linux',
-    cwd: tc.data?.cwd || tc.result?.data?.cwd || tc.args?.cwd || ''
+    cwd: tc.data?.cwd || tc.result?.data?.cwd || tc.args?.cwd || '',
+    status: tc.status
   };
 }
 

@@ -140,7 +140,7 @@ export async function getSlimSystemPromptAsync(
   const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
   const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
   const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `${linuxHome}/.everfern/attachments/`;
+  const uploadsPath = `/everfern/`;
 
   // Read the Markdown file asynchronously
   let promptMd = '';
@@ -305,7 +305,7 @@ export function getSlimSystemPrompt(
   const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
   const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
   const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `${linuxHome}/.everfern/attachments/`;
+  const uploadsPath = `/everfern/`;
 
   // Read the Markdown file (cache this separately if needed)
   let promptMd = '';

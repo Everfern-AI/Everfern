@@ -1552,9 +1552,31 @@ export default function ChatPage() {
             } catch (e) { console.error('Failed to restore live tool calls:', e); }
         }
         if (savedLoading === 'true') {
-            // If it was loading when refreshed, we might need to reconnect
-            // but for now we just show the restored state
+            // If it was loading when refreshed, we might need to reconnect.
+            // Safety timeout: if no stream events arrive within 5s, auto-clear the stuck state.
+            // This handles the case where the renderer was hot-reloaded (Fast Refresh) while
+            // the backend stream was running — the `done:true` IPC message was consumed by
+            // the old renderer instance and will never arrive again.
             setIsLoading(true);
+            const safetyTimer = setTimeout(() => {
+                setIsLoading(prev => {
+                    if (prev) {
+                        console.warn('[ChatPage] Safety timeout: isLoading was stuck after renderer refresh — auto-clearing.');
+                        sessionStorage.removeItem('everfern_is_loading');
+                        sessionStorage.removeItem('everfern_streaming_thought');
+                        sessionStorage.removeItem('everfern_live_tool_calls');
+                        setStreamingThought('');
+                        setLiveToolCalls([]);
+                        liveToolCallsRef.current = [];
+                    }
+                    return false;
+                });
+            }, 5000);
+            // Cancel the timer as soon as any real stream event arrives
+            const cleanup = (window as any).electronAPI?.onStreamChunk?.(() => {
+                clearTimeout(safetyTimer);
+                cleanup?.();
+            });
         }
     }, []);
 
@@ -3696,7 +3718,7 @@ export default function ChatPage() {
                             const blocks: any[] = [];
                             if (m.content) blocks.push({ type: 'text', text: m.content });
                             const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
-                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: ${toLinuxPath(a.path || 'unknown')}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
+                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: /everfern/${a.name}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
                             return { role: m.role, content: blocks };
                         }
                         return { role: m.role, content: m.content };

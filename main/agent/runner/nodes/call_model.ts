@@ -333,6 +333,11 @@ You do not need to use complex execution plans or tools for this interaction.`;
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
+        promptTokensCost: usage.promptTokensCost,
+        completionTokensCost: usage.completionTokensCost,
+        imageInputCost: usage.imageInputCost,
+        imageOutputCost: usage.imageOutputCost,
+        totalCost: usage.totalCost,
       });
 
       // Record into analytics DB (fire-and-forget — never block the agent)
@@ -346,6 +351,11 @@ You do not need to use complex execution plans or tools for this interaction.`;
           provider: cfg?.provider ?? cfg?.engine ?? 'unknown',
           promptTokens: usage.promptTokens ?? 0,
           completionTokens: usage.completionTokens ?? 0,
+          promptTokensCost: usage.promptTokensCost,
+          completionTokensCost: usage.completionTokensCost,
+          imageInputCost: usage.imageInputCost,
+          imageOutputCost: usage.imageOutputCost,
+          totalCost: usage.totalCost,
         }).catch(() => { /* never throw */ });
       } catch { /* analytics never blocks execution */ }
     }

@@ -217,6 +217,11 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  promptTokensCost?: number;
+  completionTokensCost?: number;
+  imageInputCost?: number;
+  imageOutputCost?: number;
+  totalCost?: number;
 }
 
 export interface ToolDefinition {
@@ -677,6 +682,19 @@ export class AIClient {
 
               const content = data.choices[0].message.content;
 
+              // Extract real token usage from EverFern Cloud response for analytics
+              const rawUsage = data.usage;
+              const usageForAnalytics = rawUsage ? {
+                promptTokens: rawUsage.prompt_tokens ?? 0,
+                completionTokens: rawUsage.completion_tokens ?? 0,
+                totalTokens: rawUsage.total_tokens ?? (rawUsage.prompt_tokens ?? 0) + (rawUsage.completion_tokens ?? 0),
+                promptTokensCost: rawUsage.prompt_tokens_cost,
+                completionTokensCost: rawUsage.completion_tokens_cost,
+                imageInputCost: rawUsage.image_input_cost,
+                imageOutputCost: rawUsage.image_output_cost,
+                totalCost: rawUsage.total_cost,
+              } : undefined;
+
               // Parse actions from the response
               const actions = this._parseActionsFromContent(content);
 
@@ -688,7 +706,7 @@ export class AIClient {
                 return {
                   id: data.id || `everfern-${Date.now()}`,
                   content: content,
-                  model: this.config.model,
+                  model: data.model || this.config.model,
                   toolCalls: [{
                     id: `call_${Date.now()}`,
                     name: 'computer_use',
@@ -697,6 +715,7 @@ export class AIClient {
                       actions: actions
                     }
                   }],
+                  usage: usageForAnalytics,
                   finishReason: 'tool_calls'
                 };
               }
@@ -706,7 +725,8 @@ export class AIClient {
               return {
                 id: data.id || `everfern-${Date.now()}`,
                 content: content,
-                model: this.config.model,
+                model: data.model || this.config.model,
+                usage: usageForAnalytics,
                 finishReason: 'stop'
               };
             } catch (err) {
@@ -1259,7 +1279,8 @@ export class AIClient {
         const stream = await retryWithBackoff(() =>
           this.openaiClient!.chat.completions.create({
             ...options,
-            stream: true
+            stream: true,
+            stream_options: { include_usage: true }
           }) as unknown as Promise<AsyncIterable<any>>
         );
 
@@ -1268,9 +1289,13 @@ export class AIClient {
         const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
         let finishReason: any = 'stop';
         let responseId = `${this.config.provider}-${Date.now()}`;
+        let finalUsage: any = undefined;
 
         for await (const chunk of stream) {
           if (chunk.id) responseId = chunk.id;
+          if (chunk.usage) {
+            finalUsage = chunk.usage;
+          }
           const delta = chunk.choices?.[0]?.delta;
 
           if (delta?.content) {
@@ -1313,6 +1338,16 @@ export class AIClient {
           reasoning_content: fullReasoning || undefined,
           model: this.config.model,
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          usage: finalUsage ? {
+            promptTokens: finalUsage.prompt_tokens,
+            completionTokens: finalUsage.completion_tokens,
+            totalTokens: finalUsage.total_tokens,
+            promptTokensCost: finalUsage.prompt_tokens_cost,
+            completionTokensCost: finalUsage.completion_tokens_cost,
+            imageInputCost: finalUsage.image_input_cost,
+            imageOutputCost: finalUsage.image_output_cost,
+            totalCost: finalUsage.total_cost,
+          } : undefined,
           finishReason: finishReason === 'tool_calls' || toolCalls.length > 0 ? 'tool_calls' : 'stop'
         };
       } else {
@@ -1337,7 +1372,12 @@ export class AIClient {
           usage: response.usage ? {
             promptTokens: response.usage.prompt_tokens,
             completionTokens: response.usage.completion_tokens,
-            totalTokens: response.usage.total_tokens
+            totalTokens: response.usage.total_tokens,
+            promptTokensCost: response.usage.prompt_tokens_cost,
+            completionTokensCost: response.usage.completion_tokens_cost,
+            imageInputCost: response.usage.image_input_cost,
+            imageOutputCost: response.usage.image_output_cost,
+            totalCost: response.usage.total_cost,
           } : undefined,
           finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
             (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop'
@@ -1608,6 +1648,7 @@ export class AIClient {
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: isStreaming,
+      ...(isStreaming && { stream_options: { include_usage: true } }),
     };
 
     this._maybeInjectComputerUseTools(body, req);
@@ -1736,6 +1777,11 @@ export class AIClient {
           promptTokens: data.usage.prompt_tokens,
           completionTokens: data.usage.completion_tokens,
           totalTokens: data.usage.total_tokens,
+          promptTokensCost: data.usage.prompt_tokens_cost,
+          completionTokensCost: data.usage.completion_tokens_cost,
+          imageInputCost: data.usage.image_input_cost,
+          imageOutputCost: data.usage.image_output_cost,
+          totalCost: data.usage.total_cost,
         } : undefined,
         finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
           (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop',
@@ -1753,6 +1799,7 @@ export class AIClient {
     let finishReason: any = 'stop';
     let responseId = `${this.config.provider}-${Date.now()}`;
     let isReasoning = false;
+    let finalUsage: any = undefined;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1775,6 +1822,9 @@ export class AIClient {
         try {
           const d = JSON.parse(payload);
           if (d.id) responseId = d.id;
+          if (d.usage) {
+            finalUsage = d.usage;
+          }
           const delta = d.choices?.[0]?.delta;
 
           let deltaContent = delta?.content ?? '';
@@ -1837,6 +1887,16 @@ export class AIClient {
       content: fullContent,
       model: this.config.model,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      usage: finalUsage ? {
+        promptTokens: finalUsage.prompt_tokens,
+        completionTokens: finalUsage.completion_tokens,
+        totalTokens: finalUsage.total_tokens,
+        promptTokensCost: finalUsage.prompt_tokens_cost,
+        completionTokensCost: finalUsage.completion_tokens_cost,
+        imageInputCost: finalUsage.image_input_cost,
+        imageOutputCost: finalUsage.image_output_cost,
+        totalCost: finalUsage.total_cost,
+      } : undefined,
       finishReason: finishReason === 'tool_calls' || toolCalls.length > 0 ? 'tool_calls' : 'stop',
     };
   }

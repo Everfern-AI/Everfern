@@ -177,6 +177,19 @@ function extractOutputText(tc: any): string {
   return '';
 }
 
+function parseToolCallArgs(tc: any) {
+  if (!tc) return {};
+  let args = tc.args || tc.arguments || {};
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      args = {};
+    }
+  }
+  return args;
+}
+
 function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
   if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
@@ -300,7 +313,7 @@ function normalizePanelUrl(value: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
-const DEFAULT_TOOL_DETAIL_ROOT = 'C:\\Users\\user\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+const DEFAULT_TOOL_DETAIL_ROOT = typeof navigator !== 'undefined' && navigator.userAgent.includes('Win') ? 'C:\\' : '/';
 
 function isMacPlatform() {
   if (typeof navigator === 'undefined') return false;
@@ -1095,7 +1108,8 @@ function FileContentBody({
     );
   }
 
-  if (!isTextLikeFile(path) && !safeContent) {
+  const isEditing = mode === 'add' || mode === 'diff';
+  if (!isTextLikeFile(path) && !safeContent && !isEditing) {
     return (
       <div style={{ flex: 1, minHeight: 0, background: EDITOR_COLORS.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}>
         <PreviewUnavailable path={path} message={previewError || 'This file type can be opened with a system app.'} />
@@ -2492,6 +2506,7 @@ export function TerminalView({
   duration,
   shellType,
   cwd,
+  status,
 }: {
   command: string;
   output: string;
@@ -2499,16 +2514,15 @@ export function TerminalView({
   duration?: number;
   shellType?: 'windows' | 'linux';
   cwd?: string;
+  status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
   const cleanOutput = normalizeTerminalOutput(output, command);
   const hasOutput = hasVisibleTerminalOutput(cleanOutput);
-  const isWindows = shellType === 'windows';
+  const looksLikePS = shellType === 'windows';
 
-  // Detect if command looks like a PowerShell command
-  const looksLikePS = isWindows || /powershell\.exe/i.test(command) || /^pwsh/i.test(command);
-
-  const showExit = exitCode !== undefined || duration !== undefined;
+  const isFinished = status === 'done' || status === 'error' || exitCode !== undefined || duration !== undefined;
+  const showExit = isFinished;
 
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
@@ -4084,21 +4098,37 @@ export function extractFernData(tc: any, progressEvents: any[] = []) {
 }
 
 function extractTerminalData(tc: any) {
-  const command = tc.args?.command || tc.args?.CommandLine || '';
+  const args = parseToolCallArgs(tc);
+  const command = args.command || args.CommandLine || '';
   const output = extractOutputText(tc);
   const toolName = (tc.toolName || '').toLowerCase();
-  const args = tc.args || tc.arguments || {};
   const data = tc.data || tc.result?.data || {};
   const cwd = inferTerminalCwd(tc, output, command);
   const requestedShell = String(args.shellType || data.shellType || data.shell || '').toLowerCase();
-  const target = String(args.target || data.target || '').toLowerCase();
-  const isWindows = target !== 'vm' && (
+  const target = String(args.target || data.target || tc.result?.target || tc.result?.data?.target || '').toLowerCase();
+  
+  const normalizedCmd = command.trim().toLowerCase();
+  const hasLinuxIndicators = normalizedCmd.includes('/mnt/') ||
+    normalizedCmd.includes('/home/') ||
+    normalizedCmd.includes('/tmp/') ||
+    /\bsource\b/.test(normalizedCmd) ||
+    /\bpython3\b/.test(normalizedCmd) ||
+    /\b(apt-get|apt)\b/.test(normalizedCmd) ||
+    target === 'vm';
+
+  const isExplicitLinux = toolName.includes('linux') || 
+    requestedShell.includes('bash') || 
+    requestedShell.includes('sh') || 
+    target === 'vm' ||
+    hasLinuxIndicators;
+
+  const isWindows = !isExplicitLinux && (
     requestedShell.includes('powershell') ||
     requestedShell.includes('pwsh') ||
     requestedShell === 'cmd' ||
     toolName.includes('pwsh') ||
     toolName.includes('powershell') ||
-    isWindowsAbsolutePath(cwd) ||
+    (isWindowsAbsolutePath(cwd) && !command.startsWith('wsl') && !command.startsWith('bash')) ||
     command.includes('powershell.exe') ||
     command.includes('pwsh') ||
     command.startsWith('powershell')
@@ -4106,20 +4136,30 @@ function extractTerminalData(tc: any) {
   return {
     command,
     output,
-    exitCode: tc.data?.exitCode ?? tc.result?.data?.exitCode,
+    exitCode: tc.data?.exitCode ?? tc.result?.data?.exitCode ?? tc.result?.exitCode,
     duration: tc.duration ?? tc.result?.duration,
     shellType: isWindows ? 'windows' : 'linux',
-    cwd
+    cwd,
+    status: tc.status
   };
 }
 
 function extractFileSystemData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const toolName = String(tc.toolName || '');
+  
+  let path = args.path || data.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || args.target_file || args.pattern || args.query || args.targetFile || args.target_path || args.targetPath || args.dest || args.destination || args.filepath || '';
+  let argsContent = pickString(args, ['CodeContent', 'codeContent', 'code_content', 'code', 'content', 'text', 'body', 'data']) || pickString(data, ['content', 'contentAfter', 'after', 'code', 'text']);
+  
+  if (typeof path === 'string' && path.includes('\n') && !argsContent) {
+      argsContent = path;
+      path = 'unknown_file';
+  }
+
   return {
     toolName,
-    path: args.path || data.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || args.target_file || args.pattern || args.query || '',
+    path,
     args,
     data,
     output: extractOutputText(tc)
@@ -4127,19 +4167,19 @@ function extractFileSystemData(tc: any) {
 }
 
 function extractMemoryData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const output = extractOutputText(tc);
   return { toolName: tc.toolName, args, output };
 }
 
 function extractGenericData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const output = extractOutputText(tc);
   return { toolName: tc.toolName, args, output, result: tc.result || tc.data || (output ? { exitCode: 0 } : null) };
 }
 
 function extractTodoWriteData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const output = extractOutputText(tc);
   let parsedOutput: any = null;
@@ -4164,7 +4204,7 @@ function extractTodoWriteData(tc: any) {
 }
 
 function extractPlanData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const output = extractOutputText(tc);
   let parsedOutput: any = null;
@@ -4203,7 +4243,7 @@ function extractPlanData(tc: any) {
 
 function extractPresentationData(tc: any) {
   try {
-    const args = tc.args || tc.arguments || {};
+    const args = parseToolCallArgs(tc);
     const data = tc.data || tc.result?.data || {};
     const output = extractOutputText(tc);
     const outputPath = args.outputPath || data.path || data.outputPath || (() => {
@@ -4723,10 +4763,20 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
 
     if (name.includes('write')) {
       isWrite = true;
-      newContent = pickString(args, ['CodeContent', 'code', 'content', 'text']) || pickString(data, ['content', 'contentAfter', 'after']);
+      newContent = pickString(args, ['CodeContent', 'codeContent', 'code_content', 'code', 'content', 'text', 'body', 'data']) || pickString(data, ['content', 'contentAfter', 'after', 'code', 'text']);
+      if (!newContent && typeof args.path === 'string' && args.path.includes('\n')) {
+          newContent = args.path;
+      } else if (!newContent && typeof args.CommandLine === 'string' && args.CommandLine.includes('\n')) {
+          newContent = args.CommandLine;
+      } else if (!newContent && Object.keys(args).length > 0) {
+          const onlyKeys = Object.keys(args);
+          if (!(onlyKeys.length === 1 && onlyKeys[0] === 'path')) {
+              newContent = JSON.stringify(args, null, 2);
+          }
+      }
     } else if (name === 'read' || name === 'read_file' || name === 'view_file') {
       isRead = true;
-      newContent = pickString(data, ['content']) || pickString(args, ['content']) || cleanReadOutput(output || '');
+      newContent = pickString(data, ['content', 'code', 'text']) || pickString(args, ['content', 'code', 'text']) || cleanReadOutput(output || '');
     } else {
       oldContent =
         pickString(data, ['contentBefore', 'oldContent', 'previousContent', 'before', 'oldString', 'old_string']) ||
@@ -4746,15 +4796,16 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
       }
     }
 
-    return {
-      isWrite,
-      isMulti,
-      chunks,
-      oldContent,
-      newContent,
-      isRead,
-      hasRenderableContent: isMulti ? chunks.length > 0 : Boolean(oldContent || newContent),
+    const result = {
+      isWrite, isMulti, chunks, oldContent, newContent, isRead,
+      hasRenderableContent: isRead || isWrite || chunks.length > 0 || (oldContent && newContent)
     };
+
+    if (name.includes('write') && !newContent) {
+      console.log('FileEditorView DEBUG (write empty):', { toolName, path, args, data, chunkSource, extracted: result });
+    }
+
+    return result;
   }, [toolName, args, output, data]);
 
   const diffStats = useMemo(() => {

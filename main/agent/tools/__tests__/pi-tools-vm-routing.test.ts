@@ -141,7 +141,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -163,7 +164,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -188,7 +190,8 @@ describe('Pi Tools VM Routing', () => {
       );
       expect(result).toEqual({
         success: true,
-        output: 'Native output'
+        output: 'Native output',
+        data: { target: 'main' }
       });
     });
   });
@@ -209,7 +212,8 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: true,
-        output: 'Success output'
+        output: 'Success output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
       expect(result.error).toBeUndefined();
     });
@@ -230,7 +234,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Error output',
-        error: 'Error output'
+        error: 'Error output',
+        data: { target: 'vm', exitCode: 1, cwd: '' }
       });
     });
 
@@ -250,7 +255,8 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: true,
-        output: 'Native success'
+        output: 'Native success',
+        data: { target: 'main' }
       });
       expect(result.error).toBeUndefined();
     });
@@ -272,7 +278,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Native error',
-        error: 'Native error'
+        error: 'Native error',
+        data: { target: 'main' }
       });
     });
   });
@@ -302,7 +309,8 @@ describe('Pi Tools VM Routing', () => {
       );
       expect(result).toEqual({
         success: true,
-        output: 'Fallback output'
+        output: 'Fallback output',
+        data: { target: 'main' }
       });
 
       consoleSpy.mockRestore();
@@ -326,7 +334,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Command failed with error',
-        error: 'Command failed with error'
+        error: 'Command failed with error',
+        data: { target: 'vm', exitCode: 127, cwd: '' }
       });
     });
 
@@ -346,7 +355,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Warning message',
-        error: 'Warning message'
+        error: 'Warning message',
+        data: { target: 'vm', exitCode: 1, cwd: '' }
       });
     });
 
@@ -479,7 +489,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'Local output'
+        output: 'Local output',
+        data: { target: 'main' }
       });
     });
 
@@ -500,7 +511,8 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -520,7 +532,8 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 

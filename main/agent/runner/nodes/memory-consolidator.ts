@@ -181,6 +181,9 @@ If you agree that there is absolutely nothing to store, respond with:
       integrator.failNode('evaluation', err instanceof Error ? err.message : String(err));
     }
 
+    // Transition away from 'evaluating' so the telemetry spinner doesn't stay stuck on EVALUATING
+    runner.telemetry.transition('finalizing');
+
     return {};
   };
 };

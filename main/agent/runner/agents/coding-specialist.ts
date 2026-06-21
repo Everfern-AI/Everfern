@@ -109,9 +109,11 @@ export const createCodingSpecialistNode = (
       const spawnTool = !isWorkerSubagent
         ? ((runner as any).tools || []).find((tool: any) => tool.name === 'spawn_agent')
         : undefined;
-      const managerTools = spawnTool
-        ? [...piTools, spawnTool]
-        : piTools;
+      const termExecTool = ((runner as any).tools || []).find((tool: any) => tool.name === 'terminal_execute');
+      const termStatusTool = ((runner as any).tools || []).find((tool: any) => tool.name === 'terminal_status');
+
+      const extraTools = [spawnTool, termExecTool, termStatusTool].filter(Boolean);
+      const managerTools = [...piTools, ...extraTools];
       const basePrompt = loadPrompt('coding-specialist.md') || '';
       const codingHandoff = buildCodingHandoff(state);
       const systemPrompt = `${basePrompt}

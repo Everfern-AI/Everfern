@@ -224,6 +224,25 @@ export function syncBuiltInSkills(): void {
     for (const [skillName, count] of skillEntries) {
       console.log(`[SkillsSync]    • ${skillName} (${count} files)`);
     }
+
+    // ── Also sync skills into WSL /everfern/skills/ ───────────────────
+    if (process.platform === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        // Build WSL path for Windows skillsDir (e.g. C:\Users\srini\.everfern\skills)
+        const driveLetter = skillsDir.replace(/^([A-Za-z]):.*/, '$1').toLowerCase();
+        const relPath = skillsDir.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
+        const wslSkillsSrc = `/mnt/${driveLetter}/${relPath}`;
+        console.log(`[SkillsSync] 🐧 Syncing skills to WSL: ${wslSkillsSrc} → /everfern/skills/`);
+        execSync(
+          `wsl.exe --exec bash -c "mkdir -p /everfern/skills && cp -r '${wslSkillsSrc}/.' /everfern/skills/ && chmod -R 755 /everfern/skills/"`,
+          { timeout: 60000, stdio: 'pipe' }
+        );
+        console.log(`[SkillsSync] ✅ Skills synced to WSL /everfern/skills/`);
+      } catch (wslErr: any) {
+        console.warn(`[SkillsSync] ⚠️ WSL skills sync failed (non-fatal): ${wslErr.message}`);
+      }
+    }
   } catch (error) {
     console.error(`[SkillsSync] ❌ Error syncing skills:`, error);
   }
