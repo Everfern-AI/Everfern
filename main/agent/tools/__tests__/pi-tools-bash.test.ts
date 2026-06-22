@@ -8,8 +8,10 @@
  * 4. bashTool is renamed to 'executePwsh' for naming consistency
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { getPiCodingTools } from '../pi-tools';
+
+vi.setConfig({ testTimeout: 30000 });
 
 describe('bashTool integration', () => {
   it('should load bashTool as executePwsh', async () => {

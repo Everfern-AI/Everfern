@@ -405,7 +405,7 @@ async function withPiToolHooks(
  * - Linux: pass-through (already native paths)
  */
 function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<string, unknown> {
-  const pathKeys = ['path', 'file_path', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'pattern', 'glob', 'include', 'exclude'];
+  const pathKeys = ['path', 'file_path', 'filePath', 'TargetFile', 'AbsolutePath', 'DirectoryPath', 'SearchPath', 'root', 'dir', 'directory', 'from', 'to', 'src', 'dest', 'destination', 'pattern', 'glob', 'include', 'exclude'];
   const translated = { ...args };
 
   for (const key of pathKeys) {
@@ -421,6 +421,12 @@ function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<s
         const drive = mntMatch[1].toUpperCase();
         const rest = mntMatch[2] ? mntMatch[2].replace(/\//g, '\\') : '\\';
         translated[key] = `${drive}:${rest}`;
+        continue;
+      }
+
+      // If it is already a WSL localhost path, just normalize backslashes and do not double-translate
+      if (p.startsWith('//wsl.localhost/') || p.startsWith('//wsl/')) {
+        translated[key] = p.replace(/\//g, '\\');
         continue;
       }
 
@@ -766,27 +772,99 @@ function adaptTool(
 
         // For host-side file tools, translate Linux paths to Windows paths
         if (HOST_FILE_TOOL_NAMES.has(name)) {
+          if (!args) {
+            args = {};
+          }
+
+          // Map path aliases to canonical 'path' key
+          const pathAliases = ['path', 'filePath', 'TargetFile', 'AbsolutePath', 'file_path'];
+          if (typeof args.path !== 'string' || !args.path.trim()) {
+            for (const alias of pathAliases) {
+              if (typeof args[alias] === 'string' && (args[alias] as string).trim()) {
+                args.path = args[alias];
+                break;
+              }
+            }
+          }
+
           if (name === 'write') {
-            if (!args || typeof args.path !== 'string' || !args.path.trim()) {
+            // Map content aliases to canonical 'content' key
+            const contentAliases = ['content', 'codeContent', 'CodeContent', 'text', 'code', 'data'];
+            if (typeof args.content !== 'string') {
+              for (const alias of contentAliases) {
+                if (typeof args[alias] === 'string') {
+                  args.content = args[alias];
+                  break;
+                }
+              }
+            }
+
+            if (typeof args.path !== 'string' || !args.path.trim()) {
               return {
                 success: false,
                 output: "Error: Missing or invalid 'path' parameter for tool 'write'",
                 error: "invalid_path"
               };
             }
-            if (!args || typeof args.content !== 'string') {
+            if (typeof args.content !== 'string') {
               return {
                 success: false,
                 output: "Error: Missing or invalid 'content' parameter for tool 'write'",
                 error: "invalid_content"
               };
             }
-          } else if (['read', 'edit'].includes(name) && (!args || typeof args.path !== 'string')) {
-            return {
-              success: false,
-              output: `Error: Missing or invalid 'path' parameter for tool '${name}'`,
-              error: `invalid_path`
-            };
+          } else if (name === 'edit') {
+            // Map oldString aliases to canonical 'oldString' key
+            const oldStringAliases = ['oldString', 'old_string', 'TargetContent', 'target', 'search'];
+            if (typeof args.oldString !== 'string') {
+              for (const alias of oldStringAliases) {
+                if (typeof args[alias] === 'string') {
+                  args.oldString = args[alias];
+                  break;
+                }
+              }
+            }
+
+            // Map newString aliases to canonical 'newString' key
+            const newStringAliases = ['newString', 'new_string', 'ReplacementContent', 'replacement', 'replace'];
+            if (typeof args.newString !== 'string') {
+              for (const alias of newStringAliases) {
+                if (typeof args[alias] === 'string') {
+                  args.newString = args[alias];
+                  break;
+                }
+              }
+            }
+
+            if (typeof args.path !== 'string' || !args.path.trim()) {
+              return {
+                success: false,
+                output: "Error: Missing or invalid 'path' parameter for tool 'edit'",
+                error: "invalid_path"
+              };
+            }
+            if (typeof args.oldString !== 'string') {
+              return {
+                success: false,
+                output: "Error: Missing or invalid 'oldString' parameter for tool 'edit'",
+                error: "invalid_old_string"
+              };
+            }
+            if (typeof args.newString !== 'string') {
+              return {
+                success: false,
+                output: "Error: Missing or invalid 'newString' parameter for tool 'edit'",
+                error: "invalid_new_string"
+              };
+            }
+          } else if (['read'].includes(name)) {
+            if (typeof args.path !== 'string' || !args.path.trim()) {
+              return {
+                success: false,
+                output: `Error: Missing or invalid 'path' parameter for tool '${name}'`,
+                error: `invalid_path`
+              };
+            }
           }
           args = translateLinuxPathsToHostPaths(args);
         }

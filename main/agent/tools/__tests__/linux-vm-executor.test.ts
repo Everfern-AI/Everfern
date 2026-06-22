@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { translateWindowsPathToLinux, translateMacOSPathToDocker } from '../linux-vm-executor';
+import { translateWindowsPathToLinux, translateMacOSPathToDocker, translateLinuxPathToHost } from '../linux-vm-executor';
 
 /**
  * Unit tests for linux-vm-executor module
@@ -125,6 +125,29 @@ describe('linux-vm-executor', () => {
         stderr: expect.any(String),
         exitCode: expect.any(Number)
       });
+    });
+  });
+
+  describe('translateWindowsPathToLinux with WSL UNC paths', () => {
+    it('should strip WSL UNC prefixes and return absolute Linux paths', () => {
+      expect(translateWindowsPathToLinux('\\\\wsl.localhost\\Ubuntu\\everfern\\Hackathon3_Proposal_Draft.docx')).toBe('/everfern/Hackathon3_Proposal_Draft.docx');
+      expect(translateWindowsPathToLinux('\\\\wsl$\\Ubuntu\\home\\user\\test.txt')).toBe('/home/user/test.txt');
+      expect(translateWindowsPathToLinux('//wsl.localhost/Ubuntu/var/log')).toBe('/var/log');
+    });
+  });
+
+  describe('translateLinuxPathToHost', () => {
+    it('should translate normal absolute Linux paths to UNC host paths', () => {
+      if (process.platform === 'win32') {
+        expect(translateLinuxPathToHost('/everfern/file.txt')).toBe('\\\\wsl.localhost\\Ubuntu\\everfern\\file.txt');
+      }
+    });
+
+    it('should skip translating already translated UNC WSL paths to avoid double translation', () => {
+      if (process.platform === 'win32') {
+        expect(translateLinuxPathToHost('\\\\wsl.localhost\\Ubuntu\\everfern\\file.txt')).toBe('\\\\wsl.localhost\\Ubuntu\\everfern\\file.txt');
+        expect(translateLinuxPathToHost('//wsl.localhost/Ubuntu/everfern/file.txt')).toBe('\\\\wsl.localhost\\Ubuntu\\everfern\\file.txt');
+      }
     });
   });
 });
