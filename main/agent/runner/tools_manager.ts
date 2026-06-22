@@ -34,12 +34,12 @@ import * as os from 'os';
 export const getBaseTools = (runner: any): AgentTool[] => {
   const platform = os.platform();
   const config = runner.config;
+  const mainConfig = hydrateVlmApiKey(runner.client.getFullConfig() as any);
 
   if (!runner.navisOrchestrator && runner.client) {
     // Check if we need a separate vision client for Navis
     // If the main AI doesn't support vision, use the configured VLM (from settings)
     let visionClient: AIClient | undefined;
-    const mainConfig = hydrateVlmApiKey(runner.client.getFullConfig() as any);
     if (mainConfig.vlm) {
       try {
         const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
@@ -81,7 +81,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
       config.ollamaBaseUrl,
       config.checkPermission,
       config.requestPermission,
-      config.vlm
+      mainConfig.vlm as any
     );
 
     // Validate tool instance has all required properties

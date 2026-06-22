@@ -32,17 +32,17 @@ describe('Bug Condition — Web Explorer Returns Without Specialist Context', ()
 
     // Check PHASE 1: Initial search return
     const phase1Return = source.match(
-      /if\s*\(\s*!isSearchComplete\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
+      /if\s*\(\s*!searchInvoked\s*&&\s*!navisInvoked\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
     );
 
     // Check PHASE 2: Worker spawning return
     const phase2Return = source.match(
-      /if\s*\(\s*isSearchComplete\s*&&\s*!hasWorkersSpawned\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
+      /if\s*\(\s*searchInvoked\s*&&\s*!navisInvoked\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
     );
 
     // Check PHASE 3: Aggregation return
     const phase3Return = source.match(
-      /if\s*\(\s*hasWorkersSpawned\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
+      /if\s*\(\s*searchInvoked\s*&&\s*navisInvoked\s*\)[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/
     );
 
     // On UNFIXED code: these will be null or undefined — FAILS
@@ -63,7 +63,7 @@ describe('Bug Condition — Web Explorer Returns Without Specialist Context', ()
 
     // Find the PHASE 1 block (initial search)
     const phase1Match = source.match(
-      /PHASE\s*1[\s\S]{0,1500}if\s*\(\s*!isSearchComplete\s*\)[\s\S]{0,1000}returningFromSpecialist/
+      /PHASE\s*1[\s\S]{0,4000}if\s*\(\s*!searchInvoked\s*&&\s*!navisInvoked\s*\)[\s\S]{0,2000}returningFromSpecialist/
     );
 
     // On UNFIXED code: null — FAILS (confirms bug)
@@ -84,13 +84,15 @@ describe('Bug Condition — Web Explorer Returns Without Specialist Context', ()
 
     // Find the PHASE 2 block (worker spawning)
     const phase2Match = source.match(
-      /PHASE\s*2[\s\S]{0,1000}if\s*\(\s*isSearchComplete\s*&&\s*!hasWorkersSpawned\s*\)[\s\S]{0,800}return/
+      /PHASE\s*2[\s\S]{0,3000}if\s*\(\s*searchInvoked\s*&&\s*!navisInvoked\s*\)[\s\S]{0,2000}return/
     );
 
     if (!phase2Match) {
       // If PHASE 2 structure doesn't exist, check for alternative patterns
       const altPhase2 = source.match(
         /Spawn\s*Workers[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/i
+      ) || source.match(
+        /Deep\s*Investigation[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/i
       );
       expect(altPhase2).toBeTruthy();
       return;
@@ -117,13 +119,15 @@ describe('Bug Condition — Web Explorer Returns Without Specialist Context', ()
 
     // Find the PHASE 3 block (aggregation)
     const phase3Match = source.match(
-      /PHASE\s*3[\s\S]{0,1000}if\s*\(\s*hasWorkersSpawned\s*\)[\s\S]{0,800}return/
+      /PHASE\s*3[\s\S]{0,3000}if\s*\(\s*searchInvoked\s*&&\s*navisInvoked\s*\)[\s\S]{0,2000}return/
     );
 
     if (!phase3Match) {
       // If PHASE 3 structure doesn't exist, check for alternative patterns
       const altPhase3 = source.match(
         /Wait\s*and\s*Aggregate[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/i
+      ) || source.match(
+        /Synthesis[\s\S]{0,500}return[\s\S]{0,200}returningFromSpecialist/i
       );
       expect(altPhase3).toBeTruthy();
       return;

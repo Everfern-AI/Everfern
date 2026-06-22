@@ -141,7 +141,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -163,7 +164,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -188,7 +190,8 @@ describe('Pi Tools VM Routing', () => {
       );
       expect(result).toEqual({
         success: true,
-        output: 'Native output'
+        output: 'Native output',
+        data: { target: 'main' }
       });
     });
   });
@@ -209,7 +212,8 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: true,
-        output: 'Success output'
+        output: 'Success output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
       expect(result.error).toBeUndefined();
     });
@@ -230,7 +234,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Error output',
-        error: 'Error output'
+        error: 'Error output',
+        data: { target: 'vm', exitCode: 1, cwd: '' }
       });
     });
 
@@ -250,7 +255,8 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: true,
-        output: 'Native success'
+        output: 'Native success',
+        data: { target: 'main' }
       });
       expect(result.error).toBeUndefined();
     });
@@ -272,7 +278,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Native error',
-        error: 'Native error'
+        error: 'Native error',
+        data: { target: 'main' }
       });
     });
   });
@@ -302,7 +309,8 @@ describe('Pi Tools VM Routing', () => {
       );
       expect(result).toEqual({
         success: true,
-        output: 'Fallback output'
+        output: 'Fallback output',
+        data: { target: 'main' }
       });
 
       consoleSpy.mockRestore();
@@ -326,7 +334,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Command failed with error',
-        error: 'Command failed with error'
+        error: 'Command failed with error',
+        data: { target: 'vm', exitCode: 127, cwd: '' }
       });
     });
 
@@ -346,7 +355,8 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Warning message',
-        error: 'Warning message'
+        error: 'Warning message',
+        data: { target: 'vm', exitCode: 1, cwd: '' }
       });
     });
 
@@ -479,7 +489,8 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'Local output'
+        output: 'Local output',
+        data: { target: 'main' }
       });
     });
 
@@ -500,7 +511,8 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -520,7 +532,8 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output'
+        output: 'VM output',
+        data: { target: 'vm', exitCode: 0, cwd: '' }
       });
     });
 
@@ -543,4 +556,118 @@ describe('Pi Tools VM Routing', () => {
       expect(mockEmitEvent).not.toHaveBeenCalled();
     });
   });
+
+  describe('File Tool Parameter Alias Mapping', () => {
+    let writeTool: any;
+    let editTool: any;
+    let readTool: any;
+
+    beforeEach(() => {
+      writeTool = tools.find(tool => tool.name === 'write');
+      editTool = tools.find(tool => tool.name === 'edit');
+      readTool = tools.find(tool => tool.name === 'read');
+
+      mockWriteExecutor.mockResolvedValue({
+        content: [{ type: 'text', text: 'Write success' }],
+        isError: false
+      });
+      mockEditExecutor.mockResolvedValue({
+        content: [{ type: 'text', text: 'Edit success' }],
+        isError: false
+      });
+      mockReadExecutor.mockResolvedValue({
+        content: [{ type: 'text', text: 'Read success' }],
+        isError: false
+      });
+    });
+
+    it('should map write tool parameter aliases correctly', async () => {
+      const result = await writeTool.execute({
+        TargetFile: '/tmp/test-file.txt',
+        codeContent: 'const x = 42;'
+      });
+
+      expect(mockWriteExecutor).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          path: expect.stringContaining('test-file.txt'),
+          content: 'const x = 42;'
+        })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should map edit tool parameter aliases correctly', async () => {
+      const result = await editTool.execute({
+        AbsolutePath: '/tmp/test-file.txt',
+        TargetContent: 'const x = 41;',
+        ReplacementContent: 'const x = 42;'
+      });
+
+      expect(mockEditExecutor).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          path: expect.stringContaining('test-file.txt'),
+          oldString: 'const x = 41;',
+          newString: 'const x = 42;'
+        })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should map read tool parameter aliases correctly', async () => {
+      const result = await readTool.execute({
+        filePath: '/tmp/test-file.txt'
+      });
+
+      expect(mockReadExecutor).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          path: expect.stringContaining('test-file.txt')
+        })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject write tool call if path is missing after mapping', async () => {
+      const result = await writeTool.execute({
+        codeContent: 'const x = 42;'
+      });
+
+      expect(result).toEqual({
+        success: false,
+        output: "Error: Missing or invalid 'path' parameter for tool 'write'",
+        error: "invalid_path"
+      });
+      expect(mockWriteExecutor).not.toHaveBeenCalled();
+    });
+
+    it('should reject write tool call if content is missing after mapping', async () => {
+      const result = await writeTool.execute({
+        TargetFile: '/tmp/test-file.txt'
+      });
+
+      expect(result).toEqual({
+        success: false,
+        output: "Error: Missing or invalid 'content' parameter for tool 'write'",
+        error: "invalid_content"
+      });
+      expect(mockWriteExecutor).not.toHaveBeenCalled();
+    });
+
+    it('should reject edit tool call if oldString is missing after mapping', async () => {
+      const result = await editTool.execute({
+        TargetFile: '/tmp/test-file.txt',
+        ReplacementContent: 'new content'
+      });
+
+      expect(result).toEqual({
+        success: false,
+        output: "Error: Missing or invalid 'oldString' parameter for tool 'edit'",
+        error: "invalid_old_string"
+      });
+      expect(mockEditExecutor).not.toHaveBeenCalled();
+    });
+  });
 });
+

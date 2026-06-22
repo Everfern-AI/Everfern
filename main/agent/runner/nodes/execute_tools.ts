@@ -295,13 +295,15 @@ export const createExecuteToolsNode = (
       });
     }
 
+    const hasAskUserQuestion = newRecords.some(r => r.toolName === 'ask_user_question');
+
     const result = {
       messages: newMessages,
       toolCallRecords: [...(state.toolCallRecords ?? []), ...newRecords],
       pendingToolCalls: nextPendingTools,
       pauseGeneration: pauseGenFlag,
       userConfirmation: undefined,
-      toolCallHistory: [...(state.toolCallHistory ?? [])],
+      toolCallHistory: [...(state.toolCallHistory ?? [])]
     };
 
     // Log return to brain

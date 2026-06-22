@@ -707,8 +707,16 @@ const UserQuestionForm = ({
     const current = visibleQuestions[currentIndex];
     const total = visibleQuestions.length;
     const currentAnswers = answers[current?.question] || [];
-    const isAnswered = currentAnswers.length > 0;
-    const allAnswered = visibleQuestions.every(q => (answers[q.question] || []).length > 0);
+    const isQuestionAnswered = React.useCallback((q: any) => {
+        const ans = answers[q.question] || [];
+        if (!q.options || q.options.length === 0) {
+            return ans.length > 0 && typeof ans[0] === 'string' && ans[0].trim().length > 0;
+        }
+        return ans.length > 0;
+    }, [answers]);
+
+    const isAnswered = current ? isQuestionAnswered(current) : false;
+    const allAnswered = visibleQuestions.every(isQuestionAnswered);
 
     // Filter options based on conditional visibility
     const visibleOptions = React.useMemo(() => {

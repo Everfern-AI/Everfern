@@ -14,6 +14,7 @@ export interface ToolConfig {
 
 export interface NavisConfig {
   useVision: boolean;
+  onlyVision: boolean;
   headless: boolean;
   maxSteps: number;
   useChromeProfile: boolean;
@@ -31,11 +32,12 @@ export interface ToolSettingsConfig {
 
 export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   useVision: false,
+  onlyVision: false,
   headless: false,
   maxSteps: 200,
-  useChromeProfile: false,
+  useChromeProfile: true,
   selectedBrowserId: 'chrome',
-  useIsolatedBrowser: true,
+  useIsolatedBrowser: false,
   automationMode: 'extension-first',
 };
 
@@ -84,17 +86,16 @@ export class ToolSettingsStore {
       };
 
       // Ensure new Navis fields are populated
+      if (loaded.navis?.onlyVision === undefined) {
+        config.navis.onlyVision = false;
+      }
       if (loaded.navis?.selectedBrowserId === undefined) {
         config.navis.selectedBrowserId = 'chrome';
       }
-      if (loaded.navis?.useIsolatedBrowser === undefined) {
-        config.navis.useIsolatedBrowser = !config.navis.useChromeProfile;
-      }
-      if (loaded.navis?.automationMode === undefined) {
-        config.navis.automationMode = config.navis.useChromeProfile && !config.navis.useIsolatedBrowser
-          ? 'extension-first'
-          : 'playwright';
-      }
+      // Force only extension mode (useIsolatedBrowser = false, useChromeProfile = true, automationMode = extension-first)
+      config.navis.useIsolatedBrowser = false;
+      config.navis.useChromeProfile = true;
+      config.navis.automationMode = 'extension-first';
 
       // Check if schema drifted (e.g., loaded stringified length vs config stringified length)
       // A more robust check is whether any keys were added by the merge

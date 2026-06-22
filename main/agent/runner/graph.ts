@@ -1,8 +1,10 @@
-import { StateGraph, END, START, interrupt } from '@langchain/langgraph';
+import { StateGraph, END, START, interrupt, GraphInterrupt } from '@langchain/langgraph';
 import { GraphState, GraphStateType, StreamEvent } from './state';
 import { createTriageNode } from './nodes/triage';
 import { createPlannerNode } from './nodes/planner';
 import { createExecuteToolsNode } from './nodes/execute_tools';
+import { createMemoryCheckNode } from './nodes/memory-check';
+import { createMemoryConsolidatorNode } from './nodes/memory-consolidator';
 
 import { createBrainNode } from './nodes/brain';
 import { createDecomposerNode } from './nodes/decomposer';
@@ -502,7 +504,105 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return node(state);
   };
 
+  const memoryCheckNode = async (state: GraphStateType, config?: any) => {
+    const ctx = getContext(config);
+    if (ctx.shouldAbort?.()) {
+      throw new Error('Execution aborted by user (stop button clicked)');
+    }
+    const node = createMemoryCheckNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, ctx.shouldAbort);
+    return node(state, config);
+  };
+
+  const memoryConsolidatorNode = async (state: GraphStateType, config?: any) => {
+    const ctx = getContext(config);
+    if (ctx.shouldAbort?.()) {
+      throw new Error('Execution aborted by user (stop button clicked)');
+    }
+    const node = createMemoryConsolidatorNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, ctx.shouldAbort);
+    return node(state, config);
+  };
+
+  const wasAskUserQuestionExecutedInLastTurn = (state: GraphStateType): boolean => {
+    const messages = state.messages || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      const role = msg.role || msg.type || msg._getType?.();
+      if (role === 'assistant' || role === 'ai') {
+        break;
+      }
+      if (role === 'tool' || role === 'function') {
+        const name = msg.name || msg.tool_name || msg.toolName || '';
+        if (name === 'ask_user_question') {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const askUserWaitNode = async (state: GraphStateType, config?: any) => {
+    const { runner, conversationId } = getContext(config);
+
+    runner.telemetry.transition('ask_user_wait');
+
+    // Find the ask_user_question tool call in records to know what we are waiting for
+    const askUserRecord = state.toolCallRecords?.find(r => r.toolName === 'ask_user_question');
+    const reasoning = askUserRecord?.result?.output || 'Awaiting clarification...';
+
+    const interruptRequest = {
+      id: askUserRecord?.id || crypto.randomUUID(),
+      conversationId: conversationId || 'unknown',
+      timestamp: new Date().toISOString(),
+      question: 'Clarification required:',
+      details: {
+        tools: [askUserRecord].filter(Boolean),
+        summary: reasoning,
+        reasoning,
+      },
+      options: []
+    };
+
+    // Register interruption in stateManager so runStream can find it upon resume
+    const { stateManager } = await import('./state-manager');
+    if (conversationId) {
+      stateManager.setInterrupted(conversationId, interruptRequest);
+    }
+
+    let answer: any;
+    try {
+      answer = interrupt(interruptRequest);
+    } catch (interruptErr: any) {
+      if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
+        throw interruptErr;
+      }
+      runner.telemetry.info('ask_user_wait interrupt() failed — ending graph turn');
+      return {
+        returningFromSpecialist: state.returningFromSpecialist,
+      };
+    }
+
+    const answerStr = String(answer);
+    console.log(`[ask_user_wait] Received user answer: ${answerStr}`);
+
+    // Clean up interrupted state in stateManager
+    if (conversationId) {
+      stateManager.resumeFromInterrupt(conversationId, null);
+    }
+
+    const userMessage = {
+      role: 'user',
+      content: answerStr,
+      id: `msg-user-ans-${Date.now()}`
+    };
+
+    return {
+      messages: [...(state.messages || []), userMessage],
+      returningFromSpecialist: state.returningFromSpecialist,
+    };
+  };
+
   const compiledGraph = new StateGraph(GraphState)
+    .addNode('memory_check', memoryCheckNode)
     .addNode('intent_classifier', triageNode)
     .addNode('operator_coordinator', operatorNode)
     .addNode('task_decomposer', decomposerNode)
@@ -515,11 +615,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
     .addNode('deep_research', deepResearchNode)
 
     .addNode('hitl_approval', hitlNode)
-    .addNode('multi_tool_orchestrator', orchestratorNode);
+    .addNode('multi_tool_orchestrator', orchestratorNode)
+    .addNode('memory_consolidator', memoryConsolidatorNode)
+    .addNode('ask_user_wait', askUserWaitNode);
 
   // New Brain-Centric Routing Architecture
   compiledGraph
-    .addEdge(START, 'intent_classifier')
+    .addEdge(START, 'memory_check')
+    .addEdge('memory_check', 'intent_classifier')
     .addConditionalEdges('intent_classifier', (state) => {
         const intent = state.currentIntent || 'unknown';
         if (intent === 'operator') {
@@ -581,6 +684,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         global_planner: 'global_planner'
     })
     .addEdge('global_planner', 'brain')
+    .addEdge('memory_consolidator', END)
 
     .addConditionalEdges('operator_coordinator', (state) => {
         const routingDecision = state.routingDecision;
@@ -599,14 +703,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
                 case 'route_deep_research': return 'deep_research';
             }
         }
-        return END;
+        return 'memory_consolidator';
     }, {
         task_decomposer: 'task_decomposer',
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
-        [END]: END
+        memory_consolidator: 'memory_consolidator'
     })
 
     // Brain is the central router - it decides whether to handle tasks itself or route to specialists
@@ -641,32 +745,31 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     // Always use web_explorer for web research tasks to ensure navis is used
                     return 'web_explorer';
                 case 'complete_task':
-                    // Sub-task 3.3: Ensure complete_task routes to END
-                    console.log('[Graph] ➡️ Brain routing decision: complete_task → END');
-                    return END;
+                    console.log('[Graph] ➡️ Brain routing decision: complete_task → memory_consolidator');
+                    return 'memory_consolidator';
                 case 'continue_brain':
-                    // If completion signal says the turn is over, END — don't loop.
-                    // This prevents the infinite greeting loop where brain keeps saying
-                    // "waiting_for_user_input" but routing back to itself.
                     if (
                         completionSignal?.reason === 'waiting_for_user_input' ||
-                        completionSignal?.reason === 'task_complete' ||
                         completionSignal?.reason === 'cannot_proceed'
                     ) {
                         console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal?.reason} → END (avoid loop)`);
                         return END;
                     }
+                    if (completionSignal?.reason === 'task_complete') {
+                        console.log(`[Graph] ➡️ continue_brain but completionSignal=task_complete → memory_consolidator`);
+                        return 'memory_consolidator';
+                    }
                     console.log('[Graph] ➡️ Brain routing decision: continue_brain → brain');
                     return 'brain';
                 default:
-                    console.log('[Graph] ➡️ Unknown routing decision, defaulting to END');
-                    return END;
+                    console.log('[Graph] ➡️ Unknown routing decision, defaulting to memory_consolidator');
+                    return 'memory_consolidator';
             }
         }
 
-        // Default to END for completion
-        console.log('[Graph] ➡️ Task complete → END');
-        return END;
+        // Default to memory_consolidator for completion
+        console.log('[Graph] ➡️ Task complete → memory_consolidator');
+        return 'memory_consolidator';
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
@@ -675,6 +778,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         brain: 'brain',
+        memory_consolidator: 'memory_consolidator',
         [END]: END,
     })
 
@@ -816,6 +920,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
         const specialist = state.returningFromSpecialist;
         console.log(`[Graph] 🔀 multi_tool_orchestrator complete. returningFromSpecialist: ${specialist || 'None'}`);
 
+        if (wasAskUserQuestionExecutedInLastTurn(state)) {
+            console.log('[Graph] 🔀 ask_user_question tool executed → routing to ask_user_wait');
+            return 'ask_user_wait';
+        }
+
         if (specialist) {
             console.log(`[Graph] ⬅️ Returning to specialist: ${specialist}`);
             switch (specialist) {
@@ -826,6 +935,27 @@ If a specialized agent failed to complete a step, identify the issue and use you
             }
         }
         console.log('[Graph] ➡️ Returning to brain');
+        return 'brain';
+    }, {
+        coding_specialist: 'coding_specialist',
+        data_analyst: 'data_analyst',
+        web_explorer: 'web_explorer',
+        deep_research: 'deep_research',
+        brain: 'brain',
+        ask_user_wait: 'ask_user_wait',
+    })
+
+    .addConditionalEdges('ask_user_wait', (state) => {
+        const specialist = state.returningFromSpecialist;
+        console.log(`[ask_user_wait] Routing after user answer. Specialist: ${specialist || 'None'}`);
+        if (specialist) {
+            switch (specialist) {
+                case 'coding_specialist': return 'coding_specialist';
+                case 'data_analyst': return 'data_analyst';
+                case 'web_explorer': return 'web_explorer';
+                case 'deep_research': return 'deep_research';
+            }
+        }
         return 'brain';
     }, {
         coding_specialist: 'coding_specialist',

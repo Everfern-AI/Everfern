@@ -90,11 +90,6 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           type: 'boolean',
           description: 'Last-resort visual fallback. Leave false for normal Navis runs; DOM extraction is much faster.',
         },
-        automationMode: {
-          type: 'string',
-          enum: ['extension-first', 'playwright'],
-          description: 'Optional manual override. extension-first uses the installed Navis browser extension; playwright uses an isolated automation browser.',
-        },
         startUrl: {
           type: 'string',
           description: 'URL to start at (default: about:blank)',
@@ -262,17 +257,20 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
 
       // Read Navis settings from the persistent store
       const navisSettings = toolSettingsStore.get().navis;
-      const requestedAutomationMode =
-        safeArgs.automationMode === 'playwright' || safeArgs.automationMode === 'extension-first'
-          ? safeArgs.automationMode
-          : navisSettings.automationMode;
-      const automationMode = requestedAutomationMode || (navisSettings.useChromeProfile && !navisSettings.useIsolatedBrowser ? 'extension-first' : 'playwright');
+      
+      // Lock down launcher mode to respect user settings:
+      // If extension-first is selected in settings, always force extension-first.
+      // Do not allow model/safeArgs override to switch to playwright.
+      const automationMode: 'extension-first' | 'playwright' =
+        navisSettings.automationMode === 'extension-first'
+          ? 'extension-first'
+          : (safeArgs.automationMode === 'extension-first' || safeArgs.automationMode === 'playwright'
+              ? safeArgs.automationMode
+              : navisSettings.automationMode);
 
       try {
         const shouldUseExtensionFirst =
-          automationMode === 'extension-first' &&
-          navisSettings.useChromeProfile &&
-          !navisSettings.useIsolatedBrowser;
+          automationMode === 'extension-first';
 
         if (shouldUseExtensionFirst) {
           const status = getNavisCompanionStatus();
@@ -309,6 +307,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
               headless: safeArgs.headless ?? navisSettings.headless,
               startUrl: safeArgs.startUrl,
               useVision: Boolean(navisSettings.useVision),
+              onlyVision: Boolean(navisSettings.onlyVision),
               forceVision: Boolean(safeArgs.forceVision),
               useChromeProfile: true,
               selectedBrowserId: navisSettings.selectedBrowserId,
@@ -360,6 +359,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           // grounding, but the orchestrator still uses DOM unless visual context
           // is requested or the DOM snapshot is weak.
           useVision: Boolean(navisSettings.useVision),
+          onlyVision: Boolean(navisSettings.onlyVision),
           forceVision: Boolean(safeArgs.forceVision),
           useChromeProfile: false,
           selectedBrowserId: navisSettings.selectedBrowserId,

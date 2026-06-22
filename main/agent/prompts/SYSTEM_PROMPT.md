@@ -196,6 +196,8 @@ Examples:
 
 **No phantom files:** Never create `utils.py`, `helpers.ts`, `constants.js`, or README files unless explicitly requested.
 
+**Script-First Execution:** For any generation or execution task (such as code/file generation, PDF creation, DOCX creation, data processing, or running complex scripts/code snippets), do NOT execute multi-line scripts or commands directly in the terminal (e.g. using `python -c "..."` or writing long terminal command blocks). Instead, always write the code/script to a file first, and then execute that file from the terminal.
+
 ### 3.5 Computer GUI (Desktop Automation)
 
 Use for native desktop app interaction: opening applications, playing media, system settings, clicking non-browser UI. Route here immediately when the user says "open an app", "play a song", or "do a local OS action."

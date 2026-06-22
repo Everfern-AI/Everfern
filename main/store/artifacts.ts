@@ -105,6 +105,12 @@ export function readArtifact(chatId: string, filename: string, projectPath?: str
 
   if (fs.existsSync(filepath)) {
     try {
+        const ext = path.extname(filepath).toLowerCase();
+        if (ext === '.pdf') {
+          const mimeType = 'application/pdf';
+          const base64 = fs.readFileSync(filepath).toString('base64');
+          return `data:${mimeType};base64,${base64}`;
+        }
         return fs.readFileSync(filepath, 'utf-8');
     } catch (e) {
         return null;

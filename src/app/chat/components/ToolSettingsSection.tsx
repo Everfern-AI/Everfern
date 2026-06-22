@@ -22,6 +22,7 @@ interface ToolConfig {
 
 interface NavisConfig {
     useVision: boolean;
+    onlyVision: boolean;
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
@@ -39,6 +40,7 @@ interface ToolSettingsConfig {
 
 const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     useVision: false,
+    onlyVision: false,
     headless: false,
     maxSteps: 200,
     useChromeProfile: false,
@@ -232,7 +234,7 @@ function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value
     
     // Robust fuzzy match: handles exact, partial, legacy short IDs ('chrome', 'firefox') and prefix
     const findBrowser = (id: string) => {
-        if (!id || id === 'isolated') return null;
+        if (!id) return null;
         const lower = id.toLowerCase();
         return (
             // 1. Exact ID match
@@ -254,7 +256,7 @@ function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value
         );
     };
 
-    const selectedBrowser = value === 'isolated' ? null : findBrowser(value);
+    const selectedBrowser = findBrowser(value);
 
     // Auto-correct stored ID if it's a legacy/stale value and we resolved a real browser
     const effectiveValue = selectedBrowser ? selectedBrowser.id : value;
@@ -280,11 +282,7 @@ function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {effectiveValue === 'isolated' ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, color: '#2f8f5b' }}>
-                            <GlobeAltIcon width={18} height={18} />
-                        </div>
-                    ) : selectedBrowser?.logo ? (
+                    {selectedBrowser?.logo ? (
                         <img src={selectedBrowser.logo} alt={selectedBrowser.name} style={{ width: 24, height: 24, objectFit: 'contain' }} />
                     ) : (
                         <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#e8e6d9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -292,9 +290,7 @@ function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value
                         </div>
                     )}
                     <span style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
-                        {effectiveValue === 'isolated'
-                            ? 'Isolated Playwright Browser'
-                            : selectedBrowser?.name || (browsers.length > 0 ? browsers[0].name : 'Select Browser')}
+                        {selectedBrowser?.name || (browsers.length > 0 ? browsers[0].name : 'Select Browser')}
                     </span>
                 </div>
                 {/* Simple clean caret */}
@@ -323,23 +319,6 @@ function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value
                             zIndex: 50, border: '1px solid #e8e6d9', maxHeight: 250, overflowY: 'auto'
                         }}
                     >
-                        <div
-                            onClick={() => { onChange('isolated'); setOpen(false); }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
-                                cursor: 'pointer', backgroundColor: effectiveValue === 'isolated' ? '#fafafa' : '#ffffff',
-                                borderBottom: '1px solid #f4f4f4'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafafa'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = effectiveValue === 'isolated' ? '#fafafa' : '#ffffff'}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, color: '#2f8f5b' }}>
-                                <GlobeAltIcon width={18} height={18} />
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 500, color: '#111111', flex: 1 }}>Isolated Playwright Browser</span>
-                            {effectiveValue === 'isolated' && <CheckIcon width={16} height={16} style={{ color: '#2f8f5b' }} />}
-                        </div>
-                        
                         {browsers.length > 0 && (
                             <div style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 700, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 System Browsers
@@ -555,89 +534,97 @@ export function ToolSettingsSection() {
                     </div>
                 </div>
 
+                {/* Only Vision Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Only Vision</Label>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '12px 16px', backgroundColor: '#ffffff',
+                        border: 'none', borderRadius: 12,
+                        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.8), 0 2px 5px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ color: '#6366f1' }}>
+                                <EyeIcon width={18} height={18} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    {config.navis.onlyVision ? 'Only Vision Enabled' : 'Only Vision Disabled'}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                    {config.navis.onlyVision
+                                        ? 'Coordinates-only navigation via VLM (bypasses DOM structure completely)'
+                                        : 'Standard hybrid mode (prefer DOM structure, use vision on-demand)'}
+                                </div>
+                            </div>
+                        </div>
+                        {/* Custom Toggle Switch */}
+                        <div
+                            onClick={() => handleNavisChange({ ...config.navis, onlyVision: !config.navis.onlyVision })}
+                            style={{
+                                width: 44, height: 24, borderRadius: 12, position: 'relative',
+                                backgroundColor: config.navis.onlyVision ? '#6366f1' : '#e8e6d9',
+                                cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0,
+                            }}
+                        >
+                            <div style={{
+                                position: 'absolute', top: 3,
+                                left: config.navis.onlyVision ? 23 : 3,
+                                width: 18, height: 18, borderRadius: '50%',
+                                backgroundColor: '#ffffff',
+                                transition: 'left 0.2s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                        </div>
+                    </div>
+                </div>
+
                 {/* Browser Selection */}
                 <div style={{ marginBottom: 18 }}>
                     <Label>Browser</Label>
 
                     <BrowserDropdown 
                         browsers={browsers} 
-                        value={config.navis.useIsolatedBrowser ? 'isolated' : config.navis.selectedBrowserId}
+                        value={config.navis.selectedBrowserId}
                         onChange={(val) => {
-                            if (val === 'isolated') {
-                                handleNavisChange({ ...config.navis, useIsolatedBrowser: true, useChromeProfile: false, automationMode: 'playwright' });
-                            } else {
-                                handleNavisChange({ ...config.navis, useIsolatedBrowser: false, selectedBrowserId: val, useChromeProfile: true, automationMode: 'extension-first' });
-                            }
+                            handleNavisChange({ ...config.navis, useIsolatedBrowser: false, selectedBrowserId: val, useChromeProfile: true, automationMode: 'extension-first' });
                         }}
                     />
 
-                    {!config.navis.useIsolatedBrowser && (
-                        <div style={{ marginTop: 8, padding: '0 4px' }}>
-                            <div style={{ fontSize: 12, color: '#8a8886', lineHeight: 1.5 }}>
-                                Use the installed Navis extension to control your real Chrome/Chromium or Firefox profile directly when connected. Playwright mode stays isolated.
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                                {[
-                                    { mode: 'extension-first' as const, title: 'Use browser extension', detail: 'Fast, logged-in, no copied profile' },
-                                    { mode: 'playwright' as const, title: 'Isolated Playwright', detail: 'Separate automation browser' },
-                                ].map(item => {
-                                    const selected = config.navis.automationMode === item.mode;
-                                    return (
-                                        <button
-                                            key={item.mode}
-                                            type="button"
-                                            onClick={() => handleNavisChange(item.mode === 'playwright'
-                                                ? { ...config.navis, automationMode: 'playwright', useIsolatedBrowser: true, useChromeProfile: false }
-                                                : { ...config.navis, automationMode: 'extension-first', useIsolatedBrowser: false, useChromeProfile: true }
-                                            )}
-                                            style={{
-                                                textAlign: 'left',
-                                                padding: '10px 12px',
-                                                borderRadius: 12,
-                                                border: selected ? '1px solid #111111' : '1px solid #e8e6d9',
-                                                backgroundColor: selected ? '#ffffff' : '#f9f9f8',
-                                                color: '#111111',
-                                                cursor: 'pointer',
-                                                boxShadow: selected ? '0 2px 5px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)' : 'none',
-                                            }}
-                                        >
-                                            <div style={{ fontSize: 12.5, fontWeight: 650 }}>{item.title}</div>
-                                            <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2 }}>{item.detail}</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                                <button
-                                    type="button"
-                                    onClick={handlePrepareMainProfileExtension}
-                                    disabled={isPreparingMainProfileExtension}
-                                    style={{
-                                        padding: '9px 12px',
-                                        borderRadius: 10,
-                                        border: '1px solid #ddd9cb',
-                                        backgroundColor: isPreparingMainProfileExtension ? '#f4f2ea' : '#ffffff',
-                                        color: '#111111',
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
-                                    }}
-                                >
-                                    {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
-                                </button>
-                            </div>
-                            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
-                                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
-                                {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
-                            </div>
-                            {extensionMessage && (
-                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                                    {extensionMessage}
-                                </div>
-                            )}
+                    <div style={{ marginTop: 8, padding: '0 4px' }}>
+                        <div style={{ fontSize: 12, color: '#8a8886', lineHeight: 1.5 }}>
+                            Use the installed Navis extension to control your real Chrome/Chromium or Firefox profile directly when connected.
                         </div>
-                    )}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                            <button
+                                type="button"
+                                onClick={handlePrepareMainProfileExtension}
+                                disabled={isPreparingMainProfileExtension}
+                                style={{
+                                    padding: '9px 12px',
+                                    borderRadius: 10,
+                                    border: '1px solid #ddd9cb',
+                                    backgroundColor: isPreparingMainProfileExtension ? '#f4f2ea' : '#ffffff',
+                                    color: '#111111',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
+                                    boxShadow: '0 2px 5px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
+                                }}
+                            >
+                                {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
+                            </button>
+                        </div>
+                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
+                            {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
+                        </div>
+                        {extensionMessage && (
+                            <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                                {extensionMessage}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Max Steps Slider */}

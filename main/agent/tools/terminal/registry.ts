@@ -11,6 +11,7 @@ export interface CommandInfo {
   output: string;
   exitCode?: number;
   startTime: number;
+  target: 'main' | 'vm';
 }
 
 interface PersistentShell {
@@ -179,7 +180,7 @@ export class CommandRegistry {
       proc.stdin?.write('$OutputEncoding = [System.Text.Encoding]::UTF8\n');
       proc.stdin?.write('$ProgressPreference = "SilentlyContinue"\n');
     } else {
-      proc.stdin?.write('export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin"\n');
+      proc.stdin?.write('export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin"\n');
     }
 
     const decodeBuffer = (buf: Buffer): string => {
@@ -223,9 +224,18 @@ export class CommandRegistry {
               }
             }
 
-            const cleanOutput = active.output.substring(0, markerIndex);
+            let cleanOutput = active.output.substring(0, markerIndex);
 
             if (active.timeoutId) clearTimeout(active.timeoutId);
+
+            if (exitCode !== 0) {
+              try {
+                const { appendPythonHintIfImportError } = require('../pi-tools');
+                cleanOutput = appendPythonHintIfImportError(cleanOutput, target);
+              } catch (err) {
+                console.warn('[CommandRegistry] Failed to load recovery hint helper:', err);
+              }
+            }
 
             const info: CommandInfo = {
               id: active.id,
@@ -235,7 +245,8 @@ export class CommandRegistry {
               status: exitCode === 0 ? 'completed' : 'failed',
               output: cleanOutput,
               exitCode,
-              startTime: active.startTime
+              startTime: active.startTime,
+              target
             };
 
             this.commands.set(active.id, info);
@@ -281,7 +292,8 @@ export class CommandRegistry {
           status: 'failed',
           output: active.output + `\n[Shell exited unexpectedly with code ${code}]`,
           exitCode: code ?? -1,
-          startTime: active.startTime
+          startTime: active.startTime,
+          target
         };
         this.commands.set(active.id, info);
         this.processes.delete(active.id);
@@ -299,7 +311,8 @@ export class CommandRegistry {
           status: 'failed',
           output: 'Shell exited unexpectedly before command execution',
           exitCode: -1,
-          startTime: Date.now()
+          startTime: Date.now(),
+          target
         };
         this.commands.set(req.id, info);
         req.resolve(info);
@@ -351,7 +364,8 @@ export class CommandRegistry {
           status: 'failed',
           output: active.output,
           exitCode: -1,
-          startTime: active.startTime
+          startTime: active.startTime,
+          target
         };
         this.commands.set(active.id, info);
         this.processes.delete(active.id);
@@ -370,23 +384,13 @@ export class CommandRegistry {
     }
 
     if (isPowerShell) {
-      shell.proc.stdin?.write(`$global:EF_M = ${this.psSingleQuote(marker)}\n`);
+      const base64Marker = Buffer.from(marker).toString('base64');
+      shell.proc.stdin?.write(`$global:EF_M = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${base64Marker}'))\n`);
       shell.proc.stdin?.write('$global:EF_EXIT = 0\n');
       if (needCd) {
         shell.proc.stdin?.write(`Set-Location -LiteralPath ${this.psSingleQuote(req.cwd)}\n`);
       }
-      shell.proc.stdin?.write('try {\n');
-      shell.proc.stdin?.write('  & {\n');
-      shell.proc.stdin?.write('    $global:LASTEXITCODE = $null\n');
-      shell.proc.stdin?.write(`${req.command}\n`);
-      shell.proc.stdin?.write('  }\n');
-      shell.proc.stdin?.write('  if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $global:EF_EXIT = $LASTEXITCODE }\n');
-      shell.proc.stdin?.write('  elseif (-not $?) { $global:EF_EXIT = 1 }\n');
-      shell.proc.stdin?.write('  else { $global:EF_EXIT = 0 }\n');
-      shell.proc.stdin?.write('} catch {\n');
-      shell.proc.stdin?.write('  Write-Error $_\n');
-      shell.proc.stdin?.write('  $global:EF_EXIT = 1\n');
-      shell.proc.stdin?.write('}\n');
+      shell.proc.stdin?.write(`try { & { $global:LASTEXITCODE = $null; ${req.command} }; if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $global:EF_EXIT = $LASTEXITCODE } elseif (-not $?) { $global:EF_EXIT = 1 } else { $global:EF_EXIT = 0 } } catch { Write-Error $_; $global:EF_EXIT = 1 }\n`);
       shell.proc.stdin?.write('Write-Output "$global:EF_M $global:EF_EXIT"\n');
       shell.proc.stdin?.write('Write-Output (Get-Location).Path\n');
     } else {
@@ -410,18 +414,36 @@ export class CommandRegistry {
     target: 'main' | 'vm' = 'main',
     onData?: (data: string) => void
   ): Promise<CommandInfo> {
+    let actualTarget = target;
+    if (process.platform === 'win32' && target === 'main') {
+      const normalizedCmd = command.trim().toLowerCase();
+      const hasLinuxIndicators = normalizedCmd.includes('/mnt/') ||
+        normalizedCmd.includes('/home/') ||
+        normalizedCmd.includes('/tmp/') ||
+        /\bsource\b/.test(normalizedCmd) ||
+        /\b(python|pip|apt-get)\b/.test(normalizedCmd) ||
+        ((normalizedCmd.includes('&&') || normalizedCmd.includes('||')) &&
+         !/^(npm|npx|yarn|node|git|powershell|pwsh|cmd)\b/.test(normalizedCmd));
+
+      if (hasLinuxIndicators) {
+        console.log(`[CommandRegistry] Auto-routing Linux/WSL command to VM: "${command.slice(0, 100)}..."`);
+        actualTarget = 'vm';
+      }
+    }
+
     const info: CommandInfo = {
       id,
       command,
       cwd,
       status: 'running',
       output: '',
-      startTime: Date.now()
+      startTime: Date.now(),
+      target: actualTarget
     };
     this.commands.set(id, info);
 
     try {
-      const shell = await this.getOrCreateShell(target, cwd);
+      const shell = await this.getOrCreateShell(actualTarget, cwd);
 
       return new Promise<CommandInfo>((resolve) => {
         shell.queue.push({
@@ -433,7 +455,7 @@ export class CommandRegistry {
           resolve
         });
 
-        this.processQueue(target);
+        this.processQueue(actualTarget);
       });
     } catch (err: any) {
       const failedInfo: CommandInfo = {
@@ -443,7 +465,8 @@ export class CommandRegistry {
         status: 'failed',
         output: `Error: ${err.message || err}`,
         exitCode: -1,
-        startTime: Date.now()
+        startTime: Date.now(),
+        target: actualTarget
       };
       this.commands.set(id, failedInfo);
       return failedInfo;
@@ -469,7 +492,8 @@ export class CommandRegistry {
           status: 'terminated',
           output: active.output + '\n[Command terminated by user/agent]',
           exitCode: -1,
-          startTime: active.startTime
+          startTime: active.startTime,
+          target
         };
         this.commands.set(id, info);
         this.processes.delete(id);
@@ -491,7 +515,8 @@ export class CommandRegistry {
           status: 'terminated',
           output: 'Command terminated before execution started',
           exitCode: -1,
-          startTime: Date.now()
+          startTime: Date.now(),
+          target
         };
         this.commands.set(id, info);
         req.resolve(info);

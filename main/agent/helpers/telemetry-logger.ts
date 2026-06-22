@@ -36,6 +36,7 @@ export class TelemetryLogger {
   private spinTimer: NodeJS.Timeout | null = null;
   private currentTask: string = 'Initializing...';
   public silent: boolean = false;
+  private isTerminated: boolean = false;
 
   constructor(private agentId: string = 'EverFern-1', silent: boolean = false) {
     this.startTime = Date.now();
@@ -92,6 +93,7 @@ export class TelemetryLogger {
    */
   public begin(task: string) {
     this.stopSpinner();
+    this.isTerminated = false;
     if (!this.silent) {
       const divider = `\x1b[90m${'='.repeat(90)}\x1b[0m`;
       const header = `\x1b[1m\x1b[34m[🚀 INITIATE]\x1b[0m Agent: \x1b[33m${this.agentId}\x1b[0m | Objective: \x1b[97m${task.substring(0, 60)}${task.length > 60 ? '...' : ''}\x1b[0m`;
@@ -161,6 +163,8 @@ export class TelemetryLogger {
    */
   public terminate(success: boolean, responseSummary?: string) {
     this.stopSpinner();
+    if (this.isTerminated) return;
+    this.isTerminated = true;
     if (!this.silent) {
       const status = success ? '\x1b[32mCOMPLETED\x1b[0m' : '\x1b[31mABORTED\x1b[0m';
       const summary = responseSummary ? ` | Result: \x1b[97m${responseSummary.substring(0, 50)}...\x1b[0m` : '';
