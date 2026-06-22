@@ -648,7 +648,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
             
             // Auto-switch to preview for specific file types if NOT a plan
             const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
-            const previewExts = ['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'];
+            const previewExts = ['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md', 'pdf'];
             
             if (previewExts.includes(ext) && !isPlan) {
                 setViewMode('preview');
@@ -866,7 +866,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
                             {/* Toolbar */}
                             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
-                                {!isPlanFile && (
+                                {!isPlanFile && !selectedCode.name.toLowerCase().endsWith('.pdf') && (
                                     <button
                                         onClick={() => setIsEditing(v => !v)}
                                         style={{ display: "flex", alignItems: "center", gap: 6, background: isEditing ? "rgba(0,0,0,0.05)" : "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
@@ -932,7 +932,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             {/* Plan notice */}
                             {isPlanFile && (
                                 <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, fontSize: 13, color: "#fbbf24", lineHeight: 1.5 }}>
-                                    âœï¸ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
+                                    ✍️ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
                                 </div>
                             )}
 
@@ -953,6 +953,15 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         }
                                         if (['pptx', 'ppt'].includes(ext)) {
                                             return <PPTViewer filename={selectedCode.name} filePath={artifactPath} />;
+                                        }
+                                        if (ext === 'pdf') {
+                                            return (
+                                                <iframe 
+                                                    src={selectedCode.content}
+                                                    style={{ width: "100%", height: "100%", border: "none" }}
+                                                    title="PDF Preview"
+                                                />
+                                            );
                                         }
                                         return (
                                             <>

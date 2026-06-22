@@ -374,28 +374,19 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
     } catch (e) {
-        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting brace-matching extraction:", e);
+        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
         
-        // 1. Try to extract valid JSON objects using brace-matching
-        let depth = 0;
+        // 1. Try to extract valid JSON objects using brace-matching with reset on new '{'
+        // Resetting startIdx on '{' allows us to skip unclosed/truncated JSON objects and capture subsequent valid ones.
         let startIdx = -1;
         const candidates: string[] = [];
         
         for (let i = 0; i < innerText.length; i++) {
             if (innerText[i] === '{') {
-                if (depth === 0) {
-                    startIdx = i;
-                }
-                depth++;
-            } else if (innerText[i] === '}') {
-                depth--;
-                if (depth === 0 && startIdx !== -1) {
-                    candidates.push(innerText.slice(startIdx, i + 1));
-                    startIdx = -1;
-                } else if (depth < 0) {
-                    depth = 0;
-                    startIdx = -1;
-                }
+                startIdx = i; // Reset startIdx to the newest '{'
+            } else if (innerText[i] === '}' && startIdx !== -1) {
+                candidates.push(innerText.slice(startIdx, i + 1));
+                startIdx = -1; // Reset after finding a match
             }
         }
         
@@ -413,12 +404,40 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
         
-        // 2. If we got nothing, fall back to line parsing with aggressive JSON token scrubbing
+        // 2. Salvage partially truncated/malformed JSON lines (e.g. unclosed quotes in fields)
+        const lines = innerText.split('\n');
+        for (const line of lines) {
+            // Match: "icon": "🔊", "text": "Turn up the
+            const hasIconAndText = line.match(/["']icon["']\s*:\s*["']([^"']+)["']\s*,\s*["']text["']\s*:\s*["']?([^"'\n}]+)/i);
+            if (hasIconAndText) {
+                const icon = hasIconAndText[1].trim();
+                let text = hasIconAndText[2].trim();
+                // Clean up any trailing quotes or commas
+                text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+                
+                if (text && !followUps.some(f => f.text.toLowerCase() === text.toLowerCase())) {
+                    followUps.push({ icon, text });
+                }
+                continue;
+            }
+            
+            // Match: "text": "Turn up the", "icon": "🔊"
+            const hasTextAndIcon = line.match(/["']text["']\s*:\s*["']([^"']+)["']\s*,\s*["']icon["']\s*:\s*["']?([^"'\n}]+)/i);
+            if (hasTextAndIcon) {
+                const textVal = hasTextAndIcon[1].trim();
+                let icon = hasTextAndIcon[2].trim();
+                icon = icon.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+                
+                if (textVal && !followUps.some(f => f.text.toLowerCase() === textVal.toLowerCase())) {
+                    followUps.push({ icon, text: textVal });
+                }
+            }
+        }
+        
+        // 3. Last fallback: line-by-line plain text parsing if we still got nothing
         if (followUps.length === 0) {
-            const lines = innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             for (const line of lines) {
                 const cleanLine = line.replace(/^[-\s*[\]{},"]+/, '').trim();
-                // Also ignore lines containing only json keys like "icon" or "text" or empty quotes
                 if (cleanLine && 
                     !cleanLine.startsWith('"icon"') && 
                     !cleanLine.startsWith('"text"') && 
@@ -1533,9 +1552,31 @@ export default function ChatPage() {
             } catch (e) { console.error('Failed to restore live tool calls:', e); }
         }
         if (savedLoading === 'true') {
-            // If it was loading when refreshed, we might need to reconnect
-            // but for now we just show the restored state
+            // If it was loading when refreshed, we might need to reconnect.
+            // Safety timeout: if no stream events arrive within 5s, auto-clear the stuck state.
+            // This handles the case where the renderer was hot-reloaded (Fast Refresh) while
+            // the backend stream was running — the `done:true` IPC message was consumed by
+            // the old renderer instance and will never arrive again.
             setIsLoading(true);
+            const safetyTimer = setTimeout(() => {
+                setIsLoading(prev => {
+                    if (prev) {
+                        console.warn('[ChatPage] Safety timeout: isLoading was stuck after renderer refresh — auto-clearing.');
+                        sessionStorage.removeItem('everfern_is_loading');
+                        sessionStorage.removeItem('everfern_streaming_thought');
+                        sessionStorage.removeItem('everfern_live_tool_calls');
+                        setStreamingThought('');
+                        setLiveToolCalls([]);
+                        liveToolCallsRef.current = [];
+                    }
+                    return false;
+                });
+            }, 5000);
+            // Cancel the timer as soon as any real stream event arrives
+            const cleanup = (window as any).electronAPI?.onStreamChunk?.(() => {
+                clearTimeout(safetyTimer);
+                cleanup?.();
+            });
         }
     }, []);
 
@@ -2082,7 +2123,7 @@ export default function ChatPage() {
             setSettingsShowuiUrl(config.showuiUrl || "http://127.0.0.1:7860");
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
-                loadedVlmProvider === "everfern" ? "fern-1" :
+                loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
                 loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
                 loadedVlmProvider === "minimax" ? "MiniMax-M3" :
                 loadedVlmProvider === "openai" ? "gpt-5.5" :
@@ -2107,6 +2148,16 @@ export default function ChatPage() {
     useEffect(() => {
         if (settingsProvider && config) setSettingsApiKey(config.keys?.[settingsProvider] || "");
     }, [settingsProvider, config]);
+
+    useEffect(() => {
+        if (settingsVlmCloudProvider && config) {
+            if (settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter') {
+                setSettingsVlmCloudKey('');
+            } else {
+                setSettingsVlmCloudKey(config.keys?.[`vlm-${settingsVlmCloudProvider}`] || config.keys?.[settingsVlmCloudProvider] || "");
+            }
+        }
+    }, [settingsVlmCloudProvider, config]);
 
     useEffect(() => {
         return () => {
@@ -3667,7 +3718,7 @@ export default function ChatPage() {
                             const blocks: any[] = [];
                             if (m.content) blocks.push({ type: 'text', text: m.content });
                             const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
-                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: ${toLinuxPath(a.path || 'unknown')}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
+                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: /everfern/${a.name}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
                             return { role: m.role, content: blocks };
                         }
                         return { role: m.role, content: m.content };
@@ -4109,7 +4160,7 @@ export default function ChatPage() {
         const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
         const defaultVlmModel =
-          settingsVlmCloudProvider === 'everfern' ? 'fern-1' :
+          settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
           settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
           settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
           settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :

@@ -286,6 +286,349 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"overview" | "models" | "timeline">("overview");
+    const [sharing, setSharing] = useState(false);
+
+    const handleShareAnalytics = async () => {
+        if (!summary) return;
+        setSharing(true);
+        try {
+            // Wait for custom fonts to load
+            try {
+                await document.fonts.ready;
+                await Promise.all([
+                    document.fonts.load('bold 36px "EB Garamond"'),
+                    document.fonts.load('500 18px "Figtree"'),
+                    document.fonts.load('bold 32px "Figtree"'),
+                    document.fonts.load('18px "Figtree"'),
+                    document.fonts.load('16px "JetBrains Mono"')
+                ]);
+            } catch (e) {
+                console.warn("Fonts load warning:", e);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 1200;
+            canvas.height = 1200;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error("Could not get canvas context");
+
+            // 1. Draw cream background gradient
+            const bgGrad = ctx.createRadialGradient(600, 600, 50, 600, 600, 800);
+            bgGrad.addColorStop(0, '#fdfbf7');
+            bgGrad.addColorStop(1, '#FEFAEF');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, 1200, 1200);
+
+            // 2. Draw card container with light glassmorphism
+            ctx.save();
+            ctx.strokeStyle = 'rgba(32, 30, 36, 0.08)';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.shadowColor = 'rgba(32, 30, 36, 0.05)';
+            ctx.shadowBlur = 40;
+            ctx.beginPath();
+            ctx.roundRect(60, 60, 1080, 1080, 24);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            // 3. Draw Branding Header
+            let logoImg: HTMLImageElement | null = null;
+            try {
+                logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                    const img = new window.Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject();
+                    img.src = '/images/logos/black-logo-withoutbg.png';
+                });
+            } catch (e) {
+                console.warn("Logo failed to load");
+            }
+
+            const headerY = 120;
+            if (logoImg) {
+                ctx.drawImage(logoImg, 100, headerY, 64, 64);
+            } else {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(132, headerY + 32, 32, 0, Math.PI * 2);
+                ctx.fillStyle = '#6366f1';
+                ctx.shadowColor = '#6366f1';
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.restore();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 24px "Figtree", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('EF', 132, headerY + 32);
+            }
+
+            ctx.fillStyle = '#201e24';
+            ctx.font = '700 36px "Figtree", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('EverFern AI', 184, headerY);
+
+            ctx.fillStyle = '#8a8886';
+            ctx.font = '500 18px "Figtree", sans-serif';
+            ctx.fillText('Usage & Cost Analytics Dashboard', 184, headerY + 44);
+
+            // 4. Draw Key Metrics Grid (4 items)
+            const metrics = [
+                { label: 'Total Spend', value: formatCost(summary.totalCost), sub: `Avg ${formatCost(summary.avgCostPerRequest)}/req`, color: '#10b981' },
+                { label: 'Total Tokens', value: formatTokens(summary.totalTokens), sub: `${formatTokens(summary.totalPromptTokens)} prompt · ${formatTokens(summary.totalCompletionTokens)} comp`, color: '#6366f1' },
+                { label: 'Total Requests', value: summary.totalRequests.toLocaleString(), sub: 'Successful calls', color: '#f59e0b' },
+                { label: 'Top Model', value: summary.topModels[0]?.model?.split("/").pop() || "—", sub: summary.topModels[0]?.provider || 'No provider', color: '#3b82f6' }
+            ];
+
+            const startX = 100;
+            const totalWidth = 1000;
+            const boxWidth = 220;
+            const gap = (totalWidth - boxWidth * 4) / 3;
+
+            metrics.forEach((m, i) => {
+                const x = startX + i * (boxWidth + gap);
+                const y = 230;
+
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#e8e6d9';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.roundRect(x, y, boxWidth, 150, 16);
+                ctx.fill();
+                ctx.stroke();
+
+                // Color accent bar
+                ctx.fillStyle = m.color;
+                ctx.beginPath();
+                ctx.roundRect(x + 16, y + 16, 6, 24, 3);
+                ctx.fill();
+
+                // Value
+                ctx.fillStyle = '#201e24';
+                ctx.font = 'bold 32px "Figtree", sans-serif';
+                ctx.fillText(m.value, x + 32, y + 48);
+
+                // Label
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '600 13px "Figtree", sans-serif';
+                ctx.fillText(m.label.toUpperCase(), x + 16, y + 95);
+
+                // Subtext
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '500 11px "Figtree", sans-serif';
+                ctx.fillText(m.sub, x + 16, y + 125);
+                ctx.restore();
+            });
+
+            // 5. Draw Daily Spend Chart (last 30 days)
+            const chartX = 100;
+            const chartY = 420;
+            const chartW = 1000;
+            const chartH = 280;
+
+            ctx.save();
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#e8e6d9';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(chartX, chartY, chartW, chartH, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            // Chart Title
+            ctx.fillStyle = '#201e24';
+            ctx.font = 'bold 18px "Figtree", sans-serif';
+            ctx.fillText('Daily Spend (Last 30 Days)', chartX + 24, chartY + 36);
+
+            const dailyData = summary.dailyUsage || [];
+            if (dailyData.length > 0) {
+                const maxVal = Math.max(...dailyData.map(d => d.cost || 0), 0.01);
+                const barSpacing = (chartW - 80) / dailyData.length;
+                const barW = Math.max(barSpacing * 0.7, 4);
+
+                dailyData.forEach((d, idx) => {
+                    const pct = (d.cost || 0) / maxVal;
+                    const barH = pct * (chartH - 120);
+                    const x = chartX + 40 + idx * barSpacing;
+                    const y = chartY + chartH - 40 - barH;
+
+                    const barGrad = ctx.createLinearGradient(x, y, x, y + barH);
+                    barGrad.addColorStop(0, '#10b981');
+                    barGrad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+                    ctx.fillStyle = barGrad;
+
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]);
+                    ctx.fill();
+
+                    if (dailyData.length <= 12 || idx % Math.ceil(dailyData.length / 8) === 0) {
+                        ctx.fillStyle = '#8a8886';
+                        ctx.font = '500 11px "Figtree", sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(d.date.slice(-5), x + barW / 2, chartY + chartH - 18);
+                    }
+                });
+            } else {
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '500 16px "Figtree", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No usage recorded yet', chartX + chartW / 2, chartY + chartH / 2);
+            }
+            ctx.restore();
+
+            // 6. Draw Provider & Token Split Side-by-Side Panels
+            const panelY = 730;
+            const panelW = 480;
+            const panelH = 280;
+
+            // --- Panel 1: Donut Chart ---
+            ctx.save();
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#e8e6d9';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(100, panelY, panelW, panelH, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#201e24';
+            ctx.font = 'bold 18px "Figtree", sans-serif';
+            ctx.fillText('Spend by Provider', 124, panelY + 36);
+
+            const providers = summary.topProviders || [];
+            const totalProviderCost = providers.reduce((a, b) => a + b.cost, 0);
+
+            if (providers.length > 0 && totalProviderCost > 0) {
+                const centerX = 220;
+                const centerY = panelY + 150;
+                const outerRadius = 70;
+                const innerRadius = 45;
+                let currentAngle = -Math.PI / 2;
+
+                const colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#3b82f6"];
+
+                providers.forEach((p, idx) => {
+                    const sliceAngle = (p.cost / totalProviderCost) * 2 * Math.PI;
+                    const nextAngle = currentAngle + sliceAngle;
+
+                    ctx.fillStyle = colors[idx % colors.length];
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, outerRadius, currentAngle, nextAngle);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    currentAngle = nextAngle;
+                });
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                providers.slice(0, 5).forEach((p, idx) => {
+                    const ly = panelY + 80 + idx * 32;
+                    ctx.fillStyle = colors[idx % colors.length];
+                    ctx.beginPath();
+                    ctx.arc(330, ly + 16, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#201e24';
+                    ctx.font = 'bold 13px "Figtree", sans-serif';
+                    ctx.fillText(p.provider, 346, ly + 16);
+
+                    ctx.fillStyle = '#8a8886';
+                    ctx.font = '500 12px "Figtree", sans-serif';
+                    ctx.fillText(formatCost(p.cost), 460 - ctx.measureText(formatCost(p.cost)).width, ly + 16);
+                });
+            } else {
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '500 15px "Figtree", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No provider data yet', 100 + panelW / 2, panelY + panelH / 2);
+            }
+            ctx.restore();
+
+            // --- Panel 2: Token Split ---
+            ctx.save();
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#e8e6d9';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(620, panelY, panelW, panelH, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#201e24';
+            ctx.font = 'bold 18px "Figtree", sans-serif';
+            ctx.fillText('Token Usage Split', 644, panelY + 36);
+
+            const promptPct = summary.totalTokens > 0 ? (summary.totalPromptTokens / summary.totalTokens) * 100 : 0;
+            const completionPct = summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) * 100 : 0;
+
+            const barY1 = panelY + 80;
+            ctx.fillStyle = '#8a8886';
+            ctx.font = 'bold 13px "Figtree", sans-serif';
+            ctx.textBaseline = 'top';
+            ctx.fillText('INPUT (PROMPT)', 644, barY1 + 10);
+            ctx.textAlign = 'right';
+            ctx.fillText(formatTokens(summary.totalPromptTokens), 620 + panelW - 24, barY1 + 10);
+            ctx.textAlign = 'left';
+
+            ctx.fillStyle = '#f5f4f0';
+            ctx.beginPath();
+            ctx.roundRect(644, barY1 + 34, panelW - 48, 14, 7);
+            ctx.fill();
+
+            ctx.fillStyle = '#6366f1';
+            ctx.beginPath();
+            ctx.roundRect(644, barY1 + 34, (panelW - 48) * (promptPct / 100), 14, 7);
+            ctx.fill();
+
+            const barY2 = panelY + 165;
+            ctx.fillStyle = '#8a8886';
+            ctx.font = 'bold 13px "Figtree", sans-serif';
+            ctx.fillText('OUTPUT (COMPLETION)', 644, barY2 + 10);
+            ctx.textAlign = 'right';
+            ctx.fillText(formatTokens(summary.totalCompletionTokens), 620 + panelW - 24, barY2 + 10);
+            ctx.textAlign = 'left';
+
+            ctx.fillStyle = '#f5f4f0';
+            ctx.beginPath();
+            ctx.roundRect(644, barY2 + 34, panelW - 48, 14, 7);
+            ctx.fill();
+
+            ctx.fillStyle = '#10b981';
+            ctx.beginPath();
+            ctx.roundRect(644, barY2 + 34, (panelW - 48) * (completionPct / 100), 14, 7);
+            ctx.fill();
+
+            ctx.restore();
+
+            // 7. Footer text
+            ctx.fillStyle = '#8a8886';
+            ctx.font = '16px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('flexed with everfern.app', 600, 1090);
+
+            // 8. Trigger PNG download
+            const url = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'everfern-analytics.png';
+            link.href = url;
+            link.click();
+
+        } catch (e: any) {
+            alert('Failed to generate sharing image: ' + e.message);
+        } finally {
+            setSharing(false);
+        }
+    };
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -353,6 +696,26 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, WebkitAppRegion: "no-drag" } as any}>
+                    <button
+                        onClick={handleShareAnalytics}
+                        disabled={sharing || !summary}
+                        style={{
+                            padding: "6px 14px",
+                            background: "#111111",
+                            border: "none",
+                            borderRadius: 8,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "#fff",
+                            cursor: (sharing || !summary) ? "not-allowed" : "pointer",
+                            opacity: (sharing || !summary) ? 0.6 : 1,
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.12)"
+                        }}
+                        onMouseEnter={e => { if (!sharing && summary) e.currentTarget.style.background = '#2a2826'; }}
+                        onMouseLeave={e => { if (!sharing) e.currentTarget.style.background = '#111111'; }}
+                    >
+                        {sharing ? "Generating..." : "✨ Share & Flex"}
+                    </button>
                     <button
                         onClick={loadData}
                         style={{

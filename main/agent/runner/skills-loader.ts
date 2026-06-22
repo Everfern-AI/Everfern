@@ -250,9 +250,8 @@ You have access to the following specialized skills. Each skill provides domain-
 
 ### MANDATORY SKILL CALLING PROCEDURE:
 1. **Detect** if your task matches any skill (check descriptions below)
-2. **Invoke** by passing the skill name in your tool call JSON parameter: "skill": "skillName"
-3. **Read** the skill's SKILL.md file using read_file
-4. **Follow** the skill's exact procedures before implementing
+2. **Invoke** by calling the \`skill\` tool with the skill name: \`{"name": "skillName"}\` — this returns the full SKILL.md content directly
+3. **Follow** the skill's exact procedures before implementing
 
 ### Skills Available:
 
@@ -263,13 +262,34 @@ You have access to the following specialized skills. Each skill provides domain-
       continue;
     }
 
+    // Convert Windows path to Linux /everfern/skills path
+    // skill.path is like: C:\Users\srini\.everfern\skills\docx\SKILL.md
+    // We want: /everfern/skills/docx/
+    const normalizedPath = skill.path.replace(/\\/g, '/');
+    const skillsMarker = '.everfern/skills/';
+    const markerIdx = normalizedPath.indexOf(skillsMarker);
+    let linuxSkillDir: string;
+    if (markerIdx !== -1) {
+      // Extract the relative part after '.everfern/skills/', e.g. 'docx/SKILL.md' → 'docx'
+      const relPart = normalizedPath.slice(markerIdx + skillsMarker.length);
+      const skillDirName = relPart.split('/')[0];
+      linuxSkillDir = `/everfern/skills/${skillDirName}/`;
+    } else {
+      // Fallback: use basename directory
+      const parts = normalizedPath.split('/');
+      const fileIdx = parts.length - 1;
+      const skillDirName = parts[fileIdx - 1] || skill.name;
+      linuxSkillDir = `/everfern/skills/${skillDirName}/`;
+    }
+
     prompt += `**${skill.name}**\n`;
-    prompt += `- File Path: ${skill.path}\n`;
+    prompt += `- Skill Directory (Linux VM): ${linuxSkillDir}\n`;
     prompt += `- When to Use: ${skill.description}\n`;
-    prompt += `- JSON Parameter: "skill": "${skill.name}"\n\n`;
+    prompt += `- How to invoke: call the \`skill\` tool with \`{"name": "${skill.name}"}\` to get full instructions\n\n`;
   }
 
-  prompt += `### EXAMPLE SKILL INVOCATION:\n{\n  "tool": "run_command",\n  "skill": "xlsx",\n  "CommandLine": "python analyze_spreadsheet.py",\n  "Cwd": "C:/Users/user/.everfern/exec",\n  "WaitMsBeforeAsync": 8000,\n  "SafeToAutoRun": true\n}\n\nAfter invoking with a skill parameter, immediately read that skill's SKILL.md file to understand its procedures, then follow those procedures exactly.\n`;
+  prompt += `### EXAMPLE SKILL INVOCATION:\nCall the skill tool: \`{"name": "docx"}\`\nThe tool returns the complete SKILL.md with all procedures. Follow those procedures exactly.\n\nNOTE: All script paths in SKILL.md are relative to the skill's directory shown above (e.g. /everfern/skills/docx/). Run scripts from that directory in the VM.\n`;
 
   return prompt;
 }
+

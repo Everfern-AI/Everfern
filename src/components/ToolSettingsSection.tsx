@@ -22,6 +22,7 @@ interface ToolConfig {
 
 interface NavisConfig {
     useVision: boolean;
+    onlyVision: boolean;
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
@@ -39,6 +40,7 @@ interface ToolSettingsConfig {
 
 const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     useVision: false,
+    onlyVision: false,
     headless: false,
     maxSteps: 200,
     useChromeProfile: false,
@@ -389,46 +391,41 @@ export function ToolSettingsSection() {
                     </div>
                 </div>
 
-                {/* Browser Extension Toggle */}
+                {/* Only Vision Toggle */}
                 <div style={{ marginBottom: 14 }}>
-                    <Label>Browser Extension</Label>
+                    <Label>Only Vision</Label>
                     <div
-                        onClick={() => handleNavisChange({
-                            ...config.navis,
-                            useChromeProfile: !config.navis.useChromeProfile,
-                            useIsolatedBrowser: config.navis.useChromeProfile,
-                            automationMode: config.navis.useChromeProfile ? 'playwright' : 'extension-first',
-                        })}
+                        onClick={() => handleNavisChange({ ...config.navis, onlyVision: !config.navis.onlyVision })}
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '12px 16px', backgroundColor: config.navis.useChromeProfile ? '#eef7f1' : '#f9f9f8',
-                            border: `1px solid ${config.navis.useChromeProfile ? '#2f8f5b' : '#e8e6d9'}`,
+                            padding: '12px 16px', backgroundColor: config.navis.onlyVision ? '#f0ecff' : '#f9f9f8',
+                            border: `1px solid ${config.navis.onlyVision ? '#667eea' : '#e8e6d9'}`,
                             borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
                         }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.useChromeProfile ? '#e2f1e8' : '#f4f4f4'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.useChromeProfile ? '#eef7f1' : '#f9f9f8'}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? '#e8e4ff' : '#f4f4f4'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? '#f0ecff' : '#f9f9f8'}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <ComputerDesktopIcon width={18} height={18} style={{ color: config.navis.useChromeProfile ? '#2f8f5b' : '#8a8886' }} />
+                            <EyeIcon width={18} height={18} style={{ color: config.navis.onlyVision ? '#667eea' : '#8a8886' }} />
                             <div>
                                 <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
-                                    {config.navis.useChromeProfile ? 'Use Browser Extension' : 'Use Isolated Browser'}
+                                    {config.navis.onlyVision ? 'Only Vision Enabled' : 'Only Vision Disabled'}
                                 </div>
-                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 330 }}>
-                                    {config.navis.useChromeProfile
-                                        ? 'Uses the installed Navis extension for fast logged-in Chrome/Firefox control'
-                                        : 'Runs Navis in its own Playwright Chromium session'}
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                    {config.navis.onlyVision
+                                        ? 'Coordinates-only navigation via VLM (bypasses DOM structure completely)'
+                                        : 'Standard hybrid mode (prefer DOM structure, use vision on-demand)'}
                                 </div>
                             </div>
                         </div>
                         <div style={{
                             width: 44, height: 24, borderRadius: 12, position: 'relative',
-                            backgroundColor: config.navis.useChromeProfile ? '#2f8f5b' : '#e8e6d9',
+                            backgroundColor: config.navis.onlyVision ? '#667eea' : '#e8e6d9',
                             transition: 'background 0.2s', flexShrink: 0,
                         }}>
                             <div style={{
                                 position: 'absolute', top: 3,
-                                left: config.navis.useChromeProfile ? 23 : 3,
+                                left: config.navis.onlyVision ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: '#ffffff',
                                 transition: 'left 0.2s',
@@ -436,38 +433,65 @@ export function ToolSettingsSection() {
                             }} />
                         </div>
                     </div>
-                    {config.navis.useChromeProfile && (
-                        <div style={{ marginTop: 10, padding: '0 4px' }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                <button
-                                    type="button"
-                                    onClick={handlePrepareMainProfileExtension}
-                                    disabled={isPreparingMainProfileExtension}
-                                    style={{
-                                        padding: '9px 12px',
-                                        borderRadius: 10,
-                                        border: '1px solid #ddd9cb',
-                                        backgroundColor: isPreparingMainProfileExtension ? '#f4f2ea' : '#ffffff',
-                                        color: '#111111',
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
-                                    }}
-                                >
-                                    {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
-                                </button>
-                            </div>
-                            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
-                                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
-                                {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
-                            </div>
-                            {extensionMessage && (
-                                <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                                    {extensionMessage}
+                </div>
+
+                {/* Browser Extension Toggle */}
+                <div style={{ marginBottom: 14 }}>
+                    <Label>Browser Extension</Label>
+                    <div
+                        style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '12px 16px', backgroundColor: '#eef7f1',
+                            border: '1px solid #2f8f5b',
+                            borderRadius: 12, transition: 'all 0.2s',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <ComputerDesktopIcon width={18} height={18} style={{ color: '#2f8f5b' }} />
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    Browser Extension Enabled
                                 </div>
-                            )}
+                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 330 }}>
+                                    Uses the installed Navis extension for fast logged-in Chrome/Firefox control
+                                </div>
+                            </div>
                         </div>
-                    )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 20, backgroundColor: '#d1fae5', color: '#065f46', fontSize: 11, fontWeight: 700 }}>
+                            <CheckIcon width={12} height={12} strokeWidth={3} />
+                            Required
+                        </div>
+                    </div>
+                    <div style={{ marginTop: 10, padding: '0 4px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            <button
+                                type="button"
+                                onClick={handlePrepareMainProfileExtension}
+                                disabled={isPreparingMainProfileExtension}
+                                style={{
+                                    padding: '9px 12px',
+                                    borderRadius: 10,
+                                    border: '1px solid #ddd9cb',
+                                    backgroundColor: isPreparingMainProfileExtension ? '#f4f2ea' : '#ffffff',
+                                    color: '#111111',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
+                                }}
+                            >
+                                {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
+                            </button>
+                        </div>
+                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
+                            {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
+                        </div>
+                        {extensionMessage && (
+                            <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                                {extensionMessage}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Max Steps Slider */}

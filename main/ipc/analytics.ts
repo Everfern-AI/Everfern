@@ -26,6 +26,11 @@ export function registerAnalyticsHandlers() {
     provider: string;
     promptTokens: number;
     completionTokens: number;
+    promptTokensCost?: number;
+    completionTokensCost?: number;
+    imageInputCost?: number;
+    imageOutputCost?: number;
+    totalCost?: number;
   }) => {
     try {
       await recordUsage(params);

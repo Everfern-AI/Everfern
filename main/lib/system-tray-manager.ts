@@ -352,10 +352,11 @@ export class SystemTrayManager {
   setupWindowEvents(): void {
     if (!this.mainWindow) return;
 
-    // Mark as quitting when app.quit() is called from any source
-    app.on('before-quit', () => {
-      this.isQuitting = true;
-    });
+    if (app && typeof app.on === 'function') {
+      app.on('before-quit', () => {
+        this.isQuitting = true;
+      });
+    }
 
     // Update tray menu when window visibility changes
     this.mainWindow.on('show', () => {

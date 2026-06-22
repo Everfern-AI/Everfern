@@ -79,7 +79,8 @@ describe('Modern LangGraph HITL Architecture', () => {
         metrics: vi.fn(),
       },
       tools: [],
-      _buildToolDefinitions: vi.fn(() => [])
+      _buildToolDefinitions: vi.fn(() => []),
+      shouldCaptureScreenshot: vi.fn(() => false)
     };
   });
 

@@ -73,16 +73,21 @@ function PillComponent({
   const statusColor = STATUS_COLORS[pill.status];
   const statusIcon = STATUS_ICONS[pill.status];
 
+  const n = (pill.toolName || pill.label || "").toLowerCase();
+  const isMemory = n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('fern') || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember');
+  const displayLabel = isMemory ? 'Memory' : (pill.label || pill.toolName);
+  const displayIcon = isMemory ? '🧠' : (pill.icon || '⚙️');
+
   return (
     <motion.button
       onClick={() => onClick(pill)}
       className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all hover:shadow-md cursor-pointer ${statusColor}`}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
-      title={`${pill.label || pill.toolName} - ${pill.status}`}
+      title={`${displayLabel} - ${pill.status}`}
     >
-      <span className="text-sm">{pill.icon || '⚙️'}</span>
-      <span className="text-xs font-medium">{pill.label || pill.toolName}</span>
+      <span className="text-sm">{displayIcon}</span>
+      <span className="text-xs font-medium">{displayLabel}</span>
       <span className="text-xs opacity-75">{statusIcon}</span>
     </motion.button>
   );

@@ -166,16 +166,38 @@ export async function recordUsage(params: {
   provider: string;
   promptTokens: number;
   completionTokens: number;
+  promptTokensCost?: number;
+  completionTokensCost?: number;
+  imageInputCost?: number;
+  imageOutputCost?: number;
+  totalCost?: number;
 }): Promise<void> {
   await ensurePricingFresh();
 
-  const { conversationId, model, provider, promptTokens, completionTokens } = params;
+  const {
+    conversationId,
+    model,
+    provider,
+    promptTokens,
+    completionTokens,
+    promptTokensCost,
+    completionTokensCost,
+    imageInputCost,
+    imageOutputCost,
+    totalCost
+  } = params;
   const totalTokens = promptTokens + completionTokens;
 
   const pricing = getModelPricing(model);
-  const inputCost = (promptTokens / 1_000_000) * pricing.inputCostPer1M;
-  const outputCost = (completionTokens / 1_000_000) * pricing.outputCostPer1M;
-  const totalCost = inputCost + outputCost;
+  const fallbackInputCost = (promptTokens / 1_000_000) * pricing.inputCostPer1M;
+  const fallbackOutputCost = (completionTokens / 1_000_000) * pricing.outputCostPer1M;
+
+  const inputCost = promptTokensCost ?? fallbackInputCost;
+  const outputCost = completionTokensCost ?? fallbackOutputCost;
+  const imageInCost = imageInputCost ?? 0;
+  const imageOutCost = imageOutputCost ?? 0;
+
+  const finalTotalCost = totalCost ?? (inputCost + outputCost + imageInCost + imageOutCost);
 
   const id = `usage-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
@@ -186,7 +208,7 @@ export async function recordUsage(params: {
         input_cost_usd, output_cost_usd, total_cost_usd, context_window, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, conversationId || null, model, provider, promptTokens, completionTokens, totalTokens,
-       inputCost, outputCost, totalCost, pricing.contextWindow, new Date().toISOString()]
+       inputCost + imageInCost, outputCost + imageOutCost, finalTotalCost, pricing.contextWindow, new Date().toISOString()]
     );
   } catch (err) {
     console.error('[Analytics] Failed to record usage:', err);

@@ -385,6 +385,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Memory ───────────────────────────────────────────────────────
   memory: {
     saveDirect: (content: string, metadata?: string) => ipcRenderer.invoke('memory:save-direct', content, metadata),
+    getGraph: () => ipcRenderer.invoke('memory:get-graph'),
+    deleteNode: (id: string) => ipcRenderer.invoke('memory:delete-node', id),
+    exportZip: () => ipcRenderer.invoke('memory:export-zip'),
+    importMerge: () => ipcRenderer.invoke('memory:import-merge-graph'),
   },
 
   // ── Artifacts ────────────────────────────────────────────────
@@ -526,8 +530,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSummary: () => ipcRenderer.invoke('analytics:get-summary'),
     getModelPricing: () => ipcRenderer.invoke('analytics:get-model-pricing'),
     getModelInfo: (modelId: string) => ipcRenderer.invoke('analytics:get-model-info', modelId),
-    recordUsage: (params: { conversationId?: string; model: string; provider: string; promptTokens: number; completionTokens: number }) =>
-      ipcRenderer.invoke('analytics:record-usage', params),
+    recordUsage: (params: {
+      conversationId?: string;
+      model: string;
+      provider: string;
+      promptTokens: number;
+      completionTokens: number;
+      promptTokensCost?: number;
+      completionTokensCost?: number;
+      imageInputCost?: number;
+      imageOutputCost?: number;
+      totalCost?: number;
+    }) => ipcRenderer.invoke('analytics:record-usage', params),
   },
 });
 
@@ -554,6 +568,7 @@ export interface ToolSettingsConfig {
   browserUse: ToolConfig;
   navis: {
     useVision: boolean;
+    onlyVision: boolean;
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
@@ -707,6 +722,8 @@ export type ElectronAPI = {
   };
   memory: {
     saveDirect: (content: string, metadata?: string) => Promise<{ success: boolean; output: string }>;
+    getGraph: () => Promise<any>;
+    deleteNode: (id: string) => Promise<{ success: boolean; error?: string }>;
   };
   artifacts: {
     list:   (chatId?: string) => Promise<any[]>;
@@ -839,6 +856,17 @@ export type ElectronAPI = {
     getSummary: () => Promise<{ success: boolean; data?: any; error?: string }>;
     getModelPricing: () => Promise<{ success: boolean; data?: any[]; error?: string }>;
     getModelInfo: (modelId: string) => Promise<{ success: boolean; data?: { contextWindow: number; inputCostPer1M: number; outputCostPer1M: number }; error?: string }>;
-    recordUsage: (params: { conversationId?: string; model: string; provider: string; promptTokens: number; completionTokens: number }) => Promise<{ success: boolean; error?: string }>;
+    recordUsage: (params: {
+      conversationId?: string;
+      model: string;
+      provider: string;
+      promptTokens: number;
+      completionTokens: number;
+      promptTokensCost?: number;
+      completionTokensCost?: number;
+      imageInputCost?: number;
+      imageOutputCost?: number;
+      totalCost?: number;
+    }) => Promise<{ success: boolean; error?: string }>;
   };
 };

@@ -38,6 +38,7 @@ const navSections = [
     { id: 'voice', label: 'Voice Mode', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎤</span> },
     { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon },
     { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon },
+    { id: 'memory', label: 'Memory Graph', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧠</span> },
     { id: 'skills', label: 'Custom Skills', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧩</span> },
     { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
@@ -593,6 +594,7 @@ const settingsPrimaryProviders = [
 const visionProviders = [
     { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} /> },
     { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'gemini', name: 'Google Gemini', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} /> },
     { id: 'minimax', name: 'MiniMax API', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
     { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} /> },
     { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
@@ -606,7 +608,8 @@ const getVisionDefaultModel = (provider: string) => {
     if (provider === 'ollama') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';
     if (provider === 'anthropic') return 'claude-opus-4.6';
-    if (provider === 'everfern') return 'fern-1';
+    if (provider === 'everfern') return 'everfern-tars-v1';
+    if (provider === 'gemini') return 'gemini-2.5-computer-use-preview-10-2025';
     return 'qwen3-vl:235b-cloud';
 };
 
@@ -1209,6 +1212,24 @@ export default function SettingsPage({
                                 })}
                             </div>
                         </div>
+                        {settingsVlmCloudProvider === 'everfern' && (
+                            <div>
+                                <Label>Accuracy & Cost Options</Label>
+                                <Select
+                                    value={(settingsVlmCloudModel === 'openai/gpt-5.4' || settingsVlmCloudModel === 'google/gemini-3-flash-preview') ? 'accurate' : 'affordable'}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setSettingsVlmCloudModel(val === 'accurate' ? 'openai/gpt-5.4' : 'everfern-tars-v1');
+                                    }}
+                                >
+                                    <option value="affordable">Affordable (Fast & Economical — Qwen 3 VL)</option>
+                                    <option value="accurate">Accurate (High Precision — GPT-5.4)</option>
+                                </Select>
+                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 8 }}>
+                                    Affordable uses Qwen 3 VL. Accurate uses GPT-5.4 via EverFern Cloud — token-optimized for low cost.
+                                </p>
+                            </div>
+                        )}
                         {settingsVlmCloudProvider !== 'everfern' && (
                             <>
                                 <div>
@@ -1869,6 +1890,1374 @@ export default function SettingsPage({
         );
     };
 
+    const MemorySection = () => {
+        const [graph, setGraph] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
+        const [isLoading, setIsLoading] = useState(true);
+        const [isBusy, setIsBusy] = useState<string | null>(null);
+        const [selectedNode, setSelectedNode] = useState<any>(null);
+        const [filterType, setFilterType] = useState<string>('all');
+        const [searchQuery, setSearchQuery] = useState<string>('');
+        const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
+        const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number; z: number }>>({});
+        const [zoom, setZoom] = useState<number>(1);
+        const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+        const node3DPositionsRef = React.useRef<Record<string, { x: number; y: number; z: number }>>({});
+        const rotationRef = React.useRef({ yaw: 0, pitch: 0.2 });
+        const isDraggingRef = React.useRef(false);
+        const lastMouseRef = React.useRef({ x: 0, y: 0 });
+        const svgRef = React.useRef<SVGSVGElement>(null);
+
+        const rotate3D = (x: number, y: number, z: number, yaw: number, pitch: number) => {
+            // Yaw (around Y axis)
+            const cosY = Math.cos(yaw);
+            const sinY = Math.sin(yaw);
+            const x1 = x * cosY - z * sinY;
+            const z1 = x * sinY + z * cosY;
+
+            // Pitch (around X axis)
+            const cosX = Math.cos(pitch);
+            const sinX = Math.sin(pitch);
+            const y2 = y * cosX - z1 * sinX;
+            const z2 = y * sinX + z1 * cosX;
+
+            return { x: x1, y: y2, z: z2 };
+        };
+
+        const fetchGraph = async () => {
+            setIsLoading(true);
+            try {
+                const res = await (window as any).electronAPI?.memory?.getGraph?.();
+                if (res) {
+                    setGraph(res);
+                }
+            } catch (e) {
+                console.error('Failed to load memory graph:', e);
+            }
+            setIsLoading(false);
+        };
+
+        useEffect(() => {
+            fetchGraph();
+        }, []);
+
+        const handleDeleteNode = async (nodeId: string) => {
+            if (!window.confirm('Are you sure you want EverFern to forget this memory?')) return;
+            try {
+                const res = await (window as any).electronAPI?.memory?.deleteNode?.(nodeId);
+                if (res?.success) {
+                    setSelectedNode(null);
+                    fetchGraph();
+                } else {
+                    alert('Failed to delete memory node.');
+                }
+            } catch (e) {
+                console.error('Delete error:', e);
+            }
+        };
+
+        const handleExport = async () => {
+            setIsBusy('export');
+            try {
+                const res = await (window as any).electronAPI?.memory?.exportZip?.();
+                if (res?.success) {
+                    alert(`Memory exported successfully to:\n${res.filePath}`);
+                } else if (res?.reason !== 'canceled') {
+                    alert('Export failed: ' + (res?.error || 'Unknown error'));
+                }
+            } catch (e: any) {
+                alert('Export failed: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
+        const handleShareMemoryGraph = async () => {
+            if (!svgRef.current) return;
+            setIsBusy('share');
+            try {
+                // Wait for custom fonts to load
+                try {
+                    await document.fonts.ready;
+                    await Promise.all([
+                        document.fonts.load('bold 36px "EB Garamond"'),
+                        document.fonts.load('500 18px "Figtree"'),
+                        document.fonts.load('bold 36px "Figtree"'),
+                        document.fonts.load('16px "JetBrains Mono"')
+                    ]);
+                } catch (e) {
+                    console.warn("Fonts load warning:", e);
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 1200;
+                canvas.height = 1200;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error("Could not get canvas context");
+
+                // 1. Draw cream background gradient
+                const bgGrad = ctx.createRadialGradient(600, 600, 50, 600, 600, 800);
+                bgGrad.addColorStop(0, '#fdfbf7');
+                bgGrad.addColorStop(1, '#FEFAEF');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(0, 0, 1200, 1200);
+
+                // 2. Draw card container with light glassmorphism
+                ctx.save();
+                ctx.strokeStyle = 'rgba(32, 30, 36, 0.08)';
+                ctx.lineWidth = 2;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.shadowColor = 'rgba(32, 30, 36, 0.05)';
+                ctx.shadowBlur = 40;
+                
+                ctx.beginPath();
+                ctx.roundRect(60, 60, 1080, 1080, 24);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+
+                // 3. Draw Branding Header
+                let logoImg: HTMLImageElement | null = null;
+                try {
+                    logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                        const img = new window.Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject();
+                        img.src = '/images/logos/black-logo-withoutbg.png';
+                    });
+                } catch (e) {
+                    console.warn("Logo failed to load");
+                }
+
+                const headerY = 120;
+                if (logoImg) {
+                    ctx.drawImage(logoImg, 100, headerY, 64, 64);
+                } else {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(132, headerY + 32, 32, 0, Math.PI * 2);
+                    ctx.fillStyle = '#10b981';
+                    ctx.shadowColor = '#10b981';
+                    ctx.shadowBlur = 15;
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 24px "Figtree", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('EF', 132, headerY + 32);
+                }
+
+                ctx.fillStyle = '#201e24';
+                ctx.font = '700 36px "Figtree", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText('EverFern AI', 184, headerY);
+
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '500 18px "Figtree", sans-serif';
+                ctx.fillText('My Personal Memory & Knowledge Graph', 184, headerY + 44);
+
+                // 4. Serialize, modify, and Draw the SVG Globe in light theme
+                const serializer = new XMLSerializer();
+                let svgString = serializer.serializeToString(svgRef.current);
+                
+                // Modify SVG string to convert dark theme to cream light theme
+                svgString = svgString.replace(/fill="url\(#graph-bg\)"/g, 'fill="transparent"');
+                svgString = svgString.replace(/stopColor="#090d16"/g, 'stopColor="#FEFAEF"');
+                svgString = svgString.replace(/stopColor="#1e293b"/g, 'stopColor="#FEFAEF"');
+                
+                // Convert grid line strokes from indigo/white to dark/subtle
+                svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.04\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.12\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.015\)"/g, 'stroke="rgba(32,30,36,0.03)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.03\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.04\)"/g, 'stroke="rgba(32,30,36,0.08)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.1\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                
+                // Convert white nodes to dark slate to be visible on cream
+                svgString = svgString.replace(/fill="#ffffff" opacity/g, 'fill="#4f46e5" opacity');
+                
+                // Tooltip and brain core text colors
+                svgString = svgString.replace(/fill="#0f172a"/g, 'fill="#FEFAEF"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.15\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/fill="#ffffff"/g, 'fill="#201e24"');
+
+                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                const blobURL = URL.createObjectURL(svgBlob);
+
+                const svgImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+                    const img = new window.Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject();
+                    img.src = blobURL;
+                });
+                URL.revokeObjectURL(blobURL);
+
+                ctx.drawImage(svgImg, 150, 240, 900, 600);
+
+                // 5. Draw Statistics Dashboard
+                const stats = [
+                    { label: 'Preferences', value: graph.nodes.filter(n => n.type === 'preference').length.toString(), color: '#10b981' },
+                    { label: 'Habits', value: graph.nodes.filter(n => n.type === 'habit').length.toString(), color: '#059669' },
+                    { label: 'Facts', value: graph.nodes.filter(n => n.type === 'fact').length.toString(), color: '#0ea5e9' },
+                    { label: 'Files Linked', value: graph.nodes.filter(n => n.type === 'file').length.toString(), color: '#64748b' }
+                ];
+
+                const startX = 100;
+                const totalWidth = 1000;
+                const boxWidth = 220;
+                const gap = (totalWidth - boxWidth * 4) / 3;
+
+                stats.forEach((stat, i) => {
+                    const x = startX + i * (boxWidth + gap);
+                    const y = 900;
+
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#e8e6d9';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, boxWidth, 120, 16);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = stat.color;
+                    ctx.beginPath();
+                    ctx.roundRect(x + 12, y + 12, 6, 24, 3);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#201e24';
+                    ctx.font = 'bold 36px "Figtree", sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(stat.value, x + 30, y + 46);
+
+                    ctx.fillStyle = '#8a8886';
+                    ctx.font = '600 14px "Figtree", sans-serif';
+                    ctx.fillText(stat.label.toUpperCase(), x + 12, y + 90);
+                    ctx.restore();
+                });
+
+                // 6. Draw Footer Text
+                ctx.fillStyle = '#8a8886';
+                ctx.font = '16px "JetBrains Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('flexed with everfern.app', 600, 1090);
+
+                // 7. Trigger download
+                const url = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = 'everfern-memory-graph.png';
+                link.href = url;
+                link.click();
+            } catch (e: any) {
+                alert('Failed to generate sharing image: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
+        const handleImportMerge = async () => {
+            setIsBusy('import');
+            try {
+                const res = await (window as any).electronAPI?.memory?.importMerge?.();
+                if (res?.success) {
+                    alert(`Memory merged! Added ${res.addedNodes} new nodes and ${res.addedEdges} new edges.`);
+                    fetchGraph();
+                } else if (res?.reason !== 'canceled') {
+                    alert('Import failed: ' + (res?.error || 'Unknown error'));
+                }
+            } catch (e: any) {
+                alert('Import failed: ' + e.message);
+            } finally {
+                setIsBusy(null);
+            }
+        };
+
+        const handleOpenFile = async (filePath: string) => {
+            if (!filePath) return;
+            try {
+                let targetPath = filePath;
+                if (!filePath.includes('/') && !filePath.includes('\\')) {
+                    const fileNodeId = `file_${filePath.toLowerCase()}`;
+                    const fileNode = graph.nodes.find(n => n.id === fileNodeId);
+                    if (fileNode?.value) {
+                        targetPath = fileNode.value;
+                    }
+                }
+                const res = await (window as any).electronAPI?.system?.openExternal?.("file://" + targetPath);
+                if (res && !res.success) {
+                    alert(`Could not open file: ${res.error}`);
+                }
+            } catch (e) {
+                console.error('Open file error:', e);
+            }
+        };
+
+        const filteredNodes = React.useMemo(() => {
+            return graph.nodes.filter(n => {
+                const matchesType = filterType === 'all' || n.type === filterType;
+                const matchesSearch = !searchQuery || 
+                    n.category.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                    (n.value && n.value.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                    (n.name && n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                return matchesType && matchesSearch;
+            });
+        }, [graph.nodes, filterType, searchQuery]);
+
+        const filteredEdges = React.useMemo(() => {
+            const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+            return graph.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
+        }, [graph.edges, filteredNodes]);
+
+        const init3DPositions = () => {
+            const current = { ...node3DPositionsRef.current };
+            const R = 140;
+
+            current['__user__'] = { x: 0, y: 0, z: 0 };
+
+            const otherNodes = filteredNodes.filter(n => n.id !== '__user__');
+            const N = otherNodes.length;
+
+            otherNodes.forEach((node, idx) => {
+                if (!current[node.id]) {
+                    const y = N > 1 ? 1 - (idx / (N - 1)) * 2 : 0;
+                    const rad = Math.sqrt(Math.max(0, 1 - y * y));
+                    const theta = 2.399963229728653 * idx;
+
+                    current[node.id] = {
+                        x: Math.cos(theta) * rad * R,
+                        y: y * R,
+                        z: Math.sin(theta) * rad * R
+                    };
+                }
+            });
+
+            const activeIds = new Set(filteredNodes.map(n => n.id));
+            Object.keys(current).forEach(id => {
+                if (id !== '__user__' && !activeIds.has(id)) {
+                    delete current[id];
+                }
+            });
+
+            node3DPositionsRef.current = current;
+        };
+
+        useEffect(() => {
+            init3DPositions();
+        }, [filteredNodes]);
+
+        useEffect(() => {
+            if (viewMode !== 'graph' || filteredNodes.length === 0) return;
+            let animationFrameId: number;
+
+            const tick = () => {
+                const vx: Record<string, number> = {};
+                const vy: Record<string, number> = {};
+                const vz: Record<string, number> = {};
+
+                filteredNodes.forEach(n => {
+                    vx[n.id] = 0;
+                    vy[n.id] = 0;
+                    vz[n.id] = 0;
+                });
+
+                const R = 140;
+                const repulsion = 10000;
+
+                for (let i = 0; i < filteredNodes.length; i++) {
+                    const u = filteredNodes[i];
+                    if (u.id === '__user__') continue;
+                    const posU = node3DPositionsRef.current[u.id];
+                    if (!posU) continue;
+
+                    for (let j = i + 1; j < filteredNodes.length; j++) {
+                        const v = filteredNodes[j];
+                        if (v.id === '__user__') continue;
+                        const posV = node3DPositionsRef.current[v.id];
+                        if (!posV) continue;
+
+                        const dx = posV.x - posU.x;
+                        const dy = posV.y - posU.y;
+                        const dz = posV.z - posU.z;
+                        const distSq = dx * dx + dy * dy + dz * dz || 1;
+                        const dist = Math.sqrt(distSq);
+
+                        const force = repulsion / distSq;
+                        const forceX = (dx / dist) * force;
+                        const forceY = (dy / dist) * force;
+                        const forceZ = (dz / dist) * force;
+
+                        vx[u.id] -= forceX;
+                        vy[u.id] -= forceY;
+                        vz[u.id] -= forceZ;
+                        vx[v.id] += forceX;
+                        vy[v.id] += forceY;
+                        vz[v.id] += forceZ;
+                    }
+                }
+
+                const k = 0.03;
+                const length = 75;
+
+                filteredEdges.forEach(edge => {
+                    if (edge.source === '__user__' || edge.target === '__user__') return;
+                    const posU = node3DPositionsRef.current[edge.source];
+                    const posV = node3DPositionsRef.current[edge.target];
+                    if (!posU || !posV) return;
+
+                    const dx = posV.x - posU.x;
+                    const dy = posV.y - posU.y;
+                    const dz = posV.z - posU.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+
+                    const force = k * (dist - length);
+                    const forceX = (dx / dist) * force;
+                    const forceY = (dy / dist) * force;
+                    const forceZ = (dz / dist) * force;
+
+                    vx[edge.source] += forceX;
+                    vy[edge.source] += forceY;
+                    vz[edge.source] += forceZ;
+                    vx[edge.target] -= forceX;
+                    vy[edge.target] -= forceY;
+                    vz[edge.target] -= forceZ;
+                });
+
+                filteredNodes.forEach(n => {
+                    if (n.id === '__user__') return;
+                    const pos = node3DPositionsRef.current[n.id];
+                    if (!pos) return;
+
+                    const newX = pos.x + vx[n.id];
+                    const newY = pos.y + vy[n.id];
+                    const newZ = pos.z + vz[n.id];
+
+                    const d = Math.sqrt(newX * newX + newY * newY + newZ * newZ) || 1;
+                    node3DPositionsRef.current[n.id] = {
+                        x: (newX / d) * R,
+                        y: (newY / d) * R,
+                        z: (newZ / d) * R
+                    };
+                });
+
+                if (!isDraggingRef.current) {
+                    rotationRef.current.yaw += 0.0015;
+                }
+
+                const { yaw, pitch } = rotationRef.current;
+                const projected: Record<string, { x: number; y: number; z: number }> = {};
+
+                filteredNodes.forEach(n => {
+                    const pos = node3DPositionsRef.current[n.id];
+                    if (!pos) return;
+
+                    const rot = rotate3D(pos.x, pos.y, pos.z, yaw, pitch);
+                    projected[n.id] = {
+                        x: 300 + rot.x,
+                        y: 200 + rot.y,
+                        z: rot.z
+                    };
+                });
+
+                setNodePositions(projected);
+
+                animationFrameId = requestAnimationFrame(tick);
+            };
+
+            animationFrameId = requestAnimationFrame(tick);
+            return () => cancelAnimationFrame(animationFrameId);
+        }, [filteredNodes, filteredEdges, viewMode]);
+
+        const handleMouseDownSvg = (e: React.MouseEvent) => {
+            const target = e.target as SVGElement;
+            const nodeIdAttr = target.getAttribute('data-node-id');
+            if (nodeIdAttr) {
+                if (nodeIdAttr !== '__user__') {
+                    const node = graph.nodes.find(n => n.id === nodeIdAttr);
+                    if (node) setSelectedNode(node);
+                }
+            }
+            isDraggingRef.current = true;
+            lastMouseRef.current = { x: e.clientX, y: e.clientY };
+        };
+
+        const handleMouseMoveSvg = (e: React.MouseEvent) => {
+            if (!isDraggingRef.current) return;
+            const dx = e.clientX - lastMouseRef.current.x;
+            const dy = e.clientY - lastMouseRef.current.y;
+
+            rotationRef.current.yaw += dx * 0.005;
+            rotationRef.current.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, rotationRef.current.pitch + dy * 0.005));
+
+            lastMouseRef.current = { x: e.clientX, y: e.clientY };
+        };
+
+        const handleMouseUpSvg = () => {
+            isDraggingRef.current = false;
+        };
+
+        const getGlobeGridPaths = (yaw: number, pitch: number) => {
+            const R = 140;
+            const paths: { path: string; isFront: boolean }[] = [];
+
+            const getPathString = (pts: { x: number; y: number }[]) => {
+                if (pts.length === 0) return '';
+                return `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} ` +
+                       pts.slice(1).map(p => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+            };
+
+            // Latitude circles
+            const latDivisions = [-0.7, -0.35, 0, 0.35, 0.7];
+            latDivisions.forEach(latVal => {
+                const y = latVal * R;
+                const radiusAtY = Math.sqrt(Math.max(0, R * R - y * y));
+
+                const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
+                let currentSegment: { x: number; y: number }[] = [];
+                let currentIsFront: boolean | null = null;
+
+                const steps = 64;
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * 2 * Math.PI;
+                    const px = Math.cos(theta) * radiusAtY;
+                    const pz = Math.sin(theta) * radiusAtY;
+
+                    const rot = rotate3D(px, y, pz, yaw, pitch);
+                    const isFront = rot.z >= -10;
+
+                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+
+                    if (currentIsFront === null) {
+                        currentIsFront = isFront;
+                        currentSegment.push(screenPt);
+                    } else if (currentIsFront === isFront) {
+                        currentSegment.push(screenPt);
+                    } else {
+                        currentSegment.push(screenPt);
+                        segments.push({ pts: currentSegment, isFront: currentIsFront });
+                        currentSegment = [screenPt];
+                        currentIsFront = isFront;
+                    }
+                }
+                if (currentSegment.length > 0) {
+                    segments.push({ pts: currentSegment, isFront: !!currentIsFront });
+                }
+
+                segments.forEach(seg => {
+                    paths.push({
+                        path: getPathString(seg.pts),
+                        isFront: seg.isFront
+                    });
+                });
+            });
+
+            // Longitude circles
+            const longDivisions = [0, 30, 60, 90, 120, 150];
+            longDivisions.forEach(angleDeg => {
+                const phi = (angleDeg * Math.PI) / 180;
+
+                const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
+                let currentSegment: { x: number; y: number }[] = [];
+                let currentIsFront: boolean | null = null;
+
+                const steps = 64;
+                for (let j = 0; j <= steps; j++) {
+                    const theta = (j / steps) * 2 * Math.PI;
+                    const px = R * Math.cos(theta) * Math.cos(phi);
+                    const py = R * Math.sin(theta);
+                    const pz = R * Math.cos(theta) * Math.sin(phi);
+
+                    const rot = rotate3D(px, py, pz, yaw, pitch);
+                    const isFront = rot.z >= -10;
+
+                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+
+                    if (currentIsFront === null) {
+                        currentIsFront = isFront;
+                        currentSegment.push(screenPt);
+                    } else if (currentIsFront === isFront) {
+                        currentSegment.push(screenPt);
+                    } else {
+                        currentSegment.push(screenPt);
+                        segments.push({ pts: currentSegment, isFront: currentIsFront });
+                        currentSegment = [screenPt];
+                        currentIsFront = isFront;
+                    }
+                }
+                if (currentSegment.length > 0) {
+                    segments.push({ pts: currentSegment, isFront: !!currentIsFront });
+                }
+
+                segments.forEach(seg => {
+                    paths.push({
+                        path: getPathString(seg.pts),
+                        isFront: seg.isFront
+                    });
+                });
+            });
+
+            return paths;
+        };
+
+        const gridPaths = getGlobeGridPaths(rotationRef.current.yaw, rotationRef.current.pitch);
+
+        const sortedEdges = React.useMemo(() => {
+            return filteredEdges.map(edge => {
+                const posU = nodePositions[edge.source];
+                const posV = nodePositions[edge.target];
+                const z = posU && posV ? (posU.z + posV.z) / 2 : 0;
+                return { edge, z };
+            });
+        }, [filteredEdges, nodePositions]);
+
+        const backEdges = sortedEdges.filter(se => se.z < 0).map(se => se.edge);
+        const frontEdges = sortedEdges.filter(se => se.z >= 0).map(se => se.edge);
+
+        const sortedHubNodes = React.useMemo(() => {
+            return filteredNodes.map(node => {
+                const pos = nodePositions[node.id];
+                const z = pos ? pos.z / 2 : 0;
+                return { node, z };
+            });
+        }, [filteredNodes, nodePositions]);
+
+        const backHubNodes = sortedHubNodes.filter(sh => sh.z < 0).map(sh => sh.node);
+        const frontHubNodes = sortedHubNodes.filter(sh => sh.z >= 0).map(sh => sh.node);
+
+        const backNodes = filteredNodes.filter(n => n.id !== '__user__' && (nodePositions[n.id]?.z || 0) < 0);
+        const frontNodes = filteredNodes.filter(n => n.id !== '__user__' && (nodePositions[n.id]?.z || 0) >= 0);
+
+        return (
+            <div>
+                {/* Title row + action buttons */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div>
+                        <SectionTitle>Memory Graph</SectionTitle>
+                        <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+                        <button
+                            onClick={handleImportMerge}
+                            disabled={!!isBusy}
+                            title="Import a .json or .zip memory file and merge it with your current memory"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid #e8e6d9',
+                                backgroundColor: '#ffffff', color: '#111111', fontSize: 12.5, fontWeight: 600,
+                                cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy === 'import' ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#f4f4f4'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                        >
+                            {isBusy === 'import' ? '⏳' : '📥'} {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
+                        </button>
+                        <button
+                            onClick={handleExport}
+                            disabled={!!isBusy || graph.nodes.length === 0}
+                            title="Export your full memory graph as a ZIP file (includes linked markdown files)"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
+                                opacity: (isBusy === 'export' || graph.nodes.length === 0) ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                        >
+                            {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
+                        </button>
+                        <button
+                            onClick={handleShareMemoryGraph}
+                            disabled={!!isBusy || graph.nodes.length === 0}
+                            title="Generate a beautiful image of your memory globe to share"
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
+                                opacity: (isBusy || graph.nodes.length === 0) ? 0.6 : 1,
+                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                            }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                        >
+                            {isBusy === 'share' ? '⏳' : '✨'} {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Help tip */}
+                <div style={{
+                    background: 'linear-gradient(135deg, rgba(20,184,166,0.06) 0%, rgba(99,102,241,0.04) 100%)',
+                    border: '1px solid rgba(20,184,166,0.2)',
+                    borderRadius: 12, padding: '12px 16px', marginBottom: 20,
+                    display: 'flex', gap: 10, alignItems: 'flex-start'
+                }}>
+                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
+                    <div>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: '#0d9488', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#4a4846' }}>
+                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable — click any node to see full details.
+                            Use <strong>Export ZIP</strong> to back up your memory, and <strong>Import &amp; Merge</strong> to restore or combine memories from another device.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Summary counters */}
+                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e8e6d9' }}>
+                    {[
+                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: '#10b981' },
+                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: '#10b981' },
+                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: '#0ea5e9' },
+                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: '#64748b' }
+                    ].map(stat => (
+                        <div key={stat.label} style={{ fontSize: 12, color: '#4a4846', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stat.color }} />
+                            <strong>{stat.count}</strong> {stat.label}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Filters, Search, and Mode Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'preference', label: 'Preferences' },
+                            { id: 'habit', label: 'Habits' },
+                            { id: 'fact', label: 'Facts' },
+                            { id: 'file', label: 'Files' }
+                        ].map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => setFilterType(f.id)}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 8,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: '1px solid #e8e6d9',
+                                    backgroundColor: filterType === f.id ? '#111111' : '#ffffff',
+                                    color: filterType === f.id ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <Input
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            style={{ height: 34, padding: '4px 12px', borderRadius: 8, fontSize: 13, width: 150 }}
+                        />
+                        <div style={{ display: 'flex', border: '1px solid #e8e6d9', borderRadius: 8, overflow: 'hidden' }}>
+                            <button
+                                onClick={() => setViewMode('graph')}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: 'none',
+                                    backgroundColor: viewMode === 'graph' ? '#111111' : '#ffffff',
+                                    color: viewMode === 'graph' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Graph
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                style={{
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    border: 'none',
+                                    backgroundColor: viewMode === 'list' ? '#111111' : '#ffffff',
+                                    color: viewMode === 'list' ? '#ffffff' : '#4a4846',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                List
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main View Area */}
+                {isLoading ? (
+                    <div style={{ textAlign: 'center', padding: 80, color: '#8a8886' }}>Loading Memory Graph...</div>
+                ) : graph.nodes.length === 0 ? (
+                    <Card style={{ padding: 40, textAlign: 'center', color: '#8a8886' }}>
+                        <span style={{ fontSize: 40 }}>🧠</span>
+                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: '#111111' }}>No memory established yet</h3>
+                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>As you chat with the agent and state your airline, payment, or general preferences, EverFern will automatically compile them here.</p>
+                    </Card>
+                ) : (
+                    <div style={{ display: 'flex', gap: 20, minHeight: 400 }}>
+                        {/* Graph/List container */}
+                        <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                            {viewMode === 'graph' ? (
+                                <div style={{ position: 'relative' }}>
+                                {/* Zoom controls */}
+                                <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {[
+                                        { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
+                                        { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
+                                        { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
+                                    ].map(btn => (
+                                        <button
+                                            key={btn.label}
+                                            title={btn.title}
+                                            onClick={btn.onClick}
+                                            style={{
+                                                width: 28, height: 28, borderRadius: 8, border: '1px solid #e8e6d9',
+                                                backgroundColor: '#ffffff', color: '#4a4846', fontSize: 14,
+                                                fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.15s'
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f4'; e.currentTarget.style.color = '#111111'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.color = '#4a4846'; }}
+                                        >
+                                            {btn.label}
+                                        </button>
+                                    ))}
+                                    <div style={{ fontSize: 10, textAlign: 'center', color: '#8a8886', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
+                                </div>
+                                <svg
+                                        ref={svgRef}
+                                        width="100%"
+                                        height="400"
+                                        viewBox={`${300 - 300/zoom} ${200 - 200/zoom} ${600/zoom} ${400/zoom}`}
+                                        onMouseDown={handleMouseDownSvg}
+                                        onMouseMove={handleMouseMoveSvg}
+                                        onMouseUp={handleMouseUpSvg}
+                                        onMouseLeave={handleMouseUpSvg}
+                                        style={{
+                                            border: '1px solid #e8e6d9',
+                                            borderRadius: 20,
+                                            backgroundColor: '#FEFAEF',
+                                            boxShadow: '0 4px 20px rgba(32, 30, 36, 0.04), inset 0 2px 10px rgba(255,255,255,0.6)',
+                                        }}
+                                    >
+                                        <defs>
+                                            <radialGradient id="graph-bg" cx="50%" cy="50%" r="60%">
+                                                <stop offset="0%" stopColor="#fdfbf7" stopOpacity="0.8" />
+                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="1" />
+                                            </radialGradient>
+                                            
+                                            <radialGradient id="globe-shading" cx="50%" cy="50%" r="50%">
+                                                <stop offset="85%" stopColor="#FEFAEF" stopOpacity="0" />
+                                                <stop offset="98%" stopColor="#FEFAEF" stopOpacity="0.75" />
+                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="0.95" />
+                                            </radialGradient>
+
+                                            <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                                                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                            <filter id="glow-strong" x="-60%" y="-60%" width="220%" height="220%">
+                                                <feGaussianBlur stdDeviation="4.5" result="blur" />
+                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                        </defs>
+                                        <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
+
+                                        {/* 1. Back Globe Grid Lines */}
+                                        <g opacity="0.3" pointerEvents="none">
+                                            {gridPaths.filter(p => !p.isFront).map((gp, idx) => (
+                                                <path
+                                                    key={`bg-grid-back-${idx}`}
+                                                    d={gp.path}
+                                                    fill="none"
+                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    strokeWidth="0.75"
+                                                    strokeDasharray="2,2"
+                                                />
+                                            ))}
+                                        </g>
+
+                                        {/* 2. Back Hub lines (root to back nodes) */}
+                                        {backHubNodes.map(node => {
+                                            const targetPos = nodePositions[node.id];
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!targetPos || !rootPos) return null;
+                                            return (
+                                                <line
+                                                    key={`hub-back-${node.id}`}
+                                                    x1={rootPos.x}
+                                                    y1={rootPos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.02)"
+                                                    strokeWidth="0.5"
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 3. Back Regular Edges */}
+                                        {backEdges.map((edge, idx) => {
+                                            const sourcePos = nodePositions[edge.source];
+                                            const targetPos = nodePositions[edge.target];
+                                            if (!sourcePos || !targetPos) return null;
+                                            return (
+                                                <line
+                                                    key={`edge-back-${idx}`}
+                                                    x1={sourcePos.x}
+                                                    y1={sourcePos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.04)"
+                                                    strokeWidth="0.75"
+                                                    strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 4. Back Nodes */}
+                                        {backNodes.map(node => {
+                                            const pos = nodePositions[node.id];
+                                            if (!pos) return null;
+
+                                            const isSelected = selectedNode?.id === node.id;
+                                            const isHovered = hoveredNodeId === node.id;
+                                            const isFocused = isSelected || isHovered;
+
+                                            let nodeColor = '#94a3b8';
+                                            if (node.type === 'preference') {
+                                                nodeColor = '#10b981';
+                                            } else if (node.type === 'habit') {
+                                                nodeColor = '#059669';
+                                            } else if (node.type === 'fact') {
+                                                nodeColor = '#6366f1';
+                                            }
+
+                                            const zDepth = pos.z;
+                                            const op = 0.15 + 0.25 * ((zDepth + 140) / 140);
+                                            const size = 3;
+
+                                            return (
+                                                <g
+                                                    key={node.id}
+                                                    transform={`translate(${pos.x}, ${pos.y})`}
+                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    <circle
+                                                        data-node-id={node.id}
+                                                        r={isFocused ? size * 1.5 : size}
+                                                        fill={nodeColor}
+                                                        opacity={op}
+                                                        stroke="#e8e6d9"
+                                                        strokeWidth={0.5}
+                                                        style={{ transition: 'all 0.15s ease' }}
+                                                    />
+                                                </g>
+                                            );
+                                        })}
+
+                                        {/* Globe atmosphere & shading overlay */}
+                                        <circle cx="300" cy="200" r="140" fill="url(#globe-shading)" pointerEvents="none" />
+                                        <circle cx="300" cy="200" r="140" fill="none" stroke="rgba(32, 30, 36, 0.12)" strokeWidth="1" pointerEvents="none" />
+
+                                        {/* 5. Front Globe Grid Lines */}
+                                        <g opacity="0.3" pointerEvents="none">
+                                            {gridPaths.filter(p => p.isFront).map((gp, idx) => (
+                                                <path
+                                                    key={`bg-grid-front-${idx}`}
+                                                    d={gp.path}
+                                                    fill="none"
+                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    strokeWidth="0.75"
+                                                />
+                                            ))}
+                                        </g>
+
+                                        {/* 6. Root User Hub Node (center z=0) */}
+                                        {(() => {
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!rootPos || filteredNodes.length === 0) return null;
+                                            const isHovered = hoveredNodeId === '__user__';
+                                            return (
+                                                <g 
+                                                    key="__user__" 
+                                                    transform={`translate(${rootPos.x}, ${rootPos.y})`} 
+                                                    style={{ cursor: 'pointer' }}
+                                                    onMouseEnter={() => setHoveredNodeId('__user__')}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                                >
+                                                    <motion.circle 
+                                                        r="16" 
+                                                        fill="rgba(16,185,129,0.08)" 
+                                                        stroke="rgba(16,185,129,0.15)" 
+                                                        strokeWidth="1" 
+                                                        animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
+                                                        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                                                    />
+                                                    <circle
+                                                        r={isHovered ? 8 : 6}
+                                                        fill="#10b981"
+                                                        filter="url(#glow-strong)"
+                                                        stroke="#ffffff"
+                                                        strokeWidth="1.5"
+                                                        style={{ transition: 'all 0.2s ease' }}
+                                                    />
+                                                    {isHovered && (
+                                                        <g transform="translate(0, -20)" style={{ pointerEvents: 'none', zIndex: 100 }}>
+                                                            <rect
+                                                                x="-45"
+                                                                y="-14"
+                                                                width="90"
+                                                                height="18"
+                                                                rx="6"
+                                                                fill="#FEFAEF"
+                                                                stroke="rgba(32,30,36,0.15)"
+                                                                strokeWidth="1"
+                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
+                                                            />
+                                                            <text
+                                                                textAnchor="middle"
+                                                                dy="-2"
+                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                            >
+                                                                EverFern Brain
+                                                            </text>
+                                                        </g>
+                                                    )}
+                                                </g>
+                                            );
+                                        })()}
+
+                                        {/* 7. Front Hub lines (root to front nodes) */}
+                                        {frontHubNodes.map(node => {
+                                            const targetPos = nodePositions[node.id];
+                                            const rootPos = nodePositions['__user__'];
+                                            if (!targetPos || !rootPos) return null;
+                                            return (
+                                                <line
+                                                    key={`hub-front-${node.id}`}
+                                                    x1={rootPos.x}
+                                                    y1={rootPos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    strokeWidth="0.75"
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 8. Front Regular Edges */}
+                                        {frontEdges.map((edge, idx) => {
+                                            const sourcePos = nodePositions[edge.source];
+                                            const targetPos = nodePositions[edge.target];
+                                            if (!sourcePos || !targetPos) return null;
+                                            return (
+                                                <line
+                                                    key={`edge-front-${idx}`}
+                                                    x1={sourcePos.x}
+                                                    y1={sourcePos.y}
+                                                    x2={targetPos.x}
+                                                    y2={targetPos.y}
+                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    strokeWidth="1.25"
+                                                    strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* 9. Front Nodes */}
+                                        {frontNodes.map(node => {
+                                            const pos = nodePositions[node.id];
+                                            if (!pos) return null;
+
+                                            const isSelected = selectedNode?.id === node.id;
+                                            const isHovered = hoveredNodeId === node.id;
+                                            const isFocused = isSelected || isHovered;
+
+                                            let nodeColor = '#94a3b8';
+                                            let useGlow = false;
+
+                                            if (node.type === 'preference') {
+                                                nodeColor = '#10b981';
+                                                useGlow = true;
+                                            } else if (node.type === 'habit') {
+                                                nodeColor = '#059669';
+                                                useGlow = true;
+                                            } else if (node.type === 'fact') {
+                                                nodeColor = '#6366f1';
+                                                useGlow = true;
+                                            }
+
+                                            const zDepth = pos.z;
+                                            const op = 0.5 + 0.5 * (zDepth / 140);
+                                            const size = isFocused ? 7 : 5;
+
+                                            const labelText = node.category.length > 20 ? `${node.category.slice(0, 17)}...` : node.category;
+                                            const tooltipWidth = Math.max(70, labelText.length * 6.5);
+
+                                            return (
+                                                <g
+                                                    key={node.id}
+                                                    transform={`translate(${pos.x}, ${pos.y})`}
+                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
+                                                    onMouseLeave={() => setHoveredNodeId(null)}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    {isSelected && (
+                                                        <circle
+                                                            r="12"
+                                                            fill="none"
+                                                            stroke="rgba(32,30,36,0.4)"
+                                                            strokeWidth="1.5"
+                                                            strokeDasharray="2,2"
+                                                        />
+                                                    )}
+
+                                                    {isHovered && (
+                                                        <circle
+                                                            r="10"
+                                                            fill="none"
+                                                            stroke="rgba(16,185,129,0.25)"
+                                                            strokeWidth="2"
+                                                        />
+                                                    )}
+
+                                                    <circle
+                                                        data-node-id={node.id}
+                                                        r={size}
+                                                        fill={nodeColor}
+                                                        opacity={op}
+                                                        filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'}
+                                                        stroke="#ffffff"
+                                                        strokeWidth={isFocused ? 1.5 : 1}
+                                                        style={{ transition: 'all 0.15s ease' }}
+                                                    />
+
+                                                    {isFocused && (
+                                                        <g transform="translate(0, -18)" style={{ pointerEvents: 'none', zIndex: 100 }}>
+                                                            <rect
+                                                                x={-tooltipWidth / 2}
+                                                                y="-13"
+                                                                width={tooltipWidth}
+                                                                height={18}
+                                                                rx="6"
+                                                                fill="#FEFAEF"
+                                                                stroke="rgba(32,30,36,0.15)"
+                                                                strokeWidth="1"
+                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
+                                                            />
+                                                            <text
+                                                                textAnchor="middle"
+                                                                dy="-1"
+                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                            >
+                                                                {labelText}
+                                                            </text>
+                                                        </g>
+                                                    )}
+                                                </g>
+                                             );
+                                         })}
+                                     </svg>
+                                </div>
+                            ) : (
+                                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e8e6d9', borderRadius: 20, backgroundColor: '#ffffff', maxHeight: 400 }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                        <thead>
+                                            <tr style={{ textAlign: 'left', borderBottom: '2px solid #e8e6d9', backgroundColor: '#faf9f6', position: 'sticky', top: 0, zIndex: 10 }}>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Type</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Category</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Value</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Linked File</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredNodes.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: '#8a8886' }}>
+                                                        No matching memories found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredNodes.map(node => {
+                                                    const isSelected = selectedNode?.id === node.id;
+                                                    return (
+                                                        <tr
+                                                            key={node.id}
+                                                            onClick={() => setSelectedNode(node)}
+                                                            style={{
+                                                                borderBottom: '1px solid #f0f0f0',
+                                                                cursor: 'pointer',
+                                                                backgroundColor: isSelected ? '#faf9f6' : 'transparent',
+                                                                transition: 'background-color 0.15s'
+                                                            }}
+                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = '#fbfbe6'; }}
+                                                            onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                        >
+                                                            <td style={{ padding: '12px 16px' }}>
+                                                                <span style={{
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: 8,
+                                                                    fontSize: 11,
+                                                                    fontWeight: 600,
+                                                                    textTransform: 'capitalize',
+                                                                    backgroundColor: node.type === 'preference' ? '#fef3c7' : node.type === 'habit' ? '#d1fae5' : node.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
+                                                                    color: node.type === 'preference' ? '#b45309' : node.type === 'habit' ? '#047857' : node.type === 'fact' ? '#0369a1' : '#475569'
+                                                                }}>
+                                                                    {node.type}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: '#111111' }}>{node.category}</td>
+                                                            <td style={{ padding: '12px 16px', color: '#4a4846', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {node.value}
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', color: '#8a8886', fontSize: 12 }}>
+                                                                {node.linkedFile || node.name || ''}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Details Sidebar panel */}
+                        <div style={{ width: 240, flexShrink: 0 }}>
+                            <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: '#e8e6d9', backgroundColor: '#fcfcfb', margin: 0 }}>
+                                {selectedNode ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
+                                        <div>
+                                            <span style={{
+                                                padding: '3px 8px',
+                                                borderRadius: 12,
+                                                fontSize: 10,
+                                                fontWeight: 700,
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                backgroundColor: selectedNode.type === 'preference' ? '#fef3c7' : selectedNode.type === 'habit' ? '#d1fae5' : selectedNode.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
+                                                color: selectedNode.type === 'preference' ? '#b45309' : selectedNode.type === 'habit' ? '#047857' : selectedNode.type === 'fact' ? '#0369a1' : '#475569'
+                                            }}>
+                                                {selectedNode.type}
+                                            </span>
+                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111', marginTop: 10, marginBottom: 4 }}>
+                                                {selectedNode.name || selectedNode.category}
+                                            </h3>
+                                            <span style={{ fontSize: 11, color: '#8a8886', fontFamily: 'monospace' }}>
+                                                ID: {selectedNode.id.split('_').slice(-1)[0]}
+                                            </span>
+                                        </div>
+                                        
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                            <div>
+                                                <Label>Value</Label>
+                                                <div style={{
+                                                    padding: 10,
+                                                    backgroundColor: '#ffffff',
+                                                    border: '1px solid #e8e6d9',
+                                                    borderRadius: 10,
+                                                    fontSize: 13,
+                                                    lineHeight: 1.4,
+                                                    color: '#201e24',
+                                                    wordBreak: 'break-word',
+                                                    maxHeight: 150,
+                                                    overflowY: 'auto'
+                                                }}>
+                                                    {selectedNode.value}
+                                                </div>
+                                            </div>
+
+                                            {selectedNode.metadata && (
+                                                <div style={{ fontSize: 11, color: '#8a8886', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    {selectedNode.metadata.created && (
+                                                        <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>
+                                                    )}
+                                                    {selectedNode.metadata.lastUpdated && (
+                                                        <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+                                            {(selectedNode.linkedFile || selectedNode.type === 'file') && (
+                                                <button
+                                                    onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)}
+                                                    style={{
+                                                        padding: '8px 12px',
+                                                        backgroundColor: '#ffffff',
+                                                        color: '#111111',
+                                                        border: '1px solid #e8e6d9',
+                                                        borderRadius: 10,
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: 6,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                                >
+                                                    📄 Open File
+                                                </button>
+                                            )}
+                                            {selectedNode.type !== 'file' && (
+                                                <button
+                                                    onClick={() => handleDeleteNode(selectedNode.id)}
+                                                    style={{
+                                                        padding: '8px 12px',
+                                                        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                                        color: '#dc2626',
+                                                        border: '1px solid rgba(239, 68, 68, 0.15)',
+                                                        borderRadius: 10,
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: 6,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.14)'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'}
+                                                >
+                                                    🗑️ Forget Memory
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', textAlign: 'center', padding: '40px 10px' }}>
+                                        <span style={{ fontSize: 32, marginBottom: 12 }}>🧠</span>
+                                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                                            Click on a node in the graph or a row in the list to view its details.
+                                        </p>
+                                    </div>
+                                )}
+                            </Card>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const sectionContent: Record<string, React.ReactNode> = {
         general: GeneralSection(),
         openclaw: OpenClawSection(),
@@ -1877,6 +3266,7 @@ export default function SettingsPage({
         voice: VoiceSection(),
         vision: VisionSection(),
         embeddings: EmbeddingsSection(),
+        memory: MemorySection(),
         skills: SkillsSection(),
         tools: (
             <div>

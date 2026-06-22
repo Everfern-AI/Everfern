@@ -38,6 +38,128 @@ const extractDomain = (url: string): string | null => {
     }
 };
 
+function unescapePartialJsonString(str: string): string {
+    let result = '';
+    let i = 0;
+    while (i < str.length) {
+        const char = str[i];
+        if (char === '\\') {
+            if (i + 1 >= str.length) {
+                break;
+            }
+            const nextChar = str[i + 1];
+            if (nextChar === 'n') {
+                result += '\n';
+            } else if (nextChar === 'r') {
+                result += '\r';
+            } else if (nextChar === 't') {
+                result += '\t';
+            } else if (nextChar === '"') {
+                result += '"';
+            } else if (nextChar === '\\') {
+                result += '\\';
+            } else {
+                result += nextChar;
+            }
+            i += 2;
+        } else if (char === '"') {
+            // An unescaped quote indicates the end of the JSON string value
+            break;
+        } else {
+            result += char;
+            i += 1;
+        }
+    }
+    return result;
+}
+
+function extractStreamingFileDetails(partialJson: string, toolName: string) {
+    const cleanToolName = toolName.toLowerCase().split(':').pop() || '';
+    const isWriteOrEdit = [
+        'write', 'edit', 'write_to_file', 'replace_file_content',
+        'multi_replace_file_content', 'write_file', 'edit_file'
+    ].includes(cleanToolName) || cleanToolName.includes('write') || cleanToolName.includes('edit') || cleanToolName.includes('replace');
+
+    if (!isWriteOrEdit) return null;
+
+    let filePath = '';
+    let codeContent = '';
+    let actionType: 'write' | 'edit' = 'write';
+
+    if (['edit', 'replace_file_content', 'multi_replace_file_content', 'edit_file'].includes(cleanToolName) || cleanToolName.includes('edit') || cleanToolName.includes('replace')) {
+        actionType = 'edit';
+    }
+
+    // Try to extract filePath / TargetFile
+    const pathKeys = ['path', 'TargetFile', 'file_path'];
+    for (const key of pathKeys) {
+        const keyIndex = partialJson.indexOf(`"${key}"`);
+        if (keyIndex !== -1) {
+            const colonIndex = partialJson.indexOf(':', keyIndex + key.length + 2);
+            if (colonIndex !== -1) {
+                const quoteIndex = partialJson.indexOf('"', colonIndex + 1);
+                if (quoteIndex !== -1) {
+                    const rawValue = partialJson.slice(quoteIndex + 1);
+                    filePath = unescapePartialJsonString(rawValue);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Try to extract code / content
+    const codeKeys = ['content', 'newString', 'new_string', 'CodeContent', 'ReplacementContent', 'replacement'];
+    for (const key of codeKeys) {
+        const keyIndex = partialJson.indexOf(`"${key}"`);
+        if (keyIndex !== -1) {
+            const colonIndex = partialJson.indexOf(':', keyIndex + key.length + 2);
+            if (colonIndex !== -1) {
+                const quoteIndex = partialJson.indexOf('"', colonIndex + 1);
+                if (quoteIndex !== -1) {
+                    const rawValue = partialJson.slice(quoteIndex + 1);
+                    codeContent = unescapePartialJsonString(rawValue);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (filePath.includes('\n') && !codeContent) {
+        codeContent = filePath;
+        filePath = 'Unknown File';
+    }
+
+    return { filePath, codeContent, actionType };
+}
+
+const detectLanguage = (filePath: string): string => {
+    if (!filePath) return 'text';
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    switch (ext) {
+        case 'ts':
+        case 'tsx':
+            return 'typescript';
+        case 'js':
+        case 'jsx':
+            return 'javascript';
+        case 'py':
+            return 'python';
+        case 'json':
+            return 'json';
+        case 'html':
+            return 'html';
+        case 'css':
+            return 'css';
+        case 'md':
+            return 'markdown';
+        case 'sh':
+        case 'bash':
+            return 'bash';
+        default:
+            return 'text';
+    }
+};
+
 // ── SearchResult Interfaces ──────────────────────────────────────────────────
 interface SearchResult {
     title: string;
@@ -395,7 +517,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.displayName || tc.label || tc.toolName}`}
+                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.label || tc.displayName || tc.toolName}`}
                 className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
                     isSelected
                         ? 'bg-indigo-50 border border-indigo-200'
@@ -418,14 +540,14 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                         <img src="/assets/tool-search.svg" className="w-[18px] h-[18px] opacity-75" alt="Search" />
                     ) : statusIcon}
                 </div>
-
+ 
                 {/* Title and Results Count */}
                 <div className="flex items-center gap-2 flex-1 overflow-hidden">
                     {!isSearchTool && <span className="flex items-center text-[#6b7280]">{iconToDisplay}</span>}
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
                         <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[#888888]' : isError ? 'text-[#ef4444]' : 'text-[#111111]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
-                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.displayName || tc.label || tc.toolName)}
+                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.label || tc.displayName || tc.toolName)}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (
@@ -771,6 +893,84 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
     const displayName = toolName
         .replace(/_/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase());
+
+    const fileDetails = extractStreamingFileDetails(partialArguments, toolName);
+
+    if (fileDetails) {
+        const { filePath, codeContent, actionType } = fileDetails;
+        const fileName = filePath ? filePath.split(/[/\\]/).pop() : '';
+        const directory = filePath && fileName ? filePath.substring(0, filePath.length - fileName.length).replace(/[/\\]+$/, '') : '';
+        const lang = detectLanguage(filePath || '');
+
+        return (
+            <motion.div
+                layout
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                className="rounded-2xl border border-indigo-100 overflow-hidden mb-4 shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10 bg-white"
+            >
+                {/* Header */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50/50 via-white to-white border-b border-indigo-50">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-indigo-400 rounded-full animate-ping opacity-20" />
+                        <div className="relative flex items-center justify-center w-6 h-6 bg-indigo-50 rounded-full text-indigo-600">
+                            <DocumentTextIcon width={14} height={14} strokeWidth={2.5} />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-[13px] font-bold text-slate-800 flex items-center gap-1.5 leading-none">
+                            {fileName || 'Initializing File...'}
+                        </span>
+                        {directory && (
+                            <span className="text-[10px] text-slate-400 font-mono truncate max-w-[250px] mt-0.5">
+                                {directory}
+                            </span>
+                        )}
+                    </div>
+
+                    <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        actionType === 'edit'
+                            ? 'text-purple-600 bg-purple-50 border border-purple-100 animate-pulse'
+                            : 'text-indigo-600 bg-indigo-50 border border-indigo-100 animate-pulse'
+                    }`}>
+                        {actionType === 'edit' ? 'Streaming Edit' : 'Streaming Write'}
+                    </span>
+                </div>
+
+                {/* Content Container */}
+                <div className="relative">
+                    {codeContent ? (
+                        <div className="max-h-[300px] overflow-y-auto custom-scrollbar font-mono text-[12px] bg-slate-900 text-slate-200">
+                            <div className="p-4 relative">
+                                <SyntaxHighlighter language={lang} code={codeContent} />
+                                {isStreaming && (
+                                    <motion.span
+                                        animate={{ opacity: cursorVisible ? 1 : 0 }}
+                                        className="inline-block w-[7px] h-[15px] bg-indigo-400 ml-0.5 translate-y-[2px]"
+                                    />
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-slate-50/50">
+                            <Loader size={16} strokeWidth={2.5} className="text-indigo-500 mb-2" />
+                            <span className="text-xs text-slate-400 font-mono">
+                                Waiting for code stream...
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer shadow effect */}
+                {isStreaming && (
+                    <div className="h-1.5 bg-gradient-to-b from-transparent to-indigo-500/5" />
+                )}
+            </motion.div>
+        );
+    }
 
     return (
         <motion.div

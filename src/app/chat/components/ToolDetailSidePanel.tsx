@@ -9,7 +9,7 @@ import {
   Clock, CheckCircle, ExternalLink,
   Braces, ChevronDown, AlertCircle, Play, Pause,
   BookOpen, Shield, Image, File as FileIcon, Plus, PanelRightOpen,
-  Files, Folder, ChevronRight, MoreHorizontal
+  Files, Folder, ChevronRight, MoreHorizontal, Brain
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
@@ -63,6 +63,7 @@ export const ToolType = {
   PRESENTATION: 'presentation',
   IMAGE_ANALYSIS: 'image_analysis',
   LIVE_PREVIEW: 'live_preview',
+  MEMORY: 'memory',
   GENERIC: 'generic',
 };
 
@@ -118,7 +119,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
   if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return ToolType.FILE_SYSTEM;
   if (n.includes('web_search') || n.includes('remote_web_search')) return ToolType.WEB_SEARCH;
-  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
+  if (n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
+  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
   if (n === 'create_plan' || n === 'execution_plan' || n === 'update_plan' || n === 'update_plan_step') return ToolType.PLAN;
   if (n === 'pptx_generator') return ToolType.PRESENTATION;
@@ -175,6 +177,19 @@ function extractOutputText(tc: any): string {
   return '';
 }
 
+function parseToolCallArgs(tc: any) {
+  if (!tc) return {};
+  let args = tc.args || tc.arguments || {};
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      args = {};
+    }
+  }
+  return args;
+}
+
 function getToolMeta(toolName: string | undefined | null) {
   const n = (toolName || "").toLowerCase();
   if (n === 'skill') return { Icon: BookOpen, label: 'Skill Tool' };
@@ -183,7 +198,8 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return { Icon: Braces, label: 'MCP Registry' };
   if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return { Icon: FolderOpenIcon, label: 'File System', iconSize: 12 };
   if (n.includes('web_search') || n.includes('remote_web_search')) return { Icon: Search, label: 'Web Search' };
-  if (n.includes('fern') || n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
+  if (n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return { Icon: Brain, label: 'Memory' };
+  if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
   if (n === 'create_plan' || n === 'execution_plan' || n === 'update_plan' || n === 'update_plan_step') return { Icon: CheckCircle, label: 'Plan' };
   if (n === 'pptx_generator') return { Icon: FileIcon, label: 'Presentation' };
@@ -297,7 +313,7 @@ function normalizePanelUrl(value: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
-const DEFAULT_TOOL_DETAIL_ROOT = 'C:\\Users\\user\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+const DEFAULT_TOOL_DETAIL_ROOT = typeof navigator !== 'undefined' && navigator.userAgent.includes('Win') ? 'C:\\' : '/';
 
 function isMacPlatform() {
   if (typeof navigator === 'undefined') return false;
@@ -1092,7 +1108,8 @@ function FileContentBody({
     );
   }
 
-  if (!isTextLikeFile(path) && !safeContent) {
+  const isEditing = mode === 'add' || mode === 'diff';
+  if (!isTextLikeFile(path) && !safeContent && !isEditing) {
     return (
       <div style={{ flex: 1, minHeight: 0, background: EDITOR_COLORS.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}>
         <PreviewUnavailable path={path} message={previewError || 'This file type can be opened with a system app.'} />
@@ -2489,6 +2506,7 @@ export function TerminalView({
   duration,
   shellType,
   cwd,
+  status,
 }: {
   command: string;
   output: string;
@@ -2496,16 +2514,15 @@ export function TerminalView({
   duration?: number;
   shellType?: 'windows' | 'linux';
   cwd?: string;
+  status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
   const cleanOutput = normalizeTerminalOutput(output, command);
   const hasOutput = hasVisibleTerminalOutput(cleanOutput);
-  const isWindows = shellType === 'windows';
+  const looksLikePS = shellType === 'windows';
 
-  // Detect if command looks like a PowerShell command
-  const looksLikePS = isWindows || /powershell\.exe/i.test(command) || /^pwsh/i.test(command);
-
-  const showExit = exitCode !== undefined || duration !== undefined;
+  const isFinished = status === 'done' || status === 'error' || exitCode !== undefined || duration !== undefined;
+  const showExit = isFinished;
 
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
@@ -3193,6 +3210,142 @@ function CollapsibleSection({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function MemoryView({ args, output, toolName }: { args?: any; output?: string; toolName?: string }) {
+  // Try to parse JSON memories (from memory_consolidator)
+  let memoriesList: any[] = [];
+  let parsedJson: any = null;
+  if (output) {
+    try {
+      const clean = output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (parsed && Array.isArray(parsed.newMemories)) {
+        memoriesList = parsed.newMemories;
+        parsedJson = parsed;
+      }
+    } catch { /* Not JSON */ }
+  }
+
+  // Parse plain-text recall results (split on --- dividers)
+  const plainBlocks: string[] = [];
+  if (output && !parsedJson) {
+    const noFoundPrefix = output.replace(/^Found matches:\s*/i, '').trim();
+    const isNoResult = noFoundPrefix.toLowerCase().startsWith('no ') || noFoundPrefix.toLowerCase().startsWith('no facts');
+    if (!isNoResult) {
+      noFoundPrefix.split(/\n---\n|\n---\s*\n/).forEach(p => { if (p.trim()) plainBlocks.push(p.trim()); });
+    }
+  }
+
+  const hasArgs = args && Object.keys(args).length > 0;
+  const query = args?.query || args?.fact || args?.content || args?.preference || args?.taskName || '';
+  const tname = (toolName || '').toLowerCase();
+  const opLabel = tname.includes('recall') ? 'Recall'
+    : tname.includes('remember') || tname.includes('save') ? 'Save'
+    : tname.includes('update') || tname.includes('profile') ? 'Update'
+    : tname.includes('search') ? 'Search'
+    : 'Consolidate';
+  const opColor = opLabel === 'Recall' ? '#6366f1'
+    : opLabel === 'Save' || opLabel === 'Consolidate' ? '#22c55e'
+    : opLabel === 'Update' ? '#f59e0b'
+    : '#3b82f6';
+  const opBg = opLabel === 'Recall' ? 'rgba(99,102,241,0.1)'
+    : opLabel === 'Save' || opLabel === 'Consolidate' ? 'rgba(34,197,94,0.1)'
+    : opLabel === 'Update' ? 'rgba(245,158,11,0.1)'
+    : 'rgba(59,130,246,0.1)';
+  const noResults = !!output && !parsedJson && memoriesList.length === 0 && plainBlocks.length === 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: VS.bg, color: VS.text }}>
+      {/* Header */}
+      <div style={{ padding: '16px 18px', borderBottom: `1px solid ${VS.border}`, background: VS.bg, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: opBg, border: `1px solid ${opColor}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Brain size={14} color={opColor} strokeWidth={2} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: VS.text, fontFamily: T.sans }}>Memory</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: opBg, color: opColor, fontFamily: T.sans, letterSpacing: '0.04em' }}>{opLabel}</span>
+            </div>
+            {query && <p style={{ fontSize: 11, color: VS.muted, margin: 0, fontFamily: T.mono, marginTop: 2 }}>"{String(query).slice(0, 60)}{String(query).length > 60 ? '\u2026' : ''}"</p>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 24px', display: 'flex', flexDirection: 'column', gap: 10, background: VS.bg }}>
+
+        {/* Plain-text recall blocks */}
+        {plainBlocks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
+              \uD83D\uDD0D Matches Found ({plainBlocks.length})
+            </p>
+            {plainBlocks.map((block, i) => {
+              const srcMatch = block.match(/^\[(.*?)\]\s*\[(.*?)\]/);
+              const src = srcMatch ? `${srcMatch[1]} \u203A ${srcMatch[2]}` : '';
+              const bodyText = srcMatch ? block.slice(srcMatch[0].length).trim() : block;
+              const isProfile = block.toLowerCase().includes('user profile');
+              const cardColor = isProfile ? '#6366f1' : '#22c55e';
+              const cardBg = isProfile ? 'rgba(99,102,241,0.07)' : 'rgba(34,197,94,0.07)';
+              return (
+                <div key={i} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: CLAY.shadow }}>
+                  {src && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: cardBg, color: cardColor, fontFamily: T.sans, letterSpacing: '0.04em', textTransform: 'uppercase', alignSelf: 'flex-start' }}>
+                      {src}
+                    </span>
+                  )}
+                  <p style={{ margin: 0, color: VS.text, fontSize: 12.5, lineHeight: 1.6, fontFamily: T.sans, whiteSpace: 'pre-wrap' }}>
+                    {bodyText.replace(/^\[[\w\s]+\]\s*\([\d\w\-T:.Z]+\)\s*/m, '').trim()}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* JSON structured memories (consolidator style) */}
+        {memoriesList.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
+              \uD83D\uDCBE Processed Memories ({memoriesList.length})
+            </p>
+            {memoriesList.map((mem: any, index: number) => (
+              <div key={index} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, boxShadow: CLAY.shadow, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'rgba(99,102,241,0.1)' : mem.type === 'habit' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)', color: mem.type === 'preference' ? '#6366f1' : mem.type === 'habit' ? '#f59e0b' : '#22c55e', textTransform: 'uppercase', fontFamily: T.sans }}>
+                    {mem.type || 'fact'}
+                  </span>
+                  {mem.linkedFile && <span style={{ fontSize: 10.5, color: VS.muted, fontFamily: T.mono }}>\uD83D\uDCC1 {mem.linkedFile}</span>}
+                </div>
+                <p style={{ margin: 0, color: VS.text, fontSize: 13, lineHeight: 1.5, fontFamily: T.sans }}>{mem.value || JSON.stringify(mem)}</p>
+                {mem.category && <span style={{ fontSize: 10.5, color: VS.dim, fontFamily: T.sans }}>Category: {mem.category}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Args card */}
+        {hasArgs && (
+          <div style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', boxShadow: CLAY.shadow }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: VS.muted, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>Parameters</p>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: T.mono, fontSize: 11.5, color: VS.text }}><code>{JSON.stringify(args, null, 2)}</code></pre>
+          </div>
+        )}
+
+        {/* No results / raw output fallback */}
+        {noResults && (
+          <div style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: CLAY.shadow }}>
+            <p style={{ fontSize: 12, color: VS.muted, margin: 0, fontStyle: 'italic', fontFamily: T.sans }}>{output}</p>
+          </div>
+        )}
+
+        {!hasArgs && !output && (
+          <p style={{ fontSize: 12.5, color: VS.muted, fontStyle: 'italic', textAlign: 'center', marginTop: 20, fontFamily: T.sans }}>No memory data for this step.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -3945,21 +4098,37 @@ export function extractFernData(tc: any, progressEvents: any[] = []) {
 }
 
 function extractTerminalData(tc: any) {
-  const command = tc.args?.command || tc.args?.CommandLine || '';
+  const args = parseToolCallArgs(tc);
+  const command = args.command || args.CommandLine || '';
   const output = extractOutputText(tc);
   const toolName = (tc.toolName || '').toLowerCase();
-  const args = tc.args || tc.arguments || {};
   const data = tc.data || tc.result?.data || {};
   const cwd = inferTerminalCwd(tc, output, command);
   const requestedShell = String(args.shellType || data.shellType || data.shell || '').toLowerCase();
-  const target = String(args.target || data.target || '').toLowerCase();
-  const isWindows = target !== 'vm' && (
+  const target = String(args.target || data.target || tc.result?.target || tc.result?.data?.target || '').toLowerCase();
+  
+  const normalizedCmd = command.trim().toLowerCase();
+  const hasLinuxIndicators = normalizedCmd.includes('/mnt/') ||
+    normalizedCmd.includes('/home/') ||
+    normalizedCmd.includes('/tmp/') ||
+    /\bsource\b/.test(normalizedCmd) ||
+    /\bpython3\b/.test(normalizedCmd) ||
+    /\b(apt-get|apt)\b/.test(normalizedCmd) ||
+    target === 'vm';
+
+  const isExplicitLinux = toolName.includes('linux') || 
+    requestedShell.includes('bash') || 
+    requestedShell.includes('sh') || 
+    target === 'vm' ||
+    hasLinuxIndicators;
+
+  const isWindows = !isExplicitLinux && (
     requestedShell.includes('powershell') ||
     requestedShell.includes('pwsh') ||
     requestedShell === 'cmd' ||
     toolName.includes('pwsh') ||
     toolName.includes('powershell') ||
-    isWindowsAbsolutePath(cwd) ||
+    (isWindowsAbsolutePath(cwd) && !command.startsWith('wsl') && !command.startsWith('bash')) ||
     command.includes('powershell.exe') ||
     command.includes('pwsh') ||
     command.startsWith('powershell')
@@ -3967,34 +4136,50 @@ function extractTerminalData(tc: any) {
   return {
     command,
     output,
-    exitCode: tc.data?.exitCode ?? tc.result?.data?.exitCode,
+    exitCode: tc.data?.exitCode ?? tc.result?.data?.exitCode ?? tc.result?.exitCode,
     duration: tc.duration ?? tc.result?.duration,
     shellType: isWindows ? 'windows' : 'linux',
-    cwd
+    cwd,
+    status: tc.status
   };
 }
 
 function extractFileSystemData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const toolName = String(tc.toolName || '');
+  
+  let path = args.path || data.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || args.target_file || args.pattern || args.query || args.targetFile || args.target_path || args.targetPath || args.dest || args.destination || args.filepath || '';
+  let argsContent = pickString(args, ['CodeContent', 'codeContent', 'code_content', 'code', 'content', 'text', 'body', 'data']) || pickString(data, ['content', 'contentAfter', 'after', 'code', 'text']);
+  
+  if (typeof path === 'string' && path.includes('\n') && !argsContent) {
+      argsContent = path;
+      path = 'unknown_file';
+  }
+
   return {
     toolName,
-    path: args.path || data.path || args.TargetFile || args.SearchPath || args.DirectoryPath || args.AbsolutePath || args.filePath || args.file || args.target_file || args.pattern || args.query || '',
+    path,
     args,
     data,
     output: extractOutputText(tc)
   };
 }
 
+function extractMemoryData(tc: any) {
+  const args = parseToolCallArgs(tc);
+  const output = extractOutputText(tc);
+  return { toolName: tc.toolName, args, output };
+}
+
 function extractGenericData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const output = extractOutputText(tc);
   return { toolName: tc.toolName, args, output, result: tc.result || tc.data || (output ? { exitCode: 0 } : null) };
 }
 
 function extractTodoWriteData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const output = extractOutputText(tc);
   let parsedOutput: any = null;
@@ -4019,7 +4204,7 @@ function extractTodoWriteData(tc: any) {
 }
 
 function extractPlanData(tc: any) {
-  const args = tc.args || tc.arguments || {};
+  const args = parseToolCallArgs(tc);
   const data = tc.data || tc.result?.data || {};
   const output = extractOutputText(tc);
   let parsedOutput: any = null;
@@ -4058,7 +4243,7 @@ function extractPlanData(tc: any) {
 
 function extractPresentationData(tc: any) {
   try {
-    const args = tc.args || tc.arguments || {};
+    const args = parseToolCallArgs(tc);
     const data = tc.data || tc.result?.data || {};
     const output = extractOutputText(tc);
     const outputPath = args.outputPath || data.path || data.outputPath || (() => {
@@ -4578,10 +4763,20 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
 
     if (name.includes('write')) {
       isWrite = true;
-      newContent = pickString(args, ['CodeContent', 'code', 'content', 'text']) || pickString(data, ['content', 'contentAfter', 'after']);
+      newContent = pickString(args, ['CodeContent', 'codeContent', 'code_content', 'code', 'content', 'text', 'body', 'data']) || pickString(data, ['content', 'contentAfter', 'after', 'code', 'text']);
+      if (!newContent && typeof args.path === 'string' && args.path.includes('\n')) {
+          newContent = args.path;
+      } else if (!newContent && typeof args.CommandLine === 'string' && args.CommandLine.includes('\n')) {
+          newContent = args.CommandLine;
+      } else if (!newContent && Object.keys(args).length > 0) {
+          const onlyKeys = Object.keys(args);
+          if (!(onlyKeys.length === 1 && onlyKeys[0] === 'path')) {
+              newContent = JSON.stringify(args, null, 2);
+          }
+      }
     } else if (name === 'read' || name === 'read_file' || name === 'view_file') {
       isRead = true;
-      newContent = pickString(data, ['content']) || pickString(args, ['content']) || cleanReadOutput(output || '');
+      newContent = pickString(data, ['content', 'code', 'text']) || pickString(args, ['content', 'code', 'text']) || cleanReadOutput(output || '');
     } else {
       oldContent =
         pickString(data, ['contentBefore', 'oldContent', 'previousContent', 'before', 'oldString', 'old_string']) ||
@@ -4601,15 +4796,16 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
       }
     }
 
-    return {
-      isWrite,
-      isMulti,
-      chunks,
-      oldContent,
-      newContent,
-      isRead,
-      hasRenderableContent: isMulti ? chunks.length > 0 : Boolean(oldContent || newContent),
+    const result = {
+      isWrite, isMulti, chunks, oldContent, newContent, isRead,
+      hasRenderableContent: isRead || isWrite || chunks.length > 0 || (oldContent && newContent)
     };
+
+    if (name.includes('write') && !newContent) {
+      console.log('FileEditorView DEBUG (write empty):', { toolName, path, args, data, chunkSource, extracted: result });
+    }
+
+    return result;
   }, [toolName, args, output, data]);
 
   const diffStats = useMemo(() => {
@@ -5505,6 +5701,8 @@ export default function ToolDetailSidePanel({
   const [surfaceMode, setSurfaceMode] = useState<'tool' | 'open-file' | 'terminal' | 'browser'>('tool');
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [filePaneOpen, setFilePaneOpen] = useState(false);
+  const [tabMenuOpenId, setTabMenuOpenId] = useState<string | null>(null);
+  const [copiedTabId, setCopiedTabId] = useState<string | null>(null);
   const [openedFile, setOpenedFile] = useState<{ path: string; absolutePath: string; content: string; mimeType?: string; previewError?: string } | null>(null);
   const [manualProjectRoot, setManualProjectRoot] = useState('');
   const [browserUrl, setBrowserUrl] = useState('');
@@ -5521,6 +5719,17 @@ export default function ToolDetailSidePanel({
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  useEffect(() => {
+    if (!tabMenuOpenId) return;
+    const handleOutsideClick = () => {
+      setTabMenuOpenId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, [tabMenuOpenId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -5598,6 +5807,8 @@ export default function ToolDetailSidePanel({
         extracted = extractLocalPermissionData(toolCall);
       } else if (type === ToolType.IMAGE_ANALYSIS) {
         extracted = extractImageAnalysisData(toolCall);
+      } else if (type === ToolType.MEMORY) {
+        extracted = extractMemoryData(toolCall);
       } else {
         extracted = extractGenericData(toolCall);
       }
@@ -5858,6 +6069,7 @@ export default function ToolDetailSidePanel({
     if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     if (toolType === ToolType.LOCAL_PERMISSION) return <LocalPermissionView {...toolData} />;
     if (toolType === ToolType.IMAGE_ANALYSIS) return <ImageAnalysisView {...toolData} />;
+    if (toolType === ToolType.MEMORY) return <MemoryView {...toolData} toolName={toolCall?.toolName || ''} />;
     return <GenericView {...toolData} />;
   };
 
@@ -6007,10 +6219,18 @@ export default function ToolDetailSidePanel({
                       {openTabs.map((tab) => {
                         const isActive = tab.id === activeId && surfaceMode === 'tool';
                         return (
-                        <button
+                        <div
                           key={tab.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => { setSurfaceMode('tool'); onSelectTab?.(tab.id); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSurfaceMode('tool');
+                              onSelectTab?.(tab.id);
+                            }
+                          }}
                           title={getToolSubtitle(tab)}
                           style={{
                             height: 31,
@@ -6029,12 +6249,117 @@ export default function ToolDetailSidePanel({
                             fontFamily: T.sans,
                             fontSize: 13.5,
                             flexShrink: 0,
+                            position: 'relative',
                           }}
                         >
                           <ToolTabIcon toolName={tab.toolName} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {getToolTabLabel(tab)}
                           </span>
+                          
+                          <span
+                            role="button"
+                            aria-label="Tab options"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setTabMenuOpenId(tabMenuOpenId === tab.id ? null : tab.id);
+                            }}
+                            style={{
+                              width: 17,
+                              height: 17,
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: isActive ? VS.muted : VS.dim,
+                              marginLeft: 2,
+                              marginRight: -2,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = isActive ? CLAY.hover : 'rgba(0,0,0,0.05)';
+                              e.currentTarget.style.color = VS.text;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = isActive ? VS.muted : VS.dim;
+                            }}
+                          >
+                            <ChevronDown size={12} />
+                          </span>
+
+                          {tabMenuOpenId === tab.id && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 32,
+                                left: 0,
+                                minWidth: 160,
+                                padding: 4,
+                                borderRadius: 8,
+                                border: `1px solid ${VS.borderStrong}`,
+                                background: CLAY.card,
+                                boxShadow: '0 8px 24px rgba(32,30,36,0.12)',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setTabMenuOpenId(null);
+                                  try {
+                                    const jsonToCopy = {
+                                      id: tab.id,
+                                      toolName: tab.toolName,
+                                      arguments: tab.args || tab.arguments || {},
+                                      output: tab.output || tab.result || null,
+                                      data: tab.data || null,
+                                    };
+                                    await navigator.clipboard.writeText(JSON.stringify(jsonToCopy, null, 2));
+                                    setCopiedTabId(tab.id);
+                                    setTimeout(() => setCopiedTabId(null), 2000);
+                                  } catch (err) {
+                                    console.error('Failed to copy tool call JSON', err);
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 10px',
+                                  fontSize: 12,
+                                  fontFamily: T.sans,
+                                  color: VS.text,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = CLAY.hover; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                {copiedTabId === tab.id ? (
+                                  <>
+                                    <Check size={12} color={VS.green} />
+                                    <span style={{ color: VS.green }}>Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={12} style={{ color: VS.muted }} />
+                                    <span>Copy JSON</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+
                           <span
                             role="button"
                             aria-label="Close tab"
@@ -6055,13 +6380,22 @@ export default function ToolDetailSidePanel({
                           >
                             <X size={12} />
                           </span>
-                        </button>
+                        </div>
                         );
                       })}
                       {hasBrowserTab && (
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => { setSurfaceMode('browser'); setFilePaneOpen(false); setPlusMenuOpen(false); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSurfaceMode('browser');
+                              setFilePaneOpen(false);
+                              setPlusMenuOpen(false);
+                            }
+                          }}
                           title={browserMeta.url || browserMeta.title}
                           style={{
                             height: 31,
@@ -6117,7 +6451,7 @@ export default function ToolDetailSidePanel({
                           >
                             <X size={12} />
                           </span>
-                        </button>
+                        </div>
                       )}
                       <button
                         type="button"

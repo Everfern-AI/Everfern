@@ -986,6 +986,9 @@ export class AgentRunner {
         }
 
         const thinkingDuration = durationTracker.onMissionComplete();
+        const success = !missionTracker.getTimeline().error && !globalAbortManager.streamAborted;
+        this.telemetry.terminate(success, currentContent || undefined);
+
         yield {
           type: 'mission_complete',
           conversationId: convId,
@@ -999,6 +1002,7 @@ export class AgentRunner {
         removeProgressListener?.();
       }
     } finally {
+      this.telemetry.terminate(false);
       // Check for pending HITL to decide whether to clean up the browser session
       try {
         const { listHitlRecords } = await import('../../store/hitl');

@@ -6,6 +6,7 @@
  */
 
 import type { AIClient } from '../../../lib/ai-client';
+import sharp from 'sharp';
 import { BrowserSession } from './session';
 import {
   captureHtmlDomParserContext,
@@ -14,7 +15,7 @@ import {
   AriaSnapshotResult,
   type HtmlDomParserContext,
 } from './element-capture';
-import { executeAction, ActionName } from './actions';
+import { executeAction, type ActionName } from './actions';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { NavisLogger } from './logger';
 import {
@@ -79,6 +80,9 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
           { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
+          { properties: { browser_double_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_double_click'], additionalProperties: false },
+          { properties: { browser_right_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_right_click'], additionalProperties: false },
+          { properties: { browser_hover: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_hover'], additionalProperties: false },
           { properties: { browser_type: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }, required: ['browser_type'], additionalProperties: false },
         ],
       },
@@ -93,6 +97,17 @@ export const NAVIS_DECISION_SCHEMA = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Loading
 // ─────────────────────────────────────────────────────────────────────────────
+
+const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
+Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
+Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
+
+const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
+Current URL: {url_placeholder}
+Tabs: {tabs_placeholder}
+Interactive elements with [index].
+Results: {results_placeholder}`;
 
 function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
   const rawPrompt = loadPrompt('NAVIS.md');
@@ -116,17 +131,6 @@ function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
 }
 
 const { systemPrompt: NAVIS_SYSTEM_PROMPT, nextStepPrompt: NEXT_STEP_PROMPT } = loadNavisPrompts();
-
-const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
-Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
-Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
-Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
-
-const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
-Current URL: {url_placeholder}
-Tabs: {tabs_placeholder}
-Interactive elements with [index].
-Results: {results_placeholder}`;
 
 function clampText(value: unknown, max = 220): string | undefined {
   if (value == null) return undefined;
@@ -292,6 +296,7 @@ export interface NavisOptions {
   startUrl?: string;
   onProgress?: (msg: string) => void;
   useVision?: boolean;
+  onlyVision?: boolean;
   forceVision?: boolean;
   useChromeProfile?: boolean;
   selectedBrowserId?: string;
@@ -340,6 +345,7 @@ export class NavisOrchestrator {
       headless = false,
       startUrl,
       useVision = false,
+      onlyVision = false,
       forceVision = false,
       useChromeProfile = false,
       selectedBrowserId = 'chrome',
@@ -364,7 +370,7 @@ export class NavisOrchestrator {
       useIsolatedBrowser
     });
     console.log(`[Navis] ⏱ launch: ${Date.now() - runStart}ms`);
-    console.log(`[Navis] Vision setting: ${useVision ? 'available' : 'disabled'}; decision mode: DOM-first${forceVision ? ' with forced vision fallback' : ''}`);
+    console.log(`[Navis] Vision setting: ${useVision ? 'available' : 'disabled'}; onlyVision: ${onlyVision}; decision mode: ${onlyVision ? 'vision-only' : 'DOM-first'}${forceVision ? ' with forced vision fallback' : ''}`);
 
     await this.session.page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     console.log(`[Navis] ⏱ initial page load: ${Date.now() - runStart}ms`);
@@ -418,49 +424,56 @@ export class NavisOrchestrator {
 
         const t2 = Date.now();
         
-        // Capture elements (DOM) always. Prefer a pre-captured snapshot from
-        // the previous step if it is ready for this same active page URL.
+        // Capture elements (DOM) only if not in Only Vision mode.
         let snapshotSource = 'sync';
         let htmlDomParserContext: HtmlDomParserContext | null = null;
-        if (pendingSnapshot) {
-          const pending = pendingSnapshot;
-          const pendingUrl = pendingSnapshotUrl;
-          pendingSnapshot = null;
-          pendingSnapshotUrl = '';
+        if (onlyVision) {
+          elementsFormatted = '[Only Vision Mode Active: DOM elements list is disabled]';
+          semanticDomJson = JSON.stringify({ message: "Only Vision Mode Active: DOM context is disabled" }, null, 2);
+          snapshot = null;
+        } else {
+          if (pendingSnapshot) {
+            const pending = pendingSnapshot;
+            const pendingUrl = pendingSnapshotUrl;
+            pendingSnapshot = null;
+            pendingSnapshotUrl = '';
 
-          const prefetched = await Promise.race([
-            pending,
-            new Promise<null>(resolve => setTimeout(() => resolve(null), 80)),
-          ]);
+            const prefetched = await Promise.race([
+              pending,
+              new Promise<null>(resolve => setTimeout(() => resolve(null), 80)),
+            ]);
 
-          if (prefetched && (!pendingUrl || pendingUrl === url)) {
-            snapshot = prefetched;
-            snapshotSource = 'prefetch';
+            if (prefetched && (!pendingUrl || pendingUrl === url)) {
+              snapshot = prefetched;
+              snapshotSource = 'prefetch';
+            } else {
+              snapshot = await captureInteractiveElements(page);
+            }
           } else {
             snapshot = await captureInteractiveElements(page);
           }
-        } else {
-          snapshot = await captureInteractiveElements(page);
+          elementsFormatted = formatElementsForPrompt(snapshot.raw);
+          
+          // Semantic DOM is a compact, model-friendly page structure summary.
+          // html-dom-parser adds a Node-side HTML parse so Navis can still reason
+          // over forms, nav, headings, links, and content when live refs are thin.
+          htmlDomParserContext = await captureHtmlDomParserContext(page);
+          semanticDomJson = buildSemanticDomContext(snapshot, url, title, htmlDomParserContext);
         }
-        elementsFormatted = formatElementsForPrompt(snapshot.raw);
-        
-        // Semantic DOM is a compact, model-friendly page structure summary.
-        // html-dom-parser adds a Node-side HTML parse so Navis can still reason
-        // over forms, nav, headings, links, and content when live refs are thin.
-        htmlDomParserContext = await captureHtmlDomParserContext(page);
-        semanticDomJson = buildSemanticDomContext(snapshot, url, title, htmlDomParserContext);
 
         // DOM is the primary browser grounding source. Vision is available on-demand
         // when the DOM is weak, the user explicitly forced it, or the model asks for it.
-        const visionAvailable = Boolean(useVision || forceVision);
-        const domWeak = isDomContextWeak(snapshot, semanticDomJson);
+        const visionAvailable = Boolean(useVision || forceVision || onlyVision);
+        const domWeak = onlyVision ? true : isDomContextWeak(snapshot, semanticDomJson);
         const pageHasRenderedContent = url !== '' && !url.includes('about:blank');
         const shouldCaptureVision = visionAvailable && pageHasRenderedContent;
 
         if (shouldCaptureVision) {
           try {
             initialVisionPending = false;
-            await this.session.annotateElements();
+            if (!onlyVision) {
+              await this.session.annotateElements();
+            }
             await page.evaluate(() => {
               const controls = (window as any).__navis_controls;
               if (controls?.hideOverlay) controls.hideOverlay();
@@ -472,7 +485,9 @@ export class NavisOrchestrator {
               const controls = (window as any).__navis_controls;
               if (controls?.showOverlay) controls.showOverlay();
             }).catch(() => {});
-            await this.session.removeAnnotations();
+            if (!onlyVision) {
+              await this.session.removeAnnotations();
+            }
 
             screenshotB64 = screenshotBuffer.toString('base64');
             console.log('[Navis] On-demand vision: screenshot captured');
@@ -539,7 +554,7 @@ If you failed to find the info, report that clearly.`;
         const t4 = Date.now();
         // DOM/text AI is the default. Vision AI is an on-demand grounding assist.
         const decision: any = shouldCaptureVision
-          ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64, history, elementsFormatted, semanticDomJson)
+          ? await this.callAIVision(systemPrompt, inputContext, nextPrompt, screenshotB64, history, elementsFormatted, semanticDomJson, onlyVision)
           : await this.callAI(systemPrompt, inputContext, nextPrompt);
         const t5 = Date.now();
 
@@ -859,6 +874,7 @@ Provide the report now.`;
     history: string[] = [],
     domContext: string = '',
     semanticDomJson: string = '',
+    onlyVision: boolean = false,
   ): Promise<any | null> {
     // Pick the right client: vision fallback if available, else main
     const client = this.visionClient || this.aiClient;
@@ -868,7 +884,7 @@ Provide the report now.`;
       // Check if using EverFern Cloud provider
       if (client.provider === 'everfern') {
         console.log('[Navis] Using EverFern Cloud visual fallback');
-        return await this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client, history, semanticDomJson || domContext);
+        return await this.callEverFernCloudVision(inputContext, nextStepPrompt, screenshotB64, client, history, semanticDomJson || domContext, onlyVision);
       }
 
       // If no screenshot, use a transparent 1x1 pixel to satisfy multimodal APIs that require an image
@@ -878,7 +894,7 @@ Provide the report now.`;
       const imgSizeKB = Math.round((finalScreenshot.length * 3) / 4 / 1024);
       const detail = imgSizeKB > 200 ? 'high' : 'low';
 
-      const visionInstructions = `
+      let visionInstructions = `
 VISION GROUNDING ACTIVE — You are seeing a screenshot plus DOM context for the browser page.
 
 VISUAL ANALYSIS INSTRUCTIONS:
@@ -901,6 +917,30 @@ VISUAL ANALYSIS INSTRUCTIONS:
 
 Use the [ref=eN] identifiers from the Elements list to perform actions.
 The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
+
+      if (onlyVision) {
+        visionInstructions = `
+ONLY VISION MODE ACTIVE — There is NO DOM context, NO interactive elements, and NO ref IDs available. You must rely SOLELY on visual analysis of the screenshot.
+
+VISUAL ANALYSIS INSTRUCTIONS:
+1. NO DOM/REFS: Do NOT attempt to use click_element, click_text, smart_click, input_text, smart_type, hold_element, drag_element, press_key, or any other ref-based or DOM-based actions, as there are no DOM element refs available.
+2. COORDINATE-BASED ACTIONS: You MUST interact with the page using ONLY the following coordinate-based actions:
+   - "browser_click": Click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
+   - "browser_double_click": Double-click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
+   - "browser_right_click": Right-click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
+   - "browser_hover": Hover at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
+   - "browser_type": Type text into the currently focused input. Normally, you should use browser_click to focus an input first, then browser_type to input text.
+3. COORDINATE CALCULATION: x and y represent coordinates on a [0, 1000] normalized grid where:
+   - (0, 0) is the top-left corner of the screenshot.
+   - (1000, 1000) is the bottom-right corner of the screenshot.
+   - (500, 500) is the center of the viewport.
+   Carefully estimate coordinates visually from the screenshot before clicking/hovering.
+4. POPUPS & OVERLAYS: If you see overlays, cookie banners, or modals, click them away first using browser_click with coordinates.
+5. GENERAL ACTIONS: You can still use browser-level actions like "go_to_url", "go_back", "wait", "open_tab", "switch_tab", "close_tab", "wait_for_navigation", and "done".
+6. CAPTCHAS: If you see a CAPTCHA, use "solve_captcha" (which operates at a session level).
+
+Estimate the coordinates accurately relative to the image size.`;
+      }
 
       const aiStart = Date.now();
       const visionLabel = client === this.visionClient ? 'vision-fallback' : 'main';
@@ -998,12 +1038,16 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
     client: AIClient,
     history: string[] = [],
     domContext: string = '',
+    onlyVision: boolean = false,
   ): Promise<any | null> {
     try {
       const aiStart = Date.now();
 
       // If no screenshot, use a transparent 1x1 pixel to satisfy multimodal APIs that require an image
       const finalScreenshot = screenshotB64 || 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+
+      // Get screenshot dimensions to scale coordinates
+      const dimensions = await getImageDimensions(screenshotB64);
 
       // Extract task objective from input context
       const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
@@ -1037,9 +1081,10 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
         },
         body: JSON.stringify({
           screenshot: `data:image/jpeg;base64,${finalScreenshot}`,
-          dom: domContext,
+          dom: onlyVision ? '' : domContext,
           objective: objective,
-          history: history.slice(-8) // Keep last 8 steps for context
+          history: history.slice(-8), // Keep last 8 steps for context
+          only_vision: onlyVision
         })
       });
 
@@ -1067,7 +1112,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
       }
 
       // Convert TARS actions to NAVIS decision format
-      return this._convertTarsActionsToNavisDecision(actions, objective, content);
+      return this._convertTarsActionsToNavisDecision(actions, objective, content, dimensions);
     } catch (err: any) {
       if (err.message === 'FALLBACK_TO_TEXT_ONLY') throw err;
       console.error('[Navis] EverFern Cloud vision grounding failed:', err);
@@ -1114,20 +1159,16 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
   private _convertTarsActionsToNavisDecision(
     tarsActions: string[],
     objective: string,
-    instruction: string
+    instruction: string,
+    dimensions: { width: number; height: number } | null
   ): any {
     const navisActions: any[] = [];
 
     for (const actionStr of tarsActions) {
-      const action = this._parseTarsAction(actionStr);
+      const action = this._parseTarsAction(actionStr, dimensions);
       if (action) {
         navisActions.push(action);
       }
-    }
-
-    // If no valid actions, return null
-    if (navisActions.length === 0) {
-      return null;
     }
 
     // Return NAVIS decision format
@@ -1145,7 +1186,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
    * Parse a single TARS action string into NAVIS action format
    * Supported: click(x,y), type(text), press(key), scroll(direction), double_click(x,y), right_click(x,y), move(x,y)
    */
-  private _parseTarsAction(actionStr: string): any | null {
+  private _parseTarsAction(actionStr: string, dimensions: { width: number; height: number } | null): any | null {
     actionStr = actionStr.trim();
 
     // 1. Coordinate-based actions: click(x,y), double_click(x,y), right_click(x,y), move(x,y)
@@ -1153,8 +1194,15 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
     const coordMatch = actionStr.match(/(click|double_click|right_click|move|smooth|hover)\s*\((?:[^0-9-]*?(-?\d+)[^0-9-]*?,[^0-9-]*?(-?\d+)[^0-9-]*?)\)/i);
     if (coordMatch) {
       const type = coordMatch[1].toLowerCase();
-      const x = parseInt(coordMatch[2]);
-      const y = parseInt(coordMatch[3]);
+      let x = parseInt(coordMatch[2]);
+      let y = parseInt(coordMatch[3]);
+
+      if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+        // Tars coordinates are physical pixels in the screenshot image.
+        // We must normalize them to 0-1000 before sending to browser_click.
+        x = Math.max(0, Math.min(1000, Math.round((x / dimensions.width) * 1000)));
+        y = Math.max(0, Math.min(1000, Math.round((y / dimensions.height) * 1000)));
+      }
 
       switch (type) {
         case 'double_click':
@@ -1172,7 +1220,7 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
 
     // 2. Simple coordinate-less clicks: right_click(), left_click()
     if (actionStr.match(/right_click\s*\(\s*\)/i)) {
-      return { browser_right_click: { x: 0, y: 0 } }; // Will use current pos if implemented
+      return { browser_right_click: { x: 0, y: 0 } };
     }
     if (actionStr.match(/left_click\s*\(\s*\)/i) || actionStr.match(/click\s*\(\s*\)/i)) {
       return { browser_click: { x: 0, y: 0 } };
@@ -1249,3 +1297,23 @@ The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
     }
   }
 }
+
+async function getImageDimensions(screenshotB64: string | null): Promise<{ width: number; height: number } | null> {
+  if (!screenshotB64) return null;
+  try {
+    let cleanB64 = screenshotB64;
+    if (cleanB64.startsWith('data:')) {
+      const parts = cleanB64.split(',');
+      cleanB64 = parts[parts.length - 1];
+    }
+    const buffer = Buffer.from(cleanB64, 'base64');
+    const metadata = await sharp(buffer).metadata();
+    if (metadata.width && metadata.height) {
+      return { width: metadata.width, height: metadata.height };
+    }
+  } catch (err) {
+    console.error('[Navis] Failed to get image dimensions with sharp:', err);
+  }
+  return null;
+}
+

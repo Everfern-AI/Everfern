@@ -118,10 +118,10 @@ export function getContextualSuggestions(intent: string, failedTool: string): st
   return list.join('\n');
 }
 
-/**
- * Host-side file tools that need Windows paths (not Linux paths)
- */
-const HOST_FILE_TOOLS = new Set(['read', 'write', 'edit', 'grep', 'find', 'ls', 'view_file', 'create_file', 'delete_file']);
+const HOST_FILE_TOOLS = new Set([
+  'read', 'write', 'edit', 'grep', 'find', 'ls', 'view_file', 'create_file', 'delete_file',
+  'read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'grep_search'
+]);
 
 /**
  * Validates and corrects paths in tool arguments, particularly handling
@@ -147,7 +147,7 @@ export function validateAndCorrectToolArgs(
     '{{EXEC_PATH}}': `${LINUX_USER_PATH}/.everfern/exec/${safeConvId}`,
     '{{SITE_PATH}}': `${LINUX_USER_PATH}/.everfern/sites/${safeConvId}`,
     '{{ARTIFACT_PATH}}': `${LINUX_USER_PATH}/.everfern/artifacts/${safeConvId}`,
-    '{{UPLOADS_PATH}}': `${LINUX_USER_PATH}/.everfern/attachments`,
+    '{{UPLOADS_PATH}}': `/everfern`,
     '{{PLAN_PATH}}': `${LINUX_USER_PATH}/.everfern/chat/plan/${safeConvId}`
   };
 
@@ -195,8 +195,9 @@ export function validateAndCorrectToolArgs(
         }
       }
 
-      // For host-side tools, translate /mnt/c/ paths back to Windows paths
-      if (isHostTool && pathValue.includes('/mnt/')) {
+      // For host-side tools, translate Linux paths back to Windows paths
+      const isLinuxPath = pathValue.startsWith('/') || pathValue.startsWith('~/') || pathValue.includes('/mnt/');
+      if (isHostTool && isLinuxPath) {
         pathValue = translateLinuxPathToHost(pathValue);
       }
 
@@ -204,11 +205,23 @@ export function validateAndCorrectToolArgs(
     }
   }
 
-  if (toolName === 'run_command' && typeof correctedArgs.CommandLine === 'string') {
+  if (correctedArgs.Cwd && !correctedArgs.cwd) {
+    correctedArgs.cwd = correctedArgs.Cwd;
+  }
+
+  if ((toolName === 'run_command' || toolName === 'terminal_execute') && typeof correctedArgs.CommandLine === 'string') {
     let cmd = correctedArgs.CommandLine;
     if (cmd.endsWith('\\"')) {
       cmd = cmd.slice(0, -2) + '"';
       correctedArgs.CommandLine = cmd;
+    }
+  }
+
+  if ((toolName === 'run_command' || toolName === 'terminal_execute') && typeof correctedArgs.command === 'string') {
+    let cmd = correctedArgs.command;
+    if (cmd.endsWith('\\"')) {
+      cmd = cmd.slice(0, -2) + '"';
+      correctedArgs.command = cmd;
     }
   }
 
