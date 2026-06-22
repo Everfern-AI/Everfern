@@ -41,11 +41,11 @@ async function run() {
         newH = Math.max(imageScaleFactor, Math.floor(height * scale / imageScaleFactor) * imageScaleFactor);
       }
 
-      const jpegBuffer = await sharp(imgBuffer)
+      const webpBuffer = await sharp(imgBuffer)
         .resize(newW, newH, { fit: 'fill' })
-        .jpeg({ quality: imageQuality })
+        .webp({ quality: 75 })
         .toBuffer();
-      encoded = jpegBuffer.toString("base64");
+      encoded = webpBuffer.toString("base64");
     } else {
       // No sharp - just encode the raw PNG as base64 (no resize)
       encoded = imgBuffer.toString("base64");

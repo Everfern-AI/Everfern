@@ -1129,11 +1129,11 @@ class ComputerUseTool {
                     fill="none" stroke="red" stroke-width="4"/>
             <circle cx="${relX}" cy="${relY}" r="4" fill="yellow"/>
           </svg>`;
-        const jpeg = await sharp(rawBuffer)
+        const webp = await sharp(rawBuffer)
           .composite([{ input: Buffer.from(svgCircle), top: 0, left: 0 }])
-          .jpeg({ quality: this.imageQuality })
+          .webp({ quality: 75 })
           .toBuffer();
-        encoded = jpeg.toString("base64");
+        encoded = webp.toString("base64");
       } catch (e) {
         console.warn("[ComputerUse] sharp composite failed, skipping cursor circle:", e);
         encoded = rawBuffer.toString("base64");
@@ -1161,7 +1161,7 @@ class ComputerUseTool {
 
     return {
       ...payload,
-      screenshot:      `data:image/jpeg;base64,${encoded}`,
+      screenshot:      `data:image/webp;base64,${encoded}`,
       screenshot_path: imgPath,
       cursor,
       display:         { width: rawW, height: rawH },

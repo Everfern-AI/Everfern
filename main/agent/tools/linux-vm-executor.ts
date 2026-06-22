@@ -69,6 +69,22 @@ export async function runInLinuxVM(
  */
 let _wslCmdCache: string | null = null;
 
+let _wslIdleTimeout: NodeJS.Timeout | null = null;
+const WSL_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+function resetWslIdleTimer() {
+  if (process.platform !== 'win32') return;
+  if (_wslIdleTimeout) clearTimeout(_wslIdleTimeout);
+  _wslIdleTimeout = setTimeout(() => {
+    console.log('[WSL] Idle for 10 minutes, shutting down WSL to save RAM...');
+    const { exec } = require('child_process');
+    exec('wsl.exe --shutdown', (err: any) => {
+      if (err) console.error('[WSL] Shutdown failed:', err);
+      else console.log('[WSL] Shutdown successful.');
+    });
+  }, WSL_IDLE_TIMEOUT_MS);
+}
+
 function getWslCmd(): string {
   if (_wslCmdCache) return _wslCmdCache;
   try {
@@ -93,6 +109,21 @@ export async function ensureWSLSetup(): Promise<void> {
   _wslSetupDone = true; // only attempt once
   const wslCmd = getWslCmd();
   console.log('[ensureWSLSetup] Setting up WSL environment...');
+
+  // Configure WSL resources (.wslconfig)
+  try {
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+    const wslConfigPath = path.join(os.homedir(), '.wslconfig');
+    const configContent = `[wsl2]\nmemory=3GB\nprocessors=2\n`;
+    if (!fs.existsSync(wslConfigPath) || !fs.readFileSync(wslConfigPath, 'utf8').includes('memory=')) {
+      fs.writeFileSync(wslConfigPath, configContent);
+      console.log('[ensureWSLSetup] Created/Updated .wslconfig with resource caps.');
+    }
+  } catch (err) {
+    console.error('[ensureWSLSetup] Failed to configure .wslconfig:', err);
+  }
 
   try {
     // Check if python3 is installed
@@ -156,6 +187,9 @@ async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string
   } catch (err) {
     console.error('[runInWSL] WSL setup failed (continuing anyway):', err);
   }
+
+  // Reset idle timer
+  resetWslIdleTimer();
 
   // Translate Windows paths to Linux paths if cwd is provided
   let linuxCwd = cwd;
@@ -383,6 +417,12 @@ export async function ensureDockerContainer(): Promise<void> {
  * @returns The equivalent Linux path for WSL
  */
 export function translateWindowsPathToLinux(windowsPath: string): string {
+  // Handle paths like \\wsl.localhost\Ubuntu\everfern\... or \\wsl$\Ubuntu\everfern\...
+  const wslUncMatch = windowsPath.replace(/\\/g, '/').match(/^\/\/wsl(?:\.localhost|\$)?\/[^\/]+(\/.*)?$/);
+  if (wslUncMatch) {
+    return wslUncMatch[1] || '/';
+  }
+
   // Handle paths like C:\Users\... or c:\temp
   const driveLetterMatch = windowsPath.match(/^([A-Za-z]):[\\\/]/);
 
@@ -444,6 +484,11 @@ export function translateLinuxPathToHost(linuxPath: string): string {
       const drive = mntMatch[1].toUpperCase();
       const rest = mntMatch[2] ? mntMatch[2].replace(/\//g, '\\') : '';
       return `${drive}:${rest}`;
+    }
+
+    // Check if it is already a WSL localhost path
+    if (cleanPath.startsWith('//wsl.localhost/') || cleanPath.startsWith('//wsl/')) {
+      return cleanPath.replace(/\//g, '\\');
     }
 
     // Otherwise, translate to WSL localhost UNC path

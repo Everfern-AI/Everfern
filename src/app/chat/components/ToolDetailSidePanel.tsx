@@ -5701,6 +5701,8 @@ export default function ToolDetailSidePanel({
   const [surfaceMode, setSurfaceMode] = useState<'tool' | 'open-file' | 'terminal' | 'browser'>('tool');
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [filePaneOpen, setFilePaneOpen] = useState(false);
+  const [tabMenuOpenId, setTabMenuOpenId] = useState<string | null>(null);
+  const [copiedTabId, setCopiedTabId] = useState<string | null>(null);
   const [openedFile, setOpenedFile] = useState<{ path: string; absolutePath: string; content: string; mimeType?: string; previewError?: string } | null>(null);
   const [manualProjectRoot, setManualProjectRoot] = useState('');
   const [browserUrl, setBrowserUrl] = useState('');
@@ -5717,6 +5719,17 @@ export default function ToolDetailSidePanel({
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  useEffect(() => {
+    if (!tabMenuOpenId) return;
+    const handleOutsideClick = () => {
+      setTabMenuOpenId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, [tabMenuOpenId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -6206,10 +6219,18 @@ export default function ToolDetailSidePanel({
                       {openTabs.map((tab) => {
                         const isActive = tab.id === activeId && surfaceMode === 'tool';
                         return (
-                        <button
+                        <div
                           key={tab.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => { setSurfaceMode('tool'); onSelectTab?.(tab.id); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSurfaceMode('tool');
+                              onSelectTab?.(tab.id);
+                            }
+                          }}
                           title={getToolSubtitle(tab)}
                           style={{
                             height: 31,
@@ -6228,12 +6249,117 @@ export default function ToolDetailSidePanel({
                             fontFamily: T.sans,
                             fontSize: 13.5,
                             flexShrink: 0,
+                            position: 'relative',
                           }}
                         >
                           <ToolTabIcon toolName={tab.toolName} />
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {getToolTabLabel(tab)}
                           </span>
+                          
+                          <span
+                            role="button"
+                            aria-label="Tab options"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setTabMenuOpenId(tabMenuOpenId === tab.id ? null : tab.id);
+                            }}
+                            style={{
+                              width: 17,
+                              height: 17,
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: isActive ? VS.muted : VS.dim,
+                              marginLeft: 2,
+                              marginRight: -2,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = isActive ? CLAY.hover : 'rgba(0,0,0,0.05)';
+                              e.currentTarget.style.color = VS.text;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = isActive ? VS.muted : VS.dim;
+                            }}
+                          >
+                            <ChevronDown size={12} />
+                          </span>
+
+                          {tabMenuOpenId === tab.id && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 32,
+                                left: 0,
+                                minWidth: 160,
+                                padding: 4,
+                                borderRadius: 8,
+                                border: `1px solid ${VS.borderStrong}`,
+                                background: CLAY.card,
+                                boxShadow: '0 8px 24px rgba(32,30,36,0.12)',
+                                zIndex: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setTabMenuOpenId(null);
+                                  try {
+                                    const jsonToCopy = {
+                                      id: tab.id,
+                                      toolName: tab.toolName,
+                                      arguments: tab.args || tab.arguments || {},
+                                      output: tab.output || tab.result || null,
+                                      data: tab.data || null,
+                                    };
+                                    await navigator.clipboard.writeText(JSON.stringify(jsonToCopy, null, 2));
+                                    setCopiedTabId(tab.id);
+                                    setTimeout(() => setCopiedTabId(null), 2000);
+                                  } catch (err) {
+                                    console.error('Failed to copy tool call JSON', err);
+                                  }
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 10px',
+                                  fontSize: 12,
+                                  fontFamily: T.sans,
+                                  color: VS.text,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = CLAY.hover; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                {copiedTabId === tab.id ? (
+                                  <>
+                                    <Check size={12} color={VS.green} />
+                                    <span style={{ color: VS.green }}>Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={12} style={{ color: VS.muted }} />
+                                    <span>Copy JSON</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+
                           <span
                             role="button"
                             aria-label="Close tab"
@@ -6254,13 +6380,22 @@ export default function ToolDetailSidePanel({
                           >
                             <X size={12} />
                           </span>
-                        </button>
+                        </div>
                         );
                       })}
                       {hasBrowserTab && (
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => { setSurfaceMode('browser'); setFilePaneOpen(false); setPlusMenuOpen(false); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSurfaceMode('browser');
+                              setFilePaneOpen(false);
+                              setPlusMenuOpen(false);
+                            }
+                          }}
                           title={browserMeta.url || browserMeta.title}
                           style={{
                             height: 31,
@@ -6316,7 +6451,7 @@ export default function ToolDetailSidePanel({
                           >
                             <X size={12} />
                           </span>
-                        </button>
+                        </div>
                       )}
                       <button
                         type="button"
