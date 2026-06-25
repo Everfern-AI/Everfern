@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { loadSkills } from '../runner/skills-loader';
+import { loadSkillsAsync } from '../runner/skills-loader';
 import type { AgentTool, ToolResult } from '../runner/types';
 
 export const skillTool: AgentTool = {
@@ -24,7 +24,7 @@ export const skillTool: AgentTool = {
     
     onUpdate?.(`🔍 Resolving skill "${skillName}"...`);
     
-    const skills = loadSkills();
+    const skills = await loadSkillsAsync();
     const matched = skills.find(s => s.name.toLowerCase() === skillName);
 
     if (!matched) {
@@ -34,7 +34,7 @@ export const skillTool: AgentTool = {
           onUpdate?.(`🎯 Fuzzy match found: ${fuzzy.name}`);
           let fuzzyContent = '';
           try {
-            fuzzyContent = require('fs').readFileSync(fuzzy.path, 'utf8');
+            fuzzyContent = await require('fs').promises.readFile(fuzzy.path, 'utf8');
           } catch (e) {
             console.error(`[SkillTool] Failed to read skill file at ${fuzzy.path}`, e);
           }
@@ -53,7 +53,7 @@ export const skillTool: AgentTool = {
 
     let fileContent = '';
     try {
-      fileContent = require('fs').readFileSync(matched.path, 'utf8');
+      fileContent = await require('fs').promises.readFile(matched.path, 'utf8');
     } catch (e) {
       console.error(`[SkillTool] Failed to read skill file at ${matched.path}`, e);
     }

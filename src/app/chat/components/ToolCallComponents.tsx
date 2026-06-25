@@ -256,7 +256,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
             <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 12 : 8, paddingRight: 12 }}>
                 {/* Description (thought/narration above tool) */}
                 {tc.description && (
-                    <div data-testid="narrative-element" style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
+                    <div data-testid="narrative-element" style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
                         {tc.description}
                     </div>
                 )}
@@ -293,15 +293,15 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     onBlur={e => { e.currentTarget.style.outline = 'none'; }}
                 >
                     <span style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>{tc.icon}</span>
-                    <span style={{ fontSize: 12.5, color: '#4b5563', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: looksLikeTerminal ? "'JetBrains Mono', monospace" : 'inherit' }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: looksLikeTerminal ? "'JetBrains Mono', monospace" : 'inherit' }}>
                         {tc.label}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                         {tc.durationMs !== undefined && !running && (
-                            <span style={{ fontSize: 10.5, color: '#9ca3af', fontFamily: "'JetBrains Mono', monospace" }}>{(tc.durationMs / 1000).toFixed(1)}s</span>
+                            <span style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace" }}>{(tc.durationMs / 1000).toFixed(1)}s</span>
                         )}
                         {!running && tc.output && tc.toolName !== 'create_plan' && tc.toolName !== 'update_plan_step' && (
-                            <ChevronDownIcon width={11} height={11} color="#9ca3af" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                            <ChevronDownIcon width={11} height={11} color='var(--color-text-tertiary)' style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                         )}
                     </div>
                 </div>
@@ -327,7 +327,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#ff5f57' }} />
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#febc2e' }} />
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#28c840' }} />
-                                    <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 6, fontFamily: "'JetBrains Mono', monospace" }}>
+                                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 6, fontFamily: "'JetBrains Mono', monospace" }}>
                                         {isTerminal ? (((tc.args?.CommandLine || tc.args?.command || tc.args?.commandLine || '') as string).split('\n')[0]?.slice(0, 50) || 'Terminal') : 'Terminal'}
                                     </span>
                                     <span style={{ marginLeft: 'auto', fontSize: 10, color: '#4a4a5a', fontFamily: "'JetBrains Mono', monospace" }}>
@@ -344,7 +344,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                         const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
                                         const promptMatch = line.match(/^([\$›#]) /);
                                         return (
-                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : '#d1d5db' }}>
+                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : 'var(--color-border)' }}>
                                                 {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
                                                 {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
                                                 {line}
@@ -367,16 +367,16 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                             transition={{ duration: 0.2 }}
                             style={{ overflow: 'hidden', marginTop: 4 }}
                         >
-                            <div style={{ backgroundColor: '#f5f4f0', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid #eceae4', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
+                            <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid var(--color-border)', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
                                 {(tc.base64Image || tc.data?.screenshot || (tc.data?.screenshots && tc.data.screenshots.length > 0)) && (
-                                    <div style={{ padding: 10, borderBottom: '1px solid #eceae4' }}>
-                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid #e8e6d9' }} />
+                                    <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
+                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)' }} />
                                     </div>
                                 )}
                                 {tc.data?.preClickB64 && (
-                                    <div style={{ padding: 10, borderBottom: '1px solid #eceae4' }}>
-                                        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6, textAlign: 'center', letterSpacing: '0.04em' }}>Click Target</div>
-                                        <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid #e8e6d9' }}>
+                                    <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, textAlign: 'center', letterSpacing: '0.04em' }}>Click Target</div>
+                                        <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
                                             <img src={`data:image/png;base64,${tc.data.preClickB64}`} alt="" style={{ width: '100%', display: 'block' }} />
                                             {tc.data.x !== undefined && tc.data.y !== undefined && tc.data.w && tc.data.h && (
                                                 <div style={{ position: 'absolute', left: `${(tc.data.x / tc.data.w) * 100}%`, top: `${(tc.data.y / tc.data.h) * 100}%`, width: 18, height: 18, backgroundColor: 'rgba(239,68,68,0.4)', border: '2px solid #e5e5e5', borderRadius: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'none' }} />
@@ -385,11 +385,11 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     </div>
                                 )}
                                 {(tc.toolName === 'read' || tc.toolName === 'read_file' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill' || tc.toolName === 'skill_detected') || tc.output.includes('---') || tc.output.startsWith('#') ? (
-                                    <div className="px-[14px] py-[10px] bg-white">
+                                    <div className="px-[14px] py-[10px]" style={{ backgroundColor: 'var(--color-bg-surface)' }}>
                                         <MarkdownRenderer content={tc.output} />
                                     </div>
                                 ) : (
-                                    <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-[1.7] text-[#6b7280] overflow-x-auto whitespace-pre-wrap">
+                                    <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
                                         {tc.output}
                                     </pre>
                                 )}
@@ -476,13 +476,13 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
         <Loader size={14} strokeWidth={2} className="text-emerald-500" />
     ) : isError ? (
         <div className="w-4 h-4 rounded-full bg-[#ef4444] flex items-center justify-center z-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3">
                 <path d="M18 6L6 18M6 6l12 12" />
             </svg>
         </div>
     ) : (
         <div className="w-4 h-4 rounded-full bg-[#10b981] flex items-center justify-center z-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 6L9 17l-5-5" />
             </svg>
         </div>
@@ -618,7 +618,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                             {docs.slice(0, 2).map((d, i) => (
                                                 <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-pointer transition-all duration-150 hover:bg-[#e5e7eb]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
-                                                    <DocumentTextIcon width={14} height={14} color="#111" strokeWidth={2} />
+                                                    <DocumentTextIcon width={14} height={14} color='var(--color-text-primary)' strokeWidth={2} />
                                                     {d}
                                                 </div>
                                             ))}
@@ -632,7 +632,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                 )}
                                 {Array.isArray(tc.data?.results) && tc.data.results.length > 0 && (
                                     <div className="mt-2">
-                                        <div className="flex flex-col border border-[#e2e8f0] rounded-xl bg-white overflow-hidden max-h-[320px] overflow-y-auto custom-scrollbar shadow-sm">
+                                        <div className="flex flex-col border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-surface)] overflow-hidden max-h-[320px] overflow-y-auto custom-scrollbar shadow-sm">
                                             {(tc.data.results as SearchResult[]).map((result, i) => (
                                                 <SearchResultCard key={i} result={result} index={i} />
                                             ))}
@@ -644,7 +644,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                             <div className={`px-4 py-3 rounded-xl text-[13px] leading-relaxed max-h-[400px] overflow-y-auto border ${
                                 isTerminal
                                     ? 'bg-[#0d0d14] font-mono text-[#e2e8f0] border-[#1e1e2e]'
-                                    : 'bg-[#f9fafb] text-[#4b5563] border-[#f3f4f6]'
+                                    : 'bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)] border-[var(--color-border-subtle)]'
                             }`}>
                                 {isTerminal ? (
                                     <div className="whitespace-pre-wrap">
@@ -837,7 +837,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                 >
                     <div className="bg-[rgba(34,197,94,0.06)] border border-[rgba(34,197,94,0.2)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
                         <div className="mt-0.5 bg-[#22c55e] rounded w-4 h-4 flex items-center justify-center shrink-0">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="20 6 9 17 4 12" />
                             </svg>
                         </div>

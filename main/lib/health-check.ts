@@ -6,6 +6,8 @@
  */
 
 import { ipcMain } from 'electron';
+import { databaseService } from '../store/database-service';
+import { dbOps } from './db';
 
 export interface HealthCheckResult {
   success: boolean;
@@ -19,26 +21,24 @@ export interface HealthCheckResult {
  */
 export async function checkDatabaseConnection(): Promise<HealthCheckResult> {
   try {
-    // This would connect to your database
-    // For now, returning a placeholder that can be implemented
-    // based on your actual database setup
-
     console.log('[HealthCheck] Checking database connection...');
-
-    // TODO: Implement actual database connection check
-    // Example:
-    // const db = await getDatabase();
-    // await db.query('SELECT 1');
-
-    return {
-      success: true,
-      details: 'Database check skipped (not yet configured)'
-    };
+    const result = await databaseService.healthCheck();
+    if (result.healthy) {
+      return {
+        success: true,
+        details: result.message
+      };
+    } else {
+      return {
+        success: false,
+        error: result.message,
+        details: result.diagnostics ? JSON.stringify(result.diagnostics) : undefined
+      };
+    }
   } catch (error) {
     console.error('[HealthCheck] Database check failed:', error);
     return {
-      success: true,
-      details: 'Database check skipped (not yet configured)',
+      success: false,
       error: error instanceof Error ? error.message : String(error)
     };
   }
@@ -50,26 +50,18 @@ export async function checkDatabaseConnection(): Promise<HealthCheckResult> {
 export async function checkVectorStore(): Promise<HealthCheckResult> {
   try {
     console.log('[HealthCheck] Checking vector store...');
-
-    // TODO: Implement actual vector store check
-    // Example:
-    // const vectorDb = await getVectorStore();
-    // const count = await vectorDb.count();
-
-    // For now, returning a placeholder
-    const count = 0; // Replace with actual count
-
+    const result = await dbOps.get('SELECT COUNT(*) as count FROM chat_messages_vec');
+    const count = result?.count ?? 0;
     return {
       success: true,
       count,
-      details: 'Vector store check skipped (not yet configured)'
+      details: `Vector store is healthy. Found ${count} vectors.`
     };
   } catch (error) {
     console.error('[HealthCheck] Vector store check failed:', error);
     return {
-      success: true,
+      success: false,
       count: 0,
-      details: 'Vector store check skipped (not yet configured)',
       error: error instanceof Error ? error.message : String(error)
     };
   }

@@ -278,13 +278,18 @@ export const buildGraph = (
 
       // Use interrupt() to pause the graph and wait for user response.
       // When the user approves/rejects, the runner resumes with Command({ resume: answer }).
+      // BUG-11 FIX: The inner catch must re-throw GraphInterrupt so LangGraph
+      // can properly pause the graph. Only catch non-interrupt errors.
       let answer: any;
       try {
         answer = interrupt(approvalRequest);
       } catch (interruptErr: any) {
-        // If interrupt throws (e.g. checkpointer doesn't support it), route to END
-        // to prevent infinite recursion. The user's next message will restart the flow.
-        runner.telemetry.info('HITL interrupt() threw — ending graph turn to prevent recursion');
+        // Re-throw GraphInterrupt — this is how LangGraph pauses the graph
+        if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
+          throw interruptErr;
+        }
+        // Only non-interrupt errors route to END to prevent infinite recursion
+        runner.telemetry.info('HITL interrupt() threw a non-interrupt error — ending graph turn to prevent recursion');
         return {
           taskPhase: 'planning' as const,
           hitlApprovalResult: {
@@ -595,9 +600,16 @@ If a specialized agent failed to complete a step, identify the issue and use you
       id: `msg-user-ans-${Date.now()}`
     };
 
+    // BUG-02 FIX: Return only the NEW message. LangGraph's MessagesAnnotation
+    // uses an 'add' reducer — spreading the entire state.messages array causes
+    // every existing message to be duplicated.
     return {
-      messages: [...(state.messages || []), userMessage],
+      messages: [userMessage],
       returningFromSpecialist: state.returningFromSpecialist,
+      codingComplete: false,
+      dataAnalysisComplete: false,
+      webExplorerComplete: false,
+      deepResearchComplete: false,
     };
   };
 
@@ -623,6 +635,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
   compiledGraph
     .addEdge(START, 'memory_check')
     .addEdge('memory_check', 'intent_classifier')
+    // BUG-08 FIX: Removed unreachable code paths — coding/build/fix were matched
+    // before the complexIntents check, making debate_chamber unreachable for those.
+    // BUG-18 FIX: Added deep_research to edge map for consistency.
     .addConditionalEdges('intent_classifier', (state) => {
         const intent = state.currentIntent || 'unknown';
         if (intent === 'operator') {
@@ -641,18 +656,18 @@ If a specialized agent failed to complete a step, identify the issue and use you
             console.log('[Graph] 🔀 Research/browser intent detected → web_explorer');
             return 'web_explorer';
         }
-        const complexIntents = ['coding', 'build', 'automate', 'fix', 'task'];
-        if (complexIntents.includes(intent)) {
+        if (['automate', 'task'].includes(intent)) {
             console.log('[Graph] 🔀 Complex intent detected → debate_chamber');
             return 'debate_chamber';
         }
-        console.log('[Graph] 🔀 Simple intent detected → task_decomposer');
+        console.log('[Graph] 🔀 Simple/unknown intent detected → task_decomposer');
         return 'task_decomposer';
     }, {
         operator_coordinator: 'operator_coordinator',
         debate_chamber: 'debate_chamber',
         coding_specialist: 'coding_specialist',
         web_explorer: 'web_explorer',
+        deep_research: 'deep_research',
         task_decomposer: 'task_decomposer'
     })
     .addConditionalEdges('debate_chamber', (state) => {
@@ -748,14 +763,18 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → memory_consolidator');
                     return 'memory_consolidator';
                 case 'continue_brain':
+                    if (!completionSignal) {
+                        console.warn('[Graph] ⚠️ continue_brain but completionSignal is null (likely parse error) → memory_consolidator');
+                        return 'memory_consolidator';
+                    }
                     if (
-                        completionSignal?.reason === 'waiting_for_user_input' ||
-                        completionSignal?.reason === 'cannot_proceed'
+                        completionSignal.reason === 'waiting_for_user_input' ||
+                        completionSignal.reason === 'cannot_proceed'
                     ) {
-                        console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal?.reason} → END (avoid loop)`);
+                        console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal.reason} → END (avoid loop)`);
                         return END;
                     }
-                    if (completionSignal?.reason === 'task_complete') {
+                    if (completionSignal.reason === 'task_complete') {
                         console.log(`[Graph] ➡️ continue_brain but completionSignal=task_complete → memory_consolidator`);
                         return 'memory_consolidator';
                     }
@@ -783,6 +802,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
     })
 
     // All specialized agents route back to brain for coordination
+    // BUG-03 FIX: Added self-loop guard for coding_specialist to prevent infinite loops
     .addConditionalEdges('coding_specialist', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
@@ -790,6 +810,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
             const route = routePendingToolsWithAutomationApproval(state, 'Coding specialist');
             console.log(`[Graph] 🔀 Coding specialist has tools → ${route}`);
             return route;
+        }
+
+        // BUG-03 FIX: Loop guard — prevent infinite self-loops
+        const loopCount = state.codingSpecialistSelfLoopCount || 0;
+        const MAX_SELF_LOOPS = 5;
+        if (loopCount >= MAX_SELF_LOOPS) {
+            console.warn(`[Graph] ⚠️ Coding specialist reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
         }
 
         // Keep specialist in control if not complete
@@ -808,6 +836,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         operator_coordinator: 'operator_coordinator',
     })
 
+    // BUG-03 FIX: Added self-loop guard for data_analyst to prevent infinite loops
     .addConditionalEdges('data_analyst', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
@@ -815,6 +844,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
             const route = routePendingToolsWithAutomationApproval(state, 'Data analyst');
             console.log(`[Graph] 🔀 Data analyst has tools → ${route}`);
             return route;
+        }
+
+        // BUG-03 FIX: Loop guard — prevent infinite self-loops
+        const loopCount = state.dataAnalysisSelfLoopCount || 0;
+        const MAX_SELF_LOOPS = 5;
+        if (loopCount >= MAX_SELF_LOOPS) {
+            console.warn(`[Graph] ⚠️ Data analyst reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
         }
 
         // Keep specialist in control if not complete
@@ -871,6 +908,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         [END]: END,
     })
 
+    // BUG-04 FIX: Added operator_coordinator routing and edge for deep_research
     .addConditionalEdges('deep_research', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
@@ -880,19 +918,28 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
+        // Loop guard for deep_research
+        const loopCount = state.deepResearchSelfLoopCount || 0;
+        const MAX_SELF_LOOPS = 5;
+        if (loopCount >= MAX_SELF_LOOPS) {
+            console.warn(`[Graph] ⚠️ Deep research reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop`);
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        }
+
         // Keep specialist in control if not complete
         if (!state.deepResearchComplete) {
             console.log('[Graph] 🔀 Deep research not complete → deep_research');
             return 'deep_research';
         }
 
-        console.log('[Graph] 🔀 Deep research complete → brain');
-        return 'brain';
+        console.log('[Graph] 🔀 Deep research complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         deep_research: 'deep_research',
         brain: 'brain',
+        operator_coordinator: 'operator_coordinator',
     })
 
 

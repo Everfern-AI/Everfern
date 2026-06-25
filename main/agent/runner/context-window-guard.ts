@@ -47,16 +47,28 @@ export function getContextWindowForModel(model: string): number {
         return MODEL_CONTEXT_WINDOWS[model];
     }
 
-    // Try partial match
     const lower = model.toLowerCase();
+
+    // Check known provider prefixes/patterns first for better estimation
+    if (lower.includes('gemini')) return 1000000;
+    if (lower.includes('claude')) return 200000;
+    if (lower.includes('deepseek')) {
+        if (lower.includes('flash')) return 64000;
+        return 128000;
+    }
+    if (lower.includes('gpt-4') || lower.includes('gpt-3.5') || lower.includes('o1') || lower.includes('o3') || lower.includes('llama-3.1')) {
+        return 128000;
+    }
+
+    // Try partial match against the dictionary
     for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
         if (lower.includes(key.toLowerCase())) {
             return value;
         }
     }
 
-    // Default to 8k
-    return 8192;
+    // Default to 128k (industry standard for modern LLMs) instead of 8k
+    return 128000;
 }
 
 export class ContextWindowGuard {

@@ -169,7 +169,7 @@ export const GradientBorderSystem: React.FC<GradientBorderProps> = ({
       <div
         style={{
           borderRadius: `${Math.max(0, borderRadius - borderWidth)}px`,
-          background: '#ffffff',
+          background: 'var(--color-bg-surface)',
           width: '100%',
           height: '100%',
           overflow: 'hidden',

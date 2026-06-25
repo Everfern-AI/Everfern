@@ -34,7 +34,7 @@ const MissionProgressCard: React.FC<MissionProgressCardProps> = ({
 
     return (
         <div style={{ 
-            backgroundColor: "#ffffff", 
+            backgroundColor: 'var(--color-bg-surface)', 
             border: "1px solid #e8e6d9", 
             borderRadius: 10, 
             overflow: "hidden",
@@ -69,11 +69,11 @@ const MissionProgressCard: React.FC<MissionProgressCardProps> = ({
                     )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <AdjustmentsHorizontalIcon width={14} height={14} style={{ color: "#9ca3af" }} />
+                    <AdjustmentsHorizontalIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
                     {isExpanded ? (
-                        <ChevronUpIcon width={14} height={14} style={{ color: "#9ca3af" }} />
+                        <ChevronUpIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
                     ) : (
-                        <ChevronDownIcon width={14} height={14} style={{ color: "#9ca3af" }} />
+                        <ChevronDownIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
                     )}
                 </div>
             </button>
@@ -92,7 +92,7 @@ const MissionProgressCard: React.FC<MissionProgressCardProps> = ({
                             <div style={{ 
                                 width: "100%", 
                                 height: 4, 
-                                backgroundColor: "#f3f4f6", 
+                                backgroundColor: 'var(--color-bg-subtle)', 
                                 borderRadius: 2, 
                                 marginBottom: 16,
                                 overflow: "hidden"
@@ -167,7 +167,7 @@ const StepItem: React.FC<{ step: MissionStep; index: number; isLast: boolean }> 
                     <span style={{ 
                         fontSize: 11, 
                         fontWeight: 700, 
-                        color: isInProgress ? "#111827" : "#9ca3af",
+                        color: isInProgress ? "#111827" : 'var(--color-text-tertiary)',
                         fontFamily: "monospace"
                     }}>
                         {formatIndex(index)}
@@ -189,7 +189,7 @@ const StepItem: React.FC<{ step: MissionStep; index: number; isLast: boolean }> 
                 </div>
                 <div style={{ 
                     fontSize: 10.5, 
-                    color: "#6b7280",
+                    color: 'var(--color-text-tertiary)',
                     lineHeight: 1.4,
                     overflow: "hidden",
                     textOverflow: "ellipsis",

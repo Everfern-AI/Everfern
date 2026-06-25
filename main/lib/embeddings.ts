@@ -326,6 +326,24 @@ function resizeAndNormalizeEmbedding(embedding: number[], targetDim = 1536): num
   return result;
 }
 
+let localPipeline: any = null;
+
+async function getLocalFallbackEmbedding(text: string): Promise<number[]> {
+  try {
+    if (!localPipeline) {
+      console.log('[Embeddings] Initializing local Transformers.js fallback with Xenova/all-MiniLM-L6-v2...');
+      const transformers = await import('@xenova/transformers');
+      transformers.env.allowLocalModels = false;
+      localPipeline = await transformers.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    }
+    const output = await localPipeline(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
+  } catch (err: any) {
+    console.error('[Embeddings] Critical failure in Transformers.js local fallback:', err);
+    throw err;
+  }
+}
+
 export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingModel {
   const result = getEmbeddingModelRaw(config);
 
@@ -334,14 +352,28 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
   const originalEmbedDocuments = result.embeddings.embedDocuments ? result.embeddings.embedDocuments.bind(result.embeddings) : undefined;
 
   result.embeddings.embedQuery = async (text: string) => {
-    const vector = await originalEmbedQuery(text);
-    return resizeAndNormalizeEmbedding(vector, 1536);
+    try {
+      const vector = await originalEmbedQuery(text);
+      return resizeAndNormalizeEmbedding(vector, 1536);
+    } catch (err: any) {
+      console.warn(`[Embeddings] Provider '${config.provider}' embedQuery failed. Falling back to local Transformers.js:`, err.message || err);
+      const fallbackVector = await getLocalFallbackEmbedding(text);
+      return resizeAndNormalizeEmbedding(fallbackVector, 1536);
+    }
   };
 
   if (originalEmbedDocuments) {
     result.embeddings.embedDocuments = async (texts: string[]) => {
-      const vectors = await originalEmbedDocuments(texts);
-      return vectors.map(v => resizeAndNormalizeEmbedding(v, 1536));
+      try {
+        const vectors = await originalEmbedDocuments(texts);
+        return vectors.map(v => resizeAndNormalizeEmbedding(v, 1536));
+      } catch (err: any) {
+        console.warn(`[Embeddings] Provider '${config.provider}' embedDocuments failed. Falling back to local Transformers.js:`, err.message || err);
+        return Promise.all(texts.map(async text => {
+          const fallbackVector = await getLocalFallbackEmbedding(text);
+          return resizeAndNormalizeEmbedding(fallbackVector, 1536);
+        }));
+      }
     };
   } else {
     result.embeddings.embedDocuments = async (texts: string[]) => {

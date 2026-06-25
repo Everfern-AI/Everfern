@@ -78,12 +78,12 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '40px 60px',
-                backgroundColor: '#ffffff'
+                backgroundColor: 'var(--color-bg-base)'
             }}
         >
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
-                <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 400, color: '#111' }}>Projects</h1>
+                <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 400, color: 'var(--color-text-primary)' }}>Projects</h1>
                 <div style={{ display: 'flex', gap: 12 }}>
                     <button
                         onClick={onCreateNew}
@@ -92,8 +92,8 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                             alignItems: 'center',
                             gap: 8,
                             padding: '10px 20px',
-                            backgroundColor: '#201e24',
-                            color: '#fff',
+                            backgroundColor: 'var(--color-text-primary)',
+                            color: 'var(--color-text-inverse)',
                             borderRadius: 12,
                             border: 'none',
                             fontSize: 14,
@@ -111,7 +111,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                             width: 40,
                             height: 40,
                             borderRadius: 12,
-                            border: '1px solid #e8e6d9',
+                            border: '1px solid var(--color-border)',
                             backgroundColor: 'transparent',
                             display: 'flex',
                             alignItems: 'center',
@@ -119,7 +119,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                             cursor: 'pointer'
                         }}
                     >
-                        <XMarkIcon width={20} height={20} color="#71717a" />
+                        <XMarkIcon width={20} height={20} className="text-[var(--color-text-secondary)]" />
                     </button>
                 </div>
             </div>
@@ -129,7 +129,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 <MagnifyingGlassIcon 
                     width={20} 
                     height={20} 
-                    style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#a1a1aa' }} 
+                    style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} 
                 />
                 <input
                     type="text"
@@ -140,10 +140,11 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                         width: '100%',
                         padding: '16px 16px 16px 48px',
                         borderRadius: 16,
-                        border: '1px solid #e8e6d9',
+                        border: '1px solid var(--color-border)',
                         fontSize: 16,
                         outline: 'none',
-                        backgroundColor: '#fff',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        color: 'var(--color-text-primary)',
                         transition: 'border-color 0.2s'
                     }}
                 />
@@ -160,22 +161,22 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24 }}>
                         {filteredProjects.map((project) => (
-                            <motion.div
+                             <motion.div
                                 key={project.id}
                                 whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(0,0,0,0.05)' }}
                                 onClick={() => onSelectProject(project)}
                                 style={{
                                     padding: 24,
                                     borderRadius: 20,
-                                    border: '1px solid #e8e6d9',
-                                    backgroundColor: '#fff',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: 'var(--color-bg-surface)',
                                     cursor: 'pointer',
                                     position: 'relative'
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-                                    <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: '#f5f4f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <FolderIcon width={24} height={24} color="#4a4846" />
+                                    <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <FolderIcon width={24} height={24} className="text-[var(--color-text-secondary)]" />
                                     </div>
                                     <button
                                         onClick={(e) => handleDelete(e, project.id)}
@@ -186,11 +187,11 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                                         <TrashIcon width={16} height={16} color="#ef4444" />
                                     </button>
                                 </div>
-                                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#111', margin: '0 0 8px 0' }}>{project.name}</h3>
-                                <p style={{ fontSize: 13, color: '#71717a', margin: 0, wordBreak: 'break-all', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                <h3 style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 8px 0' }}>{project.name}</h3>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, wordBreak: 'break-all', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                     {project.path}
                                 </p>
-                                <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 4, color: '#6366f1', fontSize: 13, fontWeight: 600 }}>
+                                <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--color-accent)', fontSize: 13, fontWeight: 600 }}>
                                     Open Project <ArrowRightIcon width={14} height={14} />
                                 </div>
                             </motion.div>

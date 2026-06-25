@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "EverFern — Your autonomous AI workplace agent.",
   "author": "Everfern Community",
   "license": "MIT",
@@ -11,7 +11,7 @@
     "build:electron-ts": "tsc -p tsconfig.electron.json",
     "postbuild:electron-ts": "node -e \"const fs=require('fs'),path=require('path');const src='main/lib/migrations',dst='dist-electron/main/lib/migrations';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.sql')).forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dst,f)));console.log('[Build] SQL migrations copied to dist-electron');const pSrc='main/agent/prompts',pDst='dist-electron/main/agent/prompts';fs.mkdirSync(pDst,{recursive:true});fs.readdirSync(pSrc).filter(f=>f.endsWith('.md')).forEach(f=>fs.copyFileSync(path.join(pSrc,f),path.join(pDst,f)));console.log('[Build] Prompt files copied to dist-electron')\" && npm run zip:extension",
     "zip:extension": "node scripts/zip-extension.js",
-    "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=4 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
+    "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=16 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
     "build:next": "next build",
     "build:electron": "npm run build:electron-ts && electron-builder",
     "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
@@ -27,6 +27,13 @@
     "make": "electron-forge make"
   },
   "build": {
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Everfern-AI",
+        "repo": "Everfern"
+      }
+    ],
     "appId": "com.everfern.desktop",
     "productName": "EverFern",
     "copyright": "Copyright © 2026 EverFern",
@@ -121,6 +128,7 @@
     "@openuidev/react-lang": "^0.2.4",
     "@supabase/supabase-js": "^2.106.2",
     "@types/sqlite3": "^3.1.11",
+    "@xenova/transformers": "^2.17.2",
     "ansi-to-react": "^6.2.6",
     "better-sqlite3": "^12.8.0",
     "canvas": "^3.2.2",
@@ -129,7 +137,9 @@
     "clsx": "^2.1.1",
     "diff": "^8.0.4",
     "discord.js": "^14.14.1",
+    "electron-log": "^5.4.4",
     "electron-squirrel-startup": "^1.0.1",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^12.38.0",
     "html-dom-parser": "^8.0.0",
     "ibm-cloud-sdk-core": "^5.4.11",

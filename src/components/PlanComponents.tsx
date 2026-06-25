@@ -283,7 +283,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Started
                                                                         </div>
                                                                         <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
-                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Just now
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Just now
                                                                         </div>
                                                                     </div>
                                                                     <div className='flex items-center'>
@@ -291,7 +291,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>Agent
                                                                         </div>
                                                                         <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
-                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><circle cx="12" cy="8" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>Computer Use Agent
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2"><circle cx="12" cy="8" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>Computer Use Agent
                                                                         </div>
                                                                     </div>
                                                                     <div className='flex items-center'>
@@ -299,7 +299,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>Model
                                                                         </div>
                                                                         <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
-                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>gemma4:31b-cloud
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>gemma4:31b-cloud
                                                                         </div>
                                                                     </div>
                                                                     <div className='flex items-center'>

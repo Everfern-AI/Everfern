@@ -71,8 +71,8 @@ export const InlineVisualization: React.FC<InlineVisualizationProps> = ({
                 margin: "16px 0",
                 borderRadius: "16px",
                 overflow: "hidden",
-                border: "1px solid #e8e6d9",
-                backgroundColor: "#ffffff",
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg-surface)",
                 boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
                 display: "flex",
                 flexDirection: "column"
@@ -81,8 +81,8 @@ export const InlineVisualization: React.FC<InlineVisualizationProps> = ({
             {title && (
                 <div style={{
                     padding: "10px 16px",
-                    borderBottom: "1px solid #f0ede8",
-                    backgroundColor: "#faf9f7",
+                    borderBottom: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-subtle)",
                     display: "flex",
                     alignItems: "center",
                     gap: 8
@@ -94,7 +94,7 @@ export const InlineVisualization: React.FC<InlineVisualizationProps> = ({
                     <span style={{
                         fontSize: 12,
                         fontWeight: 600,
-                        color: "#201e24",
+                        color: "var(--color-text-primary)",
                         fontFamily: "'Figtree', system-ui, sans-serif",
                         letterSpacing: "-0.01em"
                     }}>

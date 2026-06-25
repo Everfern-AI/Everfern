@@ -66,11 +66,14 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
       const items = await fs.promises.readdir(currentPath);
       console.log(`[SkillsLoader] ${indent}   Found ${items.length} items`);
 
+      const IGNORE_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out', 'coverage', '.vscode', '.idea', '__pycache__', 'venv', '.env', 'target']);
+
       for (const item of items) {
         const itemPath = path.join(currentPath, item);
         const stat = await fs.promises.stat(itemPath);
 
         if (stat.isDirectory()) {
+          if (IGNORE_DIRS.has(item)) continue;
           console.log(`[SkillsLoader] ${indent}   📁 [DIR] ${item}`);
           await loadSkillFiles(itemPath, depth + 1);
         } else if (item === 'SKILL.md' || (item.endsWith('.md') && item.includes('SKILL'))) {
@@ -165,11 +168,14 @@ export function loadSkills(): Skill[] {
       const items = fs.readdirSync(currentPath);
       console.log(`[SkillsLoader] ${indent}   Found ${items.length} items`);
 
+      const IGNORE_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out', 'coverage', '.vscode', '.idea', '__pycache__', 'venv', '.env', 'target']);
+
       for (const item of items) {
         const itemPath = path.join(currentPath, item);
         const stat = fs.statSync(itemPath);
 
         if (stat.isDirectory()) {
+          if (IGNORE_DIRS.has(item)) continue;
           console.log(`[SkillsLoader] ${indent}   📁 [DIR] ${item}`);
           loadSkillFiles(itemPath, depth + 1);
         } else if (item === 'SKILL.md' || (item.endsWith('.md') && item.includes('SKILL'))) {

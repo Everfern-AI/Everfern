@@ -7,10 +7,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import WindowControls from "./components/WindowControls";
+import { useTheme } from "@/components/ThemeProvider";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const checkConfig = async () => {
@@ -51,11 +53,11 @@ export default function OnboardingPage() {
     checkConfig();
   }, [router]);
 
-  if (isChecking) return <div className="min-h-screen bg-[#171615]" />;
+  if (isChecking) return <div className="min-h-screen bg-[var(--color-bg-base)]" />;
 
   return (
     <main
-      className="flex flex-col items-center justify-center min-h-screen bg-[#f5f4f0] text-[#201e24]"
+      className="flex flex-col items-center justify-center min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]"
       style={{ fontFamily: "var(--font-sans)" }}
     >
       {/* Window Controls - Top Right */}
@@ -76,6 +78,7 @@ export default function OnboardingPage() {
           alt="EverFern Logo"
           width={72}
           height={72}
+          style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }}
         />
 
         {/* Title */}
@@ -85,7 +88,7 @@ export default function OnboardingPage() {
               fontSize: 44,
               fontWeight: 400,
               letterSpacing: "-0.035em",
-              color: "#201e24",
+              color: "var(--color-text-primary)",
               lineHeight: 1.15,
               margin: 0,
             }}
@@ -96,7 +99,7 @@ export default function OnboardingPage() {
           <p
             style={{
               fontSize: 15,
-              color: "#71717a",
+              color: "var(--color-text-tertiary)",
               fontWeight: 400,
               lineHeight: 1.6,
               margin: 0,
@@ -121,8 +124,8 @@ export default function OnboardingPage() {
               justifyContent: "center",
               width: "100%",
               padding: "14px 24px",
-              backgroundColor: "#201e24",
-              color: "#ffffff",
+              backgroundColor: "var(--color-text-primary)",
+              color: "var(--color-text-inverse)",
               borderRadius: "12px",
               fontWeight: 600,
               fontSize: "15px",

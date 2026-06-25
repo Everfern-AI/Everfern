@@ -43,7 +43,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                                     borderRadius: "8px 8px 0 0",
                                     padding: "6px 12px",
                                     fontSize: 11,
-                                    color: "#6b7280",
+                                    color: 'var(--color-text-tertiary)',
                                     fontFamily: "'JetBrains Mono', monospace",
                                     borderBottom: "1px solid #333",
                                 }}
@@ -90,7 +90,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         style={{
                             fontSize: 22,
                             fontWeight: 600,
-                            color: "#fff",
+                            color: 'var(--color-bg-surface)',
                             margin: "16px 0 8px",
                             fontFamily: "system-ui, sans-serif",
                         }}
@@ -126,7 +126,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         style={{
                             fontSize: 15,
                             fontWeight: 600,
-                            color: "#d1d5db",
+                            color: 'var(--color-border)',
                             margin: "12px 0 4px",
                         }}
                     >
@@ -149,7 +149,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         style={{
                             margin: "8px 0",
                             paddingLeft: 20,
-                            color: "#d1d5db",
+                            color: 'var(--color-border)',
                         }}
                     >
                         {items.map((item, i) => (

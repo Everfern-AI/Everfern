@@ -145,7 +145,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                                             padding: '6px 10px',
                                             borderRight: '1px solid rgba(255,255,255,0.05)',
                                             fontWeight: ri === 0 ? 600 : 'normal',
-                                            color: ri === 0 ? '#ffffff' : '#b0b0b5',
+                                            color: ri === 0 ? 'var(--color-bg-surface)' : '#b0b0b5',
                                             whiteSpace: 'nowrap',
                                             textOverflow: 'ellipsis',
                                             overflow: 'hidden',
@@ -183,7 +183,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                             <div key={idx} style={{
                                 fontSize: level === 1 ? 16 : level === 2 ? 14 : 13,
                                 fontWeight: 700,
-                                color: '#ffffff',
+                                color: 'var(--color-bg-surface)',
                                 marginTop: idx > 0 ? 8 : 2,
                                 marginBottom: 2
                             }} dangerouslySetInnerHTML={{ __html: formatInline(text) }} />
@@ -296,7 +296,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                         <div style={{
                             fontSize: 14,
                             fontWeight: 600,
-                            color: '#ffffff',
+                            color: 'var(--color-bg-surface)',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',

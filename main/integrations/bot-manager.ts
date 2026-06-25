@@ -113,8 +113,8 @@ export class BotIntegrationManager extends EventEmitter {
 
     // Initialize input validator
     this.inputValidator = createInputValidator(
-      config.validation.contentFilter,
-      config.validation.webhook
+      config.validation?.contentFilter,
+      config.validation?.webhook
     );
   }
 
@@ -471,7 +471,7 @@ export class BotIntegrationManager extends EventEmitter {
    * Validate webhook request
    */
   async validateWebhookRequest(payload: string, signature: string, timestamp?: string): Promise<boolean> {
-    if (!this.config.validation.enabled) {
+    if (!this.config.validation?.enabled) {
       return true; // Skip validation if disabled
     }
 
@@ -564,7 +564,7 @@ export class BotIntegrationManager extends EventEmitter {
 
     try {
       // Validate input if validation is enabled
-      if (this.config.validation.enabled) {
+      if (this.config.validation?.enabled) {
         console.log(`[BotManager] Validation enabled, validating message...`);
         const validationResult = await this.inputValidator.validateMessage(message);
 
@@ -613,7 +613,7 @@ export class BotIntegrationManager extends EventEmitter {
         metadata: {
           receivedAt: new Date(),
           platform: message.platform,
-          validated: this.config.validation.enabled,
+          validated: !!this.config.validation?.enabled,
           replyTargetId: message.metadata?.replyTargetId || message.id,
           sourceGuildId: message.metadata?.sourceGuildId,
           sourceChannelId: message.metadata?.sourceChannelId || message.chat.id,

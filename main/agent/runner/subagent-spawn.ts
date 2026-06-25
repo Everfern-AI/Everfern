@@ -19,6 +19,7 @@ import {
     sessionCompleted,
     sessionFailed
 } from '../sessions/session-lifecycle-events';
+import { resolvePromptPlaceholders } from './system-prompt';
 
 export const AGENT_TIMEOUTS: Record<AgentType, number> = {
     'web-explorer': 900000, // 15 minutes
@@ -77,6 +78,8 @@ export interface SpawnResult {
 export interface SubagentRunner {
     /** Session key of the currently executing sub-agent (for depth tracking in nested spawns). */
     currentAgentSessionKey?: string;
+    workspaceDir?: string;
+    projectId?: string;
 
     run(
         userInput: string | any[],
@@ -161,27 +164,25 @@ class SubagentSpawner {
             throw new Error('SubagentSpawner: No runner provided');
         }
 
-        // HARD GUARD: Sub-agents cannot spawn other agents.
-        // This catches ALL direct spawner.spawn() calls from graph nodes
-        // (web-explorer, swarm-orchestrator, etc.) that bypass the spawn_agent tool guard.
-        if (runner.currentAgentSessionKey) {
-            throw new Error('Sub-agents cannot spawn other agents. You are a sub-agent yourself. Complete the task using your own available tools.');
-        }
-
         const registry = getSubagentRegistry();
 
         // Compute depth using sponsorSessionKey if available.
         // When a sub-agent spawns another, it passes its own sessionKey as sponsorSessionKey.
         // The root spawns without sponsorSessionKey (depth = 0), so a root-spawned agent gets depth = 1.
         // A sub-agent-spawned agent gets depth = parentDepth + 1.
-        const sponsorEntry = options.sponsorSessionKey
-            ? registry.getBySessionKey(options.sponsorSessionKey)
+        const sponsorKey = options.sponsorSessionKey || (parentSessionId.startsWith('agent:') ? parentSessionId : undefined);
+        const sponsorEntry = sponsorKey
+            ? registry.getBySessionKey(sponsorKey)
             : undefined;
         const currentDepth = (sponsorEntry?.currentDepth || 0) + 1;
 
         // ENFORCE maxDepth per-agent: check the parent entry's maxDepth against currentDepth
         if (sponsorEntry && currentDepth > sponsorEntry.maxDepth) {
-            throw new Error(`Max spawn depth (${sponsorEntry.maxDepth}) reached for this agent. Cannot spawn deeper.`);
+            throw new Error(`Maximum spawn depth (${sponsorEntry.maxDepth}) exceeded`);
+        }
+
+        if (currentDepth > 4) {
+            throw new Error(`Maximum spawn depth (3) exceeded`);
         }
 
         // INJECT SUB-AGENT AWARENESS PROMPT
@@ -191,8 +192,8 @@ class SubagentSpawner {
 - **Role:** You are a specialized SUB-AGENT spawned for a specific mission. Complete ONLY what was asked.
 - **Identity:** You are working as part of an agent army for your parent session: ${parentSessionId}.
 - **Nesting Depth:** Your current nesting level is ${currentDepth}.
-- **NO SPAWNING:** You MUST NOT spawn any sub-agents. You do NOT have the spawn_agent tool. Complete the task yourself using your own tools.
-- **NO DELEGATION:** Do NOT try to delegate to other agents. Do NOT try to launch web-explorer, coding-specialist, or any other specialist. YOU are the specialist.
+- **SPAWNING RULES:** You can spawn nested sub-agents (using spawn_agent or spawn_swarm) ONLY if your current nesting depth (${currentDepth}) is less than 4. Otherwise, you must complete the task yourself using your own tools.
+- **NO DELEGATION:** Do NOT try to delegate to other agents unnecessarily. Do NOT try to launch web-explorer, coding-specialist, or any other specialist unless independent work can proceed in parallel. YOU are the specialist.
 - **FOCUSED EXECUTION:** Complete ONLY the task you were given. Do not explore, research, or investigate beyond the scope of your assignment.
 - **NOT_FOUND PROTOCOL:** If you cannot find or accomplish what was requested, report back clearly: "NOT_FOUND: [specific reason]". Do NOT waste steps trying alternative approaches — just report what failed and why.
 - **EFFICIENT REPORTING:** When done, return a clear, structured report of what you found/accomplished. Include specific details, not vague summaries.
@@ -200,6 +201,13 @@ class SubagentSpawner {
 \n`;
         if (systemPrompt) {
             systemPrompt = subagentAwareness + systemPrompt;
+            systemPrompt = await resolvePromptPlaceholders(
+                systemPrompt,
+                process.platform,
+                parentSessionId,
+                [],
+                projectId
+            );
         }
 
         if (currentDepth > this.maxGlobalDepth) {
@@ -250,7 +258,18 @@ class SubagentSpawner {
             abort: () => registry.abort(agentId)
         };
 
-        const completionPromise = this.runSubagent(spawnedAgent, runner, model, systemPrompt, parentHistory);
+        // Clone the runner dynamically using its constructor to isolate session states
+        let subRunner: SubagentRunner;
+        if (runner.constructor && runner.constructor !== Object) {
+            subRunner = new (runner.constructor as any)((runner as any).client, (runner as any).config);
+            subRunner.workspaceDir = (runner as any).workspaceDir;
+            subRunner.projectId = (runner as any).projectId;
+        } else {
+            subRunner = Object.create(runner);
+        }
+        subRunner.currentAgentSessionKey = sessionKey;
+
+        const completionPromise = this.runSubagent(spawnedAgent, subRunner, model, systemPrompt, parentHistory);
         spawnedAgent.completion = completionPromise;
 
         return spawnedAgent;
@@ -420,16 +439,30 @@ class SubagentSpawner {
                     // If success, break out of retry loop
                     break;
                 } catch (err: any) {
-                    // ... (rest of catch block)
+                    console.warn(`[SubagentSpawner] Attempt ${retries + 1} failed for agent ${agent.agentId}:`, err);
+                    retries++;
+                    if (retries > MAX_RETRIES) {
+                        throw err;
+                    }
                 }
             }
 
             registry.complete(agent.agentId, finalResponse);
-
-            // ... (rest of successful completion)
+            sessionCompleted(agent.sessionKey, { result: finalResponse });
+            emitLifecycle(agent.parentSessionId, 'agent_completed', {
+                agentId: agent.agentId,
+                result: finalResponse.substring(0, 100)
+            });
 
         } catch (error) {
-            // ... (rest of error handling)
+            const errMsg = error instanceof Error ? error.message : String(error);
+            console.error(`[SubagentSpawner] Agent ${agent.agentId} failed:`, error);
+            registry.complete(agent.agentId, undefined, errMsg);
+            sessionFailed(agent.sessionKey, { error: errMsg });
+            emitLifecycle(agent.parentSessionId, 'agent_failed', {
+                agentId: agent.agentId,
+                error: errMsg
+            });
         } finally {
             this.releaseSlot();
             console.log(`[SubagentSpawner] 🏁 Agent ${agent.agentId} released execution slot. Active: ${this.activeAgents}`);

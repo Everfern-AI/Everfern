@@ -130,7 +130,7 @@ export default function SearchPopup({
                             position: 'fixed',
                             inset: 0,
                             margin: 'auto',
-                            backgroundColor: '#f5f4f0',
+                            backgroundColor: 'var(--color-bg-surface)',
                             borderRadius: 16,
                             border: 'none',
                             boxShadow: '0 25px 50px rgba(0, 0, 0, 0.2)',
@@ -154,7 +154,7 @@ export default function SearchPopup({
                                             left: 12,
                                             top: '50%',
                                             transform: 'translateY(-50%)',
-                                            color: '#8a8886',
+                                            color: 'var(--color-text-tertiary)',
                                         }}
                                         width={18}
                                         height={18}
@@ -178,15 +178,15 @@ export default function SearchPopup({
                                             paddingLeft: 40,
                                             paddingRight: 12,
                                             borderRadius: 12,
-                                            border: '1px solid #e8e6d9',
-                                            backgroundColor: '#ffffff',
+                                            border: '1px solid var(--color-border)',
+                                            backgroundColor: 'var(--color-bg-subtle)',
                                             fontSize: 15,
-                                            color: '#111111',
+                                            color: 'var(--color-text-primary)',
                                             outline: 'none',
                                             transition: 'border-color 0.2s',
                                         }}
-                                        onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = '#d4cfc3')}
-                                        onBlur={(e) => ((e.currentTarget as HTMLElement).style.borderColor = '#e8e6d9')}
+                                        onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border-strong)')}
+                                        onBlur={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)')}
                                     />
                                 </div>
                                 <button
@@ -201,16 +201,16 @@ export default function SearchPopup({
                                         border: 'none',
                                         borderRadius: 10,
                                         cursor: 'pointer',
-                                        color: '#8a8886',
+                                        color: 'var(--color-text-secondary)',
                                         transition: 'all 0.2s',
                                     }}
                                     onMouseEnter={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(0, 0, 0, 0.04)';
-                                        (e.currentTarget as HTMLElement).style.color = '#111111';
+                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover)';
+                                        (e.currentTarget as HTMLElement).style.color = 'var(--color-text-primary)';
                                     }}
                                     onMouseLeave={(e: React.MouseEvent) => {
                                         (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                                        (e.currentTarget as HTMLElement).style.color = '#8a8886';
+                                        (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)';
                                     }}
                                 >
                                     <XMarkIcon width={18} height={18} />
@@ -225,7 +225,7 @@ export default function SearchPopup({
                                     justifyContent: 'center', 
                                     marginTop: 8,
                                     fontSize: 12,
-                                    color: '#8a8886'
+                                    color: 'var(--color-text-tertiary)'
                                 }}>
                                     <svg className="animate-spin" style={{ marginRight: 6, height: 12, width: 12 }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -239,7 +239,7 @@ export default function SearchPopup({
                         {/* Chat List */}
                         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
                             {groupedChats.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: 40, color: '#8a8886' }}>
+                                <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>
                                     <p style={{ fontSize: 14, margin: 0 }}>
                                         {searchValue ? 'No chats found' : 'No chats yet'}
                                     </p>
@@ -252,7 +252,7 @@ export default function SearchPopup({
                                             style={{
                                                 fontSize: 11,
                                                 fontWeight: 700,
-                                                color: '#8a8886',
+                                                color: 'var(--color-text-tertiary)',
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.05em',
                                                 marginBottom: 8,
@@ -276,7 +276,7 @@ export default function SearchPopup({
                                                         border: 'none',
                                                         backgroundColor:
                                                             activeConversationId === chat.id
-                                                                ? 'rgba(32, 30, 36, 0.08)'
+                                                                ? 'var(--color-bg-selected)'
                                                                 : 'transparent',
                                                         cursor: 'pointer',
                                                         textAlign: 'left',
@@ -286,11 +286,13 @@ export default function SearchPopup({
                                                         gap: 3,
                                                     }}
                                                     onMouseEnter={(e: React.MouseEvent) => {
-                                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(32, 30, 36, 0.06)';
+                                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover)';
                                                     }}
                                                     onMouseLeave={(e: React.MouseEvent) => {
                                                         if (activeConversationId !== chat.id) {
                                                             (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                                                        } else {
+                                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-selected)';
                                                         }
                                                     }}
                                                 >
@@ -298,7 +300,7 @@ export default function SearchPopup({
                                                         style={{
                                                             fontSize: 14,
                                                             fontWeight: 500,
-                                                            color: '#111111',
+                                                            color: 'var(--color-text-primary)',
                                                             overflow: 'hidden',
                                                             textOverflow: 'ellipsis',
                                                             whiteSpace: 'nowrap',
@@ -309,7 +311,7 @@ export default function SearchPopup({
                                                     <div
                                                         style={{
                                                             fontSize: 12,
-                                                            color: '#8a8886',
+                                                            color: 'var(--color-text-secondary)',
                                                             overflow: 'hidden',
                                                             textOverflow: 'ellipsis',
                                                             whiteSpace: 'nowrap',

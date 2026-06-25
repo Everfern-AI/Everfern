@@ -26,10 +26,12 @@ function imageMimeFromPath(filePath: string): string | null {
 export function registerSystemHandlers() {
   ipcMain.handle('system:checkWSL', async () => {
     try {
-      const { execSync } = require('child_process');
-      execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 5000 });
-      const list = execSync('wsl.exe --list --quiet', { encoding: 'utf8', timeout: 5000 });
-      return list && list.trim().length > 0;
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      await execAsync('wsl.exe -e echo ok', { timeout: 5000 });
+      const { stdout } = await execAsync('wsl.exe --list --quiet', { encoding: 'utf8', timeout: 5000 });
+      return stdout && stdout.trim().length > 0;
     } catch {
       return false;
     }
@@ -37,8 +39,10 @@ export function registerSystemHandlers() {
 
   ipcMain.handle('system:checkDocker', async () => {
     try {
-      const { execSync } = require('child_process');
-      execSync('docker info', { stdio: 'ignore', timeout: 5000 });
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      await execAsync('docker info', { timeout: 5000 });
       return true;
     } catch {
       return false;
@@ -56,10 +60,12 @@ export function registerSystemHandlers() {
         'Start-Process wsl.exe -ArgumentList "--install -d Ubuntu --no-launch" -Verb RunAs -Wait'
       ], { shell: false });
 
-      proc.on('close', (code: number | null) => {
+      proc.on('close', async (code: number | null) => {
         try {
-          const { execSync } = require('child_process');
-          execSync('wsl.exe -d Ubuntu -e echo ok', { stdio: 'ignore', timeout: 5000 });
+          const { exec } = require('child_process');
+          const { promisify } = require('util');
+          const execAsync = promisify(exec);
+          await execAsync('wsl.exe -d Ubuntu -e echo ok', { timeout: 5000 });
           resolve({ success: true });
         } catch {
           resolve({ success: true, warning: 'Reboot may be required' });
@@ -175,14 +181,16 @@ export function registerSystemHandlers() {
       // Clone to Linux VM (WSL) for fast VM-side access — skip files >1GB
       if (stats.size <= ONE_GB) {
         try {
-          const { execSync } = require('child_process');
+          const { exec } = require('child_process');
+          const { promisify } = require('util');
+          const execAsync = promisify(exec);
           // First check if WSL is available
           let wslCmd = 'wsl.exe';
           try {
-            execSync('where wsl.exe', { stdio: 'ignore', timeout: 3000 });
+            await execAsync('where wsl.exe', { timeout: 3000 });
           } catch {
             try {
-              execSync('wsl -e echo ok', { stdio: 'ignore', timeout: 5000 });
+              await execAsync('wsl -e echo ok', { timeout: 5000 });
               wslCmd = 'wsl';
             } catch {
               throw new Error('WSL not available, skipping clone');
@@ -196,7 +204,7 @@ export function registerSystemHandlers() {
           const wslSourcePath = `/mnt/${driveLetter}/${wslRelPath}`;
           console.log(`[IPC] Cloning to WSL: ${wslSourcePath} -> ${wslAttachmentsDir}/`);
           // Create dir and copy via WSL
-          execSync(`${wslCmd} --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+          await execAsync(`${wslCmd} --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
           console.log('[IPC] File cloned to WSL:', `${wslAttachmentsDir}/${safeFileName}`);
         } catch (cloneErr: any) {
           console.warn(`[IPC] Failed to clone file to WSL (non-fatal): ${cloneErr.message}`);
@@ -286,22 +294,24 @@ export function registerSystemHandlers() {
     return 'ollama';
   }
 
-  ipcMain.handle('system:ollama-status', () => {
+  ipcMain.handle('system:ollama-status', async () => {
     try {
-      const { execSync } = require('child_process');
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
       const bin = getOllamaBinary();
 
       // Check if Ollama is installed
       try {
-        execSync(`${bin} -v`, { stdio: 'ignore' });
+        await execAsync(`${bin} -v`);
       } catch {
         return { installed: false, modelInstalled: false };
       }
 
       // Check if the specific model is pulled
       try {
-        const list = execSync(`"${bin}" list`, { encoding: 'utf8' });
-        const modelInstalled = list.includes('qwen3-vl:2b');
+        const { stdout } = await execAsync(`"${bin}" list`, { encoding: 'utf8' });
+        const modelInstalled = stdout.includes('qwen3-vl:2b');
         return { installed: true, modelInstalled };
       } catch {
         return { installed: true, modelInstalled: false };
@@ -747,7 +757,9 @@ export function registerSystemHandlers() {
     if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
 
     try {
-      const { execSync } = require('child_process');
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
       const wslUsername = (os.userInfo().username || 'user').toLowerCase();
       const wslAttachmentsDir = `/everfern`;
       const safeFileName = path.basename(filePath);
@@ -760,7 +772,7 @@ export function registerSystemHandlers() {
       const wslRelPath = filePath.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
       const wslSourcePath = `/mnt/${driveLetter}/${wslRelPath}`;
 
-      execSync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+      await execAsync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
       console.log('[IPC] Attachment cloned to Linux VM:', existingTarget);
       return { success: true };
     } catch (err: any) {

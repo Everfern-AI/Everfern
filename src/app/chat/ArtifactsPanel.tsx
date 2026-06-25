@@ -42,7 +42,7 @@ export function MarkdownViewer({ content }: { content: string }) {
 
         const formatInline = (text: string) => {
             let f = text;
-            f = f.replace(/`(.*?)`/g, '<code style="background-color: #f1f0ea; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #0891b2;">$1</code>');
+            f = f.replace(/`(.*?)`/g, '<code style="background-color: var(--color-bg-subtle); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: var(--color-accent);">$1</code>');
             f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
             f = f.replace(/__(.*?)\__/g, '<strong>$1</strong>');
             f = f.replace(/\*(.*?)\*/g, '<em>$1</em>');
@@ -86,15 +86,15 @@ export function MarkdownViewer({ content }: { content: string }) {
             }
 
             if (line.startsWith('# ')) {
-                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '20px 0 10px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 6, color: '#111' }}>{line.substring(2)}</h1>);
+                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '20px 0 10px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 6, color: 'var(--color-text-primary)' }}>{line.substring(2)}</h1>);
                 continue;
             }
             if (line.startsWith('## ')) {
-                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '18px 0 8px 0', borderBottom: '1px solid #e8e6d9', paddingBottom: 4, color: '#222' }}>{line.substring(3)}</h2>);
+                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '18px 0 8px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 4, color: 'var(--color-text-primary)' }}>{line.substring(3)}</h2>);
                 continue;
             }
             if (line.startsWith('### ')) {
-                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '16px 0 6px 0', color: '#333' }}>{line.substring(4)}</h3>);
+                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '16px 0 6px 0', color: 'var(--color-text-primary)' }}>{line.substring(4)}</h3>);
                 continue;
             }
 
@@ -115,15 +115,15 @@ export function MarkdownViewer({ content }: { content: string }) {
                             <thead>
                                 <tr>
                                     {headers.map((h, j) => (
-                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid rgba(0, 0, 0, 0.12)', textAlign: 'left', color: '#717171', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {rows.map((row, ri) => (
-                                    <tr key={ri} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                                    <tr key={ri} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                         {row.map((cell, ci) => (
-                                            <td key={ci} style={{ padding: '8px 12px', color: '#4a4846' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                                            <td key={ci} style={{ padding: '8px 12px', color: 'var(--color-text-secondary)' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
                                         ))}
                                     </tr>
                                 ))}
@@ -137,7 +137,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
                 const content = line.trim().substring(2);
                 elements.push(
-                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: '#333' }}
+                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: 'var(--color-text-primary)' }}
                         dangerouslySetInnerHTML={{ __html: formatInline(content) }}
                     />
                 );
@@ -145,7 +145,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             }
 
             if (line.trim() === '---') {
-                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid #e8e6d9', margin: '20px 0' }} />);
+                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '20px 0' }} />);
                 continue;
             }
 
@@ -155,7 +155,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             }
 
             elements.push(
-                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.6, margin: '8px 0', color: '#333' }}
+                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.6, margin: '8px 0', color: 'var(--color-text-primary)' }}
                     dangerouslySetInnerHTML={{ __html: formatInline(line) }}
                 />
             );
@@ -165,7 +165,7 @@ export function MarkdownViewer({ content }: { content: string }) {
     };
 
     return (
-        <div style={{ padding: 28, overflowY: 'auto', height: '100%', fontFamily: 'Inter, sans-serif', backgroundColor: '#ffffff', borderTopLeftRadius: 8 }}>
+        <div style={{ padding: 28, overflowY: 'auto', height: '100%', fontFamily: 'Inter, sans-serif', backgroundColor: 'var(--color-bg-surface)', borderTopLeftRadius: 8 }}>
             {renderMarkdown(content)}
         </div>
     );
@@ -193,15 +193,15 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
     const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => String.fromCharCode(65 + i));
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#f9f8f4', minWidth: 0, minHeight: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#ffffff' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#0891b2', fontStyle: 'italic', paddingRight: 8 }}>fx</span>
-                <div style={{ borderLeft: '1px solid #e8e6d9', height: 16 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-base)', minWidth: 0, minHeight: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent)', fontStyle: 'italic', paddingRight: 8 }}>fx</span>
+                <div style={{ borderLeft: '1px solid var(--color-border)', height: 16 }} />
                 <input 
                     type="text" 
                     readOnly
                     value={parsedData[1] ? `=SUM(${columns[3]}2:${columns[3]}${parsedData.length})` : ''} 
-                    style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: '#333', background: 'transparent', fontWeight: 500 }} 
+                    style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: 'var(--color-text-primary)', background: 'transparent', fontWeight: 500 }} 
                 />
             </div>
 
@@ -212,25 +212,25 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                         height: 10px;
                     }
                     .excel-scrollable::-webkit-scrollbar-track {
-                        background: #f0efe9;
-                        border-left: 1px solid #e8e6d9;
-                        border-top: 1px solid #e8e6d9;
+                        background: var(--color-bg-subtle);
+                        border-left: 1px solid var(--color-border);
+                        border-top: 1px solid var(--color-border);
                     }
                     .excel-scrollable::-webkit-scrollbar-thumb {
-                        background: #d3d3d0;
+                        background: var(--color-border-strong);
                         border-radius: 5px;
-                        border: 2.5px solid #f0efe9;
+                        border: 2.5px solid var(--color-bg-subtle);
                     }
                     .excel-scrollable::-webkit-scrollbar-thumb:hover {
-                        background: #b0b0ad;
+                        background: var(--color-text-tertiary);
                     }
                 `}} />
-                <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 12, backgroundColor: '#ffffff' }}>
+                <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 12, backgroundColor: 'var(--color-bg-surface)' }}>
                     <thead>
                         <tr>
-                            <th style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', width: 45, height: 28, position: 'sticky', top: 0, left: 0, zIndex: 10 }}></th>
+                            <th style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', width: 45, height: 28, position: 'sticky', top: 0, left: 0, zIndex: 10 }}></th>
                             {columns.map((col, i) => (
-                                <th key={i} style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', fontWeight: 600, color: '#4a4a40', position: 'sticky', top: 0, zIndex: 9, minWidth: 120, height: 28, textAlign: 'center' }}>
+                                <th key={i} style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', fontWeight: 600, color: 'var(--color-text-secondary)', position: 'sticky', top: 0, zIndex: 9, minWidth: 120, height: 28, textAlign: 'center' }}>
                                     {col}
                                 </th>
                             ))}
@@ -239,26 +239,26 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                     <tbody>
                         {parsedData.map((row, rowIndex) => (
                             <tr key={rowIndex}>
-                                <td style={{ backgroundColor: '#f0efe9', border: '1px solid #e8e6d9', fontWeight: 600, color: '#4a4a40', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
+                                <td style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
                                     {rowIndex + 1}
                                 </td>
                                 {row.map((cell, cellIndex) => (
                                     <td 
                                         key={cellIndex} 
                                         style={{ 
-                                            border: '1px solid #e8e6d9', 
+                                            border: '1px solid var(--color-border)', 
                                             padding: '6px 12px', 
                                             whiteSpace: 'nowrap',
                                             fontWeight: rowIndex === 0 ? 600 : 'normal',
-                                            backgroundColor: rowIndex === 0 ? '#fbfbfa' : cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? 'rgba(239, 68, 68, 0.05)' : cell.includes('Under Budget') || cell === 'Low' ? 'rgba(16, 185, 129, 0.05)' : '#ffffff',
-                                            color: cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? '#dc2626' : cell.includes('Under Budget') || cell === 'Low' ? '#059669' : '#111'
+                                            backgroundColor: rowIndex === 0 ? 'var(--color-bg-subtle)' : cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? 'rgba(239, 68, 68, 0.05)' : cell.includes('Under Budget') || cell === 'Low' ? 'rgba(16, 185, 129, 0.05)' : 'var(--color-bg-surface)',
+                                            color: cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' ? '#dc2626' : cell.includes('Under Budget') || cell === 'Low' ? '#059669' : 'var(--color-text-primary)'
                                         }}
                                     >
                                         {cell}
                                     </td>
                                 ))}
                                 {Array.from({ length: Math.max(0, columns.length - row.length) }).map((_, i) => (
-                                    <td key={row.length + i} style={{ border: '1px solid #e8e6d9', backgroundColor: '#ffffff' }} />
+                                    <td key={row.length + i} style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }} />
                                 ))}
                             </tr>
                         ))}
@@ -313,10 +313,10 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', fontSize: 13, backgroundColor: '#1a1a17', width: '100%', minHeight: 400 }}>
+            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-subtle)', width: '100%', minHeight: 400 }}>
                 <div style={{ textAlign: 'center' }}>
-                    <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 500, color: '#aaa' }}>Parsing Presentation Slides...</div>
-                    <div style={{ fontSize: 12, color: '#777' }}>Extracting text and shapes from the PPTX structure</div>
+                    <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)' }}>Parsing Presentation Slides...</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Extracting text and shapes from the PPTX structure</div>
                 </div>
             </div>
         );
@@ -324,10 +324,10 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
 
     if (error || slides.length === 0) {
         return (
-            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ef4444', fontSize: 14, backgroundColor: '#1a1a17', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
+            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-error)', backgroundColor: 'var(--color-bg-subtle)', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
                 <span style={{ fontSize: 32, marginBottom: 16 }}>⚠️</span>
-                <div style={{ fontWeight: 600, marginBottom: 8, color: '#f87171' }}>Failed to View PowerPoint</div>
-                <div style={{ fontSize: 12, color: '#a1a1aa', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-error)' }}>Failed to View PowerPoint</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
             </div>
         );
     }
@@ -335,18 +335,18 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
     const currentSlide = slides[activeSlide] || { title: "", subtitle: "", points: [] };
 
     return (
-        <div style={{ display: 'flex', height: '100%', backgroundColor: '#1a1a17', width: '100%', minWidth: 0, minHeight: 0 }}>
+        <div style={{ display: 'flex', height: '100%', backgroundColor: 'var(--color-bg-base)', width: '100%', minWidth: 0, minHeight: 0 }}>
             {/* Sidebar with slide previews */}
-            <div style={{ width: 180, borderRight: '1px solid #2d2d27', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto', flexShrink: 0 }}>
+            <div style={{ width: 180, borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto', flexShrink: 0 }}>
                 {slides.map((slide, index) => (
                     <div 
                         key={index}
                         onClick={() => setActiveSlide(index)}
                         style={{
-                            border: `2px solid ${activeSlide === index ? '#0891b2' : '#333'}`,
+                            border: `2px solid ${activeSlide === index ? 'var(--color-accent)' : 'var(--color-border)'}`,
                             borderRadius: 6,
                             padding: 8,
-                            backgroundColor: '#23231f',
+                            backgroundColor: 'var(--color-bg-surface)',
                             cursor: 'pointer',
                             aspectRatio: '16/9',
                             display: 'flex',
@@ -356,8 +356,8 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                             flexShrink: 0
                         }}
                     >
-                        <span style={{ fontSize: 9, color: activeSlide === index ? '#0891b2' : '#888', fontWeight: 600 }}>Slide {index + 1}</span>
-                        <div style={{ fontSize: 8, color: '#ccc', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 9, color: activeSlide === index ? 'var(--color-accent)' : 'var(--color-text-tertiary)', fontWeight: 600 }}>Slide {index + 1}</span>
+                        <div style={{ fontSize: 8, color: 'var(--color-text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {slide.title || `Slide ${index + 1}`}
                         </div>
                     </div>
@@ -370,8 +370,8 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                     width: '100%',
                     maxWidth: 620,
                     aspectRatio: '16/9',
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 16px 40px rgba(0,0,0,0.3)',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    boxShadow: '0 16px 40px var(--color-bg-overlay)',
                     borderRadius: 8,
                     padding: '28px 40px',
                     display: 'flex',
@@ -381,11 +381,11 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                     boxSizing: 'border-box'
                 }}>
                     <div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: '#111', borderBottom: '2px solid #0891b2', paddingBottom: 6, wordBreak: 'break-word' }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)', borderBottom: '2px solid var(--color-accent)', paddingBottom: 6, wordBreak: 'break-word' }}>
                             {currentSlide.title || "Untitled Slide"}
                         </div>
                         {currentSlide.subtitle && (
-                            <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic', wordBreak: 'break-word' }}>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, fontStyle: 'italic', wordBreak: 'break-word' }}>
                                 {currentSlide.subtitle}
                             </div>
                         )}
@@ -394,13 +394,13 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '14px 0', flex: 1, justifyContent: 'center', overflowY: 'auto' }}>
                         {currentSlide.points.map((pt, i) => (
                             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                                <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#0891b2', marginTop: 6, flexShrink: 0 }} />
-                                <div style={{ fontSize: 13, color: '#222', lineHeight: 1.4, wordBreak: 'break-word' }}>{pt}</div>
+                                <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: 'var(--color-accent)', marginTop: 6, flexShrink: 0 }} />
+                                <div style={{ fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{pt}</div>
                             </div>
                         ))}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#888', borderTop: '1px solid #eee', paddingTop: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: 'var(--color-text-tertiary)', borderTop: '1px solid var(--color-border)', paddingTop: 6 }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{filename}</span>
                         <span>Slide {activeSlide + 1} of {slides.length}</span>
                     </div>
@@ -413,9 +413,9 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                         style={{
                             padding: '4px 14px',
                             borderRadius: 6,
-                            border: '1px solid #444',
-                            backgroundColor: '#2d2d27',
-                            color: activeSlide === 0 ? '#555' : '#fff',
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            color: activeSlide === 0 ? 'var(--color-text-placeholder)' : 'var(--color-text-primary)',
                             cursor: activeSlide === 0 ? 'not-allowed' : 'pointer',
                             fontSize: 12,
                             fontWeight: 600
@@ -423,7 +423,7 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                     >
                         Prev
                     </button>
-                    <span style={{ fontSize: 12, color: '#aaa', fontWeight: 500 }}>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                         {activeSlide + 1} / {slides.length}
                     </span>
                     <button 
@@ -432,9 +432,9 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
                         style={{
                             padding: '4px 14px',
                             borderRadius: 6,
-                            border: '1px solid #444',
-                            backgroundColor: '#2d2d27',
-                            color: activeSlide === slides.length - 1 ? '#555' : '#fff',
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            color: activeSlide === slides.length - 1 ? 'var(--color-text-placeholder)' : 'var(--color-text-primary)',
                             cursor: activeSlide === slides.length - 1 ? 'not-allowed' : 'pointer',
                             fontSize: 12,
                             fontWeight: 600
@@ -459,7 +459,7 @@ const getSyntaxHighlightingColors = (language: string, token: string): string =>
         json: { key: '#0891b2', string: '#16a34a', number: '#2563eb', boolean: '#d946ef' },
         sql: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886' },
     };
-    return colorMap[language]?.[token] || '#201e24';
+    return colorMap[language]?.[token] || 'var(--color-text-primary)';
 };
 
 // Detect language from filename
@@ -523,13 +523,13 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
 
     const highlightLine = (line: string): React.ReactNode[] => {
         if (!colors || Object.keys(colors).length === 0) {
-            return [<span key={line} style={{ color: '#201e24' }}>{line}</span>];
+            return [<span key={line} style={{ color: 'var(--color-text-primary)' }}>{line}</span>];
         }
 
         // Comment detection
         const commentMatch = line.match(/^(\s*)(#|\/\/|\/\*|<!--)(.*)/);
         if (commentMatch) {
-            return [<span key={line} style={{ color: colors.comment || '#8a8886' }}>{line}</span>];
+            return [<span key={line} style={{ color: colors.comment || 'var(--color-text-tertiary)' }}>{line}</span>];
         }
 
         const result: React.ReactNode[] = [];
@@ -559,7 +559,7 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
             }
             const colorMap: Record<string, string> = { string: colors.string, keyword: colors.keyword, number: colors.number };
             const type = (match as any).type as 'string' | 'keyword' | 'number';
-            tokens.push({ type, value: match[0], color: colorMap[type] || '#201e24' });
+            tokens.push({ type, value: match[0], color: colorMap[type] || 'var(--color-text-primary)' });
             lastIndex = match.index! + match[0].length;
         });
 
@@ -568,7 +568,7 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
         }
 
         return tokens.map((token, idx) => (
-            <span key={idx} style={{ color: token.color || '#201e24' }}>
+            <span key={idx} style={{ color: token.color || 'var(--color-text-primary)' }}>
                 {token.value}
             </span>
         )) || [<span key={line}>{line}</span>];
@@ -577,7 +577,7 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
     return (
         <>
             {lines.map((line, idx) => (
-                <div key={idx} style={{ color: '#201e24', lineHeight: 1.6 }}>
+                <div key={idx} style={{ color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
                     {highlightLine(line)}
                 </div>
             ))}
@@ -885,19 +885,19 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                     style={{
                         position: "fixed",
                         top: 0, left: 0, right: 0, bottom: 0,
-                        backgroundColor: "#fcfcfb",
+                        backgroundColor: "var(--color-bg-base)",
                         zIndex: 9999,
                         display: "flex",
                         flexDirection: "column",
-                        color: "#201e24",
+                        color: "var(--color-text-primary)",
                         overflowY: "auto",
                         padding: "60px 80px"
                     }}
                 >
                     <button
                         onClick={onClose}
-                        style={{ position: "absolute", top: 30, right: 40, background: "transparent", border: "none", color: "#a1a1aa", cursor: "pointer", padding: 8, borderRadius: "50%" }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"}
+                        style={{ position: "absolute", top: 30, right: 40, background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     >
                         <XMarkIcon width={24} height={24} />
@@ -917,8 +917,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 style={{ 
                                     alignSelf: 'flex-start',
                                     background: "transparent", 
-                                    border: "1px solid #e8e6d9", 
-                                    color: "#111111", 
+                                    border: "1px solid var(--color-border)", 
+                                    color: "var(--color-text-primary)", 
                                     borderRadius: 8, 
                                     padding: "6px 16px", 
                                     cursor: "pointer", 
@@ -927,7 +927,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     marginBottom: 16,
                                     transition: "all 0.2s"
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                             >
                                 {"\u2190"} Back
@@ -936,7 +936,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             {/* Filename and path */}
                             <div style={{ marginBottom: 8 }}>
                                 <h1 style={{ margin: "0 0 4px", fontSize: 28, fontWeight: 600 }}>{selectedCode.name}</h1>
-                                <p style={{ margin: 0, fontSize: 12, color: "#8a8886", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: "break-all" }}>{artifactPath}</p>
+                                <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: "break-all" }}>{artifactPath}</p>
                             </div>
 
                             {/* Toolbar */}
@@ -944,8 +944,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 {!isPlanFile && (
                                     <button
                                         onClick={() => setIsEditing(v => !v)}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: isEditing ? "rgba(0,0,0,0.05)" : "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                        onMouseEnter={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                        style={{ display: "flex", alignItems: "center", gap: 6, background: isEditing ? "var(--color-bg-selected)" : "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                        onMouseEnter={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
                                         onMouseLeave={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "transparent"; }}
                                     >
                                         <PencilSquareIcon width={14} height={14} />
@@ -956,8 +956,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     <>
                                     <button
                                         onClick={handleDownload}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
                                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                                         title="Download artifact"
                                     >
@@ -970,8 +970,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         {/* Main open-in-default button */}
                                         <button
                                             onClick={handleOpenInDefault}
-                                            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid #e8e6d9", borderRight: "none", color: "#111111", borderRadius: "8px 0 0 8px", padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--color-border)", borderRight: "none", color: "var(--color-text-primary)", borderRadius: "8px 0 0 8px", padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
                                             onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                                             title="Open in default app"
                                         >
@@ -988,8 +988,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 setShowAppDropdown(next);
                                                 if (next && openApps.length === 0) handleFetchApps();
                                             }}
-                                            style={{ display: "flex", alignItems: "center", background: "transparent", border: "1px solid #e8e6d9", color: "#111111", borderRadius: "0 8px 8px 0", padding: "6px 8px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; }}
+                                            style={{ display: "flex", alignItems: "center", background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: "0 8px 8px 0", padding: "6px 8px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
                                             onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                                             title="Choose app to open with"
                                         >
@@ -1022,23 +1022,23 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                         top: 'calc(100% + 6px)',
                                                         left: 0,
                                                         zIndex: 9999,
-                                                        backgroundColor: '#fff',
-                                                        border: '1px solid #e8e6d9',
+                                                        backgroundColor: 'var(--color-bg-elevated)',
+                                                        border: '1px solid var(--color-border)',
                                                         borderRadius: 12,
-                                                        boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                                                        boxShadow: '0 8px 32px var(--color-bg-overlay)',
                                                         minWidth: 220,
                                                         overflow: 'hidden',
                                                         padding: '6px 0',
                                                     }}
                                                 >
-                                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                                         Open with
                                                     </div>
 
                                                     {openAppsLoading ? (
-                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: '#8a8886' }}>Detecting apps…</div>
+                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--color-text-tertiary)' }}>Detecting apps…</div>
                                                     ) : openApps.length === 0 ? (
-                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: '#8a8886' }}>No apps detected</div>
+                                                        <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--color-text-tertiary)' }}>No apps detected</div>
                                                     ) : openApps.map(app => (
                                                         <button
                                                             key={app.path}
@@ -1053,17 +1053,17 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                                 border: 'none',
                                                                 cursor: 'pointer',
                                                                 fontSize: 13,
-                                                                color: '#111111',
+                                                                color: 'var(--color-text-primary)',
                                                                 textAlign: 'left',
                                                                 transition: 'background 0.15s',
                                                             }}
-                                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'; }}
+                                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                                             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                                                         >
                                                             {app.icon ? (
                                                                 <img src={app.icon} alt="" width={18} height={18} style={{ borderRadius: 4, flexShrink: 0 }} />
                                                             ) : (
-                                                                <div style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: '#e8e6d9', flexShrink: 0 }} />
+                                                                <div style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: 'var(--color-border)', flexShrink: 0 }} />
                                                             )}
                                                             <span style={{ fontWeight: 500 }}>{app.name}</span>
                                                         </button>
@@ -1078,7 +1078,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     <button
                                         onClick={handleSave}
                                         disabled={isSaving}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: saveSuccess ? "rgba(34,197,94,0.1)" : "rgba(0,0,0,0.04)", border: `1px solid ${saveSuccess ? "#22c55e" : "#e8e6d9"}`, color: saveSuccess ? "#16a34a" : "#111111", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.3s" }}
+                                        style={{ display: "flex", alignItems: "center", gap: 6, background: saveSuccess ? "var(--color-success-dim, rgba(34,197,94,0.1))" : "var(--color-bg-hover)", border: `1px solid ${saveSuccess ? "var(--color-success)" : "var(--color-border)"}`, color: saveSuccess ? "var(--color-success)" : "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.3s" }}
                                     >
                                         {saveSuccess ? <><CheckIcon width={14} height={14} /> Saved!</> : "Save"}
                                     </button>
@@ -1098,16 +1098,16 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
                             {/* View Mode Toggle */}
                             {!isPlanFile && (['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '')) && (
-                                <div style={{ display: "flex", gap: 8, marginBottom: 16, backgroundColor: "rgba(0,0,0,0.03)", padding: 4, borderRadius: 10, width: "fit-content" }}>
+                                <div style={{ display: "flex", gap: 8, marginBottom: 16, backgroundColor: "var(--color-bg-hover)", padding: 4, borderRadius: 10, width: "fit-content" }}>
                                     <button
                                         onClick={() => setViewMode('code')}
-                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'code' ? "rgba(0,0,0,0.05)" : "transparent", color: viewMode === 'code' ? "#111111" : "#8a8886", transition: "all 0.2s" }}
+                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'code' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'code' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
                                     >
                                         Code
                                     </button>
                                     <button
                                         onClick={() => setViewMode('preview')}
-                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'preview' ? "rgba(0,0,0,0.05)" : "transparent", color: viewMode === 'preview' ? "#111111" : "#8a8886", transition: "all 0.2s" }}
+                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'preview' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'preview' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
                                     >
                                         {['xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '') ? 'Preview' : 'Visual Preview'}
                                     </button>
@@ -1127,7 +1127,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.1 }}
-                                    style={{ flex: 1, backgroundColor: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #e8e6d9", position: "relative", minHeight: 400 }}>
+                                    style={{ flex: 1, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--color-border)", position: "relative", minHeight: 400 }}>
                                     {(() => {
                                         const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
                                         if (ext === 'md') {
@@ -1147,7 +1147,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                     title="Preview"
                                                     sandbox="allow-scripts allow-forms allow-same-origin"
                                                 />
-                                                <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "#fff", pointerEvents: "none" }}>
+                                                <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "var(--color-text-primary)", pointerEvents: "none" }}>
                                                     Interactive Preview Mode
                                                 </div>
                                             </>
@@ -1165,27 +1165,27 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                     style={{
                                         flex: 1,
                                         minHeight: "60vh",
-                                        backgroundColor: "#f4f4f4",
-                                        border: "1px solid #e8e6d9",
+                                        backgroundColor: "var(--color-bg-subtle)",
+                                        border: "1px solid var(--color-border)",
                                         borderRadius: 12,
                                         padding: 24,
                                         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                                         fontSize: 13,
-                                        color: "#201e24",
+                                        color: "var(--color-text-primary)",
                                         lineHeight: 1.7,
                                         resize: "vertical",
                                         outline: "none",
-                                        caretColor: "#111111"
+                                        caretColor: "var(--color-text-primary)"
                                     }}
-                                    onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => { (e.target as HTMLTextAreaElement).style.borderColor = "#3f3f46"; }}
-                                    onBlur={(e: React.FocusEvent<HTMLTextAreaElement>) => { (e.target as HTMLTextAreaElement).style.borderColor = "#e8e6d9"; }}
+                                    onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => { (e.target as HTMLTextAreaElement).style.borderColor = "var(--color-border-strong)"; }}
+                                    onBlur={(e: React.FocusEvent<HTMLTextAreaElement>) => { (e.target as HTMLTextAreaElement).style.borderColor = "var(--color-border)"; }}
                                 />
                             ) : (
                                 <motion.div 
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     transition={{ delay: 0.05 }}
-                                    style={{ backgroundColor: "#f4f4f4", border: "1px solid #e8e6d9", borderRadius: 12, padding: 24, flex: 1, overflow: "auto", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                                    style={{ backgroundColor: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 24, flex: 1, overflow: "auto", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                                     <SyntaxHighlighter code={editedContent || selectedCode.content} language={detectLanguage(selectedCode.name)} />
                                 </motion.div>
                             )}
@@ -1198,30 +1198,30 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                         >
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 40 }}>
                                 <h1 style={{ margin: 0, fontSize: 32, fontFamily: "'OrticaLinear-Light', serif", fontWeight: 400 }}>Artifacts</h1>
-                                <button style={{ backgroundColor: "#201e24", color: "#fcfcfb", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "#3f3f46"}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "#201e24"}
+                                <button style={{ backgroundColor: "var(--color-text-primary)", color: "var(--color-bg-base)", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-border-strong)"}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "var(--color-text-primary)"}
                                 >
                                     New artifact
                                 </button>
                             </div>
 
-                             <div style={{ display: "flex", gap: 32, borderBottom: "1px solid #e8e6d9", marginBottom: 32 }}>
+                             <div style={{ display: "flex", gap: 32, borderBottom: "1px solid var(--color-border)", marginBottom: 32 }}>
                                 <button
                                     onClick={() => setActiveTab('inspiration')}
-                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'inspiration' ? "2px solid #201e24" : "2px solid transparent", color: activeTab === 'inspiration' ? "#201e24" : "#8a8886", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s" }}
+                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'inspiration' ? "2px solid var(--color-text-primary)" : "2px solid transparent", color: activeTab === 'inspiration' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s" }}
                                 >
                                     Inspiration
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('yours')}
-                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'yours' ? "2px solid #201e24" : "2px solid transparent", color: activeTab === 'yours' ? "#201e24" : "#8a8886", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s" }}
+                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'yours' ? "2px solid var(--color-text-primary)" : "2px solid transparent", color: activeTab === 'yours' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s" }}
                                 >
                                     Your artifacts
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('sites')}
-                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'sites' ? "2px solid #201e24" : "2px solid transparent", color: activeTab === 'sites' ? "#201e24" : "#8a8886", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 6 }}
+                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'sites' ? "2px solid var(--color-text-primary)" : "2px solid transparent", color: activeTab === 'sites' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 6 }}
                                 >
                                     <GlobeAltIcon className="w-4 h-4" />
                                     Sites
@@ -1233,7 +1233,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('terminal')}
-                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'terminal' ? "2px solid #201e24" : "2px solid transparent", color: activeTab === 'terminal' ? "#201e24" : "#8a8886", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 6 }}
+                                    style={{ background: "transparent", border: "none", borderBottom: activeTab === 'terminal' ? "2px solid var(--color-text-primary)" : "2px solid transparent", color: activeTab === 'terminal' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", fontSize: 15, fontWeight: 500, paddingBottom: 12, cursor: "pointer", transition: "0.2s", display: "flex", alignItems: "center", gap: 6 }}
                                 >
                                     Terminal
                                     {processes.filter(p => p.status === 'running').length > 0 && (
@@ -1254,12 +1254,12 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         transition={{ duration: 0.2 }}
                                         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 24 }}>
                                         {artifacts.length === 0 ? (
-                                            <div style={{ backgroundColor: "#fcfbf7", border: "1px dashed #e8e6d9", borderRadius: 16, padding: "40px", textAlign: "center", gridColumn: "1 / -1" }}>
-                                                <div style={{ fontSize: 15, fontWeight: 600, color: "#201e24" }}>No artifacts in this chat yet</div>
-                                                <p style={{ color: "#8a8886", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Tell the AI to generate a report, dashboard, or code file to see it here.</p>
+                                            <div style={{ backgroundColor: "var(--color-bg-subtle)", border: "1px dashed var(--color-border)", borderRadius: 16, padding: "40px", textAlign: "center", gridColumn: "1 / -1" }}>
+                                                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>No artifacts in this chat yet</div>
+                                                <p style={{ color: "var(--color-text-tertiary)", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Tell the AI to generate a report, dashboard, or code file to see it here.</p>
                                                 <button 
                                                     onClick={() => loadArtifacts()}
-                                                    style={{ marginTop: 20, padding: "8px 16px", backgroundColor: "#201e24", color: "#fff", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none" }}
+                                                    style={{ marginTop: 20, padding: "8px 16px", backgroundColor: "var(--color-text-primary)", color: "var(--color-bg-base)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none" }}
                                                 >
                                                     Refresh Artifacts
                                                 </button>
@@ -1276,24 +1276,24 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 <motion.div 
                                                     whileHover={{ y: -4 }}
                                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                    style={{ backgroundColor: a.name === 'execution_plan.md' ? "rgba(234,179,8,0.05)" : "#ffffff", borderRadius: "16px", border: a.name === 'execution_plan.md' ? "1px solid rgba(234,179,8,0.3)" : "1px solid #e8e6d9", height: 220, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
+                                                    style={{ backgroundColor: a.name === 'execution_plan.md' ? "rgba(234,179,8,0.05)" : "var(--color-bg-surface)", borderRadius: "16px", border: a.name === 'execution_plan.md' ? "1px solid rgba(234,179,8,0.3)" : "1px solid var(--color-border)", height: 220, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
                                                     {a.name === 'execution_plan.md' && (
                                                         <div style={{ position: "absolute", top: 10, right: 12, padding: "3px 8px", backgroundColor: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: 6, fontSize: 10, fontWeight: 700, color: "#854d0e", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                                             Awaiting Approval
                                                         </div>
                                                     )}
-                                                    <div style={{ margin: "24px 24px 0 24px", backgroundColor: "#fcfcfb", border: "1px solid #e8e6d9", borderBottom: "none", borderTopLeftRadius: 12, borderTopRightRadius: 12, flex: 1, padding: 16, overflow: "hidden" }}>
-                                                        <pre style={{ margin: 0, fontSize: 10, color: "#8a8886", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", opacity: 0.8, whiteSpace: "pre-wrap" }}>
+                                                    <div style={{ margin: "24px 24px 0 24px", backgroundColor: "var(--color-bg-base)", border: "1px solid var(--color-border)", borderBottom: "none", borderTopLeftRadius: 12, borderTopRightRadius: 12, flex: 1, padding: 16, overflow: "hidden" }}>
+                                                        <pre style={{ margin: 0, fontSize: 10, color: "var(--color-text-tertiary)", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", opacity: 0.8, whiteSpace: "pre-wrap" }}>
                                                             {a.snippet}
                                                         </pre>
                                                     </div>
-                                                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 60, background: `linear-gradient(transparent, ${a.name === 'execution_plan.md' ? 'rgba(252,250,240,0.95)' : '#ffffff'} 90%)` }}></div>
+                                                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 60, background: `linear-gradient(transparent, ${a.name === 'execution_plan.md' ? 'rgba(252,250,240,0.95)' : 'var(--color-bg-surface)'} 90%)` }}></div>
                                                 </motion.div>
                                                 <div style={{ marginTop: 12 }}>
-                                                    <div style={{ fontSize: 14, fontWeight: 600, color: "#201e24", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-                                                    <div style={{ fontSize: 12, color: "#8a8886", marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
+                                                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                                                    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
                                                         <span>Last edited {timeAgo(a.lastEdited)}</span>
-                                                        <span style={{ color: "#d1d5db" }}>·</span>
+                                                        <span style={{ color: "var(--color-border)" }}>·</span>
                                                         <span style={{ color: "#6366f1", fontWeight: 500 }}>Chat {a.chatId.slice(0, 8)}...</span>
                                                     </div>
                                                 </div>
@@ -1311,13 +1311,13 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         transition={{ duration: 0.2 }}
                                         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 24 }}>
                                         {sites.length === 0 ? (
-                                            <div style={{ backgroundColor: "#fcfbf7", border: "1px dashed #e8e6d9", borderRadius: 16, padding: "40px", textAlign: "center", gridColumn: "1 / -1" }}>
-                                                <GlobeAltIcon className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: "#8a8886" }} />
-                                                <div style={{ fontSize: 15, fontWeight: 600, color: "#201e24" }}>No websites created yet</div>
-                                                <p style={{ color: "#8a8886", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Ask the AI to build a website, dashboard, or HTML report to see it here.</p>
+                                            <div style={{ backgroundColor: "var(--color-bg-subtle)", border: "1px dashed var(--color-border)", borderRadius: 16, padding: "40px", textAlign: "center", gridColumn: "1 / -1" }}>
+                                                <GlobeAltIcon className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: "var(--color-text-tertiary)" }} />
+                                                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>No websites created yet</div>
+                                                <p style={{ color: "var(--color-text-tertiary)", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Ask the AI to build a website, dashboard, or HTML report to see it here.</p>
                                                 <button 
                                                     onClick={() => activeChatId && loadSites(activeChatId)}
-                                                    style={{ marginTop: 20, padding: "8px 16px", backgroundColor: "#201e24", color: "#fff", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none" }}
+                                                    style={{ marginTop: 20, padding: "8px 16px", backgroundColor: "var(--color-text-primary)", color: "var(--color-bg-base)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none" }}
                                                 >
                                                     Refresh Sites
                                                 </button>
@@ -1333,12 +1333,12 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 <motion.div 
                                                     whileHover={{ y: -4 }}
                                                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                                    style={{ backgroundColor: "#ffffff", borderRadius: "16px", border: "1px solid #e8e6d9", height: 280, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
+                                                    style={{ backgroundColor: "var(--color-bg-surface)", borderRadius: "16px", border: "1px solid var(--color-border)", height: 280, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
                                                     {/* Site preview */}
-                                                    <div style={{ flex: 1, backgroundColor: "#f4f4f4", overflow: "hidden", position: "relative" }}>
+                                                    <div style={{ flex: 1, backgroundColor: "var(--color-bg-subtle)", overflow: "hidden", position: "relative" }}>
                                                         <iframe 
-                                                            srcDoc={`<html><head><style>body{margin:0;padding:16px;font-family:system-ui}</style></head><body><p style="color:#8a8886;font-size:12px">Loading preview...</p></body></html>`}
-                                                            style={{ width: "100%", height: "100%", border: "none", backgroundColor: "#f4f4f4" }}
+                                                            srcDoc={`<html><head><style>body{margin:0;padding:16px;font-family:system-ui}</style></head><body><p style="color:var(--color-text-tertiary);font-size:12px">Loading preview...</p></body></html>`}
+                                                            style={{ width: "100%", height: "100%", border: "none", backgroundColor: "var(--color-bg-subtle)" }}
                                                             title="Preview"
                                                             sandbox="allow-scripts"
                                                         />
@@ -1350,7 +1350,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                                         handleReadArtifact(activeChatId, site.name);
                                                                     }
                                                                 }}
-                                                                style={{ padding: "6px 10px", backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", borderRadius: 6, fontSize: 11, fontWeight: 500, color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                                                                style={{ padding: "6px 10px", backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(4px)", borderRadius: 6, fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                                                             >
                                                                 <PencilSquareIcon className="w-3 h-3" />
                                                                 Edit
@@ -1367,9 +1367,9 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                             </button>
                                                         </div>
                                                     </div>
-                                                    <div style={{ padding: "16px 20px", borderTop: "1px solid #e8e6d9" }}>
-                                                        <div style={{ fontSize: 14, fontWeight: 600, color: "#201e24", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{site.name}</div>
-                                                        <div style={{ fontSize: 12, color: "#8a8886", marginTop: 4 }}>Last edited {timeAgo(site.lastEdited)}</div>
+                                                    <div style={{ padding: "16px 20px", borderTop: "1px solid var(--color-border)" }}>
+                                                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{site.name}</div>
+                                                        <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>Last edited {timeAgo(site.lastEdited)}</div>
                                                     </div>
                                                 </motion.div>
                                             </motion.div>
@@ -1384,7 +1384,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         animate={{ opacity: 1 }}
                                         exit={{ opacity: 0 }}
                                         transition={{ duration: 0.2 }}
-                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "#71717a", fontSize: 14 }}>
+                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "var(--color-text-secondary)", fontSize: 14 }}>
                                         The community artifact gallery is coming soon.
                                     </motion.div>
                                 )}
@@ -1398,14 +1398,14 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         transition={{ duration: 0.2 }}
                                     >
                                         {processesLoading && processes.length === 0 ? (
-                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "#71717a", fontSize: 14 }}>
+                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "var(--color-text-secondary)", fontSize: 14 }}>
                                                 Loading processes…
                                             </div>
                                         ) : processes.length === 0 ? (
                                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, gap: 8 }}>
                                                 <span style={{ fontSize: 32, opacity: 0.3 }}>▶</span>
-                                                <span style={{ color: "#71717a", fontSize: 14 }}>No active terminal processes.</span>
-                                                <span style={{ color: "#a1a1aa", fontSize: 12 }}>Processes spawned by the agent will appear here.</span>
+                                                <span style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>No active terminal processes.</span>
+                                                <span style={{ color: "var(--color-text-tertiary)", fontSize: 12 }}>Processes spawned by the agent will appear here.</span>
                                             </div>
                                         ) : (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1421,15 +1421,15 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                             gap: 16,
                                                             padding: "14px 20px",
                                                             borderRadius: 12,
-                                                            border: "1px solid #e8e6d9",
-                                                            backgroundColor: proc.status === 'running' ? "rgba(34,197,94,0.03)" : "#ffffff",
+                                                            border: "1px solid var(--color-border)",
+                                                            backgroundColor: proc.status === 'running' ? "rgba(34,197,94,0.03)" : "var(--color-bg-surface)",
                                                             transition: "background-color 0.2s"
                                                         }}
                                                     >
                                                         {/* Status dot */}
                                                         <div style={{
                                                             width: 10, height: 10, borderRadius: "50%",
-                                                            backgroundColor: proc.status === 'running' ? "#22c55e" : "#a1a1aa",
+                                                            backgroundColor: proc.status === 'running' ? "#22c55e" : "var(--color-text-placeholder)",
                                                             boxShadow: proc.status === 'running' ? "0 0 6px rgba(34,197,94,0.5)" : "none",
                                                             flexShrink: 0
                                                         }} />
@@ -1440,14 +1440,14 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                                 fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                                                                 fontSize: 13,
                                                                 fontWeight: 500,
-                                                                color: "#201e24",
+                                                                color: "var(--color-text-primary)",
                                                                 whiteSpace: "nowrap",
                                                                 overflow: "hidden",
                                                                 textOverflow: "ellipsis"
                                                             }}>
                                                                 {proc.commandLine}
                                                             </div>
-                                                            <div style={{ fontSize: 11, color: "#8a8886", marginTop: 3, display: "flex", gap: 12 }}>
+                                                            <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 3, display: "flex", gap: 12 }}>
                                                                 <span>ID: {proc.id.slice(0, 8)}…</span>
                                                                 <span>{proc.status === 'running' ? '● Running' : `○ Exited (${proc.exitCode ?? '?'})`}</span>
                                                                 <span>{(proc.bufferSize / 1024).toFixed(1)} KB buffered</span>

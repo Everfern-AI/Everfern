@@ -143,7 +143,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         onClick={onClose}
-                        style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}
+                        style={{ position: 'absolute', inset: 0, backgroundColor: 'var(--color-bg-overlay, rgba(0,0,0,0.4))', backdropFilter: 'blur(8px)' }}
                     />
                     <motion.div
                         initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
@@ -153,28 +153,28 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                         style={{
                             width: '100%',
                             maxWidth: 520,
-                            backgroundColor: '#ffffff',
+                            backgroundColor: 'var(--color-bg-surface)',
                             borderRadius: 24,
                             padding: '32px 32px 24px',
                             position: 'relative',
                             boxShadow: '0 20px 40px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
                             zIndex: 1,
-                            border: '1px solid #f0eee4'
+                            border: '1px solid var(--color-border)'
                         }}
                     >
                         {/* Header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
-                            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8c85', padding: 4 }}>
+                            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: 4 }}>
                                 <ArrowLeftIcon width={20} height={20} strokeWidth={2} />
                             </button>
-                            <h2 style={{ fontSize: 22, fontWeight: 600, color: '#111', margin: 0, letterSpacing: '-0.01em' }}>Start a new project</h2>
+                            <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.01em' }}>Start a new project</h2>
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                             {/* Name Input */}
                             <div>
-                                <label style={{ display: 'flex', gap: 4, fontSize: 13, fontWeight: 600, color: '#4a4846', marginBottom: 8 }}>
-                                    Name <span style={{ color: '#ef4444' }}>*</span>
+                                <label style={{ display: 'flex', gap: 4, fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+                                    Name <span style={{ color: 'var(--color-error)' }}>*</span>
                                 </label>
                                 <input
                                     type="text"
@@ -188,11 +188,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                         width: '100%',
                                         padding: '12px 16px',
                                         borderRadius: 12,
-                                        border: isFocused ? '1.5px solid #3b82f6' : '1px solid #d1d5db',
+                                        border: isFocused ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)',
                                         fontSize: 15,
                                         outline: 'none',
-                                        backgroundColor: '#fff',
-                                        boxShadow: isFocused ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        boxShadow: isFocused ? '0 0 0 3px rgba(59, 130, 246, 0.2)' : 'none',
                                         transition: 'all 0.2s'
                                     }}
                                 />
@@ -200,7 +200,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                             {/* Instructions Input */}
                             <div>
-                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4a4846', marginBottom: 8 }}>Instructions</label>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>Instructions</label>
                                 <textarea
                                     placeholder="Tell Fern how to work in this project (optional)"
                                     value={instructions}
@@ -210,10 +210,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                         width: '100%',
                                         padding: '12px 16px',
                                         borderRadius: 12,
-                                        border: '1px solid #d1d5db',
+                                        border: '1px solid var(--color-border)',
                                         fontSize: 15,
                                         outline: 'none',
-                                        backgroundColor: '#fff',
+                                        backgroundColor: 'var(--color-bg-surface)',
                                         resize: 'none'
                                     }}
                                 />
@@ -221,7 +221,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                             {/* Add files dropzone */}
                             <div>
-                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4a4846', marginBottom: 8 }}>Add files</label>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>Add files</label>
                                 <div
                                     onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                                     onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
@@ -231,14 +231,14 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                         width: '100%',
                                         padding: '20px',
                                         borderRadius: 12,
-                                        border: isDragging ? '1.5px dashed #3b82f6' : '1px dashed #d1d5db',
+                                        border: isDragging ? '1.5px dashed var(--color-primary)' : '1px dashed var(--color-border)',
                                         display: 'flex',
                                         flexDirection: 'column',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        color: isDragging ? '#3b82f6' : '#8e8c85',
+                                        color: isDragging ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
                                         fontSize: 14,
-                                        backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : '#faf9f5',
+                                        backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--color-bg-subtle)',
                                         cursor: 'pointer',
                                         transition: 'all 0.2s'
                                     }}
@@ -251,11 +251,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                             {files.map((file, i) => {
                                                 const fileName = file.split(/[\\/]/).pop();
                                                 return (
-                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, color: '#4b5563' }} onClick={e => e.stopPropagation()}>
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 6, fontSize: 12, color: 'var(--color-text-secondary)' }} onClick={e => e.stopPropagation()}>
                                                         <DocumentIcon width={14} height={14} />
                                                         <span style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</span>
                                                         <button onClick={() => setFiles(f => f.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}>
-                                                            <XMarkIcon width={12} height={12} color="#9ca3af" />
+                                                            <XMarkIcon width={12} height={12} color='var(--color-text-tertiary)' />
                                                         </button>
                                                     </div>
                                                 );
@@ -268,8 +268,8 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                             {/* Choose project location */}
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                    <label style={{ fontSize: 13, fontWeight: 600, color: '#4a4846' }}>Choose project location</label>
-                                    <InformationCircleIcon width={16} height={16} color="#8e8c85" />
+                                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>Choose project location</label>
+                                    <InformationCircleIcon width={16} height={16} color='var(--color-text-tertiary)' />
                                 </div>
                                 <button
                                     onClick={handleSelectFolder}
@@ -277,18 +277,18 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                         width: '100%',
                                         padding: '12px 16px',
                                         borderRadius: 12,
-                                        border: '1px solid #d1d5db',
-                                        backgroundColor: '#fff',
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-surface)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 12,
                                         cursor: 'pointer',
-                                        color: path ? '#111' : '#8e8c85',
+                                        color: path ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                                         fontSize: 14,
                                         textAlign: 'left'
                                     }}
                                 >
-                                    <FolderIcon width={20} height={20} color="#8e8c85" />
+                                    <FolderIcon width={20} height={20} color='var(--color-text-tertiary)' />
                                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', textAlign: 'left' }}>
                                         {path ? `\u200E${path}` : 'Select a folder...'}
                                     </span>
@@ -298,7 +298,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                         {/* Footer */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 32, paddingTop: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#3b82f6', fontSize: 13, fontWeight: 500 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-primary)', fontSize: 13, fontWeight: 500 }}>
                                 <SparklesIcon width={16} height={16} />
                                 Memory is on
                             </div>
@@ -308,9 +308,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                     style={{
                                         padding: '10px 16px',
                                         borderRadius: 10,
-                                        border: '1px solid #e5e7eb',
-                                        backgroundColor: '#fff',
-                                        color: '#111',
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        color: 'var(--color-text-primary)',
                                         fontSize: 14,
                                         fontWeight: 600,
                                         cursor: 'pointer'
@@ -324,8 +324,8 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                     style={{
                                         padding: '10px 20px',
                                         borderRadius: 10,
-                                        backgroundColor: (!name || !path || isCreating) ? '#e5e7eb' : '#111',
-                                        color: (!name || !path || isCreating) ? '#9ca3af' : '#fff',
+                                        backgroundColor: (!name || !path || isCreating) ? 'var(--color-border)' : 'var(--color-text-primary)',
+                                        color: (!name || !path || isCreating) ? 'var(--color-text-tertiary)' : 'var(--color-bg-surface)',
                                         fontSize: 14,
                                         fontWeight: 600,
                                         border: 'none',

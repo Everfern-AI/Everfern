@@ -3,7 +3,7 @@ import Image from "next/image";
 // ── Provider Logos ──────────────────────────────────────────────────────────
 
 const OpenAILogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="invert opacity-90" />
+    <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="dark:invert opacity-90" />
 );
 
 const AnthropicLogo = ({ size = 16 }: { size?: number }) => (
@@ -27,7 +27,7 @@ const OpenRouterLogo = ({ size = 16 }: { size?: number }) => (
 );
 
 const OllamaLogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="invert opacity-90" />
+    <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="dark:invert opacity-90" />
 );
 
 const LMStudioLogo = ({ size = 16 }: { size?: number }) => (

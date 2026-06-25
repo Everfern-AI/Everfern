@@ -65,7 +65,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2, delay: index * 0.03 }}
             onClick={() => window.open(result.url, '_blank')}
-            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#f8fafc] transition-colors cursor-pointer border-b border-[#f1f5f9] last:border-0"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-bg-subtle)] transition-colors cursor-pointer border-b border-[var(--color-border)] last:border-0"
         >
             <div className="flex shrink-0 items-center justify-center w-5 h-5">
                 <img
@@ -80,12 +80,12 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
             </div>
 
             <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-[#334155] truncate leading-none py-0.5">
+                <div className="text-[13px] font-medium text-[var(--color-text-primary)] truncate leading-none py-0.5">
                     {title}
                 </div>
             </div>
 
-            <div className="text-[12px] text-[#94a3b8] font-normal shrink-0">
+            <div className="text-[12px] text-[var(--color-text-tertiary)] font-normal shrink-0">
                 {domain}
             </div>
         </motion.article>
@@ -135,7 +135,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
             <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 12 : 8, paddingRight: 12 }}>
                 {/* Description (thought/narration above tool) */}
                 {tc.description && (
-                    <div data-testid="narrative-element" style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
+                    <div data-testid="narrative-element" style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
                         {tc.description}
                     </div>
                 )}
@@ -160,27 +160,27 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '7px 12px', borderRadius: 10,
-                        background: isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6',
+                        background: isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : 'var(--color-bg-surface)',
                         border: isSelected ? '1px solid rgba(99,102,241,0.3)' : looksLikeTerminal ? '1px solid rgba(0,0,0,0.06)' : '1px solid #eceae4',
                         cursor: (!running && tc.output) ? 'pointer' : 'default',
                         transition: 'all 0.15s',
                         outline: 'none',
                     }}
-                    onMouseEnter={e => { if (!running && tc.output) { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.15)' : looksLikeTerminal ? 'rgba(15,23,42,0.07)' : '#f2f1ee'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.4)' : '#d4d1cc'; } }}
-                    onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : '#f8f8f6'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.3)' : '#eceae4'; }}
+                    onMouseEnter={e => { if (!running && tc.output) { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.15)' : looksLikeTerminal ? 'rgba(15,23,42,0.07)' : 'var(--color-bg-hover)'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.4)' : 'var(--color-border)'; } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : 'var(--color-bg-surface)'; e.currentTarget.style.borderColor = isSelected ? 'rgba(99,102,241,0.3)' : 'var(--color-border)'; }}
                     onFocus={e => { e.currentTarget.style.outline = '2px solid rgba(99,102,241,0.5)'; e.currentTarget.style.outlineOffset = '2px'; }}
                     onBlur={e => { e.currentTarget.style.outline = 'none'; }}
                 >
                     <span style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>{tc.icon}</span>
-                    <span style={{ fontSize: 12.5, color: '#4b5563', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: looksLikeTerminal ? "'JetBrains Mono', monospace" : 'inherit' }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: looksLikeTerminal ? "'JetBrains Mono', monospace" : 'inherit' }}>
                         {tc.label}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                         {tc.durationMs !== undefined && !running && (
-                            <span style={{ fontSize: 10.5, color: '#9ca3af', fontFamily: "'JetBrains Mono', monospace" }}>{(tc.durationMs / 1000).toFixed(1)}s</span>
+                            <span style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace" }}>{(tc.durationMs / 1000).toFixed(1)}s</span>
                         )}
                         {!running && tc.output && tc.toolName !== 'create_plan' && tc.toolName !== 'update_plan_step' && (
-                            <ChevronDownIcon width={11} height={11} color="#9ca3af" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                            <ChevronDownIcon width={11} height={11} color='var(--color-text-tertiary)' style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                         )}
                     </div>
                 </div>
@@ -196,7 +196,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                             style={{ overflow: 'hidden', marginTop: 4 }}
                         >
                             <div style={{
-                                background: '#1e1e2e',
+                                background: 'var(--color-bg-subtle)',
                                 borderRadius: 10,
                                 overflow: 'hidden',
                                 border: '1px solid rgba(99,102,241,0.15)'
@@ -206,24 +206,24 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#ff5f57' }} />
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#febc2e' }} />
                                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#28c840' }} />
-                                    <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 6, fontFamily: "'JetBrains Mono', monospace" }}>
+                                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 6, fontFamily: "'JetBrains Mono', monospace" }}>
                                         {isTerminal ? (((tc.args?.CommandLine || tc.args?.command || tc.args?.commandLine || '') as string).split('\n')[0]?.slice(0, 50) || 'Terminal') : 'Terminal'}
                                     </span>
-                                    <span style={{ marginLeft: 'auto', fontSize: 10, color: '#4a4a5a', fontFamily: "'JetBrains Mono', monospace" }}>
+                                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace" }}>
                                         {tc.output.length} chars
                                     </span>
                                 </div>
                                 <pre style={{
                                     margin: 0, padding: '12px 14px', fontSize: 11.5,
                                     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                                    lineHeight: 1.7, color: '#e2e8f0', overflowX: 'auto',
+                                    lineHeight: 1.7, color: 'var(--color-text-primary)', overflowX: 'auto',
                                     whiteSpace: 'pre-wrap', maxHeight: 300, overflowY: 'auto'
                                 }}>
                                     {tc.output.split('\n').map((line, idx) => {
                                         const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
                                         const promptMatch = line.match(/^([\$›#]) /);
                                         return (
-                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : '#d1d5db' }}>
+                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : 'var(--color-border)' }}>
                                                 {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
                                                 {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
                                                 {line}
@@ -246,16 +246,16 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                             transition={{ duration: 0.2 }}
                             style={{ overflow: 'hidden', marginTop: 4 }}
                         >
-                            <div style={{ backgroundColor: '#f5f4f0', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid #eceae4', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
+                            <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid var(--color-border)', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
                                 {(tc.base64Image || tc.data?.screenshot || (tc.data?.screenshots && tc.data.screenshots.length > 0)) && (
-                                    <div style={{ padding: 10, borderBottom: '1px solid #eceae4' }}>
-                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid #e8e6d9' }} />
+                                    <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
+                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)' }} />
                                     </div>
                                 )}
                                 {tc.data?.preClickB64 && (
-                                    <div style={{ padding: 10, borderBottom: '1px solid #eceae4' }}>
-                                        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6, textAlign: 'center', letterSpacing: '0.04em' }}>Click Target</div>
-                                        <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid #e8e6d9' }}>
+                                    <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, textAlign: 'center', letterSpacing: '0.04em' }}>Click Target</div>
+                                        <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
                                             <img src={`data:image/png;base64,${tc.data.preClickB64}`} alt="" style={{ width: '100%', display: 'block' }} />
                                             {tc.data.x !== undefined && tc.data.y !== undefined && tc.data.w && tc.data.h && (
                                                 <div style={{ position: 'absolute', left: `${(tc.data.x / tc.data.w) * 100}%`, top: `${(tc.data.y / tc.data.h) * 100}%`, width: 18, height: 18, backgroundColor: 'rgba(239,68,68,0.4)', border: '2px solid #e5e5e5', borderRadius: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'none' }} />
@@ -264,11 +264,11 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     </div>
                                 )}
                                 {(tc.toolName === 'read' || tc.toolName === 'read_file' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill' || tc.toolName === 'skill_detected') || tc.output.includes('---') || tc.output.startsWith('#') ? (
-                                    <div className="px-[14px] py-[10px] bg-white">
+                                    <div className="px-[14px] py-[10px]" style={{ backgroundColor: 'var(--color-bg-surface)' }}>
                                         <MarkdownRenderer content={tc.output} />
                                     </div>
                                 ) : (
-                                    <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-[1.7] text-[#6b7280] overflow-x-auto whitespace-pre-wrap">
+                                    <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
                                         {tc.output}
                                     </pre>
                                 )}
@@ -358,13 +358,13 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
         <Loader size={14} strokeWidth={2} className="text-emerald-500" />
     ) : isError ? (
         <div className="w-4 h-4 rounded-full bg-[#ef4444] flex items-center justify-center z-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3">
                 <path d="M18 6L6 18M6 6l12 12" />
             </svg>
         </div>
     ) : (
         <div className="w-4 h-4 rounded-full bg-[#10b981] flex items-center justify-center z-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 6L9 17l-5-5" />
             </svg>
         </div>
@@ -380,7 +380,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
         >
             {/* Vertical branch line */}
             {!isLast && (
-                <div className="absolute left-[7px] top-5 bottom-[-4px] w-0.5 bg-[#e5e7eb] z-0" />
+                <div className="absolute left-[7px] top-5 bottom-[-4px] w-0.5 bg-[var(--color-border)] z-0" />
             )}
 
             <div
@@ -425,15 +425,15 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
 
                 {/* Title and Results Count */}
                 <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                    {!isSearchTool && <span className="flex items-center text-[#6b7280]">{iconToDisplay}</span>}
+                    {!isSearchTool && <span className="flex items-center text-[var(--color-text-tertiary)]">{iconToDisplay}</span>}
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
-                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[#888888]' : isError ? 'text-[#ef4444]' : 'text-[#111111]'}`}
+                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[var(--color-text-tertiary)]' : isError ? 'text-[#ef4444]' : 'text-[var(--color-text-primary)]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
                             {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.displayName || tc.label || tc.toolName)}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (
-                            <span className="text-[13px] text-[#888888] font-normal ml-auto shrink-0 pr-1">
+                            <span className="text-[13px] text-[var(--color-text-tertiary)] font-normal ml-auto shrink-0 pr-1">
                                 {tc.data.results.length} results
                             </span>
                         )}
@@ -445,7 +445,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 {hasOutput && (
                     <motion.span
                         animate={{ rotate: expanded ? 0 : 90 }}
-                        className="flex shrink-0 text-[#9ca3af]"
+                        className="flex shrink-0 text-[var(--color-text-tertiary)]"
                     >
                         <ChevronUpIcon width={14} height={14} strokeWidth={2.5} />
                     </motion.span>
@@ -481,10 +481,10 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                             <div className="flex flex-col gap-4 pb-1">
                                 {queries.length > 0 && (
                                     <div>
-                                        <div className="text-[13px] text-[#6b7280] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Querying</div>
+                                        <div className="text-[13px] text-[var(--color-text-tertiary)] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Querying</div>
                                         <div className="flex flex-wrap gap-2">
                                             {queries.map((q, i) => (
-                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-default transition-all duration-150 hover:bg-[#e5e7eb]"
+                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[var(--color-bg-subtle)] border border-transparent text-[13px] text-[var(--color-text-primary)] font-medium cursor-default transition-all duration-150 hover:bg-[var(--color-border)]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
                                                     <img src="/assets/tool-search.svg" className="w-3.5 h-3.5 opacity-70" alt="Search" />
                                                     {q}
@@ -495,12 +495,12 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                 )}
                                 {docs.length > 0 && (
                                     <div>
-                                        <div className="text-[13px] text-[#6b7280] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Reading</div>
+                                        <div className="text-[13px] text-[var(--color-text-tertiary)] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Reading</div>
                                         <div className="flex flex-wrap gap-2 items-center">
                                             {docs.slice(0, 2).map((d, i) => (
-                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-pointer transition-all duration-150 hover:bg-[#e5e7eb]"
+                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[var(--color-bg-subtle)] border border-transparent text-[13px] text-[var(--color-text-primary)] font-medium cursor-pointer transition-all duration-150 hover:bg-[var(--color-border)]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
-                                                    <DocumentTextIcon width={14} height={14} color="#111" strokeWidth={2} />
+                                                    <DocumentTextIcon width={14} height={14} color='var(--color-text-primary)' strokeWidth={2} />
                                                     {d}
                                                 </div>
                                             ))}
@@ -514,7 +514,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                 )}
                                 {Array.isArray(tc.data?.results) && tc.data.results.length > 0 && (
                                     <div className="mt-2">
-                                        <div className="flex flex-col border border-[#e2e8f0] rounded-xl bg-white overflow-hidden max-h-[320px] overflow-y-auto custom-scrollbar shadow-sm">
+                                        <div className="flex flex-col border border-[var(--color-border)] rounded-xl bg-[var(--color-bg-surface)] overflow-hidden max-h-[320px] overflow-y-auto custom-scrollbar shadow-sm">
                                             {(tc.data.results as SearchResult[]).map((result, i) => (
                                                 <SearchResultCard key={i} result={result} index={i} />
                                             ))}
@@ -525,22 +525,22 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                         ) : (
                             <div className={`px-4 py-3 rounded-xl text-[13px] leading-relaxed max-h-[400px] overflow-y-auto border ${
                                 isTerminal
-                                    ? 'bg-[#0d0d14] font-mono text-[#e2e8f0] border-[#1e1e2e]'
-                                    : 'bg-[#f9fafb] text-[#4b5563] border-[#f3f4f6]'
+                                    ? 'bg-[var(--color-bg-surface)] font-mono text-[var(--color-text-primary)] border-[var(--color-bg-subtle)]'
+                                    : 'bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)] border-[var(--color-border-subtle)]'
                             }`}>
                                 {isTerminal ? (
                                     <div className="whitespace-pre-wrap">
                                         {cmdStr && (
-                                            <div className="mb-3 pb-2 border-b border-[#2d2d3a] flex items-center gap-3 text-[#94a3b8] text-xs">
+                                            <div className="mb-3 pb-2 border-b border-[var(--color-border)] flex items-center gap-3 text-[var(--color-text-tertiary)] text-xs">
                                                 <span className="text-[#6366f1] font-semibold">$</span>
-                                                <span className="text-[#e2e8f0]">{cmdStr}</span>
-                                                <span className="ml-auto text-[#4a4a5a]">
+                                                <span className="text-[var(--color-text-primary)]">{cmdStr}</span>
+                                                <span className="ml-auto text-[var(--color-text-tertiary)]">
                                                     {tc.durationMs ? `${(tc.durationMs / 1000).toFixed(1)}s` : ''}
                                                 </span>
                                             </div>
                                         )}
                                         {displayOutput.slice(0, 2000)}
-                                        {displayOutput.length > 2000 && <span className="text-[#9ca3af]">{'\n'}... ({displayOutput.length - 2000} more chars)</span>}
+                                        {displayOutput.length > 2000 && <span className="text-[var(--color-text-tertiary)]">{'\n'}... ({displayOutput.length - 2000} more chars)</span>}
                                     </div>
                                 ) : (
                                     <MarkdownRenderer content={displayOutput} />
@@ -719,7 +719,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                 >
                     <div className="bg-[rgba(34,197,94,0.06)] border border-[rgba(34,197,94,0.2)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
                         <div className="mt-0.5 bg-[#22c55e] rounded w-4 h-4 flex items-center justify-center shrink-0">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="20 6 9 17 4 12" />
                             </svg>
                         </div>
@@ -729,7 +729,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                     </div>
 
                     <div className="flex items-center flex-wrap gap-3 text-xs">
-                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                        <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
                             <span className="font-medium">Tool used</span>
                             <div className={`flex items-center gap-1 text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold ${finalStatus === 'executing' ? 'bg-[#3b82f6]' : finalStatus === 'error' ? 'bg-[#ef4444]' : 'bg-[#22c55e]'}`}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -741,12 +741,12 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                             </div>
                         </div>
                         {finalStatus !== 'executing' && (
-                            <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                            <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
                                 <span>Duration</span>
-                                <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
+                                <span className="font-semibold text-[var(--color-text-primary)]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
                             </div>
                         )}
-                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
+                        <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
                             <span>Status</span>
                             <span className={`font-semibold ${finalStatus === 'executing' ? 'text-[#3b82f6]' : finalStatus === 'error' ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
                                 {finalStatus === 'executing' ? 'Executing...' : finalStatus === 'error' ? 'Error' : 'Success'}
@@ -785,7 +785,7 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className={`rounded-2xl border overflow-hidden mb-4 transition-all duration-300 ${
                 isStreaming
-                    ? 'border-[#e2e8f0] shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10'
+                    ? 'border-[var(--color-text-primary)] shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10'
                     : 'border-emerald-200 shadow-sm bg-emerald-50/30'
             }`}
         >

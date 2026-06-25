@@ -194,6 +194,10 @@ export class NavisExtensionOrchestrator {
       if (shouldCaptureVision) {
         try {
           screenshotB64 = await this.adapter.screenshot({ quality: 75 });
+          if (screenshotB64.includes('svg+xml') || screenshotB64.includes('%3Csvg') || screenshotB64.includes('<svg')) {
+            this.logger.error('Cannot access restricted browser page or capture failed.');
+            return { success: false, output: '[EXTENSION_FALLBACK_REQUIRED] Browser page is restricted or capture failed. Navis cannot operate on this page.', steps };
+          }
           console.log('[Navis Extension] Screenshot captured');
           this.logger.screenshot(steps, maxSteps, screenshotB64);
         } catch (err) {
@@ -202,6 +206,10 @@ export class NavisExtensionOrchestrator {
       } else {
         try {
           const uiScreenshotB64 = await this.adapter.screenshot({ quality: 40 });
+          if (uiScreenshotB64.includes('svg+xml') || uiScreenshotB64.includes('%3Csvg') || uiScreenshotB64.includes('<svg')) {
+            this.logger.error('Cannot access restricted browser page or capture failed.');
+            return { success: false, output: '[EXTENSION_FALLBACK_REQUIRED] Browser page is restricted or capture failed. Navis cannot operate on this page.', steps };
+          }
           this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
         } catch (err) {
           console.warn('[Navis Extension] UI screenshot capture failed:', err);

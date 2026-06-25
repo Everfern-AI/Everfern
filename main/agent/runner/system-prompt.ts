@@ -113,6 +113,143 @@ setInterval(() => promptCache.cleanup(), 120000);
 // ─────────────────────────────────────────────
 
 /**
+ * Synchronous version of system prompt placeholder resolution.
+ */
+export function resolvePromptPlaceholdersSync(
+  template: string,
+  platform: string = 'win32',
+  conversationId?: string,
+  sessionCreatedPaths: string[] = [],
+  projectPath?: string,
+  skillsTable?: string
+): string {
+  const safeConvId = conversationId && typeof conversationId === 'string' ? conversationId : 'current';
+  
+  const homedir = osHomedir();
+  const homedirNorm = homedir.replace(/\\/g, '/');
+  const linuxHome = hostPathToLinux(homedirNorm);
+  const user = osUserInfo();
+
+  // All paths are Linux VM paths — the AI uses these in all tool calls
+  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
+  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
+  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
+  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
+  const uploadsPath = `/everfern/`;
+
+  // OS Info
+  const osInfo =
+    platform === 'win32'
+      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
+      : platform === 'darwin'
+        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
+        : '**OS**: Linux. All commands execute natively using Bash.';
+
+  // Session File Registry
+  const sessionRegistry = sessionCreatedPaths.length > 0
+    ? sessionCreatedPaths.map(p => `- \`${p}\``).join('\n')
+    : '_No files created in this session memory yet._';
+
+  const pluginsTable = '_All skills are loaded dynamically above._';
+  const workspaceMounted = 'false';
+
+  // Replace placeholders — all paths are Linux paths
+  return template
+    .replace(/{{OS_INFO}}/g, osInfo)
+    .replace(/{{HOME_DIR}}/g, linuxHome)
+    .replace(/{{SESSION_ID}}/g, safeConvId)
+    .replace(/{{PLAN_PATH}}/g, planPath)
+    .replace(/{{EXEC_PATH}}/g, execPath)
+    .replace(/{{ARTIFACT_PATH}}/g, artifactPath)
+    .replace(/{{SITE_PATH}}/g, sitePath)
+    .replace(/{{UPLOADS_PATH}}/g, uploadsPath)
+    .replace(/{{PROJECT_PATH}}/g, projectPath || execPath)
+    .replace(/{{SESSION_FILES}}/g, sessionRegistry)
+    .replace(/{{SKILLS}}/g, skillsTable || '')
+    .replace(/{{PLUGIN_SKILLS}}/g, pluginsTable)
+    .replace(/{{CURRENT_DATE}}/g, new Date().toISOString().split('T')[0])
+    .replace(/{{WORKSPACE_MOUNTED}}/g, workspaceMounted)
+    .replace(/{{USER_NAME}}/g, user.username)
+    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
+    .replace(/{{OTHER_TOOLS}}/g, '');
+}
+
+/**
+ * Asynchronously resolve all placeholders, inject integration status and project context.
+ */
+export async function resolvePromptPlaceholders(
+  template: string,
+  platform: string = 'win32',
+  conversationId?: string,
+  sessionCreatedPaths: string[] = [],
+  projectId?: string,
+  preloadedSkills?: any[]
+): Promise<string> {
+  // Resolve skills
+  const skills = preloadedSkills || await loadSkillsAsync();
+  const skillsTable = formatSkillsForPrompt(skills);
+
+  // Resolve project path
+  const targetProjectId = projectId || conversationId;
+  let projectPath = '';
+  let activeProject: any = null;
+  if (targetProjectId) {
+    activeProject = await projectsStore.get(targetProjectId);
+    if (activeProject) {
+      projectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
+    }
+  }
+
+  // Call sync helper to perform replacements
+  let finalPrompt = resolvePromptPlaceholdersSync(
+    template,
+    platform,
+    conversationId,
+    sessionCreatedPaths,
+    projectPath,
+    skillsTable
+  );
+
+  // Inject Integration Status
+  try {
+    const botManager = integrationService.getService<any>('bot-integration-manager');
+    if (botManager) {
+      const discord = botManager.getPlatform('discord');
+      const telegram = botManager.getPlatform('telegram');
+      
+      const statusContext = `
+## INTEGRATION STATUS
+- **Discord**: ${discord ? 'CONNECTED' : 'NOT CONFIGURED'}
+- **Telegram**: ${telegram ? 'CONNECTED' : 'NOT CONFIGURED'}
+
+If a service is NOT CONFIGURED, inform the user they can set it up in the Integration Settings if they wish to use it.
+`;
+      finalPrompt += "\n" + statusContext;
+    }
+  } catch (err) {
+    console.error('[SystemPrompt] Failed to inject integration status:', err);
+  }
+
+  // Add project-specific context
+  if (activeProject) {
+    console.log(`[SystemPrompt] 📁 Injecting context for project: ${activeProject.name}`);
+    const projectContext = `
+## PROJECT CONTEXT
+You are currently working in the context of a specific project.
+- **Project Name**: ${activeProject.name}
+- **Project Path**: ${activeProject.path}
+${activeProject.instructions ? `- **Project Instructions**: ${activeProject.instructions}` : ''}
+
+When the user asks you to perform tasks, assume they are related to this project unless specified otherwise.
+Always prioritize the project path for file operations.
+`;
+    finalPrompt += "\n" + projectContext;
+  }
+
+  return finalPrompt;
+}
+
+/**
  * Load and assemble system prompt asynchronously using fs.promises for non-blocking I/O
  * This function should be used before graph building to avoid blocking the event loop
  * 
@@ -128,19 +265,7 @@ export async function getSlimSystemPromptAsync(
   preloadedSkills?: any[],
   projectId?: string
 ): Promise<string> {
-  const safeConvId = conversationId && typeof conversationId === 'string' ? conversationId : 'current';
-  
   const homedir = osHomedir();
-  const homedirNorm = homedir.replace(/\\/g, '/');
-  const linuxHome = hostPathToLinux(homedirNorm);
-  const user = osUserInfo();
-
-  // All paths are Linux VM paths — the AI uses these in all tool calls
-  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
-  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
-  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
-  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `/everfern/`;
 
   // Read the Markdown file asynchronously
   let promptMd = '';
@@ -170,96 +295,14 @@ export async function getSlimSystemPromptAsync(
     promptMd = '# EverFern System Prompt\n(Error loading full prompt file - check logs)';
   }
 
-  // OS Info
-  const osInfo =
-    platform === 'win32'
-      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
-      : platform === 'darwin'
-        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
-        : '**OS**: Linux. All commands execute natively using Bash.';
-  console.log(`[SystemPrompt] OS info string: platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
-
-  // Session File Registry
-  const sessionRegistry = sessionCreatedPaths.length > 0
-    ? sessionCreatedPaths.map(p => `- \`${p}\``).join('\n')
-    : '_No files created in this session memory yet._';
-
-  // Skills - use pre-loaded skills if provided, otherwise load asynchronously
-  const skills = preloadedSkills || await loadSkillsAsync();
-  const skillsTable = formatSkillsForPrompt(skills);
-  const pluginsTable = '_All skills are loaded dynamically above._';
-
-  // State Context
-  const workspaceMounted = 'false';
-
-  // Project context - lookup before replacements for {{PROJECT_PATH}} injection
-  const targetProjectId = projectId || conversationId;
-  let projectPath = '';
-  let activeProject: any = null;
-  if (targetProjectId) {
-    activeProject = await projectsStore.get(targetProjectId);
-    if (activeProject) {
-      projectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
-    }
-  }
-
-  // Replace placeholders — all paths are Linux paths
-  let finalPrompt = promptMd
-    .replace(/{{OS_INFO}}/g, osInfo)
-    .replace(/{{HOME_DIR}}/g, linuxHome)
-    .replace(/{{SESSION_ID}}/g, safeConvId)
-    .replace(/{{PLAN_PATH}}/g, planPath)
-    .replace(/{{EXEC_PATH}}/g, execPath)
-    .replace(/{{ARTIFACT_PATH}}/g, artifactPath)
-    .replace(/{{SITE_PATH}}/g, sitePath)
-    .replace(/{{UPLOADS_PATH}}/g, uploadsPath)
-    .replace(/{{PROJECT_PATH}}/g, projectPath || execPath)
-    .replace(/{{SESSION_FILES}}/g, sessionRegistry)
-    .replace(/{{SKILLS}}/g, skillsTable)
-    .replace(/{{PLUGIN_SKILLS}}/g, pluginsTable)
-    .replace(/{{CURRENT_DATE}}/g, new Date().toISOString().split('T')[0])
-    .replace(/{{WORKSPACE_MOUNTED}}/g, workspaceMounted)
-    .replace(/{{USER_NAME}}/g, user.username)
-    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
-    .replace(/{{OTHER_TOOLS}}/g, ''); 
-
-  // Inject Integration Status
-  try {
-    const botManager = integrationService.getService<any>('bot-integration-manager');
-    if (botManager) {
-      const discord = botManager.getPlatform('discord');
-      const telegram = botManager.getPlatform('telegram');
-      
-      const statusContext = `
-## INTEGRATION STATUS
-- **Discord**: ${discord ? 'CONNECTED' : 'NOT CONFIGURED'}
-- **Telegram**: ${telegram ? 'CONNECTED' : 'NOT CONFIGURED'}
-
-If a service is NOT CONFIGURED, inform the user they can set it up in the Integration Settings if they wish to use it.
-`;
-      finalPrompt += "\n" + statusContext;
-    }
-  } catch (err) {
-    console.error('[SystemPrompt] Failed to inject integration status:', err);
-  }
-
-  // Add project-specific context if projectId or conversationId matches a project
-  if (activeProject) {
-    console.log(`[SystemPrompt] 📁 Injecting context for project: ${activeProject.name}`);
-    const projectContext = `
-## PROJECT CONTEXT
-You are currently working in the context of a specific project.
-- **Project Name**: ${activeProject.name}
-- **Project Path**: ${activeProject.path}
-${activeProject.instructions ? `- **Project Instructions**: ${activeProject.instructions}` : ''}
-
-When the user asks you to perform tasks, assume they are related to this project unless specified otherwise.
-Always prioritize the project path for file operations.
-`;
-    finalPrompt += "\n" + projectContext;
-  }
-
-  return finalPrompt;
+  return resolvePromptPlaceholders(
+    promptMd,
+    platform,
+    conversationId,
+    sessionCreatedPaths,
+    projectId,
+    preloadedSkills
+  );
 }
 
 /**
@@ -279,33 +322,13 @@ export function getSlimSystemPrompt(
     return preloadedPrompt;
   }
   
-  const safeConvId = conversationId && typeof conversationId === 'string' ? conversationId : 'current';
-  
   // Check cache first
   const cached = promptCache.get(platform, conversationId, sessionCreatedPaths);
   if (cached) {
     return cached;
   }
 
-  // Look up project context if conversationId is a project ID
-  // Note: Since this is synchronous, we use a trick or just accept that it might miss the first time
-  // Actually, better to fetch it in getSlimSystemPromptAsync and pass it here, 
-  // but let's try to handle it here if possible. 
-  // Actually, getSlimSystemPrompt is used in buildSystemMessages which is used in AgentRunner.runStream.
-  // AgentRunner.runStream is async! So I should update getSlimSystemPrompt to be async or handle it in AgentRunner.
-
-
   const homedir = osHomedir();
-  const homedirNorm = homedir.replace(/\\/g, '/');
-  const linuxHome = hostPathToLinux(homedirNorm);
-  const user = osUserInfo();
-
-  // All paths are Linux VM paths
-  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
-  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
-  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
-  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `/everfern/`;
 
   // Read the Markdown file (cache this separately if needed)
   let promptMd = '';
@@ -335,47 +358,17 @@ export function getSlimSystemPrompt(
     promptMd = '# EverFern System Prompt\n(Error loading full prompt file - check logs)';
   }
 
-  // OS Info
-  const osInfo =
-    platform === 'win32'
-      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
-      : platform === 'darwin'
-        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
-        : '**OS**: Linux. All commands execute natively using Bash.';
-  console.log(`[SystemPrompt] OS info string (sync): platform=${platform}, osInfo="${osInfo.slice(0, 120)}..."`);
-
-  // Session File Registry
-  const sessionRegistry = sessionCreatedPaths.length > 0
-    ? sessionCreatedPaths.map(p => `- \`${p}\``).join('\n')
-    : '_No files created in this session memory yet._';
-
-  // Skills (load once and cache if needed)
   const skills = loadSkills();
   const skillsTable = formatSkillsForPrompt(skills);
-  const pluginsTable = '_All skills are loaded dynamically above._';
 
-  // State Context (can be improved by checking actual manager state)
-  const workspaceMounted = 'false';
-
-  // Replace placeholders — all paths are Linux paths
-  let finalPrompt = promptMd
-    .replace(/{{OS_INFO}}/g, osInfo)
-    .replace(/{{HOME_DIR}}/g, linuxHome)
-    .replace(/{{SESSION_ID}}/g, safeConvId)
-    .replace(/{{PLAN_PATH}}/g, planPath)
-    .replace(/{{EXEC_PATH}}/g, execPath)
-    .replace(/{{ARTIFACT_PATH}}/g, artifactPath)
-    .replace(/{{SITE_PATH}}/g, sitePath)
-    .replace(/{{UPLOADS_PATH}}/g, uploadsPath)
-    .replace(/{{PROJECT_PATH}}/g, execPath)
-    .replace(/{{SESSION_FILES}}/g, sessionRegistry)
-    .replace(/{{SKILLS}}/g, skillsTable)
-    .replace(/{{PLUGIN_SKILLS}}/g, pluginsTable)
-    .replace(/{{CURRENT_DATE}}/g, new Date().toISOString().split('T')[0])
-    .replace(/{{WORKSPACE_MOUNTED}}/g, workspaceMounted)
-    .replace(/{{USER_NAME}}/g, user.username)
-    .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
-    .replace(/{{OTHER_TOOLS}}/g, ''); 
+  const finalPrompt = resolvePromptPlaceholdersSync(
+    promptMd,
+    platform,
+    conversationId,
+    sessionCreatedPaths,
+    undefined,
+    skillsTable
+  );
 
   // Cache the result
   promptCache.set(platform, conversationId, sessionCreatedPaths, finalPrompt);
