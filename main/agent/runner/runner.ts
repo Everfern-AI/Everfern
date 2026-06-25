@@ -115,9 +115,15 @@ export class AgentRunner {
     try {
       const piTools = await getPiCodingTools();
       if (!this.tools.find(t => t.name === piTools[0].name)) {
-        console.log(`[AgentRunner] 🔄 Registering ${piTools.length} Pi coding tools...`);
-        this.tools.push(...piTools, this.createSpawnAgentTool());
-        console.log(`[AgentRunner] ✅ Pi coding tools registered. Total tools: ${this.tools.length}`);
+        console.log(`[AgentRunner] 🔄 Registering ${piTools.length} Pi coding tools and swarm tools...`);
+        this.tools.push(
+          ...piTools,
+          this.createSpawnAgentTool(),
+          this.createSpawnSwarmTool(),
+          this.createBroadcastSwarmFactTool(),
+          this.createReadSwarmMemoryTool()
+        );
+        console.log(`[AgentRunner] ✅ Pi coding tools and swarm tools registered. Total tools: ${this.tools.length}`);
       }
     } catch (error) {
       console.error('[AgentRunner] Failed to initialize Pi tools:', error);
@@ -192,9 +198,14 @@ export class AgentRunner {
         required: ['task']
       },
       execute: async (args, onUpdate, emitEvent, toolCallId) => {
-        // HARD GUARD: Sub-agents cannot spawn other agents
-        if (this.currentAgentSessionKey) {
-          const errorMsg = 'ERROR: Sub-agents cannot spawn other agents. You are a sub-agent yourself. Complete the task using your own available tools.';
+        const { getSubagentRegistry } = await import('./subagent-registry');
+        const registry = getSubagentRegistry();
+        const entry = this.currentAgentSessionKey ? registry.getBySessionKey(this.currentAgentSessionKey) : undefined;
+        const currentDepth = entry ? entry.currentDepth : 0;
+        const proposedDepth = currentDepth + 1;
+
+        if (proposedDepth > 4) {
+          const errorMsg = `ERROR: Max spawn depth ceiling (4) reached. You cannot spawn deeper sub-agents. Complete the task yourself.`;
           onUpdate?.(errorMsg);
           return { success: false, output: errorMsg };
         }
@@ -312,6 +323,267 @@ export class AgentRunner {
             });
           }
           return { success: false, output: `Spawn failed: ${err}` };
+        }
+      }
+    };
+  }
+
+  private createSpawnSwarmTool(): AgentTool {
+    const AGENT_TYPE_PROMPTS: Record<string, string> = {
+      'coding-specialist': 'coding-specialist.md',
+      'web-explorer': 'web-explorer.md',
+      'data-analyst': 'data-analyst.md',
+    };
+
+    const AGENT_TYPE_TIMEOUT: Record<string, number> = {
+      'web-explorer': 300000,
+      'coding-specialist': 180000,
+      'data-analyst': 180000,
+      'generic': 120000,
+    };
+
+    return {
+      name: 'spawn_swarm',
+      description: 'Launch a cohort of specialized sub-agents in parallel to perform independent tasks. Speeds up parallel operations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          tasks: {
+            type: 'array',
+            description: 'Array of self-contained tasks for the sub-agents to accomplish in parallel.',
+            items: {
+              type: 'object',
+              properties: {
+                task: { type: 'string', description: 'Task description.' },
+                agent_type: { type: 'string', description: 'Type of specialist agent. Options: generic, coding-specialist, web-explorer, data-analyst.', enum: ['generic', 'coding-specialist', 'web-explorer', 'data-analyst'] }
+              },
+              required: ['task']
+            }
+          },
+          context: { type: 'string', description: 'Shared background information or constraints for all tasks.' },
+          max_depth: { type: 'number', description: 'Maximum spawn depth (default: 2, max: 3)' }
+        },
+        required: ['tasks']
+      },
+      execute: async (args, onUpdate, emitEvent, toolCallId) => {
+        const { getSubagentRegistry } = await import('./subagent-registry');
+        const registry = getSubagentRegistry();
+        const entry = this.currentAgentSessionKey ? registry.getBySessionKey(this.currentAgentSessionKey) : undefined;
+        const currentDepth = entry ? entry.currentDepth : 0;
+        const proposedDepth = currentDepth + 1;
+
+        if (proposedDepth > 4) {
+          const errorMsg = `ERROR: Max spawn depth ceiling (4) reached. Cannot spawn a parallel swarm.`;
+          onUpdate?.(errorMsg);
+          return { success: false, output: errorMsg };
+        }
+
+        const tasks = args.tasks as Array<{ task: string; agent_type?: string }>;
+        const context = (args.context as string) || '';
+        const maxDepth = Math.min((args.max_depth as number) || 2, 3);
+
+        onUpdate?.(`Spawning swarm of ${tasks.length} agents in parallel...`);
+
+        try {
+          let parentHistory: Array<{ role: string; content: string | any[] }> = [];
+          try {
+            const chatHistoryStore = new ChatHistoryStore();
+            const fullConversation = await chatHistoryStore.load(this.currentConversationId || 'default');
+
+            if (fullConversation && fullConversation.messages.length > 0) {
+              const reconstructed = reconstructFullHistory(fullConversation.messages, '');
+              parentHistory = reconstructed.slice(-40);
+            }
+          } catch (historyErr) {
+            console.warn('[SubagentSpawn] Failed to load parent history:', historyErr);
+            parentHistory = [];
+          }
+
+          const { getSubagentSpawner } = await import('./subagent-spawn');
+          const spawner = getSubagentSpawner();
+
+          // Spawn all sub-agents in the swarm in parallel
+          const spawnedAgents = await Promise.all(tasks.map(async (t) => {
+            const agentType = t.agent_type || 'generic';
+            let systemPrompt: string | undefined;
+            const promptFile = AGENT_TYPE_PROMPTS[agentType];
+            if (promptFile) {
+              systemPrompt = loadPrompt(promptFile) || undefined;
+            }
+
+            return spawner.spawn({
+              parentSessionId: this.currentConversationId || 'default',
+              sponsorSessionKey: this.currentAgentSessionKey,
+              task: t.task,
+              agentType: agentType as any,
+              context,
+              model: this.client.model,
+              maxDepth,
+              parentHistory: parentHistory as Array<{ role: 'user' | 'assistant'; content: string | any[] }>,
+              workspaceDir: this.workspaceDir,
+              projectId: this.projectId,
+              runner: this,
+              toolCallId: toolCallId
+            });
+          }));
+
+          // Emit phase start events for each spawned agent in the swarm
+          spawnedAgents.forEach((sa) => {
+            if (!emitEvent) return;
+            emitEvent({
+              type: 'subagent_event',
+              subagentEventType: 'phase_start',
+              phase: sa.agentType,
+              agent: sa.agentType,
+              toolCallId,
+              timestamp: new Date().toISOString(),
+              data: {
+                agentId: sa.agentId,
+                description: sa.task,
+                agentType: sa.agentType,
+                toolCallId,
+                initialMetrics: { mode: 'parallel', maxDepth },
+              },
+            } as any);
+          });
+
+          // Wait for all sub-agents to complete in parallel
+          const results = await Promise.all(spawnedAgents.map(async (sa) => {
+            const timeout = AGENT_TYPE_TIMEOUT[sa.agentType] ?? 120000;
+            try {
+              const child = await spawner.waitForAgent(sa.agentId, timeout);
+              if (child && child.result) {
+                if (emitEvent) {
+                  emitEvent({
+                    type: 'subagent_event',
+                    subagentEventType: 'phase_complete',
+                    phase: sa.agentType,
+                    agent: sa.agentType,
+                    toolCallId,
+                    timestamp: new Date().toISOString(),
+                    data: {
+                      agentId: sa.agentId,
+                      output: child.result,
+                      metrics: {
+                        status: child.status,
+                        durationMs: child.completedAt ? child.completedAt - child.createdAt : undefined,
+                      },
+                    },
+                  } as any);
+                }
+                return { agentId: sa.agentId, type: sa.agentType, success: true, result: child.result };
+              }
+              if (emitEvent) {
+                emitEvent({
+                  type: 'subagent_event',
+                  subagentEventType: 'phase_error',
+                  phase: sa.agentType,
+                  agent: sa.agentType,
+                  toolCallId,
+                  timestamp: new Date().toISOString(),
+                  data: { agentId: sa.agentId, error: child?.error || 'Unknown error' },
+                } as any);
+              }
+              return { agentId: sa.agentId, type: sa.agentType, success: false, error: child?.error || 'Unknown error' };
+            } catch (err) {
+              if (emitEvent) {
+                emitEvent({
+                  type: 'subagent_event',
+                  subagentEventType: 'phase_error',
+                  phase: sa.agentType,
+                  agent: sa.agentType,
+                  toolCallId,
+                  timestamp: new Date().toISOString(),
+                  data: { agentId: sa.agentId, error: String(err) },
+                } as any);
+              }
+              return { agentId: sa.agentId, type: sa.agentType, success: false, error: String(err) };
+            }
+          }));
+
+          const successCount = results.filter(r => r.success).length;
+          const outputString = results.map((r, i) => {
+            const status = r.success ? 'SUCCESS' : 'FAILED';
+            const details = r.success ? r.result : r.error;
+            return `--- Swarm Agent #${i + 1} [ID: ${r.agentId}] [Type: ${r.type}] [Status: ${status}] ---\n${details}`;
+          }).join('\n\n');
+
+          onUpdate?.(`Parallel swarm execution finished. Successful: ${successCount}/${tasks.length}`);
+          return { success: successCount > 0, output: outputString };
+        } catch (err) {
+          return { success: false, output: `Swarm execution failed: ${err}` };
+        }
+      }
+    };
+  }
+
+  private createBroadcastSwarmFactTool(): AgentTool {
+    return {
+      name: 'broadcast_swarm_fact',
+      description: 'Broadcast a critical fact or finding to the shared real-time swarm memory bus so all active sibling agents can immediately see it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', description: 'The category of the fact. Options: fact, goal_update, error, pivot.', enum: ['fact', 'goal_update', 'error', 'pivot'] },
+          content: { type: 'string', description: 'The key findings or updates to share with other agents in the swarm.' }
+        },
+        required: ['content']
+      },
+      execute: async (args, onUpdate) => {
+        const type = (args.type as any) || 'fact';
+        const content = args.content as string;
+        
+        try {
+          const { getSwarmMemory } = await import('./swarm-memory');
+          const swarm = getSwarmMemory();
+          
+          const agentId = this.currentAgentSessionKey || 'commander';
+          const parentSessionId = this.currentConversationId || 'default';
+          
+          swarm.broadcast({
+            sourceAgentId: agentId,
+            sessionId: parentSessionId,
+            type,
+            content
+          });
+          
+          onUpdate?.(`Successfully broadcast fact to the swarm memory.`);
+          return { success: true, output: `Successfully broadcast: "${content}"` };
+        } catch (err) {
+          return { success: false, output: `Failed to broadcast: ${err}` };
+        }
+      }
+    };
+  }
+
+  private createReadSwarmMemoryTool(): AgentTool {
+    return {
+      name: 'read_swarm_memory',
+      description: 'Query the shared real-time swarm memory bus to read findings and facts broadcasted by sibling sub-agents.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      },
+      execute: async (args, onUpdate) => {
+        try {
+          const { getSwarmMemory } = await import('./swarm-memory');
+          const swarm = getSwarmMemory();
+          const parentSessionId = this.currentConversationId || 'default';
+          
+          const facts = swarm.getMemory(parentSessionId);
+          if (facts.length === 0) {
+            return { success: true, output: 'Swarm memory is currently empty. No facts have been broadcasted yet.' };
+          }
+          
+          const formatted = facts.map(f => {
+            const date = new Date(f.timestamp).toLocaleTimeString();
+            return `[${date}] [Agent: ${f.sourceAgentId}] [Type: ${f.type}]: ${f.content}`;
+          }).join('\n');
+          
+          return { success: true, output: `Current Swarm Memory Bus:\n${formatted}` };
+        } catch (err) {
+          return { success: false, output: `Failed to read swarm memory: ${err}` };
         }
       }
     };
@@ -503,21 +775,25 @@ export class AgentRunner {
       }
 
       // Check if this is a HITL approval/rejection response
+      // BUG-17 FIX: Use exact structured markers or full option strings only.
+      // Previously, bare 'Reject' substring matched normal messages like
+      // "Don't reject the hypothesis".
       const isHitlResponse = textInput.includes('[HITL_APPROVED]') ||
+                             textInput.includes('[HITL_APPROVED_ALWAYS]') ||
+                             textInput.includes('[HITL_APPROVED_PREFIX]') ||
                              textInput.includes('[HITL_REJECTED]') ||
-                             textInput.includes('Approve — proceed once') ||
-                             textInput.includes('proceed once') ||
-                             textInput.includes('Approve & Allow Always') ||
-                             textInput.includes('Approve & Allow Prefix') ||
-                             textInput.includes('Reject — cancel and do not proceed') ||
-                             textInput.includes('Reject');
+                             textInput.includes('✅ Approve — proceed once') ||
+                             textInput.includes('🚀 Approve & Allow Always') ||
+                             textInput.includes('📂 Approve & Allow Prefix') ||
+                             textInput.includes('❌ Reject — cancel and do not proceed');
 
       if (isHitlResponse) {
         const approved = textInput.includes('[HITL_APPROVED]') ||
-                         textInput.includes('Approve — proceed once') ||
-                         textInput.includes('proceed once') ||
-                         textInput.includes('Approve & Allow Always') ||
-                         textInput.includes('Approve & Allow Prefix');
+                         textInput.includes('[HITL_APPROVED_ALWAYS]') ||
+                         textInput.includes('[HITL_APPROVED_PREFIX]') ||
+                         textInput.includes('✅ Approve — proceed once') ||
+                         textInput.includes('🚀 Approve & Allow Always') ||
+                         textInput.includes('📂 Approve & Allow Prefix');
         console.log(`[Runner] HITL response detected: ${approved ? 'APPROVED' : 'REJECTED'}`);
 
         // Try to find the request ID from state manager
@@ -632,8 +908,10 @@ export class AgentRunner {
         this.skills = await loadSkillsAsync();
       }
 
-      // Reset abort state for new execution
-      globalAbortManager.reset();
+      // BUG-05 FIX: Removed duplicate globalAbortManager.reset() that was here.
+      // The first reset at line 702 is sufficient. A second reset here can race
+      // with the async graph invocation IIFE, clearing an abort signal that was
+      // set between the two resets and also wiping abort listeners.
 
       // SWARM SYNC: Listen for sub-agent progress events to forward to the stream
       let removeProgressListener: (() => void) | undefined;
@@ -654,8 +932,21 @@ export class AgentRunner {
       try {
         const shouldAbort = globalAbortManager.createShouldAbortCallback();
         let toolDefs = this._buildToolDefinitions();
-        if (isSubagent) {
-          toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent');
+        let currentDepth = 0;
+        if (this.currentAgentSessionKey) {
+          try {
+            const { getSubagentRegistry } = await import('./subagent-registry');
+            const registry = getSubagentRegistry();
+            const entry = registry.getBySessionKey(this.currentAgentSessionKey);
+            if (entry) {
+              currentDepth = entry.currentDepth;
+            }
+          } catch (e) {
+            console.warn('[AgentRunner] Failed to fetch current agent depth:', e);
+          }
+        }
+        if (isSubagent && currentDepth >= 4) {
+          toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent' && t.name !== 'spawn_swarm');
         }
         const graph = await Promise.resolve().then(() => buildGraph(
           this,
@@ -703,10 +994,7 @@ export class AgentRunner {
               event.toolCallId || '',
               event.type || '',
               event.timestamp || '',
-              event.stepNumber ?? '',
-              event.content || '',
-              event.action?.type || '',
-              event.screenshotPath || event.screenshot?.screenshotPath || '',
+              event.stepNumber ?? ''
             ].join('|');
             if (seen.has(key)) continue;
             seen.add(key);
@@ -1064,12 +1352,16 @@ function reconstructFullHistory(storedMessages: any[], currentUserInput: string 
       // Ensure all tool calls have IDs and they are consistent.
       // We use the message ID + index to generate a STABLE ID if one is missing.
       const toolCallsWithIds = msg.toolCalls.map((tc: any, idx: number) => {
+        // BUG-13 FIX: Use a single canonical ID for both the assistant tool_calls
+        // entry and the tool result message. Previously tc.id vs tc.toolCallId could
+        // differ, causing "tool_call_id mismatch" errors from the LLM API.
         const stableId = tc.id || tc.toolCallId || `call_${msg.id || 'stub'}_${idx}`;
         return {
           id: stableId,
           name: tc.toolName || tc.name,
           arguments: tc.args || tc.arguments || {},
-          result: tc.result
+          result: tc.result,
+          _canonicalId: stableId  // Used below for tool result messages
         };
       });
 

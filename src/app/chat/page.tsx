@@ -36,6 +36,8 @@ import {
     EyeIcon,
     StopCircleIcon,
     BriefcaseIcon,
+    HandThumbUpIcon,
+    HandThumbDownIcon,
 } from "@heroicons/react/24/outline";
 import { CheckIcon as CheckSolidIcon } from "@heroicons/react/24/solid";
 
@@ -71,6 +73,7 @@ import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
 import AnalyticsPage from './AnalyticsPage';
 import RevertModal from './components/RevertModal';
+import MessageFeedbackModal from './components/MessageFeedbackModal';
 import ProjectsPage from '../components/ProjectsPage';
 import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from './components/ToolDetailSidePanel';
@@ -491,7 +494,7 @@ const SuggestedFollowUpsComponent = ({
             <div style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: "#8a8886",
+                color: "var(--color-text-tertiary)",
                 letterSpacing: "0.03em",
                 textTransform: "uppercase",
                 marginBottom: 4,
@@ -502,10 +505,10 @@ const SuggestedFollowUpsComponent = ({
             <div style={{
                 display: "flex",
                 flexDirection: "column",
-                border: "1px solid #e8e6d9",
+                border: "1px solid var(--color-border)",
                 borderRadius: 14,
                 overflow: "hidden",
-                backgroundColor: "#ffffff",
+                backgroundColor: "var(--color-bg-surface)",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.02)"
             }}>
                 {followUps.map((item, idx) => (
@@ -523,15 +526,15 @@ const SuggestedFollowUpsComponent = ({
                             cursor: "pointer",
                             width: "100%",
                             textAlign: "left",
-                            color: "#201e24",
+                            color: "var(--color-text-primary)",
                             fontFamily: "var(--font-sans)",
                             fontSize: 13.5,
-                            borderBottom: idx < followUps.length - 1 ? "1px solid #f1f1ef" : "none",
+                            borderBottom: idx < followUps.length - 1 ? "1px solid var(--color-border-subtle)" : "none",
                             transition: "background-color 0.15s ease",
                             outline: "none"
                         }}
                         onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "#faf9f7";
+                            e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.backgroundColor = "transparent";
@@ -546,7 +549,7 @@ const SuggestedFollowUpsComponent = ({
                                 width: 28,
                                 height: 28,
                                 borderRadius: "50%",
-                                backgroundColor: "#f5f4f0",
+                                backgroundColor: "var(--color-bg-subtle)",
                                 flexShrink: 0
                             }}>
                                 {item.icon}
@@ -564,7 +567,7 @@ const SuggestedFollowUpsComponent = ({
                             strokeWidth="2.5"
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            style={{ color: "#a5a3a0", flexShrink: 0 }}
+                            style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}
                         >
                             <path d="M5 12h14" />
                             <path d="m12 5 7 7-7 7" />
@@ -656,6 +659,9 @@ export default function ChatPage() {
     // Revert modal state
     const [showRevertModal, setShowRevertModal] = useState(false);
     const [revertTarget, setRevertTarget] = useState<{ conversationId: string; timestamp: number; msgIndex: number } | null>(null);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [feedbackType, setFeedbackType] = useState<'up' | 'down'>('up');
+    const [feedbackTargetIndex, setFeedbackTargetIndex] = useState<number | null>(null);
 
     const { debate: debateData, isDebating, lastDebateId, skipDebate } = useDebateStream();
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
@@ -1275,10 +1281,7 @@ export default function ChatPage() {
                 event.toolCallId || '',
                 event.type || '',
                 event.timestamp || '',
-                event.stepNumber ?? '',
-                event.content || '',
-                event.action?.type || '',
-                event.screenshotPath || event.screenshot?.screenshotPath || '',
+                event.stepNumber ?? ''
             ].join('|');
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
@@ -1495,8 +1498,8 @@ export default function ChatPage() {
                         right: 24,
                         zIndex: 9999,
                         width: 320,
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #e8e6d9',
+                        backgroundColor: 'var(--color-bg-elevated)',
+                        border: '1px solid var(--color-border)',
                         borderRadius: 16,
                         padding: '16px 20px',
                         boxShadow: '0 12px 40px rgba(0,0,0,0.12)',
@@ -1510,7 +1513,7 @@ export default function ChatPage() {
                         width: 40,
                         height: 40,
                         borderRadius: 12,
-                        backgroundColor: '#f0fdf4',
+                        backgroundColor: 'rgba(34, 197, 94, 0.08)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1520,12 +1523,12 @@ export default function ChatPage() {
                         <CheckCircleIcon width={24} height={24} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111111', marginBottom: 2 }}>Task Complete</div>
-                        <div style={{ fontSize: 12, color: '#8a8886', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 2 }}>Task Complete</div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {notification.title} is ready
                         </div>
                     </div>
-                    <div style={{ color: '#8a8886' }}>
+                    <div style={{ color: 'var(--color-text-tertiary)' }}>
                         <ChevronRightIcon width={16} height={16} />
                     </div>
                 </motion.div>
@@ -3026,6 +3029,45 @@ export default function ChatPage() {
         }
     }, [revertTarget, messages, saveConversation]);
 
+    const handleFeedbackSubmit = useCallback(async (type: 'up' | 'down', reason: string, customReason: string, dataToSend: 'current' | 'last_3' | 'all') => {
+        if (feedbackTargetIndex === null) return;
+        
+        let contextMessages = [];
+        if (dataToSend === 'all') {
+            contextMessages = messages.slice(0, feedbackTargetIndex + 1);
+        } else if (dataToSend === 'last_3') {
+            const startIdx = Math.max(0, feedbackTargetIndex - 5);
+            contextMessages = messages.slice(startIdx, feedbackTargetIndex + 1);
+        } else {
+            const startIdx = Math.max(0, feedbackTargetIndex - 1);
+            contextMessages = messages.slice(startIdx, feedbackTargetIndex + 1);
+        }
+
+        try {
+            const res = await (window as any).electronAPI.loadConfig();
+            if (!res.success || !res.config?.apiKey) {
+                alert("Please log in to submit feedback.");
+                return;
+            }
+            
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+            const reqRes = await fetch(`${API_URL}/api/feedback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${res.config.apiKey}` },
+                body: JSON.stringify({
+                    feedback_type: type,
+                    reason,
+                    custom_reason: customReason,
+                    context_data: contextMessages
+                })
+            });
+            if (!reqRes.ok) throw new Error('Failed to submit feedback');
+        } catch (err) {
+            console.error('Error submitting feedback:', err);
+        }
+    }, [messages, feedbackTargetIndex]);
+
+
     const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[], skipAddUserMessage?: boolean) => {
         if (loadPromiseRef.current) {
             await loadPromiseRef.current;
@@ -3397,7 +3439,15 @@ export default function ChatPage() {
                     // Filter out fun startup messages, keep only actual thoughts
                     if (!['🎬 Let\'s do this!'].includes(content)) {
                         streamingThoughtRef.current += content;
-                        setStreamingThought(streamingThoughtRef.current);
+                        if (!(window as any).__streamingThrottler) {
+                            (window as any).__streamingThrottler = setTimeout(() => {
+                                setStreamingContent(streamingContentRef.current);
+                                setStreamingThought(streamingThoughtRef.current);
+                                setLiveToolCalls([...liveToolCallsRef.current]);
+                                setStreamingToolCalls([...streamingToolCallsRef.current]);
+                                (window as any).__streamingThrottler = null;
+                            }, 50);
+                        }
                     }
                 });
                 api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
@@ -3528,7 +3578,15 @@ export default function ChatPage() {
                             return tc;
                         });
                         liveToolCallsRef.current = updated;
-                        setLiveToolCalls(updated);
+                        if (!(window as any).__streamingThrottler) {
+                            (window as any).__streamingThrottler = setTimeout(() => {
+                                setStreamingContent(streamingContentRef.current);
+                                setStreamingThought(streamingThoughtRef.current);
+                                setLiveToolCalls([...liveToolCallsRef.current]);
+                                setStreamingToolCalls([...streamingToolCallsRef.current]);
+                                (window as any).__streamingThrottler = null;
+                            }, 50);
+                        }
                     }
                 });
 
@@ -3548,7 +3606,15 @@ export default function ChatPage() {
                             t.index === index ? { ...t, partialArguments: t.partialArguments + argumentsDelta } : t
                         );
                         streamingToolCallsRef.current = updated;
-                        setStreamingToolCalls([...updated]);
+                        if (!(window as any).__streamingThrottler) {
+                            (window as any).__streamingThrottler = setTimeout(() => {
+                                setStreamingContent(streamingContentRef.current);
+                                setStreamingThought(streamingThoughtRef.current);
+                                setLiveToolCalls([...liveToolCallsRef.current]);
+                                setStreamingToolCalls([...streamingToolCallsRef.current]);
+                                (window as any).__streamingThrottler = null;
+                            }, 50);
+                        }
                     }
                 });
 
@@ -3575,7 +3641,15 @@ export default function ChatPage() {
                     if (!done) {
                         accumulated += delta;
                         streamingContentRef.current = accumulated;
-                        setStreamingContent(accumulated);
+                        if (!(window as any).__streamingThrottler) {
+                            (window as any).__streamingThrottler = setTimeout(() => {
+                                setStreamingContent(streamingContentRef.current);
+                                setStreamingThought(streamingThoughtRef.current);
+                                setLiveToolCalls([...liveToolCallsRef.current]);
+                                setStreamingToolCalls([...streamingToolCallsRef.current]);
+                                (window as any).__streamingThrottler = null;
+                            }, 50);
+                        }
 
                         // Update create_artifact tool with streaming content
                         const artifactToolIdx = liveToolCallsRef.current.findIndex(
@@ -3591,7 +3665,7 @@ export default function ChatPage() {
                                 }
                             };
                             liveToolCallsRef.current = updated;
-                            setLiveToolCalls(updated);
+                            // Throttled by the main onStreamChunk updater
                         }
 
                         // Detect tool calls while streaming
@@ -3625,7 +3699,7 @@ export default function ChatPage() {
                         });
 
                         if (hasNewTools) {
-                            setLiveToolCalls([...liveToolCallsRef.current]);
+                            // Throttled by the main onStreamChunk updater
                         }
                     } else {
                         api.removeStreamListeners();
@@ -4108,9 +4182,9 @@ export default function ChatPage() {
         <div ref={modelSelectorRef} style={{ position: "relative" }}>
             <button
                 onClick={() => setShowModelSelector(!showModelSelector)}
-                style={{ display: "flex", alignItems: "center", gap: minimal ? 4 : 6, background: minimal ? "transparent" : "rgba(0, 0, 0, 0.04)", border: minimal ? "none" : "1px solid #e8e6d9", color: "#201e24", fontSize: 13.5, fontWeight: 600, cursor: "pointer", padding: minimal ? "0" : "0 12px", borderRadius: 8, height: minimal ? "auto" : 36, transition: "all 0.15s" }}
-                onMouseEnter={e => { if (!minimal) { e.currentTarget.style.borderColor = "#111111"; } e.currentTarget.style.color = "#111111"; }}
-                onMouseLeave={e => { if (!minimal) { e.currentTarget.style.borderColor = "#e8e6d9"; } e.currentTarget.style.color = "#201e24"; }}
+                style={{ display: "flex", alignItems: "center", gap: minimal ? 4 : 6, background: minimal ? "transparent" : "var(--color-bg-subtle)", border: minimal ? "none" : "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13.5, fontWeight: 600, cursor: "pointer", padding: minimal ? "0" : "0 12px", borderRadius: 8, height: minimal ? "auto" : 36, transition: "all 0.15s" }}
+                onMouseEnter={e => { if (!minimal) { e.currentTarget.style.borderColor = "var(--color-text-primary)"; } e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                onMouseLeave={e => { if (!minimal) { e.currentTarget.style.borderColor = "var(--color-border)"; } e.currentTarget.style.color = "var(--color-text-primary)"; }}
             >
                 {!minimal && currentModel.logo && <currentModel.logo size={14} />}
                 {currentModel.name}
@@ -4120,8 +4194,8 @@ export default function ChatPage() {
             <AnimatePresence>
                 {showModelSelector && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
-                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 240, backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
-                        <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
+                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 240, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
+                        <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
                         <div style={{ maxHeight: 300, overflowY: "auto" }}>
                             {availableModels.map(model => {
                                 const isDisabled = model.id.endsWith('-error') || model.id.endsWith('-empty');
@@ -4139,8 +4213,8 @@ export default function ChatPage() {
                                         setSelectedModel(model.id);
                                         setShowModelSelector(false);
                                     }}
-                                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "none", background: selectedModel === model.id ? "rgba(0,0,0,0.05)" : "transparent", color: isDisabled ? "#8a8886" : "#201e24", cursor: isDisabled ? "default" : "pointer", fontSize: 13, transition: "all 0.1s", textAlign: "left", opacity: isDisabled ? 0.7 : 1 }}
-                                        onMouseEnter={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "rgba(0,0,0,0.03)"; }}
+                                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "none", background: selectedModel === model.id ? "var(--color-bg-selected)" : "transparent", color: isDisabled ? "var(--color-text-tertiary)" : "var(--color-text-primary)", cursor: isDisabled ? "default" : "pointer", fontSize: 13, transition: "all 0.1s", textAlign: "left", opacity: isDisabled ? 0.7 : 1 }}
+                                        onMouseEnter={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                                         onMouseLeave={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "transparent"; }}
                                     >
                                         {model.logo ? <model.logo size={14} /> : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
@@ -4256,32 +4330,32 @@ export default function ChatPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative" }}>
                 <button type="button" onClick={() => setShowAddMenu(!showAddMenu)} title="Attach menu"
-                    style={{ background: "transparent", border: "none", color: "#717171", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#111111"}
-                    onMouseLeave={e => e.currentTarget.style.color = "#717171"}
+                    style={{ background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
+                    onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
                 >
                     <PlusIcon width={22} height={22} style={{ transform: showAddMenu ? 'rotate(45deg)' : 'none', transition: '0.2s' }} />
                 </button>
                 <AnimatePresence>
                     {showAddMenu && (
                         <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, backgroundColor: "#ffffff", borderRadius: 12, border: "1px solid #e8e6d9", padding: 6, display: "flex", flexDirection: "column", gap: 2, minWidth: 180, zIndex: 50, boxShadow: "0 8px 30px rgba(0,0,0,0.12)" }}>
-                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('image'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                            style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, display: "flex", flexDirection: "column", gap: 2, minWidth: 180, zIndex: 50, boxShadow: "0 8px 30px rgba(0,0,0,0.12)" }}>
+                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('image'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect><path d="M8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path><path d="M21 15l-5-5L5 21"></path></svg>
                                 Upload Image
                             </button>
-                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('document'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('document'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                 Upload Document
                             </button>
-                            <div style={{ height: 1, backgroundColor: "#f1f1ef", margin: "4px 6px" }} />
+                            <div style={{ height: 1, backgroundColor: "var(--color-border-subtle)", margin: "4px 6px" }} />
                             <button
                                 type="button"
                                 onClick={() => setPursueGoalMode(v => !v)}
                                 title="Enable operator mode for long-running goals"
-                                style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: pursueGoalMode ? "rgba(0,0,0,0.05)" : "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left" }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = pursueGoalMode ? "rgba(0,0,0,0.05)" : "transparent"}
+                                style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: pursueGoalMode ? "var(--color-bg-selected)" : "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = pursueGoalMode ? "var(--color-bg-selected)" : "transparent"}
                             >
                                 <SparklesIcon width={18} height={18} style={{ flexShrink: 0 }} />
                                 <span style={{ flex: 1 }}>Pursue goal</span>
@@ -4291,7 +4365,7 @@ export default function ChatPage() {
                                         width: 32,
                                         height: 18,
                                         borderRadius: 999,
-                                        backgroundColor: pursueGoalMode ? "#201e24" : "#d6d6d3",
+                                        backgroundColor: pursueGoalMode ? "var(--color-text-primary)" : "var(--color-border-strong)",
                                         padding: 2,
                                         display: "flex",
                                         alignItems: "center",
@@ -4300,7 +4374,7 @@ export default function ChatPage() {
                                         flexShrink: 0,
                                     }}
                                 >
-                                    <span style={{ width: 14, height: 14, borderRadius: "50%", backgroundColor: "#ffffff", boxShadow: "0 1px 2px rgba(0,0,0,0.18)" }} />
+                                    <span style={{ width: 14, height: 14, borderRadius: "50%", backgroundColor: "var(--color-bg-surface)", boxShadow: "0 1px 2px rgba(0,0,0,0.18)" }} />
                                 </span>
                             </button>
                         </motion.div>
@@ -4312,13 +4386,13 @@ export default function ChatPage() {
                 <button type="button"
                     onClick={() => !isProjectLocked && setShowProjectDropdown(!showProjectDropdown)}
                     title={isProjectLocked ? "Project Locked" : "Select Project"}
-                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid #e8e6d9", borderRadius: 14, color: folderContexts.length > 0 ? "#111111" : "#8a8886", cursor: isProjectLocked ? "default" : "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 500, transition: "0.2s" }}
-                    onMouseEnter={e => { if (!isProjectLocked) { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "#111111"; } }}
-                    onMouseLeave={e => { if (!isProjectLocked) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = folderContexts.length > 0 ? "#111111" : "#8a8886"; } }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--color-border)", borderRadius: 14, color: folderContexts.length > 0 ? "var(--color-text-primary)" : "var(--color-text-tertiary)", cursor: isProjectLocked ? "default" : "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 500, transition: "0.2s" }}
+                    onMouseEnter={e => { if (!isProjectLocked) { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; } }}
+                    onMouseLeave={e => { if (!isProjectLocked) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = folderContexts.length > 0 ? "var(--color-text-primary)" : "var(--color-text-tertiary)"; } }}
                 >
-                    <BriefcaseIcon width={15} height={15} style={{ color: folderContexts.length > 0 ? "#111111" : "#8a8886" }} />
+                    <BriefcaseIcon width={15} height={15} style={{ color: folderContexts.length > 0 ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }} />
                     {folderContexts.length > 0 ? folderContexts[0].name : "Project"}
-                    {!isProjectLocked && <ChevronDownIcon width={12} height={12} style={{ marginLeft: 4, color: '#8a8886' }} />}
+                    {!isProjectLocked && <ChevronDownIcon width={12} height={12} style={{ marginLeft: 4, color: 'var(--color-text-tertiary)' }} />}
                 </button>
 
                 <AnimatePresence>
@@ -4328,31 +4402,31 @@ export default function ChatPage() {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -10, scale: 0.95 }}
                             transition={{ duration: 0.15 }}
-                            style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, width: 220, backgroundColor: "#ffffff", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.1)", border: "1px solid #f4f4f4", padding: 6, zIndex: 50, display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}
+                            style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, width: 220, backgroundColor: "var(--color-bg-elevated)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.1)", border: "1px solid var(--color-border)", padding: 6, zIndex: 50, display: "flex", flexDirection: "column", gap: 2, maxHeight: 300, overflowY: "auto" }}
                         >
                             <button
                                 type="button"
                                 onClick={() => { setFolderContexts([]); setShowProjectDropdown(false); }}
-                                style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: folderContexts.length === 0 ? "rgba(0,0,0,0.04)" : "transparent", color: folderContexts.length === 0 ? "#111111" : "#8a8886", cursor: "pointer", fontSize: 13, textAlign: "left", transition: "0.15s" }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = folderContexts.length === 0 ? "rgba(0,0,0,0.04)" : "transparent"}
+                                style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: folderContexts.length === 0 ? "var(--color-bg-selected)" : "transparent", color: folderContexts.length === 0 ? "var(--color-text-primary)" : "var(--color-text-tertiary)", cursor: "pointer", fontSize: 13, textAlign: "left", transition: "0.15s" }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = folderContexts.length === 0 ? "var(--color-bg-selected)" : "transparent"}
                             >
                                 No Project
                             </button>
 
-                            {projects.length > 0 && <div style={{ height: 1, backgroundColor: '#f4f4f4', margin: '4px 0' }} />}
+                            {projects.length > 0 && <div style={{ height: 1, backgroundColor: 'var(--color-border-subtle)', margin: '4px 0' }} />}
 
                             {projects.map(p => (
                                 <button
                                     key={p.id}
                                     type="button"
                                     onClick={() => { setFolderContexts([{ id: p.id, path: p.path, name: p.name }]); setShowProjectDropdown(false); }}
-                                    style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: folderContexts[0]?.id === p.id ? "rgba(0,0,0,0.04)" : "transparent", color: "#111111", cursor: "pointer", fontSize: 13, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "0.15s" }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = folderContexts[0]?.id === p.id ? "rgba(0,0,0,0.04)" : "transparent"}
+                                    style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: folderContexts[0]?.id === p.id ? "var(--color-bg-selected)" : "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "0.15s" }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = folderContexts[0]?.id === p.id ? "var(--color-bg-selected)" : "transparent"}
                                 >
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", overflow: "hidden" }}>
-                                        <BriefcaseIcon width={14} height={14} style={{ flexShrink: 0, color: folderContexts[0]?.id === p.id ? '#111111' : '#8a8886' }} />
+                                        <BriefcaseIcon width={14} height={14} style={{ flexShrink: 0, color: folderContexts[0]?.id === p.id ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }} />
                                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
                                     </div>
                                 </button>
@@ -4423,7 +4497,7 @@ export default function ChatPage() {
                 </button>
             ) : (
                 <button type="button" onClick={handleSend} disabled={activeUserQuestions.length > 0 || !!showHitlApproval || (!inputValue.trim() && attachments.length === 0 && folderContexts.length === 0)} title="Send"
-                    style={{ width: 32, height: 32, borderRadius: 10, background: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "#201e24" : "#f4f4f4", border: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "none" : "1px solid #e8e6d9", color: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "#ffffff" : "#a1a1aa", cursor: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
+                    style={{ width: 32, height: 32, borderRadius: 10, background: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "var(--color-text-primary)" : "var(--color-bg-subtle)", border: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "none" : "1px solid var(--color-border)", color: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "var(--color-bg-base)" : "var(--color-text-placeholder)", cursor: (inputValue.trim() || attachments.length > 0 || folderContexts.length > 0) ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -4464,10 +4538,10 @@ export default function ChatPage() {
                         gap: 10,
                         padding: "9px 12px",
                         borderRadius: 12,
-                        border: "1px solid #e2ddd2",
-                        background: "linear-gradient(180deg, #fffefa 0%, #f4f2eb 100%)",
-                        boxShadow: "0 2px 6px rgba(32,30,36,0.08), inset 0 1px 0 rgba(255,255,255,0.85)",
-                        color: "#201e24",
+                        border: "1px solid var(--color-border)",
+                        background: "var(--color-bg-subtle)",
+                        boxShadow: "none",
+                        color: "var(--color-text-primary)",
                         cursor: "pointer",
                         textAlign: "left",
                     }}
@@ -4489,10 +4563,10 @@ export default function ChatPage() {
                         <CpuChipIcon width={14} height={14} strokeWidth={2.2} />
                     </span>
                     <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
-                        <span style={{ fontSize: 13, fontWeight: 650, color: "#201e24", lineHeight: 1.2 }}>
+                        <span style={{ fontSize: 13, fontWeight: 650, color: "var(--color-text-primary)", lineHeight: 1.2 }}>
                             Sub-agent spawned
                         </span>
-                        <span style={{ fontSize: 11.5, color: "#7c776f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <span style={{ fontSize: 11.5, color: "var(--color-text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {agentLabel} · {activePhase.description || "Working on a delegated task"}
                         </span>
                     </span>
@@ -4503,17 +4577,17 @@ export default function ChatPage() {
                             gap: 5,
                             padding: "4px 8px",
                             borderRadius: 999,
-                            background: "#eef6ff",
-                            color: "#2563eb",
+                            background: "var(--color-navis-active-bg)",
+                            color: "var(--color-navis-active-text)",
                             fontSize: 11,
                             fontWeight: 650,
                             flexShrink: 0,
                         }}
                     >
-                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "#3b82f6", boxShadow: "0 0 10px rgba(59,130,246,0.7)" }} />
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--color-navis-active-border)", boxShadow: "0 0 10px var(--color-navis-active-border)" }} />
                         {statusLabel}
                     </span>
-                    <ChevronRightIcon width={14} height={14} strokeWidth={2.2} color="#8a8886" />
+                    <ChevronRightIcon width={14} height={14} strokeWidth={2.2} color="var(--color-text-tertiary)" />
                 </button>
             </div>
         );
@@ -4525,22 +4599,21 @@ export default function ChatPage() {
             {attachments.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 16px 0" }}>
                     {attachments.map(a => (
-                        <div key={a.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "6px 12px 6px 6px", backgroundColor: "#f5f4f0", borderRadius: 8, border: "1px solid #e8e6d9" }}>
+                        <div key={a.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "6px 12px 6px 6px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)" }}>
                             {a.mimeType.startsWith("image/") && a.base64 ? (
                                 <div style={{ width: 40, height: 40, borderRadius: 6, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} />
                             ) : (
-                                <div style={{ width: 40, height: 40, borderRadius: 6, backgroundColor: "rgba(0, 0, 0, 0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                    <PaperClipIcon width={20} height={20} color="#717171" />
+                                <div style={{ width: 40, height: 40, borderRadius: 6, backgroundColor: "var(--color-bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                    <PaperClipIcon width={20} height={20} color="var(--color-text-tertiary)" />
                                 </div>
                             )}
                             <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, paddingRight: 8 }}>
-                                <span style={{ fontSize: 13, fontWeight: 500, color: "#111111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{a.name}</span>
-                                <span style={{ fontSize: 11, color: "#8a8886" }}>{(a.size / 1024).toFixed(1)} KB</span>
+                                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{a.name}</span>
+                                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
                             </div>
                             <button onClick={() => setAttachments(prev => prev.filter(att => att.id !== a.id))}
-                                style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: "#ffffff", border: "1px solid #dcdad0", display: "flex", alignItems: "center", justifyContent: "center", color: "#111111", cursor: "pointer", zIndex: 10 }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f5f5e1"}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "#ffffff"}>
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                                 <XMarkIcon width={12} height={12} strokeWidth={3} />
                             </button>
                         </div>
@@ -4555,23 +4628,23 @@ export default function ChatPage() {
         <AnimatePresence>
             {showOnboarding && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,252,240,0.8)", backdropFilter: "blur(16px)" }}>
+                    style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(16px)" }}>
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-                        style={{ width: "100%", maxWidth: onboardingStep === "name" ? 440 : 540, backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 32, padding: "48px 32px", textAlign: "center", boxShadow: "0 32px 64px -12px rgba(0,0,0,0.12)" }}>
+                        style={{ width: "100%", maxWidth: onboardingStep === "name" ? 440 : 540, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 32, padding: "48px 32px", textAlign: "center", boxShadow: "var(--shadow-lg)" }}>
                         {onboardingStep === "name" ? (
                             <motion.div key="name-step" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-                                <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "#f5f4f0", border: "1px solid #e8e6d9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    <SparklesIcon width={32} height={32} color="#201e24" />
+                                <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <SparklesIcon width={32} height={32} color="var(--color-text-primary)" />
                                 </div>
-                                <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "#201e24", letterSpacing: "-0.02em" }}>Welcome to EverFern</h2>
-                                <p style={{ fontSize: 16, color: "#8a8886", marginBottom: 32, lineHeight: 1.5 }}>Let's get started. How should your intelligence companion address you?</p>
+                                <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Welcome to EverFern</h2>
+                                <p style={{ fontSize: 16, color: "var(--color-text-tertiary)", marginBottom: 32, lineHeight: 1.5 }}>Let's get started. How should your intelligence companion address you?</p>
                                 <input type="text" placeholder="Your name..." value={onboardingName} onChange={(e) => setOnboardingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNextFromName()}
-                                    style={{ width: "100%", padding: "18px 24px", backgroundColor: "#f5f4f0", border: "1px solid #e8e6d9", borderRadius: 18, color: "#201e24", fontSize: 16, outline: "none", boxSizing: "border-box", marginBottom: 24, textAlign: "center", transition: "all 0.2s", fontFamily: "var(--font-sans)" }}
-                                    onFocus={e => { e.target.style.borderColor = "#111111"; e.target.style.backgroundColor = "#ffffff"; }}
-                                    onBlur={e => { e.target.style.borderColor = "#e8e6d9"; e.target.style.backgroundColor = "#f5f4f0"; }}
+                                    style={{ width: "100%", padding: "18px 24px", backgroundColor: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", borderRadius: 18, color: "var(--color-text-primary)", fontSize: 16, outline: "none", boxSizing: "border-box", marginBottom: 24, textAlign: "center", transition: "all 0.2s", fontFamily: "var(--font-sans)" }}
+                                    onFocus={e => { e.target.style.borderColor = "var(--color-border-focus)"; e.target.style.backgroundColor = "var(--color-bg-surface)"; }}
+                                    onBlur={e => { e.target.style.borderColor = "var(--color-border)"; e.target.style.backgroundColor = "var(--color-bg-subtle)"; }}
                                 />
                                 <button onClick={handleNextFromName} disabled={!onboardingName.trim()}
-                                    style={{ width: "100%", padding: "18px", backgroundColor: "#201e24", color: "#ffffff", borderRadius: 18, fontWeight: 600, fontSize: 16, border: "none", cursor: onboardingName.trim() ? "pointer" : "not-allowed", opacity: onboardingName.trim() ? 1 : 0.4, transition: "all 0.2s" }}
+                                    style={{ width: "100%", padding: "18px", backgroundColor: "var(--color-text-primary)", color: "var(--color-text-inverse)", borderRadius: 18, fontWeight: 600, fontSize: 16, border: "none", cursor: onboardingName.trim() ? "pointer" : "not-allowed", opacity: onboardingName.trim() ? 1 : 0.4, transition: "all 0.2s" }}
                                     onMouseEnter={e => { if (onboardingName.trim()) e.currentTarget.style.transform = "translateY(-1px)"; }}
                                     onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}>
                                     Get Started
@@ -4579,75 +4652,75 @@ export default function ChatPage() {
                             </motion.div>
                         ) : (
                             <motion.div key="vlm-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                                <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "#f5f4f0", border: "1px solid #e8e6d9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    <CpuChipIcon width={32} height={32} color="#201e24" />
+                                <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <CpuChipIcon width={32} height={32} color="var(--color-text-primary)" />
                                 </div>
-                                <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "#201e24", letterSpacing: "-0.02em" }}>Local Vision AI</h2>
-                                <p style={{ fontSize: 15, color: "#8a8886", marginBottom: 32, lineHeight: 1.6 }}>
-                                    To see your screen and control your PC locally, EverFern recommends installing the <strong style={{ color: "#201e24" }}>Qwen3 VL (2B)</strong> model via Ollama.
+                                <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Local Vision AI</h2>
+                                <p style={{ fontSize: 15, color: "var(--color-text-tertiary)", marginBottom: 32, lineHeight: 1.6 }}>
+                                    To see your screen and control your PC locally, EverFern recommends installing the <strong style={{ color: "var(--color-text-primary)" }}>Qwen3 VL (2B)</strong> model via Ollama.
                                 </p>
                                 {ollamaInstalled === false ? (
-                                    <div style={{ padding: "24px", background: "#f5f4f0", borderRadius: 20, border: "1px solid #e8e6d9", marginBottom: 24 }}>
+                                    <div style={{ padding: "24px", background: "var(--color-bg-subtle)", borderRadius: 20, border: "1px solid var(--color-border)", marginBottom: 24 }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16 }}>
                                             <OllamaLogo size={24} />
-                                            <span style={{ fontSize: 16, fontWeight: 700, color: "#201e24" }}>Ollama is required</span>
+                                            <span style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>Ollama is required</span>
                                         </div>
                                         <button onClick={handleInstallOllama} disabled={isInstallingOllama}
-                                            style={{ width: "100%", padding: "14px", backgroundColor: "#201e24", color: "#ffffff", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: isInstallingOllama ? "wait" : "pointer", transition: "all 0.2s" }}>
+                                            style={{ width: "100%", padding: "14px", backgroundColor: "var(--color-text-primary)", color: "var(--color-text-inverse)", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: isInstallingOllama ? "wait" : "pointer", transition: "all 0.2s" }}>
                                             {isInstallingOllama ? "Installing Ollama..." : "Install Ollama Automatically"}
                                         </button>
                                         {(isInstallingOllama || ollamaInstallDone) && (
                                             <div style={{ marginTop: 20 }}>
                                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                                                    <span style={{ fontSize: 12, color: "#8a8886", fontWeight: 500 }}>
+                                                    <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", fontWeight: 500 }}>
                                                         {ollamaInstallPhase === "done" ? "✔ Installation complete!" : ollamaInstallPhase === "finalizing" ? "Finalizing..." : "Downloading Ollama..."}
                                                     </span>
-                                                    <span style={{ fontSize: 12, color: "#8a8886", fontFamily: "monospace" }}>{ollamaInstallPct.toFixed(1)}%</span>
+                                                    <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>{ollamaInstallPct.toFixed(1)}%</span>
                                                 </div>
-                                                <div style={{ width: "100%", height: 6, borderRadius: 999, background: "#e8e6d9", overflow: "hidden" }}>
-                                                    <motion.div animate={{ width: `${ollamaInstallPhase === "finalizing" ? 100 : ollamaInstallPct}%` }} transition={{ ease: "linear", duration: 0.3 }} style={{ height: "100%", borderRadius: 999, background: "#201e24" }} />
+                                                <div style={{ width: "100%", height: 6, borderRadius: 999, background: "var(--color-border)", overflow: "hidden" }}>
+                                                    <motion.div animate={{ width: `${ollamaInstallPhase === "finalizing" ? 100 : ollamaInstallPct}%` }} transition={{ ease: "linear", duration: 0.3 }} style={{ height: "100%", borderRadius: 999, background: "var(--color-text-primary)" }} />
                                                 </div>
                                             </div>
                                         )}
                                     </div>
                                 ) : (
-                                    <div style={{ padding: "24px", background: "#f5f4f0", borderRadius: 20, border: "1px solid #e8e6d9", marginBottom: 24 }}>
+                                    <div style={{ padding: "24px", background: "var(--color-bg-subtle)", borderRadius: 20, border: "1px solid var(--color-border)", marginBottom: 24 }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                                <div style={{ width: 40, height: 40, borderRadius: 10, background: "#ffffff", border: "1px solid #e8e6d9", display: "flex", alignItems: "center", justifyContent: "center" }}><OllamaLogo size={20} /></div>
+                                                <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "center" }}><OllamaLogo size={20} /></div>
                                                 <div style={{ textAlign: "left" }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 700, color: "#201e24" }}>Qwen2.5-VL-3B-Thinking</div>
-                                                    <div style={{ fontSize: 12, color: "#8a8886" }}>~2.5 GB · Fast Local Inference</div>
+                                                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>Qwen2.5-VL-3B-Thinking</div>
+                                                    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>~2.5 GB · Fast Local Inference</div>
                                                 </div>
                                             </div>
-                                            <CheckCircleIcon width={24} height={24} color="#201e24" style={{ opacity: (isPullingModel || modelInstalled) ? 1 : 0.2 }} />
+                                            <CheckCircleIcon width={24} height={24} color="var(--color-text-primary)" style={{ opacity: (isPullingModel || modelInstalled) ? 1 : 0.2 }} />
                                         </div>
                                         <button onClick={handlePullModel} disabled={!!(isPullingModel || isInstallingOllama || modelInstalled)}
-                                            style={{ width: "100%", padding: "14px", backgroundColor: modelInstalled ? "transparent" : "#201e24", color: modelInstalled ? "#8a8886" : "#ffffff", borderRadius: 14, fontWeight: 600, fontSize: 14, border: modelInstalled ? "1px solid #e8e6d9" : "none", cursor: (isPullingModel || isInstallingOllama) ? "wait" : (modelInstalled ? "default" : "pointer"), transition: "all 0.2s" }}>
+                                            style={{ width: "100%", padding: "14px", backgroundColor: modelInstalled ? "transparent" : "var(--color-text-primary)", color: modelInstalled ? "var(--color-text-tertiary)" : "var(--color-text-inverse)", borderRadius: 14, fontWeight: 600, fontSize: 14, border: modelInstalled ? "1px solid var(--color-border)" : "none", cursor: (isPullingModel || isInstallingOllama) ? "wait" : (modelInstalled ? "default" : "pointer"), transition: "all 0.2s" }}>
                                             {modelInstalled ? "✔ Ready to use" : (isPullingModel ? `Downloading... ${pullPct.toFixed(1)}%` : "Download & Setup")}
                                         </button>
                                         {isPullingModel && (
                                             <div style={{ marginTop: 14 }}>
-                                                <div style={{ width: "100%", height: 6, borderRadius: 999, background: "#e8e6d9", overflow: "hidden" }}>
-                                                    <motion.div animate={{ width: `${pullPct}%` }} transition={{ ease: "linear", duration: 0.3 }} style={{ height: "100%", borderRadius: 999, background: "#201e24" }} />
+                                                <div style={{ width: "100%", height: 6, borderRadius: 999, background: "var(--color-border)", overflow: "hidden" }}>
+                                                    <motion.div animate={{ width: `${pullPct}%` }} transition={{ ease: "linear", duration: 0.3 }} style={{ height: "100%", borderRadius: 999, background: "var(--color-text-primary)" }} />
                                                 </div>
-                                                <p style={{ fontSize: 11, color: "#8a8886", marginTop: 8, textAlign: "center" }}>Downloading model weights... ~2.5 GB total</p>
+                                                <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 8, textAlign: "center" }}>Downloading model weights... ~2.5 GB total</p>
                                             </div>
                                         )}
                                         {modelInstalled && !isPullingModel && (
                                             <div style={{ marginTop: 12, textAlign: "center" }}>
-                                                <button onClick={() => finalizeOnboarding(true)} style={{ background: "none", border: "none", color: "#111111", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>Complete Setup →</button>
+                                                <button onClick={() => finalizeOnboarding(true)} style={{ background: "none", border: "none", color: "var(--color-text-primary)", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>Complete Setup →</button>
                                             </div>
                                         )}
                                     </div>
                                 )}
                                 {ollamaLogs.length > 0 && (
-                                    <div style={{ width: "100%", height: 120, backgroundColor: "#242322", borderRadius: 12, padding: 12, border: "1px solid #363635", overflowY: "auto", textAlign: "left" }}>
-                                        <pre style={{ margin: 0, color: "#8a8886", fontSize: 11, fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{ollamaLogs.join('\n')}</pre>
+                                    <div style={{ width: "100%", height: 120, backgroundColor: "var(--color-bg-base)", borderRadius: 12, padding: 12, border: "1px solid var(--color-border)", overflowY: "auto", textAlign: "left" }}>
+                                        <pre style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: 11, fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{ollamaLogs.join('\n')}</pre>
                                     </div>
                                 )}
                                 <div style={{ marginTop: 24 }}>
-                                    <button onClick={() => finalizeOnboarding(false)} style={{ background: "none", border: "none", color: "#8a8886", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>Skip for now</button>
+                                    <button onClick={() => finalizeOnboarding(false)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>Skip for now</button>
                                 </div>
                             </motion.div>
                         )}
@@ -4799,7 +4872,7 @@ export default function ChatPage() {
                 />
             )}
 
-            <div style={{ height: "100vh", backgroundColor: "#f5f4f0", color: "#201e24", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
+            <div style={{ height: "100vh", backgroundColor: "var(--color-bg-base)", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
                 <PermissionDialog />
                 <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
                 <FileViewerModal
@@ -4845,7 +4918,7 @@ export default function ChatPage() {
                     initial={false}
                     animate={{ marginLeft: sidebarOpen ? 260 : 68 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "#f5f4f0", position: "relative" }}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "var(--color-bg-base)", position: "relative" }}
                 >
                     {/* Header */}
                     <header style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", WebkitAppRegion: "drag" } as any}>
@@ -4854,7 +4927,7 @@ export default function ChatPage() {
                                 <button onClick={() => {
                                     setIsExecutionPlanPaneOpen(true);
                                     if (activeConversationId) localStorage.removeItem(`everfern_exec_pane_closed_${activeConversationId}`);
-                                }} style={{ fontSize: 12, fontWeight: 600, color: "#201e24", backgroundColor: "rgba(0,0,0,0.04)", padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.08)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                                }} style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", backgroundColor: "var(--color-bg-subtle)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-border)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                     View Plan
                                 </button>
@@ -4866,13 +4939,13 @@ export default function ChatPage() {
                                 <button 
                                     type="button" 
                                     onClick={() => setShowNotificationMenu(!showNotificationMenu)}
-                                    style={{ position: "relative", background: "transparent", border: "none", color: "#73716e", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }} 
-                                    onMouseEnter={e => e.currentTarget.style.color = "#111111"} 
-                                    onMouseLeave={e => e.currentTarget.style.color = "#73716e"}
+                                    style={{ position: "relative", background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }} 
+                                    onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"} 
+                                    onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
                                 >
                                     <BellIcon width={20} height={20} />
                                     {(activeTaskIds.length > 0 || notification) && (
-                                        <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "#ef4444", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #f5f4f0", fontWeight: 700 }}>
+                                        <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "#ef4444", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--color-bg-base)", fontWeight: 700 }}>
                                             {activeTaskIds.length + (notification ? 1 : 0)}
                                         </span>
                                     )}
@@ -4881,37 +4954,37 @@ export default function ChatPage() {
                                 {showNotificationMenu && (
                                     <>
                                         <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setShowNotificationMenu(false)} />
-                                        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, backgroundColor: "#ffffff", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", border: "1px solid #e8e6e1", zIndex: 100, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                                            <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                                <span style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>Activity & Notifications</span>
+                                        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, boxShadow: "var(--shadow-md)", border: "1px solid var(--color-border)", zIndex: 100, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                                            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--color-border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Activity & Notifications</span>
                                                 {(activeTaskIds.length > 0 || notification) && (
-                                                    <span style={{ fontSize: 11, color: "#666", backgroundColor: "#f5f5f5", padding: "2px 8px", borderRadius: 10 }}>
+                                                    <span style={{ fontSize: 11, color: "var(--color-text-secondary)", backgroundColor: "var(--color-bg-subtle)", padding: "2px 8px", borderRadius: 10 }}>
                                                         {activeTaskIds.length + (notification ? 1 : 0)} new
                                                     </span>
                                                 )}
                                             </div>
                                             <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
                                                 {notification && (
-                                                    <div style={{ padding: "10px 16px", borderBottom: activeTaskIds.length > 0 ? "1px solid #f5f5f5" : "none", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                                                    <div style={{ padding: "10px 16px", borderBottom: activeTaskIds.length > 0 ? "1px solid var(--color-border-subtle)" : "none", display: "flex", gap: 12, alignItems: "flex-start" }}>
                                                         <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#ef4444", marginTop: 6, flexShrink: 0 }} />
                                                         <div>
-                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "#111" }}>{notification.title}</div>
-                                                            <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>Click to view details</div>
+                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{notification.title}</div>
+                                                            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Click to view details</div>
                                                         </div>
                                                     </div>
                                                 )}
                                                 {activeTaskIds.map(taskId => (
-                                                    <div key={taskId} style={{ padding: "10px 16px", display: "flex", gap: 12, alignItems: "center", cursor: "pointer" }} onClick={() => { setActiveConversationId(taskId); setShowNotificationMenu(false); }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f9f9f9"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                                                        <div style={{ width: 16, height: 16, border: "2px solid #e5e7eb", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                                                    <div key={taskId} style={{ padding: "10px 16px", display: "flex", gap: 12, alignItems: "center", cursor: "pointer" }} onClick={() => { setActiveConversationId(taskId); setShowNotificationMenu(false); }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                                                        <div style={{ width: 16, height: 16, border: "2px solid var(--color-border)", borderTopColor: "var(--color-accent)", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
                                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Agent working in background</div>
-                                                            <div style={{ fontSize: 12, color: "#666" }}>Task ID: {taskId.substring(0, 8)}...</div>
+                                                            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Agent working in background</div>
+                                                            <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Task ID: {taskId.substring(0, 8)}...</div>
                                                         </div>
-                                                        <button onClick={(e) => { e.stopPropagation(); setActiveConversationId(taskId); setShowNotificationMenu(false); }} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "#3b82f6", backgroundColor: "#eff6ff", border: "none", borderRadius: 6, cursor: "pointer" }}>View</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); setActiveConversationId(taskId); setShowNotificationMenu(false); }} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, color: "var(--color-accent)", backgroundColor: "var(--color-accent-dim)", border: "none", borderRadius: 6, cursor: "pointer" }}>View</button>
                                                     </div>
                                                 ))}
                                                 {activeTaskIds.length === 0 && !notification && (
-                                                    <div style={{ padding: "20px", textAlign: "center", color: "#888", fontSize: 13 }}>
+                                                    <div style={{ padding: "20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13 }}>
                                                         No active tasks or notifications
                                                     </div>
                                                 )}
@@ -4924,17 +4997,17 @@ export default function ChatPage() {
                         </div>
                     </header>
 
-                    <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "#ffffff", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid #e8e6d9", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", overflow: "hidden" }}>
+                    <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "var(--color-bg-surface)", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid var(--color-border)", boxShadow: "var(--shadow-xs)", overflow: "hidden" }}>
                         {/* Main Chat Area */}
                         {showAnalyticsPage ? (
-                            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "#fff" }}>
+                            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "var(--color-bg-surface)" }}>
                                 <AnalyticsPage
                                     onClose={() => setShowAnalyticsPage(false)}
                                     sidebarOpen={sidebarOpen}
                                 />
                             </div>
                         ) : showProjectsPage ? (
-                            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "#fff" }}>
+                            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "var(--color-bg-surface)" }}>
                                 <ProjectsPage
                                     onClose={() => setShowProjectsPage(false)}
                                     onCreateNew={() => setShowCreateProjectModal(true)}
@@ -4974,17 +5047,17 @@ export default function ChatPage() {
                                             )} */}
                                             {folderContexts.length > 0 ? (
                                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "#201e24", letterSpacing: "-0.01em" }}>
+                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
                                                         {folderContexts[0].name}
                                                     </h1>
                                                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 6, display: "flex", borderRadius: 8 }} title="Favorite"
-                                                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,0,0,0.05)"; }}
+                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="Favorite"
+                                                            onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                                                             onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                                                         </button>
-                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 6, display: "flex", borderRadius: 8 }} title="More options"
-                                                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,0,0,0.05)"; }}
+                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="More options"
+                                                            onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                                                             onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
                                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                                                         </button>
@@ -4992,7 +5065,7 @@ export default function ChatPage() {
                                                 </div>
                                             ) : (
                                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
-                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, margin: 0, color: "#201e24", letterSpacing: "-0.01em" }}>
+                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
                                                         {randomGreeting}
                                                     </h1>
                                                 </div>
@@ -5092,7 +5165,7 @@ export default function ChatPage() {
                                                 )}
 
                                                  {/* Progressive input container */}
-                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#f4f4f4", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
+                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
                                                     {renderSubagentSpawnAttachment()}
                                                     {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
@@ -5103,11 +5176,11 @@ export default function ChatPage() {
                                                                 : "How can I help you today?"
                                                     } rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                        className="placeholder-[#a5a3a0]"
-                                                        style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
+                                                        className="placeholder-[var(--color-text-placeholder)]"
+                                                        style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
 
                                                     {/* Progressive fade at the bottom of the textarea */}
-                                                    <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, transparent, #f4f4f4 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
+                                                    <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
                                                     <div style={{ flex: 1 }} />
                                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
                                                         {renderComposerLeftActions()}
@@ -5126,9 +5199,9 @@ export default function ChatPage() {
                                                              { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
                                                          ].map(c => (
                                                              <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
-                                                                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid #f7f5f2", color: "#201e24", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
-                                                                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f7f5f2"; e.currentTarget.style.color = "#111111"; }}
-                                                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#201e24"; }}>
+                                                                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
+                                                                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                                                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-primary)"; }}>
                                                                  <span style={{ display: 'flex' }}>{c.icon}</span>
                                                                  <span style={{ fontWeight: 400 }}>{c.label}</span>
                                                              </button>
@@ -5138,12 +5211,12 @@ export default function ChatPage() {
                                                 {/* Project mode empty state cue */}
                                                 {folderContexts.length > 0 && (
                                                     <div style={{ marginTop: 60, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#d1cfc9" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                                                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                                             <line x1="9" y1="10" x2="15" y2="10"/>
                                                             <line x1="9" y1="14" x2="13" y2="14"/>
                                                         </svg>
-                                                        <p style={{ fontSize: 15, color: "#111111", margin: 0, fontWeight: 500, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
+                                                        <p style={{ fontSize: 15, color: "var(--color-text-primary)", margin: 0, fontWeight: 500, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
                                                             Give EverFern a task and it'll pick up your project context automatically.
                                                         </p>
                                                     </div>
@@ -5184,21 +5257,21 @@ export default function ChatPage() {
                                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
                                                     transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
-                                                    layout
+                                                    layout={idx === messages.length - 1}
                                                     style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
                                                 >
 
-                                                <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "#f5f4f0" : "transparent", border: "none", fontSize: 15, lineHeight: 1.7 }}>
+                                                <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
                                                     {msg.role === "user" ? (
                                                         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                                             {msg.attachments && msg.attachments.length > 0 && (
                                                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                                                                     {msg.attachments.map(a => (
-                                                                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "#f5f4f0", borderRadius: 8, border: "1px solid #e8e6d9" }}>
-                                                                            {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center" }} /> : <PaperClipIcon width={16} height={16} color="#717171" />}
+                                                                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)" }}>
+                                                                            {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center" }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
                                                                             <div style={{ display: "flex", flexDirection: "column" }}>
-                                                                                <span style={{ fontSize: 12, fontWeight: 500, color: "#111111", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
-                                                                                <span style={{ fontSize: 10, color: "#8a8886" }}>{(a.size / 1024).toFixed(1)} KB</span>
+                                                                                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
+                                                                                <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
                                                                             </div>
                                                                         </div>
                                                                     ))}
@@ -5218,20 +5291,20 @@ export default function ChatPage() {
                                                                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                                                                 <PlanApprovalBanner />
                                                                                 {planText && planText !== 'I have reviewed and approved your execution plan. Please proceed with the execution as planned.' && (
-                                                                                    <span style={{ color: "#111111", whiteSpace: "pre-wrap" }}>{planText}</span>
+                                                                                    <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{planText}</span>
                                                                                 )}
                                                                             </div>
                                                                         ) : (
-                                                                            mainText && <span style={{ color: "#111111", whiteSpace: "pre-wrap" }}>{mainText}</span>
+                                                                            mainText && <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{mainText}</span>
                                                                         )}
                                                                         {folderLines.length > 0 && (
-                                                                            <div style={{ padding: "12px 16px", backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 12 }}>
-                                                                                <div style={{ fontSize: 12, fontWeight: 700, color: "#8a8886", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
+                                                                            <div style={{ padding: "12px 16px", backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12 }}>
+                                                                                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
                                                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                                                                     Shared context
                                                                                 </div>
-                                                                                <div style={{ fontSize: 13, color: "#4a4846", display: "flex", flexDirection: "column", gap: 4 }}>
-                                                                                    {folderLines.map((line, idx) => <div key={idx} style={{ wordBreak: "break-all", display: "flex", gap: 6 }}><span style={{ color: "#8a8886" }}>-</span> {line}</div>)}
+                                                                                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                                                                    {folderLines.map((line, idx) => <div key={idx} style={{ wordBreak: "break-all", display: "flex", gap: 6 }}><span style={{ color: "var(--color-text-tertiary)" }}>-</span> {line}</div>)}
                                                                                 </div>
                                                                             </div>
                                                                         )}
@@ -5270,11 +5343,11 @@ export default function ChatPage() {
                                                                     gap: 8,
                                                                     padding: '10px 14px',
                                                                     marginTop: 12,
-                                                                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                                                                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                                    backgroundColor: 'var(--color-error-dim)',
+                                                                    border: '1px solid var(--color-error-border)',
                                                                     borderRadius: 10,
                                                                     fontSize: 13,
-                                                                    color: '#ef4444',
+                                                                    color: 'var(--color-error)',
                                                                     fontWeight: 500
                                                                 }}>
                                                                     <StopIcon width={14} height={14} />
@@ -5298,7 +5371,7 @@ export default function ChatPage() {
                                                                         {hasContent ? (
                                                                             <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
                                                                         ) : hasToolCalls ? (
-                                                                            <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic', padding: '8px 0' }}>
+                                                                            <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
 
                                                                             </div>
                                                                         ) : null}
@@ -5392,7 +5465,7 @@ export default function ChatPage() {
                                                                         background: 'transparent',
                                                                         border: 'none',
                                                                         padding: '4px',
-                                                                        color: '#b0afa8',
+                                                                        color: 'var(--color-text-tertiary)',
                                                                         cursor: 'pointer',
                                                                         display: 'flex',
                                                                         alignItems: 'center',
@@ -5403,6 +5476,42 @@ export default function ChatPage() {
                                                                         <path d="M3 7v6h6" />
                                                                         <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13" />
                                                                     </svg>
+                                                                </button>
+                                                                
+                                                                <button
+                                                                    onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('down'); setShowFeedbackModal(true); }}
+                                                                    title="Thumbs Down"
+                                                                    className="hover:text-red-500 transition-colors"
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        padding: '4px',
+                                                                        color: 'var(--color-text-tertiary)',
+                                                                        cursor: 'pointer',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center'
+                                                                    }}
+                                                                >
+                                                                    <HandThumbDownIcon className="w-4 h-4" />
+                                                                </button>
+
+                                                                <button
+                                                                    onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('up'); setShowFeedbackModal(true); }}
+                                                                    title="Thumbs Up"
+                                                                    className="hover:text-green-500 transition-colors"
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        padding: '4px',
+                                                                        color: 'var(--color-text-tertiary)',
+                                                                        cursor: 'pointer',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center'
+                                                                    }}
+                                                                >
+                                                                    <HandThumbUpIcon className="w-4 h-4" />
                                                                 </button>
                                                             </div>
                                                         </>
@@ -5543,11 +5652,11 @@ export default function ChatPage() {
                                                         alignItems: 'center',
                                                         gap: 8,
                                                         padding: '16px 20px',
-                                                        backgroundColor: '#f0f9ff',
-                                                        border: '1px solid #bfdbfe',
+                                                        backgroundColor: 'var(--color-navis-active-bg)',
+                                                        border: '1px solid var(--color-navis-active-border)',
                                                         borderRadius: 8,
                                                         margin: '16px 20px',
-                                                        color: '#1e40af',
+                                                        color: 'var(--color-navis-active-text)',
                                                         fontSize: 14,
                                                         fontWeight: 600
                                                     }}>
@@ -5572,7 +5681,7 @@ export default function ChatPage() {
                                     <div
                                         className="absolute bottom-0 left-0 right-0 pointer-events-none h-24 z-10"
                                         style={{
-                                            background: 'linear-gradient(to bottom, transparent, rgba(255,255,255,0.98) 75%)',
+                                            background: 'linear-gradient(to bottom, var(--color-bg-surface-transparent), var(--color-bg-surface) 75%)',
                                         }}
                                     />
                                     {/* Morphing scroll-to-bottom button */}
@@ -5590,12 +5699,12 @@ export default function ChatPage() {
                                                     stiffness: 400,
                                                     damping: 25,
                                                 }}
-                                                whileHover={{ scale: 1.15, backgroundColor: '#000000' }}
+                                                whileHover={{ scale: 1.15, opacity: 0.9 }}
                                                 whileTap={{ scale: 0.9 }}
                                                 className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center cursor-pointer shadow-2xl backdrop-blur-md"
                                                 style={{
                                                     bottom: 24,
-                                                    backgroundColor: '#111111',
+                                                    backgroundColor: 'var(--color-text-primary)',
                                                     border: '1px solid rgba(255,255,255,0.15)',
                                                     boxShadow: '0 8px 30px rgba(0,0,0,0.28)',
                                                 }}
@@ -5605,7 +5714,7 @@ export default function ChatPage() {
                                                     height={22}
                                                     viewBox="0 0 24 24"
                                                     fill="none"
-                                                    stroke="#ffffff"
+                                                    stroke="var(--color-bg-surface)"
                                                     strokeWidth={2.5}
                                                     strokeLinecap="round"
                                                     strokeLinejoin="round"
@@ -5624,26 +5733,24 @@ export default function ChatPage() {
                                     <AnimatePresence>
                                         {showPermissionModal && (
                                             <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ duration: 0.2 }} style={{ width: "96%", maxWidth: 840, margin: "0 auto", position: "relative", zIndex: 1 }}>
-                                                <div style={{ width: "100%", background: "#161615", border: "1px solid rgba(255, 255, 255, 0.12)", borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                                                <div style={{ width: "100%", background: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
                                                     {/* Header with Title and Controls */}
                                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                                                         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                                                            <div style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showPermissionModal ? "rgba(251, 191, 36, 0.15)" : "rgba(255, 255, 255, 0.05)", border: showPermissionModal ? "1px solid rgba(251, 191, 36, 0.3)" : "1px solid transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                                            <div style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showPermissionModal ? "rgba(251, 191, 36, 0.15)" : "var(--color-bg-subtle)", border: showPermissionModal ? "1px solid rgba(251, 191, 36, 0.3)" : "1px solid transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                                                 {showPermissionModal ? <span style={{ fontSize: 16 }}>🔒</span> : <Loader size={14} strokeWidth={2} className="text-zinc-300" />}
                                                             </div>
                                                             <div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>Fern needs permission to access your system files</div>
+                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Fern needs permission to access your system files</div>
                                                                 </div>
-                                                                <div style={{ fontSize: 12, color: "#fcd34d", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
+                                                                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
                                                             </div>
                                                         </div>
 
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                         </div>
                                                     </div>
-
-                                                    {/* Progress and Visual History */}
                                                 </div>
                                             </motion.div>
                                         )}
@@ -5694,7 +5801,7 @@ export default function ChatPage() {
                                                 />
                                             </div>
                                         )}
-                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "#ffffff", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid #e8e6d9", borderRadius: showPermissionModal ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
+                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: showPermissionModal ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
                                             {/* Memory Preference Banner */}
                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                 <motion.div
@@ -5705,9 +5812,9 @@ export default function ChatPage() {
                                                     style={{
                                                         margin: "12px 16px 0",
                                                         padding: "12px 14px",
-                                                        backgroundColor: "#faf9f7",
-                                                        border: "1px solid #e8e6d9",
-                                                        borderLeft: "3px solid #6366f1",
+                                                        backgroundColor: "var(--color-bg-subtle)",
+                                                        border: "1px solid var(--color-border)",
+                                                        borderLeft: "3px solid var(--color-navis-active-border)",
                                                         borderRadius: 10,
                                                         display: "flex",
                                                         flexDirection: "column",
@@ -5715,22 +5822,22 @@ export default function ChatPage() {
                                                     }}
                                                 >
                                                     <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-active-border)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
                                                             <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
                                                             <path d="M12 8v4M12 16h.01"/>
                                                         </svg>
                                                         <div style={{ flex: 1 }}>
-                                                            <div style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
                                                                 From your previous preferences
                                                             </div>
-                                                            <div style={{ fontSize: 12.5, color: "#4a4846", lineHeight: 1.55 }}>
+                                                            <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
                                                                 {memoryPreferenceBanner.preference}
                                                             </div>
                                                         </div>
                                                         <button
                                                             type="button"
                                                             onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "#b5b2aa", padding: 2, flexShrink: 0 }}
+                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 2, flexShrink: 0 }}
                                                         >
                                                             <XMarkIcon width={14} height={14} />
                                                         </button>
@@ -5742,7 +5849,7 @@ export default function ChatPage() {
                                                             style={{
                                                                 fontSize: 11.5, fontWeight: 500,
                                                                 padding: "4px 12px", borderRadius: 6,
-                                                                backgroundColor: "#6366f1", color: "#fff",
+                                                                backgroundColor: "var(--color-navis-active-text)", color: "var(--color-bg-base)",
                                                                 border: "none", cursor: "pointer",
                                                             }}
                                                         >
@@ -5758,8 +5865,8 @@ export default function ChatPage() {
                                                             style={{
                                                                 fontSize: 11.5, fontWeight: 500,
                                                                 padding: "4px 12px", borderRadius: 6,
-                                                                backgroundColor: "transparent", color: "#4a4846",
-                                                                border: "1px solid #e8e6d9", cursor: "pointer",
+                                                                backgroundColor: "transparent", color: "var(--color-text-secondary)",
+                                                                border: "1px solid var(--color-border)", cursor: "pointer",
                                                             }}
                                                         >
                                                             Do it differently
@@ -5802,16 +5909,16 @@ export default function ChatPage() {
                                                                 : "How can I help you today?"
                                                     } rows={1}
                                                         disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                        style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "#9ca3af" : "#111111", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
+                                                        style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
                                                 </div>
 
 
                                             </div>
                                             {(isRecording || voiceLoading || voiceTranscript) && (
                                                 <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                                                    {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "#ef4444" }}>Recording...</span></div>}
-                                                    {voiceLoading && <span style={{ fontSize: 13, color: "#10b981" }}>Transcribing...</span>}
-                                                    {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "#717171", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
+                                                    {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
+                                                    {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
+                                                    {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
                                                 </div>
                                             )}
 
@@ -5838,7 +5945,7 @@ export default function ChatPage() {
                                 <div style={{
                                     display: "flex",
                                     gap: 8,
-                                    borderBottom: "1px solid #e8e6d9",
+                                    borderBottom: "1px solid var(--color-border)",
                                     paddingBottom: 12,
                                     marginBottom: 8
                                 }}>
@@ -5848,11 +5955,11 @@ export default function ChatPage() {
                                             padding: "6px 12px",
                                             borderRadius: 6,
                                             border: "none",
-                                            background: showSubagentPanel && !selectedSubagentToolCall ? "#e8e6d9" : "transparent",
+                                            background: showSubagentPanel && !selectedSubagentToolCall ? "var(--color-bg-selected)" : "transparent",
                                             cursor: "pointer",
                                             fontSize: 12,
                                             fontWeight: 600,
-                                            color: "#4a4846",
+                                            color: "var(--color-text-secondary)",
                                             transition: "all 0.2s"
                                         }}
                                     >
@@ -5865,11 +5972,11 @@ export default function ChatPage() {
                                                 padding: "6px 12px",
                                                 borderRadius: 6,
                                                 border: "none",
-                                                background: !showSubagentPanel ? "#e8e6d9" : "transparent",
+                                                background: !showSubagentPanel ? "var(--color-bg-selected)" : "transparent",
                                                 cursor: "pointer",
                                                 fontSize: 12,
                                                 fontWeight: 600,
-                                                color: "#4a4846",
+                                                color: "var(--color-text-secondary)",
                                                 transition: "all 0.2s"
                                             }}
                                         >
@@ -5899,16 +6006,16 @@ export default function ChatPage() {
 
                             {/* Instructions card */}
                             {!(subagent.isActive && showSubagentPanel) && !selectedSubagentToolCall ? (
-                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
+                            <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
                                 <button
                                     type="button"
                                     onClick={() => setInstructionsExpanded(!instructionsExpanded)}
                                     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
                                 >
-                                    <span style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Instructions</span>
+                                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Instructions</span>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: instructionsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: instructionsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
                                     </div>
                                 </button>
                                 <AnimatePresence>
@@ -5926,7 +6033,7 @@ export default function ChatPage() {
                                                     onChange={(e) => setInstructions(e.target.value)}
                                                     placeholder="Add tone, formatting, or rules to guide how EverFern works."
                                                     rows={3}
-                                                    style={{ width: "100%", resize: "none", border: "none", outline: "none", fontSize: 13, color: instructions ? "#374151" : "#9ca3af", lineHeight: 1.6, background: "transparent", fontFamily: "var(--font-sans)", fontStyle: instructions ? "normal" : "italic" }}
+                                                    style={{ width: "100%", resize: "none", border: "none", outline: "none", fontSize: 13, color: instructions ? "var(--color-text-secondary)" : "var(--color-text-placeholder)", lineHeight: 1.6, background: "transparent", fontFamily: "var(--font-sans)", fontStyle: instructions ? "normal" : "italic" }}
                                                 />
                                             </div>
                                         </motion.div>
@@ -5947,16 +6054,16 @@ export default function ChatPage() {
 
 
                             {/* Context card */}
-                            <div style={{ backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
+                            <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
                                 <button
                                     type="button"
                                     onClick={() => setContextExpanded(!contextExpanded)}
                                     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
                                 >
-                                    <span style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Context</span>
+                                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Context</span>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: contextExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: contextExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
                                     </div>
                                 </button>
                                 <AnimatePresence>
@@ -5972,25 +6079,25 @@ export default function ChatPage() {
                                                 {/* Project context row */}
                                                 {folderContexts.length > 0 ? (
                                                     <div>
-                                                        <p style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Project</p>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "#f3f4f6", borderRadius: 8, padding: "8px 10px" }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#4b5563" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-                                                            <span style={{ fontSize: 12, fontWeight: 500, color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderContexts[0].name}</span>
-                                                            <button type="button" onClick={() => setFolderContexts([])} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 0, display: "flex" }}>
+                                                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Project</p>
+                                                        <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-text-secondary)" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                                                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderContexts[0].name}</span>
+                                                            <button type="button" onClick={() => setFolderContexts([])} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 0, display: "flex" }}>
                                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
                                                             </button>
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <p style={{ fontSize: 12, color: "#9ca3af", margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>No project selected. Use the Project dropdown in the composer.</p>
+                                                    <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>No project selected. Use the Project dropdown in the composer.</p>
                                                 )}
 
                                                 {/* Memory row */}
                                                 <div>
-                                                    <p style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Memory</p>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "#f3f4f6", borderRadius: 8, padding: "8px 10px" }}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg>
-                                                        <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>Memory</span>
+                                                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Memory</p>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg>
+                                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>Memory</span>
                                                     </div>
                                                 </div>
 
@@ -6003,39 +6110,39 @@ export default function ChatPage() {
                                                     </defs>
 
                                                     {/* Background */}
-                                                    <rect width="540" height="170" rx="12" fill="#E9E5DE"/>
+                                                    <rect width="540" height="170" rx="12" fill="var(--color-border-subtle)"/>
 
                                                     {/* Card 1 — placed, left */}
-                                                    <rect x="30" y="32" width="110" height="108" rx="8" fill="#FFFFFF" filter="url(#shadow)"/>
-                                                    <rect x="44" y="50" width="55" height="6" rx="2" fill="#CCCAC4"/>
-                                                    <rect x="44" y="63" width="77" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="44" y="75" width="65" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="44" y="87" width="72" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="44" y="99" width="50" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="44" y="111" width="60" height="5" rx="2" fill="#DEDAD5"/>
+                                                    <rect x="30" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)"/>
+                                                    <rect x="44" y="50" width="55" height="6" rx="2" fill="var(--color-border-strong)"/>
+                                                    <rect x="44" y="63" width="77" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="44" y="75" width="65" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="44" y="87" width="72" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="44" y="99" width="50" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="44" y="111" width="60" height="5" rx="2" fill="var(--color-border)"/>
 
                                                     {/* Card 2 — placed, center */}
-                                                    <rect x="165" y="32" width="110" height="108" rx="8" fill="#FFFFFF" filter="url(#shadow)"/>
-                                                    <rect x="245" y="40" width="18" height="18" rx="4" fill="#F0EDE8"/>
-                                                    <rect x="249" y="45" width="10" height="3" rx="1" fill="#C5C2BC"/>
-                                                    <rect x="249" y="50" width="8"  height="3" rx="1" fill="#C5C2BC"/>
-                                                    <rect x="179" y="50" width="55" height="7" rx="2" fill="#C5C2BC"/>
-                                                    <rect x="179" y="65" width="88" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="179" y="77" width="80" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="179" y="89" width="88" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="179" y="101" width="70" height="5" rx="2" fill="#DEDAD5"/>
-                                                    <rect x="179" y="113" width="78" height="5" rx="2" fill="#DEDAD5"/>
+                                                    <rect x="165" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)"/>
+                                                    <rect x="245" y="40" width="18" height="18" rx="4" fill="var(--color-bg-subtle)"/>
+                                                    <rect x="249" y="45" width="10" height="3" rx="1" fill="var(--color-text-tertiary)"/>
+                                                    <rect x="249" y="50" width="8"  height="3" rx="1" fill="var(--color-text-tertiary)"/>
+                                                    <rect x="179" y="50" width="55" height="7" rx="2" fill="var(--color-text-tertiary)"/>
+                                                    <rect x="179" y="65" width="88" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="179" y="77" width="80" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="179" y="89" width="88" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="179" y="101" width="70" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="179" y="113" width="78" height="5" rx="2" fill="var(--color-border)"/>
 
                                                     {/* Card 3 — being placed */}
-                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="#FFFFFF" opacity="0.75" filter="url(#shadow)"/>
+                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" opacity="0.75" filter="url(#shadow)"/>
                                                     <rect x="300" y="32" width="110" height="108" rx="8" fill="none"
-                                                            stroke="#AAAAAA" strokeWidth="1.5" strokeDasharray="5,3"/>
-                                                    <rect x="314" y="50" width="55" height="6" rx="2" fill="#D8D5CF" opacity="0.7"/>
-                                                    <rect x="314" y="63" width="77" height="5" rx="2" fill="#E2DED9" opacity="0.7"/>
-                                                    <rect x="314" y="75" width="65" height="5" rx="2" fill="#E2DED9" opacity="0.7"/>
-                                                    <rect x="314" y="87" width="72" height="5" rx="2" fill="#E2DED9" opacity="0.7"/>
-                                                    <rect x="314" y="99" width="50" height="5" rx="2" fill="#E2DED9" opacity="0.7"/>
-                                                    <rect x="314" y="111" width="60" height="5" rx="2" fill="#E2DED9" opacity="0.7"/>
+                                                            stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeDasharray="5,3"/>
+                                                    <rect x="314" y="50" width="55" height="6" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                    <rect x="314" y="63" width="77" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                    <rect x="314" y="75" width="65" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                    <rect x="314" y="87" width="72" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                    <rect x="314" y="99" width="50" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                    <rect x="314" y="111" width="60" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
                                                 </svg>
                                             </div>
                                         </motion.div>
@@ -6052,26 +6159,26 @@ export default function ChatPage() {
                                     });
                                     const shouldShowApproveButton = !isLoading && !isPlanAlreadyApproved;
                                     return (
-                                        <motion.div key="exec-plan" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} style={{ backgroundColor: "#ffffff", border: "1px solid #e8e6d9", borderRadius: 12, overflow: "hidden", minHeight: 480, width: "100%" }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: "12px 14px", borderBottom: '1px solid #f4f4f4' }}>
+                                        <motion.div key="exec-plan" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12, overflow: "hidden", minHeight: 480, width: "100%" }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: "12px 14px", borderBottom: '1px solid var(--color-border-subtle)' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <div style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <div style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                         {isLoading ? (
-                                                            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#201e24" strokeWidth="2"><circle cx="12" cy="12" r="10" stroke="#e8e6d9" strokeWidth="4"/><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="#201e24" stroke="none"/></svg>
+                                                            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10" stroke="var(--color-border)" strokeWidth="4"/><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="var(--color-text-primary)" stroke="none"/></svg>
                                                         ) : (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#201e24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                                                         )}
                                                     </div>
-                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "#201e24" }}>Execution Plan</span>
+                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Execution Plan</span>
                                                 </div>
                                                 <div style={{ display: 'flex', gap: 6 }}>
                                                     {shouldShowApproveButton && (
-                                                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`; setInputValue(msg); setTimeout(() => { const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement; if (sendBtn) sendBtn.click(); }, 100); }} style={{ fontSize: 11, fontWeight: 600, color: "#ffffff", backgroundColor: "#201e24", padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", boxShadow: "none" }}>Approve</button>
+                                                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`; setInputValue(msg); setTimeout(() => { const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement; if (sendBtn) sendBtn.click(); }, 100); }} style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-inverse)", backgroundColor: "var(--color-text-primary)", padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", boxShadow: "none" }}>Approve</button>
                                                     )}
-                                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); }} style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.05)', border: 'none', borderRadius: 6, cursor: 'pointer' }} title="Close"><XMarkIcon width={14} height={14} color="#6b7280" /></button>
+                                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); }} style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-subtle)', border: 'none', borderRadius: 6, cursor: 'pointer' }} title="Close"><XMarkIcon width={14} height={14} color="var(--color-text-secondary)" /></button>
                                                 </div>
                                             </div>
-                                            <div style={{ padding: "12px 14px", maxHeight: 600, overflowY: 'auto', fontSize: 12, fontFamily: "'Figtree', system-ui, sans-serif", color: '#374151', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                                            <div style={{ padding: "12px 14px", maxHeight: 600, overflowY: 'auto', fontSize: 12, fontFamily: "'Figtree', system-ui, sans-serif", color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                                                 <MarkdownRenderer content={executionPlan.content} />
                                             </div>
                                         </motion.div>
@@ -6127,6 +6234,13 @@ export default function ChatPage() {
                     onConfirm={handleConfirmRevert}
                     conversationId={revertTarget?.conversationId ?? null}
                     targetTimestamp={revertTarget?.timestamp ?? null}
+                />
+                
+                <MessageFeedbackModal
+                    isOpen={showFeedbackModal}
+                    onClose={() => { setShowFeedbackModal(false); setFeedbackTargetIndex(null); }}
+                    onSubmit={handleFeedbackSubmit}
+                    feedbackType={feedbackType}
                 />
             </div>
         </>

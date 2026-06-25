@@ -68,7 +68,7 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                 style={{
                     position: 'fixed',
                     inset: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.6)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -82,46 +82,63 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                     exit={{ scale: 0.9, opacity: 0 }}
                     onClick={e => e.stopPropagation()}
                     style={{
-                        backgroundColor: 'white',
-                        borderRadius: 16,
-                        padding: 24,
-                        maxWidth: 500,
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 20,
+                        padding: 28,
+                        maxWidth: 520,
                         width: '90%',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                        boxShadow: 'var(--shadow-xl)',
                     }}
                 >
                     {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                         <div>
-                            <h2 style={{ fontSize: 20, fontWeight: 600, color: '#111827' }}>Select Options</h2>
-                            <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+                            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)' }}>
+                                Select Options
+                            </h2>
+                            <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
                                 Question {currentQuestionIndex + 1} of {questions.length}
                             </p>
                         </div>
                         <button
                             onClick={onClose}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}
+                            style={{
+                                background: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 10,
+                                cursor: 'pointer',
+                                padding: 8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--color-text-tertiary)',
+                                transition: 'all 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
                         >
-                            <XMarkIcon style={{ width: 20, height: 20, color: '#9ca3af' }} />
+                            <XMarkIcon style={{ width: 18, height: 18 }} />
                         </button>
                     </div>
 
                     {/* Progress bar */}
-                    <div style={{ height: 4, backgroundColor: '#e5e7eb', borderRadius: 2, marginBottom: 24 }}>
+                    <div style={{ height: 4, backgroundColor: 'var(--color-border)', borderRadius: 2, marginBottom: 24 }}>
                         <motion.div
                             style={{
                                 height: '100%',
-                                backgroundColor: '#10b981',
+                                backgroundColor: 'var(--color-success)',
                                 borderRadius: 2,
                             }}
                             animate={{ width: `${progress}%` }}
+                            transition={{ duration: 0.3 }}
                         />
                     </div>
 
                     {/* Question */}
                     {currentQuestion && (
                         <div>
-                            <p style={{ fontSize: 16, fontWeight: 500, color: '#111827', marginBottom: 16 }}>
+                            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16, lineHeight: 1.5 }}>
                                 {currentQuestion.question}
                             </p>
 
@@ -138,23 +155,41 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                                                 alignItems: 'center',
                                                 gap: 12,
                                                 padding: '12px 16px',
-                                                border: isSelected ? '2px solid #10b981' : '2px solid #e5e7eb',
-                                                borderRadius: 8,
-                                                backgroundColor: isSelected ? '#ecfdf5' : 'white',
+                                                border: isSelected
+                                                    ? '2px solid var(--color-success)'
+                                                    : '2px solid var(--color-border)',
+                                                borderRadius: 12,
+                                                backgroundColor: isSelected
+                                                    ? 'var(--color-success-dim)'
+                                                    : 'var(--color-bg-subtle)',
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s',
                                                 textAlign: 'left',
+                                            }}
+                                            onMouseEnter={e => {
+                                                if (!isSelected) {
+                                                    e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)';
+                                                    e.currentTarget.style.borderColor = 'var(--color-border-strong)';
+                                                }
+                                            }}
+                                            onMouseLeave={e => {
+                                                if (!isSelected) {
+                                                    e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                                                }
                                             }}
                                         >
                                             <div style={{
                                                 width: 20,
                                                 height: 20,
                                                 borderRadius: currentQuestion.multiSelect ? 4 : '50%',
-                                                border: isSelected ? 'none' : '2px solid #d1d5db',
-                                                backgroundColor: isSelected ? '#10b981' : 'transparent',
+                                                border: isSelected ? 'none' : '2px solid var(--color-border-strong)',
+                                                backgroundColor: isSelected ? 'var(--color-success)' : 'transparent',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
+                                                flexShrink: 0,
+                                                transition: 'all 0.15s',
                                             }}>
                                                 {isSelected && (
                                                     <CheckCircleIcon style={{ width: 16, height: 16, color: 'white' }} />
@@ -162,7 +197,9 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                                             </div>
                                             <span style={{
                                                 fontSize: 14,
-                                                color: isSelected ? '#065f46' : '#374151',
+                                                color: isSelected ? 'var(--color-success)' : 'var(--color-text-secondary)',
+                                                fontWeight: isSelected ? 600 : 400,
+                                                transition: 'all 0.15s',
                                             }}>
                                                 {option}
                                             </span>
@@ -180,13 +217,15 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                             disabled={currentQuestionIndex === 0}
                             style={{
                                 padding: '10px 20px',
-                                borderRadius: 8,
-                                border: '1px solid #d1d5db',
-                                backgroundColor: currentQuestionIndex === 0 ? '#f3f4f6' : 'white',
-                                color: currentQuestionIndex === 0 ? '#9ca3af' : '#374151',
+                                borderRadius: 10,
+                                border: '1px solid var(--color-border)',
+                                backgroundColor: currentQuestionIndex === 0 ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                color: currentQuestionIndex === 0 ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
                                 cursor: currentQuestionIndex === 0 ? 'not-allowed' : 'pointer',
                                 fontSize: 14,
                                 fontWeight: 500,
+                                opacity: currentQuestionIndex === 0 ? 0.6 : 1,
+                                transition: 'all 0.15s',
                             }}
                         >
                             Back
@@ -198,16 +237,18 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                                     disabled={!isCurrentAnswered}
                                     style={{
                                         padding: '10px 20px',
-                                        borderRadius: 8,
+                                        borderRadius: 10,
                                         border: 'none',
-                                        backgroundColor: isCurrentAnswered ? '#10b981' : '#9ca3af',
+                                        backgroundColor: isCurrentAnswered ? 'var(--color-success)' : 'var(--color-border-strong)',
                                         color: 'white',
                                         cursor: isCurrentAnswered ? 'pointer' : 'not-allowed',
                                         fontSize: 14,
-                                        fontWeight: 500,
+                                        fontWeight: 600,
+                                        opacity: isCurrentAnswered ? 1 : 0.6,
+                                        transition: 'all 0.15s',
                                     }}
                                 >
-                                    Next
+                                    Next →
                                 </button>
                             ) : (
                                 <button
@@ -215,16 +256,18 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                                     disabled={!allAnswered}
                                     style={{
                                         padding: '10px 24px',
-                                        borderRadius: 8,
+                                        borderRadius: 10,
                                         border: 'none',
-                                        backgroundColor: allAnswered ? '#10b981' : '#9ca3af',
+                                        backgroundColor: allAnswered ? 'var(--color-success)' : 'var(--color-border-strong)',
                                         color: 'white',
                                         cursor: allAnswered ? 'pointer' : 'not-allowed',
                                         fontSize: 14,
-                                        fontWeight: 500,
+                                        fontWeight: 600,
+                                        opacity: allAnswered ? 1 : 0.6,
+                                        transition: 'all 0.15s',
                                     }}
                                 >
-                                    Submit
+                                    Submit ✓
                                 </button>
                             )}
                         </div>

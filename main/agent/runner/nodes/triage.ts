@@ -24,15 +24,9 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
       runner.telemetry.transition('triage');
       runner.telemetry.info('Analyzing user intent and decomposing task requirements...');
 
-      // Add analyzing intent message as a narrative message (not part of chat context)
-      state.messages.push({
-        role: 'system',
-        content: 'Analyzing user intent and decomposing task...',
-        metadata: {
-          isNarrative: true,  // Mark as narrative so it won't be sent to AI
-          type: 'analyzing_intent'
-        }
-      } as any);
+      // BUG-01 FIX: Do NOT mutate state.messages directly.
+      // LangGraph state is immutable — direct mutation bypasses the state reducer
+      // and causes corrupted checkpoints, phantom messages, and duplicate messages on replay.
 
       const lastUserMsg = state.messages.filter(m => {
         const msg = m as any;
@@ -60,7 +54,6 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
 
       runner.telemetry.info(`Intent identified: ${classification.intent.toUpperCase()} (${Math.round(classification.confidence * 100)}% confidence)`);
 
-
       eventQueue?.push({
         type: 'intent_classified',
         intent: classification.intent,
@@ -72,6 +65,10 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
         currentIntent: classification.intent,
         intentConfidence: classification.confidence,
         taskPhase: 'routing' as const, // Transit to routing/decomposer
+        codingComplete: false,
+        dataAnalysisComplete: false,
+        webExplorerComplete: false,
+        deepResearchComplete: false,
       };
 
       integrator.completeNode('triage', `Intent classified as: ${classification.intent}`);

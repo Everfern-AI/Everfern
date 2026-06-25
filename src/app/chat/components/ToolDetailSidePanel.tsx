@@ -72,24 +72,24 @@ export const ToolType = {
    ============================================================ */
 const T = {
   // Surfaces
-  bg: '#fafafa',
-  surface: '#fff',
-  surfaceRaised: '#f5f5f4',
-  border: '#e8e8e6',
-  borderSubtle: '#f0f0ee',
+  bg: 'var(--color-bg-base)',
+  surface: 'var(--color-bg-surface)',
+  surfaceRaised: 'var(--color-bg-subtle)',
+  border: 'var(--color-border)',
+  borderSubtle: 'var(--color-border-subtle)',
 
   // Text
-  text: '#141412',
-  textSecondary: '#6b6b67',
-  textMuted: '#a8a8a3',
-  textPlaceholder: '#c8c8c3',
+  text: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textMuted: 'var(--color-text-tertiary)',
+  textPlaceholder: 'var(--color-text-placeholder)',
 
   // Ink (terminal / code) - Updated to be friendlier and match app design
-  inkBg: '#f8f7f5',
-  inkSurface: '#faf9f7',
-  inkBorder: '#e8e6d9',
-  inkText: '#2d2d2a',
-  inkMuted: '#a8a8a3',
+  inkBg: 'var(--color-bg-base)',
+  inkSurface: 'var(--color-bg-surface)',
+  inkBorder: 'var(--color-border)',
+  inkText: 'var(--color-text-primary)',
+  inkMuted: 'var(--color-text-tertiary)',
 
   // Semantic
   green: '#22c55e',
@@ -104,8 +104,8 @@ const T = {
   r4: 4, r6: 6, r8: 8, r10: 10, r12: 12, r14: 14, r16: 16,
 
   // Font stacks
-  sans: '"Geist", "DM Sans", ui-sans-serif, system-ui, sans-serif',
-  mono: '"Geist Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, monospace',
+  sans: 'var(--font-sans)',
+  mono: 'var(--font-mono)',
 };
 
 /* ============================================================
@@ -211,15 +211,15 @@ function getToolMeta(toolName: string | undefined | null) {
 }
 
 const VS = {
-  bg: '#f5f4f0',
-  bg2: '#faf9f7',
-  tab: '#f0eee7',
-  tabActive: '#ffffff',
-  border: '#e7e2d6',
-  borderStrong: '#d8d1c2',
-  text: '#201e24',
-  muted: '#77716b',
-  dim: '#aaa39a',
+  bg: 'var(--color-bg-base)',
+  bg2: 'var(--color-bg-surface)',
+  tab: 'var(--color-bg-subtle)',
+  tabActive: 'var(--color-bg-surface)',
+  border: 'var(--color-border)',
+  borderStrong: 'var(--color-border-strong)',
+  text: 'var(--color-text-primary)',
+  muted: 'var(--color-text-secondary)',
+  dim: 'var(--color-text-tertiary)',
   green: '#22c55e',
   red: '#ef4444',
   yellow: '#f59e0b',
@@ -227,12 +227,12 @@ const VS = {
 };
 
 const CLAY = {
-  card: '#ffffff',
-  cardMuted: '#faf9f7',
-  hover: '#efede6',
-  active: '#ffffff',
-  shadow: '0 1px 2px rgba(32,30,36,0.05), inset 0 1px 0 rgba(255,255,255,0.72)',
-  panelShadow: '-12px 0 30px rgba(32,30,36,0.08)',
+  card: 'var(--color-bg-surface)',
+  cardMuted: 'var(--color-bg-subtle)',
+  hover: 'var(--color-bg-hover)',
+  active: 'var(--color-bg-active)',
+  shadow: '0 1px 2px rgba(0,0,0,0.15)',
+  panelShadow: '0 12px 32px rgba(0,0,0,0.25)',
 };
 
 function getToolPath(toolCall: any): string {
@@ -552,7 +552,7 @@ const FILE_COLOR_MAP: Record<string, string> = {
   env: '#ecd46f',
   gitignore: '#f05033',
   git: '#f05033',
-  log: '#9ca3af',
+  log: 'var(--color-text-tertiary)',
   ts: '#4da3ff',
   tsx: '#58c7ff',
   js: '#f7df1e',
@@ -1043,7 +1043,7 @@ function FileContentBody({
           <iframe
             title="PDF preview"
             src={safeContent}
-            style={{ width: '100%', height: '100%', border: `1px solid ${EDITOR_COLORS.border}`, borderRadius: 8, background: '#111' }}
+            style={{ width: '100%', height: '100%', border: `1px solid ${EDITOR_COLORS.border}`, borderRadius: 8, background: 'var(--color-text-primary)' }}
           />
         ) : (
           <PreviewUnavailable path={path} message={previewError || 'PDF preview is not available.'} />
@@ -1091,12 +1091,12 @@ function FileContentBody({
   if (visual.ext === 'svg') {
     return (
       <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateRows: 'minmax(220px, 42%) 1fr', background: EDITOR_COLORS.bg }}>
-        <div style={{ margin: 12, border: `1px solid ${EDITOR_COLORS.border}`, borderRadius: 8, background: '#ffffff', overflow: 'hidden' }}>
+        <div style={{ margin: 12, border: `1px solid ${EDITOR_COLORS.border}`, borderRadius: 8, background: 'var(--color-bg-surface)', overflow: 'hidden' }}>
           <iframe
             title="SVG preview"
             sandbox=""
             srcDoc={safeContent}
-            style={{ width: '100%', height: '100%', border: 'none', background: '#ffffff' }}
+            style={{ width: '100%', height: '100%', border: 'none', background: 'var(--color-bg-surface)' }}
           />
         </div>
         <div style={{ overflow: 'auto', paddingBottom: 18 }}>
@@ -1250,7 +1250,7 @@ function BrowserSurface({ url, onUrlChange }: { url: string; onUrlChange: (url: 
         <iframe
           title="Browser"
           src={url}
-          style={{ flex: 1, border: 'none', background: '#ffffff' }}
+          style={{ flex: 1, border: 'none', background: 'var(--color-bg-surface)' }}
         />
       ) : (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: VS.muted, fontFamily: T.sans }}>
@@ -1587,11 +1587,11 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
         {/* Icon */}
         <div style={{
           width: 36, height: 36, borderRadius: T.r10, flexShrink: 0,
-          background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
+          background: 'var(--color-bg-subtle)', border: '0.5px solid var(--color-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.08)',
         }}>
-          <Icon size={iconSize} color={'#333'} strokeWidth={1.75} />
+          <Icon size={iconSize} color={'var(--color-text-secondary)'} strokeWidth={1.75} />
         </div>
 
         {/* Text stack */}
@@ -1604,9 +1604,9 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
               </>
             )}
             <code style={{
-              fontSize: 11.5, fontFamily: T.mono, fontWeight: 400, color: '#111',
-              background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+              fontSize: 11.5, fontFamily: T.mono, fontWeight: 400, color: 'var(--color-text-primary)',
+              background: 'var(--color-bg-subtle)', border: '0.5px solid var(--color-border)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
               padding: '2px 8px', borderRadius: T.r6,
             }}>
               {toolName}
@@ -1625,18 +1625,18 @@ function PanelHeader({ agentName, toolName, onClose }: { agentName?: string; too
           onClick={onClose}
           aria-label="Close"
           style={{
-            width: 32, height: 32, borderRadius: T.r8, border: '0.5px solid rgba(0,0,0,0.1)',
-            background: '#ececea', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
-            cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
+            width: 32, height: 32, borderRadius: T.r8, border: '0.5px solid var(--color-border)',
+            background: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
+            cursor: 'pointer', color: 'var(--color-text-secondary)', transition: 'all 0.1s ease',
           }}
           onMouseEnter={e => {
             e.currentTarget.style.transform = 'scale(1.05)';
-            e.currentTarget.style.color = '#000';
+            e.currentTarget.style.color = 'var(--color-text-primary)';
           }}
           onMouseLeave={e => {
             e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.color = '#333';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
           onMouseDown={e => {
             e.currentTarget.style.transform = 'scale(0.95)';
@@ -1661,7 +1661,7 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       padding: '16px 24px 12px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       position: 'sticky', top: 0, zIndex: 10,
-      background: 'rgba(250,250,250,0.94)',
+      background: 'var(--color-bg-surface)',
       backdropFilter: 'blur(10px)',
       borderBottom: `1px solid ${T.borderSubtle}`,
     }}>
@@ -1673,10 +1673,10 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       </span>
       {right && (
         <span style={{
-          fontSize: 10.5, fontWeight: 400, color: '#111',
-          background: '#ececea',
-          border: '0.5px solid rgba(0,0,0,0.1)',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+          fontSize: 10.5, fontWeight: 400, color: 'var(--color-text-primary)',
+          background: 'var(--color-bg-subtle)',
+          border: '0.5px solid var(--color-border)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
           padding: '3px 12px', borderRadius: 100, fontFamily: T.mono,
         }}>
           {right}
@@ -2042,12 +2042,12 @@ function NavisThinkingRail({ events = [] }: { events?: any[] }) {
       width: 290,
       minWidth: 250,
       borderLeft: `1px solid ${T.border}`,
-      background: 'linear-gradient(180deg, #fbfaf7 0%, #f4f2ec 100%)',
+      background: 'var(--color-bg-subtle)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
     }}>
-      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}`, background: 'rgba(255,255,255,0.58)' }}>
+      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}`, background: 'var(--color-bg-surface)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <span style={{
             width: 12,
@@ -2078,7 +2078,7 @@ function NavisThinkingRail({ events = [] }: { events?: any[] }) {
                     : 'radial-gradient(circle at 35% 30%, #ffffff 0%, #8ee7ff 20%, #3b82f6 55%, #7c3aed 100%)',
                 boxShadow: event.type === 'reasoning' ? '0 0 12px rgba(59,130,246,0.38)' : 'none',
               }} />
-              {index !== safe.length - 1 && <span style={{ width: 1, flex: 1, minHeight: 26, background: 'rgba(32,30,36,0.08)', marginTop: 5 }} />}
+              {index !== safe.length - 1 && <span style={{ width: 1, flex: 1, minHeight: 26, background: 'var(--color-border-subtle)', marginTop: 5 }} />}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -2227,7 +2227,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
             </div>
             <div style={{
               position: 'absolute', bottom: 12, left: 12,
-              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 400,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -2236,7 +2236,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
             </div>
             <div style={{
               position: 'absolute', bottom: 12, right: 12,
-              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 400,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -2244,14 +2244,13 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
               {formatTimestamp(currentScreenshot.timestamp).split(',')[1]?.trim() || ''}
             </div>
           </div>
-
           {/* Slider and Controls */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '6px 16px 6px 6px',
-            background: "#ececea",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 2px 5px rgba(0,0,0,0.05)",
-            border: "0.5px solid rgba(0,0,0,0.10)",
+            background: "var(--color-bg-subtle)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 2px 5px rgba(0,0,0,0.05)",
+            border: "0.5px solid var(--color-border)",
             borderRadius: 100,
             marginTop: 4
           }}>
@@ -2264,12 +2263,12 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
               }}
               style={{
                 width: 34, height: 34, borderRadius: '50%',
-                background: isPlaying ? '#111' : '#f9f9f9',
-                color: isPlaying ? '#fff' : '#111',
+                background: isPlaying ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                color: isPlaying ? 'var(--color-text-inverse)' : 'var(--color-text-primary)',
                 boxShadow: isPlaying
                   ? 'inset 0 1px 3px rgba(0,0,0,0.3)'
-                  : 'inset 0 1px 0 rgba(255,255,255,1), 0 1px 2px rgba(0,0,0,0.05)',
-                border: isPlaying ? 'none' : '0.5px solid rgba(0,0,0,0.1)',
+                  : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 1px 2px rgba(0,0,0,0.05)',
+                border: isPlaying ? 'none' : '0.5px solid var(--color-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', flexShrink: 0,
                 transition: 'all 0.15s ease'
@@ -2534,9 +2533,9 @@ export function TerminalView({
       textOut:  '#f1f1f1',
       textErr:  '#ff7b72',
       textDim:  '#777777',
-      textMeta: '#9b9b9b',
+      textMeta: 'var(--color-text-tertiary)',
       psPrefix: '#f8f8f2',
-      psPath:   '#ffffff',
+      psPath:   'var(--color-bg-surface)',
       psChevron:'#f8f8f2',
     };
     const promptCwd = cwd || DEFAULT_TOOL_DETAIL_ROOT;
@@ -2896,7 +2895,7 @@ function LivePreviewView({ url }: { url: string }) {
       </div>
 
       {/* Frame wrapper */}
-      <div style={{ flex: 1, position: 'relative', background: '#fff' }}>
+      <div style={{ flex: 1, position: 'relative', background: 'var(--color-bg-surface)' }}>
         <iframe
           ref={iframeRef}
           src={iframeUrl}
@@ -2904,7 +2903,7 @@ function LivePreviewView({ url }: { url: string }) {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: '#fff'
+            background: 'var(--color-bg-surface)'
           }}
           sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
         />
@@ -4099,7 +4098,8 @@ export function extractFernData(tc: any, progressEvents: any[] = []) {
 
 function extractTerminalData(tc: any) {
   const args = parseToolCallArgs(tc);
-  const command = args.command || args.CommandLine || '';
+  const rawCommand = args.command || args.CommandLine || '';
+  const command = typeof rawCommand === 'string' ? rawCommand : JSON.stringify(rawCommand);
   const output = extractOutputText(tc);
   const toolName = (tc.toolName || '').toLowerCase();
   const data = tc.data || tc.result?.data || {};
@@ -4515,7 +4515,7 @@ function FileSystemView({ toolName, path, args, output, data }: { toolName: stri
               <pre style={{
                 margin: 0,
                 padding: '14px 16px',
-                color: '#e4e4e7',
+                color: 'var(--color-border)',
                 fontFamily: T.mono,
                 fontSize: 11.5,
                 lineHeight: 1.55,
@@ -4538,9 +4538,9 @@ function FileSystemView({ toolName, path, args, output, data }: { toolName: stri
 const EDITOR_COLORS = {
   bg: '#121214',
   gutterBg: '#18181b',
-  gutterText: '#52525b',
+  gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
-  text: '#e4e4e7',
+  text: 'var(--color-border)',
   keyword: '#e879f9', // pink/magenta
   string: '#34d399', // green
   number: '#60a5fa', // blue
@@ -4979,7 +4979,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
         <div style={{ flex: 1, overflow: 'auto', background: EDITOR_COLORS.bg, paddingTop: 6, paddingBottom: 18 }}>
           {!hasRenderableContent ? (
             <div style={{ padding: 16 }}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#a1a1aa', fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.55 }}>
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-tertiary)', fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.55 }}>
                 {output || JSON.stringify(args || {}, null, 2)}
               </pre>
             </div>
@@ -4988,7 +4988,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
               <div key={idx}>
                 <div style={{
                   backgroundColor: '#18181b',
-                  color: '#a1a1aa',
+                  color: 'var(--color-text-tertiary)',
                   padding: '4px 16px',
                   fontSize: 10,
                   fontWeight: 400,
@@ -5117,7 +5117,7 @@ function LocalPermissionView({
             </button>
             <button
               onClick={() => sendResponse(true, false)}
-              style={{ ...btnBase, background: '#2563eb', color: '#fff', borderColor: '#3b82f6' }}
+              style={{ ...btnBase, background: '#2563eb', color: 'var(--color-bg-surface)', borderColor: '#3b82f6' }}
               onMouseEnter={e => { e.currentTarget.style.background = '#1d4ed8'; }}
               onMouseLeave={e => { e.currentTarget.style.background = '#2563eb'; }}
             >

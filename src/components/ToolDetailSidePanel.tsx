@@ -36,24 +36,24 @@ export const ToolType = {
    ============================================================ */
 const T = {
   // Surfaces
-  bg: '#fafafa',
-  surface: '#fff',
-  surfaceRaised: '#f5f5f4',
-  border: '#e8e8e6',
-  borderSubtle: '#f0f0ee',
+  bg: 'var(--color-bg-base)',
+  surface: 'var(--color-bg-surface)',
+  surfaceRaised: 'var(--color-bg-subtle)',
+  border: 'var(--color-border)',
+  borderSubtle: 'var(--color-border-subtle)',
 
   // Text
-  text: '#141412',
-  textSecondary: '#6b6b67',
-  textMuted: '#a8a8a3',
-  textPlaceholder: '#c8c8c3',
+  text: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textMuted: 'var(--color-text-tertiary)',
+  textPlaceholder: 'var(--color-text-placeholder)',
 
   // Ink (terminal / code)
-  inkBg: '#0d0d0b',
-  inkSurface: '#161614',
-  inkBorder: 'rgba(255,255,255,0.07)',
-  inkText: 'rgba(255,255,255,0.82)',
-  inkMuted: 'rgba(255,255,255,0.35)',
+  inkBg: 'var(--color-bg-base)',
+  inkSurface: 'var(--color-bg-surface)',
+  inkBorder: 'var(--color-border)',
+  inkText: 'var(--color-text-primary)',
+  inkMuted: 'var(--color-text-tertiary)',
 
   // Semantic
   green: '#22c55e',
@@ -68,20 +68,20 @@ const T = {
   r4: 4, r6: 6, r8: 8, r10: 10, r12: 12, r14: 14, r16: 16,
 
   // Font stacks
-  sans: '"Geist", "DM Sans", ui-sans-serif, system-ui, sans-serif',
-  mono: '"Geist Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, monospace',
+  sans: 'var(--font-sans)',
+  mono: 'var(--font-mono)',
 };
 
 const VS = {
-  bg: '#f5f4f0',
-  bg2: '#faf9f7',
-  tab: '#f0eee7',
-  tabActive: '#ffffff',
-  border: '#e7e2d6',
-  borderStrong: '#d8d1c2',
-  text: '#201e24',
-  muted: '#77716b',
-  dim: '#aaa39a',
+  bg: 'var(--color-bg-base)',
+  bg2: 'var(--color-bg-surface)',
+  tab: 'var(--color-bg-subtle)',
+  tabActive: 'var(--color-bg-surface)',
+  border: 'var(--color-border)',
+  borderStrong: 'var(--color-border-strong)',
+  text: 'var(--color-text-primary)',
+  muted: 'var(--color-text-secondary)',
+  dim: 'var(--color-text-tertiary)',
   green: '#22c55e',
   red: '#ef4444',
   yellow: '#f59e0b',
@@ -89,12 +89,12 @@ const VS = {
 };
 
 const CLAY = {
-  card: '#ffffff',
-  cardMuted: '#faf9f7',
-  hover: '#efede6',
-  active: '#ffffff',
-  shadow: '0 1px 2px rgba(32,30,36,0.05), inset 0 1px 0 rgba(255,255,255,0.72)',
-  panelShadow: '-12px 0 30px rgba(32,30,36,0.08)',
+  card: 'var(--color-bg-surface)',
+  cardMuted: 'var(--color-bg-subtle)',
+  hover: 'var(--color-bg-hover)',
+  active: 'var(--color-bg-active)',
+  shadow: '0 1px 2px rgba(0,0,0,0.15)',
+  panelShadow: '0 12px 32px rgba(0,0,0,0.25)',
 };
 
 /* ============================================================
@@ -214,11 +214,11 @@ function PanelHeader({
         {/* Icon */}
         <div style={{
           width: 36, height: 36, borderRadius: T.r10, flexShrink: 0,
-          background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
+          background: 'var(--color-bg-subtle)', border: '0.5px solid var(--color-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.08)',
         }}>
-          <Icon size={iconSize} color={'#333'} strokeWidth={1.75} />
+          <Icon size={iconSize} color={'var(--color-text-secondary)'} strokeWidth={1.75} />
         </div>
 
         {/* Text stack */}
@@ -231,9 +231,9 @@ function PanelHeader({
               </>
             )}
             <code style={{
-              fontSize: 11.5, fontFamily: T.mono, fontWeight: 700, color: '#111',
-              background: '#ececea', border: '0.5px solid rgba(0,0,0,0.1)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+              fontSize: 11.5, fontFamily: T.mono, fontWeight: 700, color: 'var(--color-text-primary)',
+              background: 'var(--color-bg-subtle)', border: '0.5px solid var(--color-border)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
               padding: '2px 8px', borderRadius: T.r6,
             }}>
               {toolName}
@@ -254,10 +254,10 @@ function PanelHeader({
             aria-label="Toggle files pane"
             title="Toggle files pane"
             style={{
-              width: 32, height: 32, borderRadius: T.r8, border: showFilePane ? '1px solid rgba(20,20,18,0.22)' : '0.5px solid rgba(0,0,0,0.1)',
-              background: showFilePane ? '#deded9' : '#ececea', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
-              cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
+              width: 32, height: 32, borderRadius: T.r8, border: showFilePane ? '1px solid rgba(20,20,18,0.22)' : '0.5px solid var(--color-border)',
+              background: showFilePane ? 'var(--color-bg-hover)' : 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
+              cursor: 'pointer', color: 'var(--color-text-secondary)', transition: 'all 0.1s ease',
             }}
           >
             <PanelRightOpen size={15} strokeWidth={1.8} />
@@ -267,18 +267,18 @@ function PanelHeader({
           onClick={onClose}
           aria-label="Close"
           style={{
-            width: 32, height: 32, borderRadius: T.r8, border: '0.5px solid rgba(0,0,0,0.1)',
-            background: '#ececea', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
-            cursor: 'pointer', color: '#333', transition: 'all 0.1s ease',
+            width: 32, height: 32, borderRadius: T.r8, border: '0.5px solid var(--color-border)',
+            background: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
+            cursor: 'pointer', color: 'var(--color-text-secondary)', transition: 'all 0.1s ease',
           }}
           onMouseEnter={e => {
             e.currentTarget.style.transform = 'scale(1.05)';
-            e.currentTarget.style.color = '#000';
+            e.currentTarget.style.color = 'var(--color-text-primary)';
           }}
           onMouseLeave={e => {
             e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.color = '#333';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
           onMouseDown={e => {
             e.currentTarget.style.transform = 'scale(0.95)';
@@ -303,7 +303,7 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       padding: '16px 24px 12px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       position: 'sticky', top: 0, zIndex: 10,
-      background: 'rgba(250,250,250,0.94)',
+      background: 'var(--color-bg-surface)',
       backdropFilter: 'blur(10px)',
       borderBottom: `1px solid ${T.borderSubtle}`,
     }}>
@@ -315,10 +315,10 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
       </span>
       {right && (
         <span style={{
-          fontSize: 10.5, fontWeight: 700, color: '#111',
-          background: '#ececea',
-          border: '0.5px solid rgba(0,0,0,0.1)',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05)',
+          fontSize: 10.5, fontWeight: 700, color: 'var(--color-text-primary)',
+          background: 'var(--color-bg-subtle)',
+          border: '0.5px solid var(--color-border)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
           padding: '3px 12px', borderRadius: 100, fontFamily: T.mono,
         }}>
           {right}
@@ -705,7 +705,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
       display: 'flex',
       gap: 4,
       padding: '4px',
-      background: '#ececea',
+      background: 'var(--color-bg-subtle)',
       borderRadius: T.r10,
       alignSelf: 'flex-start',
       marginBottom: 16,
@@ -839,7 +839,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
             </div>
             <div style={{
               position: 'absolute', bottom: 12, left: 12,
-              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -848,7 +848,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
             </div>
             <div style={{
               position: 'absolute', bottom: 12, right: 12,
-              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -861,9 +861,9 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '6px 16px 6px 6px',
-            background: "#ececea",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(0,0,0,0.06), inset 1px 0 rgba(255,255,255,0.50), inset -1px 0 rgba(0,0,0,0.04), 0 2px 5px rgba(0,0,0,0.05)",
-            border: "0.5px solid rgba(0,0,0,0.10)",
+            background: "var(--color-bg-subtle)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 2px 5px rgba(0,0,0,0.05)",
+            border: "0.5px solid var(--color-border)",
             borderRadius: 100,
             marginTop: 4
           }}>
@@ -876,12 +876,12 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
               }}
               style={{
                 width: 34, height: 34, borderRadius: '50%',
-                background: isPlaying ? '#111' : '#f9f9f9',
-                color: isPlaying ? '#fff' : '#111',
+                background: isPlaying ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                color: isPlaying ? 'var(--color-text-inverse)' : 'var(--color-text-primary)',
                 boxShadow: isPlaying
                   ? 'inset 0 1px 3px rgba(0,0,0,0.3)'
-                  : 'inset 0 1px 0 rgba(255,255,255,1), 0 1px 2px rgba(0,0,0,0.05)',
-                border: isPlaying ? 'none' : '0.5px solid rgba(0,0,0,0.1)',
+                  : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 1px 2px rgba(0,0,0,0.05)',
+                border: isPlaying ? 'none' : '0.5px solid var(--color-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', flexShrink: 0,
                 transition: 'all 0.15s ease'
@@ -914,7 +914,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
               .gallium-slider::-webkit-slider-thumb {
                 -webkit-appearance: none;
                 height: 20px; width: 20px; border-radius: 50%;
-                background: #fafafa;
+                background: var(--color-bg-subtle);
                 box-shadow: inset 0 1px 0 rgba(255,255,255,1), inset 0 -1px 0 rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.15);
                 border: 0.5px solid rgba(0,0,0,0.15);
                 margin-top: -7.5px;
@@ -925,7 +925,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
               }
               .gallium-slider::-webkit-slider-thumb:active {
                 transform: scale(0.95);
-                background: #f0f0f0;
+                background: var(--color-bg-base);
               }
             `}</style>
           </div>
@@ -1140,13 +1140,13 @@ export function TerminalView({
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
     const WIN = {
-      bg: '#111111',
+      bg: 'var(--color-text-primary)',
       tab: '#202020',
-      tabText: '#f4f4f5',
+      tabText: 'var(--color-bg-subtle)',
       border: 'rgba(255,255,255,0.08)',
       divider: 'rgba(255,255,255,0.08)',
-      textCmd: '#ffffff',
-      textOut: '#f5f5f5',
+      textCmd: 'var(--color-bg-surface)',
+      textOut: 'var(--color-bg-subtle)',
       textErr: '#ff8a8a',
       textDim: 'rgba(255,255,255,0.36)',
       textMeta: 'rgba(255,255,255,0.42)',
@@ -1297,7 +1297,8 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
 
   useEffect(() => {
     // If we're missing rich info, try to fetch it lazily
-    const isTitleURLOrDomain = !title || title.startsWith('http') || (title.includes('.') && !title.includes(' '));
+    const safeTitle = typeof title === 'string' ? title : '';
+    const isTitleURLOrDomain = !safeTitle || safeTitle.startsWith('http') || (safeTitle.includes('.') && !safeTitle.includes(' '));
     if (!initialDescription || !initialFavicon || isTitleURLOrDomain) {
       const fetchMeta = async () => {
         try {
@@ -1316,21 +1317,23 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
     }
   }, [url, initialDescription, initialFavicon, title]);
 
-  const content = description || snippet || '';
+  const content = typeof (description || snippet) === 'string' ? (description || snippet) : JSON.stringify(description || snippet || '');
   const displayFavicon = favicon || getFaviconUrl(domain);
-  const finalTitle = displayTitle?.trim() || domain || url || 'Search Result';
+  const finalTitle = typeof displayTitle === 'string' ? (displayTitle.trim() || domain || url || 'Search Result') : 'Search Result';
   let displayDomain = domain || 'Unknown';
-  if (displayDomain === 'Unknown' && url) {
+  if (displayDomain === 'Unknown' && typeof url === 'string') {
     try {
       displayDomain = new URL(url).hostname;
     } catch { /* ignore */ }
   }
 
+  const safeUrl = typeof url === 'string' ? url : '';
+
   return (
     <motion.article
-      onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+      onClick={() => window.open(safeUrl, '_blank', 'noopener,noreferrer')}
       role="button" tabIndex={0}
-      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && window.open(url, '_blank')}
+      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && window.open(safeUrl, '_blank')}
       style={{
         padding: '18px 20px',
         background: T.surface,
@@ -1532,7 +1535,7 @@ function LivePreviewView({ url }: { url: string }) {
       </div>
 
       {/* Frame wrapper */}
-      <div style={{ flex: 1, position: 'relative', background: '#fff' }}>
+      <div style={{ flex: 1, position: 'relative', background: 'var(--color-bg-surface)' }}>
         <iframe
           ref={iframeRef}
           src={iframeUrl}
@@ -1540,7 +1543,7 @@ function LivePreviewView({ url }: { url: string }) {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: '#fff'
+            background: 'var(--color-bg-surface)'
           }}
           sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
         />
@@ -1554,6 +1557,7 @@ function LivePreviewView({ url }: { url: string }) {
    ============================================================ */
 function WebSearchView({ query, results = [], totalResults = 0 }: { query: string; results?: any[]; totalResults?: number }) {
   const safe = Array.isArray(results) ? results : [];
+  const safeQuery = typeof query === 'string' ? query : JSON.stringify(query);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -1564,7 +1568,7 @@ function WebSearchView({ query, results = [], totalResults = 0 }: { query: strin
             Query
           </p>
           <p style={{ fontSize: 13.5, fontWeight: 500, color: T.text, margin: 0, letterSpacing: '-0.01em', lineHeight: 1.5, fontFamily: T.sans }}>
-            "{query}"
+            "{safeQuery}"
           </p>
         </div>
       </div>
@@ -2158,7 +2162,8 @@ export function extractNavisData(tc: any, progressEvents: any[] = []) {
 }
 
 function extractTerminalData(tc: any) {
-  const command = tc.args?.command || tc.args?.CommandLine || '';
+  let command = tc.args?.command || tc.args?.CommandLine || '';
+  if (typeof command !== 'string') command = JSON.stringify(command);
   const toolName = (tc.toolName || '').toLowerCase();
   const args = tc.args || tc.arguments || {};
   const data = tc.data || tc.result?.data || {};
@@ -2291,9 +2296,9 @@ function FileSystemView({ toolName, path, args, output }: { toolName: string; pa
 const EDITOR_COLORS = {
   bg: '#121214',
   gutterBg: '#18181b',
-  gutterText: '#52525b',
+  gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
-  text: '#e4e4e7',
+  text: 'var(--color-border)',
   keyword: '#e879f9', // pink/magenta
   string: '#34d399', // green
   number: '#60a5fa', // blue
@@ -2619,7 +2624,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
                 <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#fbbf24' }} />
                 <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#22c55e' }} />
               </div>
-              <span style={{ fontSize: 11, color: '#a1a1aa', fontFamily: T.mono, marginLeft: 12 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: T.mono, marginLeft: 12 }}>
                 {path.split(/[/\\]/).pop() || 'Untitled'}
               </span>
             </div>
@@ -2643,18 +2648,18 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
                   borderRadius: T.r8,
                   padding: 14,
                   background: '#18181b',
-                  color: '#d4d4d8',
+                  color: 'var(--color-border)',
                   fontFamily: T.mono,
                   fontSize: 12,
                   lineHeight: 1.7,
                 }}>
-                  <div style={{ color: '#a1a1aa', marginBottom: 10, fontFamily: T.sans, fontSize: 12 }}>
+                  <div style={{ color: 'var(--color-text-tertiary)', marginBottom: 10, fontFamily: T.sans, fontSize: 12 }}>
                     This edit completed, but no before/after diff was included in the tool arguments.
                   </div>
                   {output && (
                     <pre style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{output}</pre>
                   )}
-                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#a1a1aa' }}>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-tertiary)' }}>
                     {JSON.stringify(args || {}, null, 2)}
                   </pre>
                 </div>
@@ -2664,7 +2669,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
                 <div key={idx} style={{ marginBottom: idx < chunks.length - 1 ? 16 : 0 }}>
                   <div style={{
                     backgroundColor: '#18181b',
-                    color: '#a1a1aa',
+                    color: 'var(--color-text-tertiary)',
                     padding: '4px 16px',
                     fontSize: 10,
                     fontWeight: 'bold',
@@ -2924,7 +2929,7 @@ function FileNavigatorPane({
       flexShrink: 0,
       borderLeft: '1px solid #252525',
       background: '#151515',
-      color: '#f4f4f5',
+      color: 'var(--color-bg-subtle)',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
@@ -2939,7 +2944,7 @@ function FileNavigatorPane({
           borderRadius: 10,
           background: '#202020',
           border: '1px solid #303030',
-          color: '#9ca3af',
+          color: 'var(--color-text-tertiary)',
           padding: '0 10px',
         }}>
           <Search size={15} strokeWidth={1.8} />
@@ -2953,7 +2958,7 @@ function FileNavigatorPane({
               background: 'transparent',
               border: 'none',
               outline: 'none',
-              color: '#f4f4f5',
+              color: 'var(--color-bg-subtle)',
               fontSize: 13,
               fontFamily: T.sans,
             }}
@@ -2985,7 +2990,7 @@ function FileNavigatorPane({
                 border: 'none',
                 borderRadius: 7,
                 background: active ? '#242424' : 'transparent',
-                color: item.kind === 'folder' ? '#f4f4f5' : '#e7e7e7',
+                color: item.kind === 'folder' ? 'var(--color-bg-subtle)' : '#e7e7e7',
                 cursor: item.kind === 'file' ? 'pointer' : 'default',
                 textAlign: 'left',
                 padding: `0 8px 0 ${8 + Math.min(item.depth, 4) * 14}px`,
@@ -3034,7 +3039,7 @@ function FilePreviewOverlay({
       inset: 0,
       zIndex: 4,
       background: '#151515',
-      color: '#f4f4f5',
+      color: 'var(--color-bg-subtle)',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
@@ -3063,8 +3068,8 @@ function FilePreviewOverlay({
           <div style={{ padding: 18, color: '#7c7c7c' }}>Unable to preview this file.</div>
         ) : lines.map((line, idx) => (
           <div key={idx} style={{ display: 'flex', minWidth: 'fit-content' }}>
-            <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: '#6b7280', userSelect: 'none' }}>{idx + 1}</span>
-            <pre style={{ margin: 0, paddingRight: 18, color: '#e5e7eb', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
+            <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: 'var(--color-text-tertiary)', userSelect: 'none' }}>{idx + 1}</span>
+            <pre style={{ margin: 0, paddingRight: 18, color: 'var(--color-border)', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
           </div>
         ))}
       </div>

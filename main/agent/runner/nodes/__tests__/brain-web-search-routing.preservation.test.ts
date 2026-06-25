@@ -289,8 +289,8 @@ describe('Preservation — Brain Node Non-Research Intent Routing Unchanged', ()
 
     runner.client.chat.mockResolvedValueOnce({
       content: JSON.stringify({
-        decision: 'route_computer_use',
-        explanation: 'Desktop automation task detected',
+        decision: 'continue_brain',
+        explanation: 'Desktop automation task handled directly by brain',
       }),
     });
 
@@ -300,8 +300,8 @@ describe('Preservation — Brain Node Non-Research Intent Routing Unchanged', ()
     const result = await brainNode(state);
 
     expect(result.routingDecision).toBeDefined();
-    expect(result.routingDecision?.decision).toBe('route_computer_use');
-    expect(result.taskPhase).toBe('specialized_agent');
+    expect(result.routingDecision?.decision).toBe('continue_brain');
+    expect(result.taskPhase).not.toBe('specialized_agent');
   });
 
   /**
@@ -416,7 +416,7 @@ describe('Preservation Property — Brain Node Routing for Non-Research Intents'
       'fix': 'route_coding',
       'build': 'route_coding',
       'analyze': 'route_data_analyst',
-      'automate': 'route_computer_use',
+      'automate': 'continue_brain',
       'question': /^(continue_brain|complete_task)$/,
       'conversation': /^(continue_brain|complete_task)$/,
       'task': /^(continue_brain|complete_task)$/,
@@ -554,8 +554,8 @@ describe('Preservation Property — Brain Node Routing for Non-Research Intents'
 
           runner.client.chat.mockResolvedValueOnce({
             content: JSON.stringify({
-              decision: 'route_computer_use',
-              explanation: 'Routing automate to computer-use',
+              decision: 'continue_brain',
+              explanation: 'Routing automate to continue_brain',
             }),
           });
 
@@ -564,9 +564,9 @@ describe('Preservation Property — Brain Node Routing for Non-Research Intents'
 
           const result = await brainNode(state);
 
-          // Must route to computer-use
-          expect(result.routingDecision?.decision).toBe('route_computer_use');
-          expect(result.taskPhase).toBe('specialized_agent');
+          // Must route to continue_brain
+          expect(result.routingDecision?.decision).toBe('continue_brain');
+          expect(result.taskPhase).not.toBe('specialized_agent');
         }
       ),
       { numRuns: 20 }
@@ -702,7 +702,7 @@ describe('Preservation — Brain Node Fallback Routing for Non-Research Intents'
       'fix': 'route_coding',
       'build': 'route_coding',
       'analyze': 'route_data_analyst',
-      'automate': 'route_computer_use',
+      'automate': 'continue_brain',
     };
 
     await fc.assert(
@@ -724,7 +724,11 @@ describe('Preservation — Brain Node Fallback Routing for Non-Research Intents'
           // Should use fallback routing
           const expectedDecision = intentRoutingMap[intent];
           expect(result.routingDecision?.decision).toBe(expectedDecision);
-          expect(result.taskPhase).toBe('specialized_agent');
+          if (intent === 'automate') {
+            expect(result.taskPhase).not.toBe('specialized_agent');
+          } else {
+            expect(result.taskPhase).toBe('specialized_agent');
+          }
         }
       ),
       { numRuns: 25 }

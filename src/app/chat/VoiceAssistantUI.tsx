@@ -54,7 +54,7 @@ export default function VoiceAssistantUI({
                             right: 0,
                             bottom: 0,
                             width: '100vw',
-                            backgroundColor: '#f5f4f0',
+                            backgroundColor: 'var(--color-bg-base)',
                             zIndex: 1001,
                             display: 'flex',
                             flexDirection: 'column',
@@ -64,7 +64,7 @@ export default function VoiceAssistantUI({
                         {/* Header */}
                         <div style={{
                             padding: '24px',
-                            borderBottom: '1px solid #e8e6d9',
+                            borderBottom: '1px solid var(--color-border)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -74,14 +74,14 @@ export default function VoiceAssistantUI({
                                     margin: 0,
                                     fontSize: 24,
                                     fontWeight: 600,
-                                    color: '#111111',
+                                    color: 'var(--color-text-primary)',
                                 }}>
                                     🎤 Voice Assistant
                                 </h2>
                                 <p style={{
                                     margin: '4px 0 0',
                                     fontSize: 13,
-                                    color: '#717171',
+                                    color: 'var(--color-text-secondary)',
                                 }}>
                                     {isConfigured ? 'Voice mode active' : 'Configure voice in settings first'}
                                 </p>
@@ -91,7 +91,7 @@ export default function VoiceAssistantUI({
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    color: '#717171',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: 0,
                                     display: 'flex',
@@ -117,13 +117,13 @@ export default function VoiceAssistantUI({
                             {!isConfigured ? (
                                 <div style={{
                                     textAlign: 'center',
-                                    color: '#717171',
+                                    color: 'var(--color-text-secondary)',
                                 }}>
-                                    <h3 style={{ fontSize: 20, color: '#111', fontWeight: 500, marginBottom: 12 }}>Voice Mode Not Configured</h3>
+                                    <h3 style={{ fontSize: 20, color: 'var(--color-text-primary)', fontWeight: 500, marginBottom: 12 }}>Voice Mode Not Configured</h3>
                                     <p style={{ fontSize: 16, margin: '0 0 12px' }}>
                                         Voice mode is not configured yet.
                                     </p>
-                                    <p style={{ fontSize: 14, color: '#a1a1aa', margin: 0, maxWidth: 500 }}>
+                                    <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', margin: 0, maxWidth: 500 }}>
                                         Please select a provider (Deepgram or ElevenLabs) and add your API key in Settings to activate the full-screen voice assistant.
                                     </p>
                                 </div>
@@ -142,7 +142,7 @@ export default function VoiceAssistantUI({
                                                 key={i}
                                                 animate={{
                                                     height: isRecording || voicePlayback ? [20, 60, 40, 50, 35, 55, 30, 60, 45][i - 1] : 20,
-                                                    backgroundColor: isRecording ? '#ef4444' : voicePlayback ? '#3b82f6' : '#a1a1aa',
+                                                    backgroundColor: isRecording ? '#ef4444' : voicePlayback ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
                                                 }}
                                                 transition={{
                                                     duration: 0.4,
@@ -152,7 +152,7 @@ export default function VoiceAssistantUI({
                                                 style={{
                                                     width: 8,
                                                     borderRadius: 4,
-                                                    background: '#a1a1aa',
+                                                    background: 'var(--color-text-tertiary)',
                                                 }}
                                             />
                                         ))}
@@ -183,7 +183,7 @@ export default function VoiceAssistantUI({
                                                     borderRadius: '50%',
                                                     backgroundColor: '#ef4444',
                                                 }} />
-                                                <span style={{ fontSize: 16, color: '#111111', fontWeight: 500 }}>
+                                                <span style={{ fontSize: 16, color: 'var(--color-text-primary)', fontWeight: 500 }}>
                                                     Listening...
                                                 </span>
                                             </motion.div>
@@ -196,7 +196,7 @@ export default function VoiceAssistantUI({
                                                 gap: 8,
                                             }}>
                                                 <Loader size={12} strokeWidth={2} className="text-zinc-400" />
-                                                <span style={{ fontSize: 16, color: '#111111', fontWeight: 500 }}>
+                                                <span style={{ fontSize: 16, color: 'var(--color-text-primary)', fontWeight: 500 }}>
                                                     Transcribing...
                                                 </span>
                                             </div>
@@ -216,21 +216,21 @@ export default function VoiceAssistantUI({
                                                     xmlns="http://www.w3.org/2000/svg"
                                                     viewBox="0 0 24 24"
                                                     fill="none"
-                                                    stroke="#3b82f6"
+                                                    stroke="var(--color-accent)"
                                                     strokeWidth="2"
                                                     style={{ width: 20, height: 20 }}
                                                 >
                                                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                                                     <path d="M15.54 3.54a9 9 0 0 1 0 12.72M19.07 4.93a16 16 0 0 1 0 14.14"></path>
                                                 </svg>
-                                                <span style={{ fontSize: 16, color: '#111111', fontWeight: 500 }}>
+                                                <span style={{ fontSize: 16, color: 'var(--color-text-primary)', fontWeight: 500 }}>
                                                     Playing response...
                                                 </span>
                                             </motion.div>
                                         )}
 
                                         {!isRecording && !voiceLoading && !voicePlayback && (
-                                            <span style={{ fontSize: 16, color: '#717171' }}>
+                                            <span style={{ fontSize: 16, color: 'var(--color-text-secondary)' }}>
                                                 Ready to listen
                                             </span>
                                         )}
@@ -242,7 +242,7 @@ export default function VoiceAssistantUI({
                                                 style={{
                                                     margin: '12px 0 0',
                                                     fontSize: 13,
-                                                    color: '#717171',
+                                                    color: 'var(--color-text-secondary)',
                                                     fontStyle: 'italic',
                                                     maxWidth: '90%',
                                                 }}
@@ -259,7 +259,7 @@ export default function VoiceAssistantUI({
                         {isConfigured && (
                             <div style={{
                                 padding: '24px',
-                                borderTop: '1px solid #e8e6d9',
+                                borderTop: '1px solid var(--color-border)',
                                 display: 'flex',
                                 gap: 12,
                                 justifyContent: 'center',
@@ -307,9 +307,9 @@ export default function VoiceAssistantUI({
                                         width: 56,
                                         height: 56,
                                         borderRadius: '50%',
-                                        border: `2px solid ${voiceOutputEnabled ? '#a1a1aa' : '#e8e6d9'}`,
-                                        backgroundColor: voiceOutputEnabled ? 'rgba(113, 113, 113, 0.1)' : '#f4f4f4',
-                                        color: voiceOutputEnabled ? '#717171' : '#a1a1aa',
+                                        border: `2px solid ${voiceOutputEnabled ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
+                                        backgroundColor: voiceOutputEnabled ? 'var(--color-bg-selected)' : 'var(--color-bg-subtle)',
+                                        color: voiceOutputEnabled ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)',
                                         cursor: voiceLoading ? 'not-allowed' : 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',

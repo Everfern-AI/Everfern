@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'fs';
 import { BotIntegrationManager, BotIntegrationConfig } from '../bot-manager';
 import { FileManager } from '../file-manager';
 import { ConversationContextManager } from '../conversation-context';
@@ -16,7 +17,6 @@ class MockPlatform extends MessagePlatform {
   private messages: Array<{ text: string; options: SendOptions }> = [];
   private shouldFail = false;
   private connectionStatus = true;
-  private messageHandlers: Array<(message: IncomingMessage) => void> = [];
 
   constructor(name: string) {
     super(name, { enabled: true, config: {} });
@@ -133,6 +133,14 @@ describe('BotIntegrationManager Integration Tests', () => {
   };
 
   beforeEach(async () => {
+    // Clean up directories to ensure test isolation
+    try {
+      fs.rmSync('/tmp/test-attachments', { recursive: true, force: true });
+      fs.rmSync('/tmp/test-conversations', { recursive: true, force: true });
+    } catch (e) {
+      // ignore
+    }
+
     // Create managers
     botManager = new BotIntegrationManager(testConfig);
     fileManager = new FileManager({
@@ -162,6 +170,11 @@ describe('BotIntegrationManager Integration Tests', () => {
     fileManager.registerPlatform('discord', mockDiscord);
     contextManager.registerPlatform('telegram', mockTelegram);
     contextManager.registerPlatform('discord', mockDiscord);
+
+    // Connect bot manager to context manager
+    botManager.on('messageReceived', async (context) => {
+      await contextManager.processMessage(context.message);
+    });
   });
 
   afterEach(async () => {
@@ -231,7 +244,7 @@ describe('BotIntegrationManager Integration Tests', () => {
       expect(messageReceived).toHaveBeenCalledOnce();
       const [context] = messageReceived.mock.calls[0];
       expect(context.message.content.text).toBe('Hello bot!');
-      expect(context.conversationId).toBe('telegram_chat1');
+      expect(context.conversationId).toBe('telegram:chat1');
     });
 
     it('should send messages to multiple platforms', async () => {
@@ -365,7 +378,7 @@ describe('BotIntegrationManager Integration Tests', () => {
       });
 
       expect(formatted.length).toBeLessThanOrEqual(100);
-      expect(formatted).toEndWith('...');
+      expect(formatted.endsWith('...')).toBe(true);
     });
   });
 
@@ -404,6 +417,13 @@ describe('BotIntegrationManager Integration Tests', () => {
 
   describe('Cross-Platform Synchronization', () => {
     it('should sync conversations across platforms when enabled', async () => {
+      // Create conversation first by processing an initial message
+      mockTelegram.simulateIncomingMessage({
+        id: 'initial_sync_msg',
+        content: { text: 'Initial message', files: [], isMention: false }
+      });
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Enable cross-platform sync
       contextManager.updateSyncSettings('telegram_chat1', {
         enabled: true,
@@ -601,6 +621,14 @@ describe('End-to-End Integration Scenarios', () => {
   let mockDiscord: MockPlatform;
 
   beforeEach(async () => {
+    // Clean up directories to ensure test isolation
+    try {
+      fs.rmSync('/tmp/test-attachments', { recursive: true, force: true });
+      fs.rmSync('/tmp/test-conversations', { recursive: true, force: true });
+    } catch (e) {
+      // ignore
+    }
+
     // Set up complete integration environment
     botManager = new BotIntegrationManager({
       enabled: true,
@@ -614,8 +642,16 @@ describe('End-to-End Integration Scenarios', () => {
       }
     });
 
-    fileManager = new FileManager();
-    contextManager = new ConversationContextManager();
+    fileManager = new FileManager({
+      baseDir: '/tmp/test-attachments',
+      maxFileSize: 10 * 1024 * 1024,
+      retentionDays: 1
+    });
+    contextManager = new ConversationContextManager({
+      baseDir: '/tmp/test-conversations',
+      maxContextMessages: 10,
+      saveInterval: 1000
+    });
     mockTelegram = new MockPlatform('telegram');
     mockDiscord = new MockPlatform('discord');
 

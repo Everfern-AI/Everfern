@@ -67,6 +67,7 @@ export class IntegrationService extends EventEmitter {
   private serviceStatuses: Map<string, ServiceStatus> = new Map();
   private isInitialized = false;
   private isStarted = false;
+  private monitoringInterval?: NodeJS.Timeout;
 
   // Core services
   private securityLogger?: SecurityLogger;
@@ -199,6 +200,11 @@ export class IntegrationService extends EventEmitter {
 
     try {
       console.log('[IntegrationService] Stopping integration services...');
+
+      if (this.monitoringInterval) {
+        clearInterval(this.monitoringInterval);
+        this.monitoringInterval = undefined;
+      }
 
       // Stop services in reverse dependency order
       const stopOrder = [
@@ -517,9 +523,11 @@ export class IntegrationService extends EventEmitter {
     }
 
     try {
-      // Call stop method if it exists
+      // Call stop method if it exists, or fallback to shutdown
       if (typeof service.stop === 'function') {
         await service.stop();
+      } else if (typeof service.shutdown === 'function') {
+        await service.shutdown();
       }
 
       this.updateServiceStatus(serviceName, 'stopped');
@@ -554,8 +562,11 @@ export class IntegrationService extends EventEmitter {
    * Set up service monitoring
    */
   private setupServiceMonitoring(): void {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+    }
     // Monitor service health every 30 seconds
-    setInterval(() => {
+    this.monitoringInterval = setInterval(() => {
       this.checkServiceHealth();
     }, 30000);
 

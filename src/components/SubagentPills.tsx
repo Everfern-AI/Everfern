@@ -9,13 +9,13 @@ import { SubagentPhase } from '../app/chat/components/SubagentPanel';
 
 // Theme tokens mirroring SubagentPanel
 const T = {
-  bg: '#fafafa',
-  surface: '#fff',
-  surfaceRaised: '#f5f5f4',
-  border: '#e8e8e6',
-  text: '#141412',
-  textSecondary: '#6b6b67',
-  textMuted: '#a8a8a3',
+  bg: 'var(--color-bg-subtle)',
+  surface: 'var(--color-bg-surface)',
+  surfaceRaised: 'var(--color-bg-subtle)',
+  border: 'var(--color-border)',
+  text: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textMuted: 'var(--color-text-tertiary)',
   green: '#22c55e',
   greenFaint: 'rgba(34,197,94,0.08)',
   red: '#ef4444',
@@ -87,7 +87,7 @@ export function SubagentPills({ phases = [], isActive }: SubagentPillsProps) {
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
             style={{
               overflow: 'hidden',
-              backgroundColor: '#ffffff',
+              backgroundColor: 'var(--color-bg-surface)',
               border: `1px solid ${T.border}`,
               borderRadius: T.r12,
               boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
@@ -104,7 +104,7 @@ export function SubagentPills({ phases = [], isActive }: SubagentPillsProps) {
               justifyContent: 'space-between',
               padding: '12px 16px',
               borderBottom: `1px solid ${T.border}`,
-              background: '#fafafa'
+              background: 'var(--color-bg-subtle)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{

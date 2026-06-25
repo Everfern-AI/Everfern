@@ -11,6 +11,18 @@ import {
   deleteMemoryNode,
 } from '../memory/persistent-memory';
 
+vi.mock('../../../lib/embeddings', () => {
+  return {
+    getSystemEmbeddingConfig: () => ({ provider: 'dummy' }),
+    getEmbeddingModel: () => ({
+      embeddings: {
+        embedQuery: async () => new Array(1536).fill(0.1)
+      },
+      dimensions: 1536
+    })
+  };
+});
+
 const testDir = path.join(__dirname, 'temp_test_memory');
 
 describe('PersistentMemory', () => {
@@ -47,8 +59,8 @@ describe('PersistentMemory', () => {
     expect(loaded.edges.length).toBe(1);
   });
 
-  it('should add memory node and update appropriate markdown file', () => {
-    addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
+  it('should add memory node and update appropriate markdown file', async () => {
+    await addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
 
     const graph = loadMemoryGraph();
     expect(graph.nodes.length).toBe(2);
@@ -72,9 +84,9 @@ describe('PersistentMemory', () => {
     expect(mdContent).toContain('[airline]');
   });
 
-  it('should update existing node if category matches', () => {
-    addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
-    addOrUpdateMemory('preference', 'airline', 'prefers United Airlines', 'TRAVEL.md');
+  it('should update existing node if category matches', async () => {
+    await addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
+    await addOrUpdateMemory('preference', 'airline', 'prefers United Airlines', 'TRAVEL.md');
 
     const graph = loadMemoryGraph();
     const prefNodes = graph.nodes.filter(n => n.type === 'preference');
@@ -87,9 +99,9 @@ describe('PersistentMemory', () => {
     expect(mdContent).toContain('prefers United Airlines');
   });
 
-  it('should find sensitive preference matching query', () => {
-    addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
-    addOrUpdateMemory('preference', 'payment', 'use Visa ending in 4242', 'PAYMENTS.md');
+  it('should find sensitive preference matching query', async () => {
+    await addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
+    await addOrUpdateMemory('preference', 'payment', 'use Visa ending in 4242', 'PAYMENTS.md');
 
     expect(findMatchingSensitivePreference('hello there')).toBeNull();
 
@@ -104,8 +116,8 @@ describe('PersistentMemory', () => {
     expect(paymentMatch?.value).toBe('use Visa ending in 4242');
   });
 
-  it('should delete memory node and clean up orphaned file nodes', () => {
-    addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
+  it('should delete memory node and clean up orphaned file nodes', async () => {
+    await addOrUpdateMemory('preference', 'airline', 'prefers Delta Airlines', 'TRAVEL.md');
 
     let graph = loadMemoryGraph();
     expect(graph.nodes.length).toBe(2); // prefNode + fileNode

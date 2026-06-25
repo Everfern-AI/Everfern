@@ -86,7 +86,7 @@ export default function PermissionDialog() {
                                 width: '90%',
                                 maxWidth: 420,
                                 height: 'fit-content',
-                                backgroundColor: '#f5f4f0',
+                                backgroundColor: 'var(--color-bg-surface)',
                                 borderRadius: 16,
                                 boxShadow: '0 25px 50px rgba(0, 0, 0, 0.3)',
                                 zIndex: 9999,
@@ -102,7 +102,7 @@ export default function PermissionDialog() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: 16,
-                                    borderBottom: '1px solid #e8e6d9',
+                                    borderBottom: '1px solid var(--color-border)',
                                 }}
                             >
                                 <div
@@ -110,7 +110,7 @@ export default function PermissionDialog() {
                                         width: 44,
                                         height: 44,
                                         borderRadius: 12,
-                                        backgroundColor: '#e8d9c3',
+                                        backgroundColor: 'var(--color-bg-subtle)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
@@ -122,7 +122,7 @@ export default function PermissionDialog() {
                                         height={24}
                                         viewBox="0 0 24 24"
                                         fill="none"
-                                        stroke="#201e24"
+                                        stroke="var(--color-text-primary)"
                                         strokeWidth={2}
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
@@ -136,7 +136,7 @@ export default function PermissionDialog() {
                                             margin: 0,
                                             fontSize: 16,
                                             fontWeight: 700,
-                                            color: '#201e24',
+                                            color: 'var(--color-text-primary)',
                                         }}
                                     >
                                         Permission Required
@@ -145,7 +145,7 @@ export default function PermissionDialog() {
                                         style={{
                                             margin: '4px 0 0 0',
                                             fontSize: 13,
-                                            color: '#8a8886',
+                                            color: 'var(--color-text-secondary)',
                                         }}
                                     >
                                         EverFern needs your approval
@@ -165,15 +165,15 @@ export default function PermissionDialog() {
                                         margin: '0 0 12px 0',
                                         fontSize: 14,
                                         lineHeight: 1.6,
-                                        color: '#201e24',
+                                        color: 'var(--color-text-primary)',
                                     }}
                                 >
                                     The AI agent needs permission to execute system commands and manage files for this operation.
                                 </p>
                                 <div
                                     style={{
-                                        backgroundColor: '#f9f7f1',
-                                        border: '1px solid #e8e6d9',
+                                        backgroundColor: 'var(--color-bg-subtle)',
+                                        border: '1px solid var(--color-border)',
                                         borderRadius: 12,
                                         padding: 12,
                                         marginTop: 16,
@@ -183,7 +183,7 @@ export default function PermissionDialog() {
                                         style={{
                                             margin: 0,
                                             fontSize: 12,
-                                            color: '#8a8886',
+                                            color: 'var(--color-text-secondary)',
                                             fontWeight: 500,
                                         }}
                                     >
@@ -198,8 +198,8 @@ export default function PermissionDialog() {
                                     padding: 16,
                                     display: 'flex',
                                     gap: 12,
-                                    borderTop: '1px solid #e8e6d9',
-                                    backgroundColor: '#faf9f7',
+                                    borderTop: '1px solid var(--color-border)',
+                                    backgroundColor: 'var(--color-bg-surface)',
                                 }}
                             >
                                 <motion.button
@@ -210,9 +210,9 @@ export default function PermissionDialog() {
                                         flex: 1,
                                         height: 40,
                                         borderRadius: 10,
-                                        border: '1px solid #e8e6d9',
-                                        backgroundColor: '#ffffff',
-                                        color: '#201e24',
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        color: 'var(--color-text-primary)',
                                         fontSize: 14,
                                         fontWeight: 600,
                                         cursor: 'pointer',
@@ -223,12 +223,12 @@ export default function PermissionDialog() {
                                         gap: 8,
                                     }}
                                     onMouseEnter={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = '#f5f4f0';
-                                        (e.currentTarget as HTMLElement).style.borderColor = '#d4cfc3';
+                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover)';
+                                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border-strong)';
                                     }}
                                     onMouseLeave={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = '#ffffff';
-                                        (e.currentTarget as HTMLElement).style.borderColor = '#e8e6d9';
+                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-surface)';
+                                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)';
                                     }}
                                 >
                                     <XCircleIcon width={16} height={16} />
@@ -243,8 +243,8 @@ export default function PermissionDialog() {
                                         height: 40,
                                         borderRadius: 10,
                                         border: 'none',
-                                        backgroundColor: '#201e24',
-                                        color: '#f5f4f0',
+                                        backgroundColor: 'var(--color-text-primary)',
+                                        color: 'var(--color-text-inverse)',
                                         fontSize: 14,
                                         fontWeight: 600,
                                         cursor: 'pointer',
@@ -255,10 +255,10 @@ export default function PermissionDialog() {
                                         gap: 8,
                                     }}
                                     onMouseEnter={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = '#111111';
+                                        (e.currentTarget as HTMLElement).style.opacity = '0.9';
                                     }}
                                     onMouseLeave={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = '#201e24';
+                                        (e.currentTarget as HTMLElement).style.opacity = '1';
                                     }}
                                 >
                                     <CheckCircleIcon width={16} height={16} />

@@ -231,21 +231,21 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
     // Light theme styling constants
     const colors = {
         overlay: "rgba(0, 0, 0, 0.2)",
-        background: "#ffffff",
-        sidebarBg: "#f9f9f8",
-        border: "#e5e5e0",
-        textPrimary: "#111111",
-        textSecondary: "#666666",
-        textMuted: "#999999",
+        background: 'var(--color-bg-surface)',
+        sidebarBg: 'var(--color-bg-subtle)',
+        border: 'var(--color-border)',
+        textPrimary: 'var(--color-text-primary)',
+        textSecondary: 'var(--color-text-secondary)',
+        textMuted: 'var(--color-text-tertiary)',
         accent: "#000000",
         accentHover: "rgba(0,0,0,0.05)",
-        cardBg: "#ffffff",
-        cardHover: "#fbfbfb",
-        inputBg: "#ffffff",
-        buttonBg: "#ffffff",
-        buttonHover: "#f0f0f0",
-        primaryButton: "#111111",
-        primaryButtonText: "#ffffff",
+        cardBg: 'var(--color-bg-surface)',
+        cardHover: 'var(--color-bg-subtle)',
+        inputBg: 'var(--color-bg-surface)',
+        buttonBg: 'var(--color-bg-surface)',
+        buttonHover: 'var(--color-bg-base)',
+        primaryButton: 'var(--color-text-primary)',
+        primaryButtonText: 'var(--color-bg-surface)',
         primaryButtonHover: "#333333"
     };
 
@@ -364,7 +364,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     height: "32px",
                                     borderRadius: "8px",
                                     border: "none",
-                                    backgroundColor: "transparent",
+                                    backgroundColor: 'transparent',
                                     color: colors.textSecondary,
                                     display: "flex",
                                     alignItems: "center",
@@ -419,8 +419,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         <div style={{
                                             padding: "4px 12px",
                                             borderRadius: "100px",
-                                            backgroundColor: "#111111",
-                                            color: "#ffffff",
+                                            backgroundColor: 'var(--color-text-primary)',
+                                            color: 'var(--color-bg-surface)',
                                             fontSize: "13px",
                                             fontWeight: 500
                                         }}>
@@ -435,7 +435,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     style={{
                                                         display: "flex", alignItems: "center", gap: "6px",
                                                         padding: "6px 12px", borderRadius: "8px",
-                                                        border: `1px solid ${colors.border}`, backgroundColor: "transparent",
+                                                        border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
                                                         color: colors.textPrimary, fontSize: "13px", cursor: "pointer",
                                                         fontWeight: 500
                                                     }}>
@@ -446,7 +446,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     style={{
                                                         display: "flex", alignItems: "center", gap: "6px",
                                                         padding: "6px 12px", borderRadius: "8px",
-                                                        border: `1px solid ${colors.border}`, backgroundColor: "transparent",
+                                                        border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
                                                         color: colors.textSecondary, fontSize: "13px", cursor: "pointer"
                                                     }}>
                                                     <FolderIcon width={14} height={14} /> Open Folder
@@ -482,7 +482,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 style={{
                                                 display: "flex", alignItems: "center", gap: "6px",
                                                 padding: "6px 12px", borderRadius: "8px",
-                                                border: `1px solid ${colors.border}`, backgroundColor: "transparent",
+                                                border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
                                                 color: colors.textPrimary, fontSize: "13px", cursor: "pointer",
                                                 fontWeight: 500
                                             }}>
@@ -492,7 +492,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         <button style={{
                                             display: "flex", alignItems: "center", gap: "6px",
                                             padding: "6px 12px", borderRadius: "8px",
-                                            border: `1px solid ${colors.border}`, backgroundColor: "transparent",
+                                            border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
                                             color: colors.textSecondary, fontSize: "13px", cursor: "pointer"
                                         }}>
                                             Filter by <ChevronDownIcon width={14} height={14} />
@@ -500,7 +500,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         <button style={{
                                             display: "flex", alignItems: "center", gap: "6px",
                                             padding: "6px 12px", borderRadius: "8px",
-                                            border: `1px solid ${colors.border}`, backgroundColor: "transparent",
+                                            border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
                                             color: colors.textSecondary, fontSize: "13px", cursor: "pointer"
                                         }}>
                                             Sort by <ChevronDownIcon width={14} height={14} />
@@ -541,7 +541,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     <div style={{
                                                         width: "36px", height: "36px",
                                                         borderRadius: "8px",
-                                                        backgroundColor: "#f5f5f5",
+                                                        backgroundColor: 'var(--color-bg-subtle)',
                                                         display: "flex", alignItems: "center", justifyContent: "center",
                                                         overflow: "hidden"
                                                     }}>
@@ -563,7 +563,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     onClick={(e) => { e.stopPropagation(); handleAddClick(mcp); }}
                                                     style={{
                                                         width: "28px", height: "28px", borderRadius: "8px",
-                                                        border: "none", backgroundColor: "transparent", color: colors.textSecondary,
+                                                        border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                         display: "flex", alignItems: "center", justifyContent: "center",
                                                         cursor: "pointer", transition: "all 0.2s"
                                                     }}
@@ -636,7 +636,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     <button
                                                         style={{
                                                             width: "28px", height: "28px", borderRadius: "8px",
-                                                            border: "none", backgroundColor: "transparent", color: colors.textSecondary,
+                                                            border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                             display: "flex", alignItems: "center", justifyContent: "center",
                                                             cursor: "pointer", transition: "all 0.2s"
                                                         }}
@@ -684,7 +684,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                             onClick={() => handleDeleteSkill(skill.name)}
                                                             style={{
                                                                 width: "28px", height: "28px", borderRadius: "8px",
-                                                                border: "none", backgroundColor: "transparent", color: colors.textSecondary,
+                                                                border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                                 display: "flex", alignItems: "center", justifyContent: "center",
                                                                 cursor: "pointer", transition: "all 0.2s"
                                                             }}
@@ -741,7 +741,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         exit={{ scale: 0.95, y: 20 }}
                                         style={{
                                             width: "480px",
-                                            backgroundColor: "#ffffff",
+                                            backgroundColor: 'var(--color-bg-surface)',
                                             borderRadius: "16px",
                                             boxShadow: "0 24px 48px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)",
                                             overflow: "hidden",
@@ -760,7 +760,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 <div style={{
                                                     width: "32px", height: "32px",
                                                     borderRadius: "8px",
-                                                    backgroundColor: "#f5f5f5",
+                                                    backgroundColor: 'var(--color-bg-subtle)',
                                                     display: "flex", alignItems: "center", justifyContent: "center",
                                                     overflow: "hidden"
                                                 }}>
@@ -782,7 +782,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 onClick={() => setSelectedMCP(null)}
                                                 style={{
                                                     width: "28px", height: "28px", borderRadius: "8px",
-                                                    border: "none", backgroundColor: "transparent", color: colors.textSecondary,
+                                                    border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                     display: "flex", alignItems: "center", justifyContent: "center",
                                                     cursor: "pointer", transition: "all 0.2s"
                                                 }}
@@ -866,7 +866,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         padding: "8px 16px",
                                                         borderRadius: "8px",
                                                         border: `1px solid ${colors.border}`,
-                                                        backgroundColor: "transparent",
+                                                        backgroundColor: 'transparent',
                                                         color: colors.textPrimary,
                                                         fontSize: "13px",
                                                         fontWeight: 500,
@@ -927,7 +927,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         exit={{ scale: 0.95, y: 20 }}
                                         style={{
                                             width: "480px",
-                                            backgroundColor: "#ffffff",
+                                            backgroundColor: 'var(--color-bg-surface)',
                                             borderRadius: "16px",
                                             boxShadow: "0 24px 48px rgba(0,0,0,0.1)",
                                             overflow: "hidden",
@@ -949,7 +949,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 onClick={() => setIsAddingSkill(false)}
                                                 style={{
                                                     width: "28px", height: "28px", borderRadius: "8px",
-                                                    border: "none", backgroundColor: "transparent", color: colors.textSecondary,
+                                                    border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                     display: "flex", alignItems: "center", justifyContent: "center",
                                                     cursor: "pointer"
                                                 }}
@@ -1048,7 +1048,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         padding: "8px 16px",
                                                         borderRadius: "8px",
                                                         border: `1px solid ${colors.border}`,
-                                                        backgroundColor: "transparent",
+                                                        backgroundColor: 'transparent',
                                                         color: colors.textPrimary,
                                                         fontSize: "13px",
                                                         fontWeight: 500,

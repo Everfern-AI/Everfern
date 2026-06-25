@@ -12,6 +12,10 @@
  * - Cleanup coordination: Sub-agents (200ms) → Tool calls (100ms) → Browser (500ms) → Streaming (immediate)
  */
 
+import { getSubagentSpawner } from './subagent-spawn';
+import { toolCallRegistry } from './tool-call-registry';
+import { BrowserSession } from '../tools/navis/session';
+
 interface CleanupPhaseStatus {
   phase: 'sub-agents' | 'tool-calls' | 'browser-sessions' | 'streaming';
   completed: boolean;
@@ -145,7 +149,6 @@ export class AbortSignalManager {
       async () => {
         console.log('[Cleanup] Starting sub-agent termination...');
         try {
-          const { getSubagentSpawner } = await import('./subagent-spawn');
           const spawner = getSubagentSpawner();
           if (spawner && typeof spawner.abortAll === 'function') {
             await spawner.abortAll();
@@ -165,8 +168,6 @@ export class AbortSignalManager {
       async () => {
         console.log('[Cleanup] Starting tool call cancellation...');
         try {
-          // Mark all tool calls as aborted in registry
-          const { toolCallRegistry } = await import('./tool-call-registry');
           if (toolCallRegistry && typeof toolCallRegistry.markAllAborted === 'function') {
             toolCallRegistry.markAllAborted();
           }
@@ -185,7 +186,6 @@ export class AbortSignalManager {
       async () => {
         console.log('[Cleanup] Starting browser session closure...');
         try {
-          const { BrowserSession } = await import('../tools/navis/session');
           await BrowserSession.closeAll(true);
         } catch (err) {
           console.error('[Cleanup] Browser session close error:', err);
@@ -356,3 +356,9 @@ export class AbortError extends Error {
     this.name = 'AbortError';
   }
 }
+
+// Preload heavy modules in the background to prevent compilation/loading latency during timed cleanup execution
+import('./subagent-spawn').catch(() => {});
+import('./tool-call-registry').catch(() => {});
+import('../tools/navis/session').catch(() => {});
+

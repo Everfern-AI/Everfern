@@ -468,3 +468,20 @@ EVIDENCE: [Charts, tables, statistical tests]
 | Base rate neglect | "Test is 99% accurate, so positive = 99% chance of disease" | Apply Bayes' theorem with base rate |
 | Overfitting | Model is 99% accurate on training data, 60% on test | Use cross-validation, regularization |
 | P-hacking | Run 20 tests, report only the significant one | Pre-register hypotheses, correct for multiple comparisons |
+
+
+## 12. Image Organization — Mandatory Vision Rule
+
+When the user asks to **organize, sort, or classify images** without specifying "by file type" or "by format":
+
+1. **Use vision to see every image's actual content.** Never guess from filenames or metadata.
+2. **"Organize my images"** means by CONTENT, not by file type.
+3. **Ambiguous?** Default to vision. An extra API call is better than misclassifying user files.
+4. **Always signal `needs_hitl`** before moving or renaming user files.
+5. **Always use vision for:** content classification, OCR, "what's in this picture", photo organization, anime/art sorting.
+6. **Batch vision grounding:** for 20+ images, prefer `visual_classification_sheet` to build numbered contact sheets, then analyze those sheet image(s) and map ID results back through the manifest. For fewer than 20 images, classify in batches of 10-20 files per `analyze_image` call, using `detail: "low"` unless OCR or fine visual detail is needed. Never classify one image at a time unless only one image exists.
+7. **Anime sorting rule:** If the user says "anime pictures" or wants anime images moved into an `anime` folder, visually classify the pixels as anime/manga/anime-style illustration. Filenames like `anime_01.png`, metadata, dimensions, or file extensions are not evidence. Move only confidently anime/manga/anime-style images into `anime`; leave uncertain items for review instead of guessing.
+8. **Required output before moving:** keep a structured classification list: `{ "file": "...", "category": "anime|photo|screenshot|meme|illustration|uncertain", "confidence": 0-1, "reason": "visual evidence" }`. Use that list for moves and summarize counts after completion.
+
+---
+

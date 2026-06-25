@@ -51,8 +51,8 @@ const INTENT_SIGNALS: Record<IntentType, string[]> = {
     'api', 'endpoint', 'database', 'query', 'schema'
   ],
   research: [
-    'search', 'find information', 'lookup', 'what is', 'how does',
-    'explain', 'research', 'investigate', 'analyze', 'compare'
+    'search', 'find information', 'lookup', 'look up', 'documentation', 'docs', 'what is', 'how does',
+    'explain', 'research', 'investigate', 'analyze', 'compare', 'google', 'browser', 'website', 'url'
   ],
   task: [
     'run command', 'create file', 'delete', 'download', 'generate report',
@@ -177,6 +177,12 @@ export function classifyIntentHeuristic(userInput: string, history: any[] = []):
     if (intent === 'unknown') continue;
     for (const signal of signals) {
       if (normalized.includes(signal)) {
+        if (signal === 'script' && /\b(typescript|javascript|purescript)\b/i.test(normalized)) {
+          const hasStandaloneScript = /\bscripts?\b/i.test(normalized.replace(/\b(typescript|javascript|purescript)\b/gi, ''));
+          if (!hasStandaloneScript) {
+            continue;
+          }
+        }
         scores[intent as IntentType] += 1;
       }
     }
@@ -213,6 +219,10 @@ export function classifyIntentHeuristic(userInput: string, history: any[] = []):
 
   if (/\b(benchmark|test against|compare.*with|vs\.?|versus)\b/i.test(normalized)) {
     scores.research += 2;
+  }
+
+  if (/\b(compile\s+(.*?\s+)?list|comprehensive\s+list|top\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)|find\s+the\s+best|compare)\b/i.test(normalized)) {
+    scores.research += 3;
   }
 
   if (/\b(algorithm|database|api|endpoint|microservice|architecture|design pattern)\b/i.test(normalized)) {
@@ -275,12 +285,27 @@ export function classifyIntentFast(userInput: string, history: any[]): IntentCla
 
   // GUI automation - general keywords
   if (/\b(open|click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(normalized)) {
-    return { intent: 'automate', confidence: 0.85, reasoning: 'Fast: GUI automation keywords' };
+    // Guard against 'open-source' triggering the 'open' GUI keyword
+    if (/\bopen-source\b/i.test(normalized)) {
+      const hasOtherGUIKeyword = /\b(click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(normalized) ||
+                                 /\bopen\b/i.test(normalized.replace(/\bopen-source\b/gi, ''));
+      if (hasOtherGUIKeyword) {
+        return { intent: 'automate', confidence: 0.85, reasoning: 'Fast: GUI automation keywords' };
+      }
+    } else {
+      return { intent: 'automate', confidence: 0.85, reasoning: 'Fast: GUI automation keywords' };
+    }
   }
 
   // Strong fix/debug signals
   if (/\b(fix|debug|error|bug|crash|broken|not working|doesn't work|failing)\b/.test(normalized)) {
     return { intent: 'fix', confidence: 0.85, reasoning: 'Fast: fix/debug keywords' };
+  }
+
+  // Strong research signals
+  if (/\b(compile\s+(.*?\s+)?list|comprehensive\s+list|top\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)|find\s+the\s+best|compare)\b/i.test(normalized) ||
+      /\b(search|find information|lookup|look up|documentation|docs|google|browser|website|url)\b/i.test(normalized)) {
+    return { intent: 'research', confidence: 0.85, reasoning: 'Fast: research keywords' };
   }
 
   // Strong coding signals

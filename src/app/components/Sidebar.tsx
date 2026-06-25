@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { PlusIcon, ChatBubbleLeftIcon, MagnifyingGlassIcon, Cog6ToothIcon, ChatBubbleLeftRightIcon, FolderIcon, SparklesIcon, CodeBracketIcon, EllipsisHorizontalIcon, TrashIcon, Bars3Icon, BriefcaseIcon, ArchiveBoxIcon, SquaresPlusIcon, UserCircleIcon, LinkIcon, ChartBarIcon } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
+import { useTheme } from "@/components/ThemeProvider";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -38,6 +39,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
     const [userPlan, setUserPlan] = useState<string>("free");
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+    const { theme } = useTheme();
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -142,8 +144,8 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 left: 0,
                 top: 0,
                 bottom: 0,
-                backgroundColor: "#f5f4f0",
-                borderRight: "1px solid #e8e6d9",
+                backgroundColor: "var(--sidebar-bg)",
+                borderRight: "1px solid var(--sidebar-border)",
                 display: "flex",
                 flexDirection: "column",
                 zIndex: 50,
@@ -159,15 +161,15 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 justifyContent: isOpen ? "space-between" : "center",
                 flexShrink: 0,
                 WebkitAppRegion: "drag",
-                backgroundColor: "#f5f4f0"
+                backgroundColor: "var(--sidebar-bg)"
             } as any}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, WebkitAppRegion: "no-drag" } as any}>
                     <button
                         type="button"
                         onClick={onToggle}
-                        style={{ background: "transparent", border: "none", color: "#73716e", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
-                        onMouseEnter={e => e.currentTarget.style.color = "#111111"}
-                        onMouseLeave={e => e.currentTarget.style.color = "#73716e"}
+                        style={{ background: "transparent", border: "none", color: "var(--sidebar-btn-color)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                        onMouseEnter={e => e.currentTarget.style.color = "var(--sidebar-btn-hover-color)"}
+                        onMouseLeave={e => e.currentTarget.style.color = "var(--sidebar-btn-color)"}
                     >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -177,9 +179,9 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     {isOpen && (
                         <button
                             type="button"
-                            style={{ background: "transparent", border: "none", color: "#73716e", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
-                            onMouseEnter={e => e.currentTarget.style.color = "#111111"}
-                            onMouseLeave={e => e.currentTarget.style.color = "#73716e"}
+                            style={{ background: "transparent", border: "none", color: "var(--sidebar-btn-color)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                            onMouseEnter={e => e.currentTarget.style.color = "var(--sidebar-btn-hover-color)"}
+                            onMouseLeave={e => e.currentTarget.style.color = "var(--sidebar-btn-color)"}
                         >
                             <UserCircleIcon width={18} height={18} />
                         </button>
@@ -196,13 +198,13 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 padding: "0 16px",
                 justifyContent: "flex-start",
                 flexShrink: 0,
-                backgroundColor: "#f5f4f0"
+                backgroundColor: "var(--sidebar-bg)"
             } as any}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} />
+                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                     {isOpen && (
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.03em", color: "#201e24", fontFamily: 'var(--font-sans)' }}>EverFern</span>
+                            <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--sidebar-brand-text)", fontFamily: 'var(--font-sans)' }}>EverFern</span>
                         </div>
                     )}
                 </div>
@@ -226,7 +228,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         backgroundColor: "transparent",
                         border: "none",
                         borderRadius: 12,
-                        color: "#111111",
+                        color: "var(--sidebar-text-primary)",
                         cursor: "pointer",
                         fontSize: 13,
                         fontWeight: 600,
@@ -234,7 +236,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         lineHeight: 1
                     }}
                     onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
-                        e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)";
+                        e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)";
                     }}
                     onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
                         e.currentTarget.style.backgroundColor = "transparent";
@@ -268,14 +270,14 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                 background: "transparent",
                                 border: "none",
                                 borderRadius: 12,
-                                color: "#4a4846",
+                                color: "var(--sidebar-text-secondary)",
                                 cursor: "pointer",
                                 fontSize: 13,
                                 fontWeight: 500,
                                 transition: "background-color 0.15s, color 0.15s",
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)"; e.currentTarget.style.color = "#111111"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#4a4846"; }}
+                            } as any}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)"; e.currentTarget.style.color = "var(--sidebar-text-primary)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--sidebar-text-secondary)"; }}
                             onClick={() => {
                                 if (item.label === "Search") setShowSearch(true);
                                 else if (item.label === "Artifacts" && onArtifactsClick) onArtifactsClick();
@@ -296,7 +298,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
             {/* History List - Only show if open */}
             <div style={{ padding: isOpen ? "12px 8px 20px" : "12px 0 20px", display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
                 {isOpen && history.length > 0 && (
-                    <div style={{ padding: "12px 12px 12px", fontSize: 11, fontWeight: 700, color: "#8a8886", width: "100%", textTransform: "uppercase" }}>Recents</div>
+                    <div style={{ padding: "12px 12px 12px", fontSize: 11, fontWeight: 700, color: "var(--sidebar-text-tertiary)", width: "100%", textTransform: "uppercase" }}>Recents</div>
                 )}
                 {isOpen && history.map((item) => (
                     <button
@@ -310,10 +312,10 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             gap: 14,
                             padding: "8px 14px",
                             justifyContent: "flex-start",
-                            backgroundColor: activeConversationId === item.id ? "rgba(0,0,0,0.06)" : "transparent",
+                            backgroundColor: activeConversationId === item.id ? "var(--sidebar-bg-selected)" : "transparent",
                             border: "none",
                             borderRadius: 12,
-                            color: activeConversationId === item.id ? "#111111" : "#4a4846",
+                            color: activeConversationId === item.id ? "var(--sidebar-text-primary)" : "var(--sidebar-text-secondary)",
                             cursor: "pointer",
                             fontSize: 13,
                             textAlign: "left",
@@ -324,8 +326,8 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         }}
                         onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
                             if (activeConversationId !== item.id) {
-                                e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.04)";
-                                e.currentTarget.style.color = "#111111";
+                                e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)";
+                                e.currentTarget.style.color = "var(--sidebar-text-primary)";
                             }
                             const delBtn = e.currentTarget.querySelector('.del-btn') as HTMLElement;
                             if (delBtn) delBtn.style.opacity = '1';
@@ -333,7 +335,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
                             if (activeConversationId !== item.id) {
                                 e.currentTarget.style.backgroundColor = "transparent";
-                                e.currentTarget.style.color = "#4a4846";
+                                e.currentTarget.style.color = "var(--sidebar-text-secondary)";
                             }
                             const delBtn = e.currentTarget.querySelector('.del-btn') as HTMLElement;
                             if (delBtn) delBtn.style.opacity = '0';
@@ -373,11 +375,11 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                     WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
                                 }}>{item.title || "Untitled Chat"}</span>
                                 {item.projectName && (
-                                    <div style={{ fontSize: 10, backgroundColor: 'rgba(0,0,0,0.08)', padding: '2px 6px', borderRadius: 6, color: '#666666', marginLeft: 4, whiteSpace: 'nowrap', fontWeight: 600 }}>
+                                    <div style={{ fontSize: 10, backgroundColor: 'var(--sidebar-bg-active)', padding: '2px 6px', borderRadius: 6, color: 'var(--sidebar-project-text)', marginLeft: 4, whiteSpace: 'nowrap', fontWeight: 600 }}>
                                         {item.projectName}
                                     </div>
                                 )}
-                                <div className="del-btn" onClick={(e) => handleDelete(e, item.id)} style={{ padding: 4, borderRadius: 10, color: "#666666", opacity: 0, transition: "opacity 0.15s, color 0.15s", cursor: "pointer", lineHeight: 1, display: "flex" }} onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.color = "#f87171"}>
+                                <div className="del-btn" onClick={(e) => handleDelete(e, item.id)} style={{ padding: 4, borderRadius: 10, color: "var(--sidebar-project-text)", opacity: 0, transition: "opacity 0.15s, color 0.15s", cursor: "pointer", lineHeight: 1, display: "flex" }} onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.color = "#f87171"}>
                                     <TrashIcon width={14} height={14} />
                                 </div>
                             </>
@@ -387,13 +389,13 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
             </div>
             </div>
             {/* Footer */}
-            <div style={{ padding: isOpen ? 12 : "12px 0", borderTop: "1px solid #e8e6d9", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <div style={{ padding: isOpen ? 12 : "12px 0", borderTop: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: isOpen ? "10px 12px" : "10px 0", justifyContent: isOpen ? "flex-start" : "center", borderRadius: 14 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 999, background: "#f0eee1", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #dcdad0", overflow: "hidden" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 999, background: "var(--sidebar-avatar-bg)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--sidebar-avatar-border)", overflow: "hidden" }}>
                         {avatarUrl ? (
                             <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                            <span style={{ fontSize: 12, fontWeight: 600, color: "#111111" }}>{username.charAt(0).toUpperCase()}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--sidebar-text-primary)" }}>{username.charAt(0).toUpperCase()}</span>
                         )}
                     </div>
                     {isOpen && (
@@ -401,18 +403,18 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             <div style={{
                                 fontSize: 13,
                                 fontWeight: 600,
-                                color: "#111111",
+                                color: "var(--sidebar-text-primary)",
                                 overflow: "hidden",
                                 whiteSpace: "nowrap",
                                 maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                                 WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)'
                             }}>{username}</div>
-                            <div style={{ fontSize: 11, color: "#8a8886", display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ fontSize: 11, color: "var(--sidebar-text-tertiary)", display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ textTransform: "capitalize" }}>{userPlan} plan</span>
                             </div>
                             {dailyLimit !== null && dailyUsed !== null && (
                                 <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 3, paddingRight: 4 }}>
-                                    <div style={{ width: "100%", height: 4, backgroundColor: "#e8e6d9", borderRadius: 2, overflow: "hidden" }}>
+                                    <div style={{ width: "100%", height: 4, backgroundColor: "var(--sidebar-border)", borderRadius: 2, overflow: "hidden" }}>
                                         <div style={{
                                             width: `${Math.min(100, (dailyUsed / dailyLimit) * 100)}%`,
                                             height: "100%",
@@ -420,7 +422,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                             borderRadius: 2
                                         }}></div>
                                     </div>
-                                    <div style={{ fontSize: 9, color: "#a09e9c", textAlign: "right", fontWeight: 500 }}>
+                                    <div style={{ fontSize: 9, color: "var(--sidebar-limit-text)", textAlign: "right", fontWeight: 500 }}>
                                         {Math.round((dailyUsed / dailyLimit) * 100)}% used
                                     </div>
                                 </div>
@@ -431,13 +433,13 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         <button
                             onClick={onSettingsClick}
                             style={{
-                                width: 32, height: 32, borderRadius: 10, background: "rgba(0, 0, 0, 0.03)",
-                                border: "1px solid rgba(0, 0, 0, 0.05)", color: "#717171",
+                                width: 32, height: 32, borderRadius: 10, background: "var(--sidebar-settings-bg)",
+                                border: "1px solid var(--sidebar-settings-border)", color: "var(--sidebar-settings-text)",
                                 display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
                                 transition: "all 0.2s"
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(0,0,0,0.15)"; e.currentTarget.style.color = "#111111"; e.currentTarget.style.background = "rgba(0,0,0,0.06)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(0,0,0,0.05)"; e.currentTarget.style.color = "#717171"; e.currentTarget.style.background = "rgba(0,0,0,0.03)"; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--sidebar-settings-hover-border)"; e.currentTarget.style.color = "var(--sidebar-settings-hover-text)"; e.currentTarget.style.background = "var(--sidebar-settings-hover-bg)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--sidebar-settings-border)"; e.currentTarget.style.color = "var(--sidebar-settings-text)"; e.currentTarget.style.background = "var(--sidebar-settings-bg)"; }}
                         >
                             <Cog6ToothIcon width={16} height={16} />
                         </button>

@@ -163,8 +163,10 @@ export class LightweightCheckpointer extends BaseCheckpointSaver {
     }
   }
 
-  clearThread(threadId: string): void {
-    this.deleteThread(threadId);
+  // BUG-06 FIX: Made async and awaiting deleteThread to prevent race conditions
+  // where a subsequent put() could complete before the delete, then get wiped.
+  async clearThread(threadId: string): Promise<void> {
+    await this.deleteThread(threadId);
   }
 
   async getStats(): Promise<{ threads: number; totalCheckpoints: number }> {

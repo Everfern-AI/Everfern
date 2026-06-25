@@ -45,111 +45,27 @@ function shouldRetryWithCorrection(error: any, toolName: string): boolean {
 }
 
 /**
- * AI-based approval detection
- * Replaces keyword-based approval checking with semantic analysis
+ * Approval detection using keyword matching
+ * BUG-10 FIX: Removed AI-based approval detection that made an extra LLM call
+ * per approval check. The keyword-based approach is reliable and avoids
+ * doubling API costs.
  */
-async function isApprovalResponse(feedback: string, client?: AIClient): Promise<boolean> {
-  if (!client) {
-    // Fallback: keyword-based check
-    return feedback.toLowerCase().includes('approve');
-  }
-
-  try {
-    const prompt = `Determine if this user feedback represents approval or rejection.
-
-Feedback: "${feedback}"
-
-Approval indicators:
-- "approve", "yes", "ok", "proceed", "go ahead"
-- Affirmative responses
-- Permission granted
-
-Rejection indicators:
-- "reject", "no", "deny", "cancel", "stop"
-- Negative responses
-- Permission denied
-
-Respond with JSON:
-{
-  "isApproval": true/false,
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}`;
-
-    const response = await client.chat({
-      messages: [{ role: 'user', content: prompt }],
-      responseFormat: 'json',
-      temperature: 0.3,
-      maxTokens: 150
-    });
-
-    let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    // Remove markdown code blocks if present
-    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const analysis = JSON.parse(content);
-
-    return analysis.isApproval && analysis.confidence > 0.7;
-  } catch (err) {
-    console.warn('[ExecuteTools] AI approval detection failed:', err);
-    return feedback.toLowerCase().includes('approve');
-  }
+function isApprovalResponse(feedback: string): boolean {
+  const lower = feedback.toLowerCase();
+  return lower.includes('approve') || lower.includes('yes') ||
+         lower.includes('proceed') || lower.includes('go ahead') || lower.includes('ok');
 }
 
 /**
- * AI-based command completion detection
- * Replaces keyword-based prompt detection with semantic analysis
+ * Command completion detection using keyword matching
+ * BUG-10 FIX: Removed AI-based completion detection that made an extra LLM call
+ * per terminal command result. At scale (10+ terminal commands), this was doubling
+ * API costs and adding 2-3s latency per tool call.
  */
-async function isCommandComplete(output: string, client?: AIClient): Promise<boolean> {
-  if (!client) {
-    // Fallback: keyword-based check
-    const lastLines = output.split('\n').slice(-3).join('\n');
-    return lastLines.includes('> ') || lastLines.includes('$ ') ||
-           output.includes('Status: DONE') || output.includes('Exit code:');
-  }
-
-  try {
-    const lastLines = output.split('\n').slice(-5).join('\n');
-    const prompt = `Determine if this command output indicates completion (has shell prompt or exit status).
-
-Last lines of output:
-${lastLines}
-
-Complete indicators:
-- Shell prompts (>, $, #)
-- Exit codes or status messages
-- "DONE", "completed", "finished"
-
-Incomplete indicators:
-- Still running
-- Waiting for input
-- No prompt or status
-
-Respond with JSON:
-{
-  "isComplete": true/false,
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}`;
-
-    const response = await client.chat({
-      messages: [{ role: 'user', content: prompt }],
-      responseFormat: 'json',
-      temperature: 0.3,
-      maxTokens: 150
-    });
-
-    let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    // Remove markdown code blocks if present
-    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const analysis = JSON.parse(content);
-
-    return analysis.isComplete && analysis.confidence > 0.7;
-  } catch (err) {
-    console.warn('[ExecuteTools] AI completion detection failed:', err);
-    const lastLines = output.split('\n').slice(-3).join('\n');
-    return lastLines.includes('> ') || lastLines.includes('$ ') ||
-           output.includes('Status: DONE') || output.includes('Exit code:');
-  }
+function isCommandComplete(output: string): boolean {
+  const lastLines = output.split('\n').slice(-3).join('\n');
+  return lastLines.includes('> ') || lastLines.includes('$ ') ||
+         output.includes('Status: DONE') || output.includes('Exit code:');
 }
 
 export const createExecuteToolsNode = (
@@ -270,8 +186,8 @@ export const createExecuteToolsNode = (
         if ((rec.toolName === 'run_command' || rec.toolName === 'command_status') && rec.result?.success) {
             const out = typeof rec.result.output === 'string' ? rec.result.output : JSON.stringify(rec.result.output);
 
-            // Use AI to determine if command is complete
-            const isComplete = await isCommandComplete(out, aiClient);
+            // BUG-10 FIX: Now using keyword-based check (synchronous, no LLM call)
+            const isComplete = isCommandComplete(out);
 
             if (!isComplete) {
                 nextPendingTools.push({
