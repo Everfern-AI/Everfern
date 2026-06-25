@@ -495,10 +495,7 @@ export function registerAgentHandlers() {
             event.toolCallId || '',
             event.type || '',
             event.timestamp || '',
-            event.stepNumber ?? '',
-            event.content || '',
-            event.action?.type || '',
-            event.screenshotPath || event.screenshot?.screenshotPath || '',
+            event.stepNumber ?? ''
           ].join('|');
           if (seen.has(key)) continue;
           seen.add(key);

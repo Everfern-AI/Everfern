@@ -22,8 +22,7 @@ interface FileViewerModalProps {
 }
 
 // ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
-export function MarkdownViewer({ content, theme = 'light' }: { content: string; theme?: 'light' | 'dark' }) {
-    const isDark = theme === 'dark';
+export function MarkdownViewer({ content }: { content: string }) {
     
     const renderMarkdown = (text: string) => {
         const lines = text.split('\n');
@@ -31,20 +30,20 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
         let inCodeBlock = false;
         let codeBlockContent: string[] = [];
         let codeBlockLang = '';
-
+ 
         const formatInline = (text: string) => {
             let f = text;
-            f = f.replace(/`(.*?)`/g, `<code style="background-color: ${isDark ? 'rgba(255,255,255,0.08)' : '#f1f0ea'}; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: ${isDark ? '#60a5fa' : '#0891b2'};">$1</code>`);
+            f = f.replace(/`(.*?)`/g, `<code style="background-color: var(--color-bg-subtle); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: var(--color-accent);">$1</code>`);
             f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
             f = f.replace(/__(.*?)\__/g, '<strong>$1</strong>');
             f = f.replace(/\*(.*?)\*/g, '<em>$1</em>');
             f = f.replace(/_(.*?)_/g, '<em>$1</em>');
             return f;
         };
-
+ 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-
+ 
             if (line.trim().startsWith('```')) {
                 if (inCodeBlock) {
                     inCodeBlock = false;
@@ -52,15 +51,15 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
                     codeBlockContent = [];
                     elements.push(
                         <pre key={`code-${i}`} style={{ 
-                            backgroundColor: '#111113', 
-                            color: '#f8f7f2', 
+                            backgroundColor: 'var(--color-bg-base)', 
+                            color: 'var(--color-text-primary)', 
                             padding: 16, 
                             borderRadius: 8, 
                             overflowX: 'auto', 
                             fontSize: 13, 
                             fontFamily: 'monospace', 
                             margin: '12px 0',
-                            border: '1px solid rgba(255,255,255,0.05)'
+                            border: '1px solid var(--color-border)'
                         }}>
                             <code>{code}</code>
                         </pre>
@@ -71,25 +70,25 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
                 }
                 continue;
             }
-
+ 
             if (inCodeBlock) {
                 codeBlockContent.push(line);
                 continue;
             }
-
+ 
             if (line.startsWith('# ')) {
-                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '24px 0 12px 0', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e8e6d9'}`, paddingBottom: 6, color: isDark ? '#ffffff' : '#111' }}>{line.substring(2)}</h1>);
+                elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 24, fontWeight: 700, margin: '24px 0 12px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 6, color: 'var(--color-text-primary)' }}>{line.substring(2)}</h1>);
                 continue;
             }
             if (line.startsWith('## ')) {
-                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '20px 0 10px 0', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e8e6d9'}`, paddingBottom: 4, color: isDark ? '#f3f4f6' : '#222' }}>{line.substring(3)}</h2>);
+                elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 20, fontWeight: 600, margin: '20px 0 10px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 4, color: 'var(--color-text-primary)' }}>{line.substring(3)}</h2>);
                 continue;
             }
             if (line.startsWith('### ')) {
-                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '18px 0 8px 0', color: isDark ? '#e5e7eb' : '#333' }}>{line.substring(4)}</h3>);
+                elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 16, fontWeight: 600, margin: '18px 0 8px 0', color: 'var(--color-text-primary)' }}>{line.substring(4)}</h3>);
                 continue;
             }
-
+ 
             // Table support
             if (line.includes('|') && i + 1 < lines.length && lines[i + 1].includes('---')) {
                 const headers = line.split('|').map(h => h.trim()).filter(Boolean);
@@ -107,15 +106,15 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
                             <thead>
                                 <tr>
                                     {headers.map((h, j) => (
-                                        <th key={j} style={{ padding: '8px 12px', borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.12)'}`, textAlign: 'left', color: isDark ? '#9ca3af' : '#717171', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {rows.map((row, ri) => (
-                                    <tr key={ri} style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}` }}>
+                                    <tr key={ri} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                                         {row.map((cell, ci) => (
-                                            <td key={ci} style={{ padding: '8px 12px', color: isDark ? '#d1d5db' : '#4a4846' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                                            <td key={ci} style={{ padding: '8px 12px', color: 'var(--color-text-secondary)' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
                                         ))}
                                     </tr>
                                 ))}
@@ -125,45 +124,45 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
                 );
                 continue;
             }
-
+ 
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
                 const content = line.trim().substring(2);
                 elements.push(
-                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '6px 0', fontSize: 14, color: isDark ? '#d1d5db' : '#333', lineHeight: 1.6 }}
+                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '6px 0', fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.6 }}
                         dangerouslySetInnerHTML={{ __html: formatInline(content) }}
                     />
                 );
                 continue;
             }
-
+ 
             if (line.trim() === '---') {
-                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e8e6d9'}`, margin: '20px 0' }} />);
+                elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '20px 0' }} />);
                 continue;
             }
-
+ 
             if (line.trim() === '') {
                 elements.push(<div key={`spacer-${i}`} style={{ height: 12 }} />);
                 continue;
             }
-
+ 
             elements.push(
-                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.7, margin: '10px 0', color: isDark ? '#d1d5db' : '#333' }}
+                <p key={`p-${i}`} style={{ fontSize: 14, lineHeight: 1.7, margin: '10px 0', color: 'var(--color-text-primary)' }}
                     dangerouslySetInnerHTML={{ __html: formatInline(line) }}
                 />
             );
         }
-
+ 
         return elements;
     };
-
+ 
     return (
         <div style={{ 
             padding: '32px 48px', 
             overflowY: 'auto', 
             height: '100%', 
             fontFamily: 'Inter, sans-serif', 
-            backgroundColor: isDark ? '#18181c' : '#ffffff',
-            color: isDark ? '#e3e3e6' : '#222',
+            backgroundColor: 'var(--color-bg-surface)',
+            color: 'var(--color-text-primary)',
             borderTopLeftRadius: 8 
         }}>
             <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: 80 }}>
@@ -174,8 +173,7 @@ export function MarkdownViewer({ content, theme = 'light' }: { content: string; 
 }
 
 // ── 2. EXCEL (XLSX/CSV) VIEWER ──────────────────────────────────────
-function ExcelViewer({ filename, content, theme = 'light' }: { filename: string; content: string | null; theme?: 'light' | 'dark' }) {
-    const isDark = theme === 'dark';
+function ExcelViewer({ filename, content }: { filename: string; content: string | null }) {
     let parsedData: string[][] = [];
     if (content && (filename.endsWith('.csv') || content.includes(','))) {
         parsedData = content.split('\n')
@@ -203,23 +201,23 @@ function ExcelViewer({ filename, content, theme = 'light' }: { filename: string;
     const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => String.fromCharCode(65 + i));
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: isDark ? '#131316' : '#f9f8f4', minWidth: 0, minHeight: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-base)', minWidth: 0, minHeight: 0 }}>
             {/* fx formula bar */}
             <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
                 gap: 8, 
                 padding: '10px 16px', 
-                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, 
-                backgroundColor: isDark ? '#18181c' : '#ffffff' 
+                borderBottom: '1px solid var(--color-border)', 
+                backgroundColor: 'var(--color-bg-surface)' 
             }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981', fontStyle: 'italic', paddingRight: 8 }}>fx</span>
-                <div style={{ borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e8e6d9'}`, height: 16 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent)', fontStyle: 'italic', paddingRight: 8 }}>fx</span>
+                <div style={{ borderLeft: '1px solid var(--color-border)', height: 16 }} />
                 <input 
                     type="text" 
                     readOnly
                     value={parsedData[1] ? `=SUM(${columns[3]}2:${columns[3]}${parsedData.length})` : ''} 
-                    style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: isDark ? '#ffffff' : '#333', background: 'transparent', fontWeight: 500 }} 
+                    style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, color: 'var(--color-text-primary)', background: 'transparent', fontWeight: 500 }} 
                 />
             </div>
 
@@ -230,25 +228,25 @@ function ExcelViewer({ filename, content, theme = 'light' }: { filename: string;
                         height: 10px;
                     }
                     .excel-scrollable::-webkit-scrollbar-track {
-                        background: ${isDark ? '#141416' : '#f0efe9'};
-                        border-left: 1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'};
-                        border-top: 1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'};
+                        background: var(--color-bg-subtle);
+                        border-left: 1px solid var(--color-border);
+                        border-top: 1px solid var(--color-border);
                     }
                     .excel-scrollable::-webkit-scrollbar-thumb {
-                        background: ${isDark ? 'rgba(255,255,255,0.1)' : '#d3d3d0'};
+                        background: var(--color-border-strong);
                         border-radius: 5px;
-                        border: 2.5px solid ${isDark ? '#141416' : '#f0efe9'};
+                        border: 2.5px solid var(--color-bg-subtle);
                     }
                     .excel-scrollable::-webkit-scrollbar-thumb:hover {
-                        background: ${isDark ? 'rgba(255,255,255,0.2)' : '#b0b0ad'};
+                        background: var(--color-text-tertiary);
                     }
                 `}} />
-                <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 12, backgroundColor: isDark ? '#18181c' : '#ffffff' }}>
+                <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 12, backgroundColor: 'var(--color-bg-surface)' }}>
                     <thead>
                         <tr>
-                            <th style={{ backgroundColor: isDark ? '#1e1e24' : '#f0efe9', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, width: 45, height: 28, position: 'sticky', top: 0, left: 0, zIndex: 10 }}></th>
+                            <th style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', width: 45, height: 28, position: 'sticky', top: 0, left: 0, zIndex: 10 }}></th>
                             {columns.map((col, i) => (
-                                <th key={i} style={{ backgroundColor: isDark ? '#1e1e24' : '#f0efe9', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, fontWeight: 600, color: isDark ? '#a1a1aa' : '#4a4a40', position: 'sticky', top: 0, zIndex: 9, minWidth: 120, height: 28, textAlign: 'center' }}>
+                                <th key={i} style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', fontWeight: 600, color: 'var(--color-text-secondary)', position: 'sticky', top: 0, zIndex: 9, minWidth: 120, height: 28, textAlign: 'center' }}>
                                     {col}
                                 </th>
                             ))}
@@ -257,36 +255,36 @@ function ExcelViewer({ filename, content, theme = 'light' }: { filename: string;
                     <tbody>
                         {parsedData.map((row, rowIndex) => (
                             <tr key={rowIndex}>
-                                <td style={{ backgroundColor: isDark ? '#1e1e24' : '#f0efe9', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, fontWeight: 600, color: isDark ? '#a1a1aa' : '#4a4a40', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
+                                <td style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
                                     {rowIndex + 1}
                                 </td>
                                 {row.map((cell, cellIndex) => (
                                     <td 
                                         key={cellIndex} 
                                         style={{ 
-                                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, 
+                                            border: '1px solid var(--color-border)', 
                                             padding: '6px 12px', 
                                             whiteSpace: 'nowrap',
                                             fontWeight: rowIndex === 0 ? 600 : 'normal',
                                             backgroundColor: rowIndex === 0 
-                                                ? (isDark ? '#1c1c21' : '#fbfbfa') 
+                                                ? 'var(--color-bg-subtle)' 
                                                 : cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' 
                                                     ? 'rgba(239, 68, 68, 0.08)' 
                                                     : cell.includes('Under Budget') || cell === 'Low' 
                                                         ? 'rgba(16, 185, 129, 0.08)' 
-                                                        : (isDark ? '#18181c' : '#ffffff'),
+                                                        : 'var(--color-bg-surface)',
                                             color: cell.startsWith('-') || cell.includes('Over Budget') || cell === 'High' 
                                                 ? '#f87171' 
                                                 : cell.includes('Under Budget') || cell === 'Low' 
                                                     ? '#34d399' 
-                                                    : (isDark ? '#e3e3e6' : '#111')
+                                                    : 'var(--color-text-primary)'
                                         }}
                                     >
                                         {cell}
                                     </td>
                                 ))}
                                 {Array.from({ length: Math.max(0, columns.length - row.length) }).map((_, i) => (
-                                    <td key={row.length + i} style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#e8e6d9'}`, backgroundColor: isDark ? '#18181c' : '#ffffff' }} />
+                                    <td key={row.length + i} style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)' }} />
                                 ))}
                             </tr>
                         ))}
@@ -298,8 +296,8 @@ function ExcelViewer({ filename, content, theme = 'light' }: { filename: string;
 }
 
 // ── 3. POWERPOINT (PPT/PPTX) VIEWER ─────────────────────────────────
-function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; filePath?: string; theme?: 'light' | 'dark' }) {
-    const isDark = theme === 'dark';
+
+function PPTViewer({ filename, filePath }: { filename: string; filePath?: string }) {
     const [activeSlide, setActiveSlide] = useState(0);
     const [slides, setSlides] = useState<Array<{ title: string; subtitle: string; points: string[] }>>([]);
     const [loading, setLoading] = useState(true);
@@ -341,10 +339,10 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', fontSize: 13, backgroundColor: isDark ? '#18181c' : '#1a1a17', width: '100%', minHeight: 400 }}>
+            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-subtle)', width: '100%', minHeight: 400 }}>
                 <div style={{ textAlign: 'center' }}>
-                    <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 500, color: isDark ? '#e3e3e6' : '#aaa' }}>Parsing Presentation Slides...</div>
-                    <div style={{ fontSize: 12, color: '#777' }}>Extracting text and shapes from the PPTX structure</div>
+                    <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)' }}>Parsing Presentation Slides...</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Extracting text and shapes from the PPTX structure</div>
                 </div>
             </div>
         );
@@ -352,10 +350,10 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
 
     if (error || slides.length === 0) {
         return (
-            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ef4444', fontSize: 14, backgroundColor: isDark ? '#18181c' : '#1a1a17', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
+            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-error)', backgroundColor: 'var(--color-bg-subtle)', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
                 <span style={{ fontSize: 32, marginBottom: 16 }}>⚠️</span>
-                <div style={{ fontWeight: 600, marginBottom: 8, color: '#f87171' }}>Failed to View PowerPoint</div>
-                <div style={{ fontSize: 12, color: '#a1a1aa', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-error)' }}>Failed to View PowerPoint</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
             </div>
         );
     }
@@ -363,18 +361,18 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
     const currentSlide = slides[activeSlide] || { title: "", subtitle: "", points: [] };
 
     return (
-        <div style={{ display: 'flex', height: '100%', backgroundColor: isDark ? '#18181c' : '#1a1a17', width: '100%', minWidth: 0, minHeight: 0 }}>
+        <div style={{ display: 'flex', height: '100%', backgroundColor: 'var(--color-bg-base)', width: '100%', minWidth: 0, minHeight: 0 }}>
             {/* Sidebar with slide previews */}
-            <div style={{ width: 180, borderRight: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#2d2d27'}`, display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto', flexShrink: 0 }}>
+            <div style={{ width: 180, borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto', flexShrink: 0 }}>
                 {slides.map((slide, index) => (
                     <div 
                         key={index}
                         onClick={() => setActiveSlide(index)}
                         style={{
-                            border: `2px solid ${activeSlide === index ? '#0891b2' : isDark ? '#2d2d35' : '#333'}`,
+                            border: `2px solid ${activeSlide === index ? 'var(--color-accent)' : 'var(--color-border)'}`,
                             borderRadius: 6,
                             padding: 8,
-                            backgroundColor: isDark ? '#1c1c21' : '#23231f',
+                            backgroundColor: 'var(--color-bg-surface)',
                             cursor: 'pointer',
                             aspectRatio: '16/9',
                             display: 'flex',
@@ -384,8 +382,8 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                             flexShrink: 0
                         }}
                     >
-                        <span style={{ fontSize: 9, color: activeSlide === index ? '#0891b2' : '#888', fontWeight: 600 }}>Slide {index + 1}</span>
-                        <div style={{ fontSize: 8, color: '#ccc', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 9, color: activeSlide === index ? 'var(--color-accent)' : 'var(--color-text-tertiary)', fontWeight: 600 }}>Slide {index + 1}</span>
+                        <div style={{ fontSize: 8, color: 'var(--color-text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {slide.title || `Slide ${index + 1}`}
                         </div>
                     </div>
@@ -398,8 +396,8 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                     width: '100%',
                     maxWidth: 620,
                     aspectRatio: '16/9',
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 16px 40px rgba(0,0,0,0.3)',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    boxShadow: '0 16px 40px var(--color-bg-overlay)',
                     borderRadius: 8,
                     padding: '28px 40px',
                     display: 'flex',
@@ -409,11 +407,11 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                     boxSizing: 'border-box'
                 }}>
                     <div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: '#111', borderBottom: '2px solid #0891b2', paddingBottom: 6, wordBreak: 'break-word' }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)', borderBottom: '2px solid var(--color-accent)', paddingBottom: 6, wordBreak: 'break-word' }}>
                             {currentSlide.title || "Untitled Slide"}
                         </div>
                         {currentSlide.subtitle && (
-                            <div style={{ fontSize: 12, color: '#666', marginTop: 4, fontStyle: 'italic', wordBreak: 'break-word' }}>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, fontStyle: 'italic', wordBreak: 'break-word' }}>
                                 {currentSlide.subtitle}
                             </div>
                         )}
@@ -422,13 +420,13 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '14px 0', flex: 1, justifyContent: 'center', overflowY: 'auto' }}>
                         {currentSlide.points.map((pt, i) => (
                             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                                <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#0891b2', marginTop: 6, flexShrink: 0 }} />
-                                <div style={{ fontSize: 13, color: '#222', lineHeight: 1.4, wordBreak: 'break-word' }}>{pt}</div>
+                                <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: 'var(--color-accent)', marginTop: 6, flexShrink: 0 }} />
+                                <div style={{ fontSize: 13, color: 'var(--color-text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{pt}</div>
                             </div>
                         ))}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: '#888', borderTop: '1px solid #eee', paddingTop: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9, color: 'var(--color-text-tertiary)', borderTop: '1px solid var(--color-border)', paddingTop: 6 }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{filename}</span>
                         <span>Slide {activeSlide + 1} of {slides.length}</span>
                     </div>
@@ -441,9 +439,9 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                         style={{
                             padding: '4px 14px',
                             borderRadius: 6,
-                            border: '1px solid #444',
-                            backgroundColor: '#2d2d27',
-                            color: activeSlide === 0 ? '#555' : '#fff',
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            color: activeSlide === 0 ? 'var(--color-text-placeholder)' : 'var(--color-text-primary)',
                             cursor: activeSlide === 0 ? 'not-allowed' : 'pointer',
                             fontSize: 12,
                             fontWeight: 600
@@ -451,7 +449,7 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                     >
                         Prev
                     </button>
-                    <span style={{ fontSize: 12, color: '#aaa', fontWeight: 500 }}>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                         {activeSlide + 1} / {slides.length}
                     </span>
                     <button 
@@ -460,9 +458,9 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
                         style={{
                             padding: '4px 14px',
                             borderRadius: 6,
-                            border: '1px solid #444',
-                            backgroundColor: '#2d2d27',
-                            color: activeSlide === slides.length - 1 ? '#555' : '#fff',
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            color: activeSlide === slides.length - 1 ? 'var(--color-text-placeholder)' : 'var(--color-text-primary)',
                             cursor: activeSlide === slides.length - 1 ? 'not-allowed' : 'pointer',
                             fontSize: 12,
                             fontWeight: 600
@@ -477,6 +475,7 @@ function PPTViewer({ filename, filePath, theme = 'light' }: { filename: string; 
 }
 
 // ── 4. CODE & TEXT VIEWER ───────────────────────────────────────────
+
 function CodeTextViewer({ filename, content, extension }: { filename: string; content: string | null; extension: string }) {
     const isHtml = extension === 'html' || extension === 'htm';
     const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml ? 'preview' : 'code');
@@ -492,7 +491,7 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
 
     if (content === null) {
         return (
-            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', fontSize: 13 }}>
+            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-secondary)', fontSize: 13 }}>
                 Loading file content...
             </div>
         );
@@ -501,9 +500,9 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
     const lines = content.split('\n');
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#18181c' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: '#18181c' }}>
-                <div style={{ display: 'flex', gap: 8, padding: 4, backgroundColor: '#121214', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-base)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)' }}>
+                <div style={{ display: 'flex', gap: 8, padding: 4, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 16, border: '1px solid var(--color-border)' }}>
                     {isHtml && (
                         <>
                             <button
@@ -515,8 +514,8 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                                     fontWeight: 600,
                                     cursor: 'pointer',
                                     border: 'none',
-                                    backgroundColor: viewMode === 'preview' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                    color: viewMode === 'preview' ? '#ffffff' : '#888',
+                                    backgroundColor: viewMode === 'preview' ? 'var(--color-bg-active)' : 'transparent',
+                                    color: viewMode === 'preview' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                                     transition: 'all 0.15s'
                                 }}
                             >
@@ -531,8 +530,8 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                                     fontWeight: 600,
                                     cursor: 'pointer',
                                     border: 'none',
-                                    backgroundColor: viewMode === 'code' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                    color: viewMode === 'code' ? '#ffffff' : '#888',
+                                    backgroundColor: viewMode === 'code' ? 'var(--color-bg-active)' : 'transparent',
+                                    color: viewMode === 'code' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                                     transition: 'all 0.15s'
                                 }}
                             >
@@ -553,13 +552,13 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: 'pointer',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        backgroundColor: '#18181c',
-                        color: '#ccc',
+                        border: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        color: 'var(--color-text-secondary)',
                         transition: 'all 0.15s'
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.color = '#fff'; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#ccc'; }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                 >
                     <ClipboardIcon width={14} height={14} />
                     {copySuccess ? 'Copied!' : 'Copy Code'}
@@ -572,11 +571,11 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                         title="HTML Preview"
                         srcDoc={content}
                         sandbox="allow-scripts"
-                        style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#ffffff' }}
+                        style={{ width: '100%', height: '100%', border: 'none', backgroundColor: 'var(--color-bg-surface)' }}
                     />
                 ) : (
-                    <div style={{ display: 'flex', fontFamily: 'monospace', fontSize: 13, lineHeight: '20px', color: '#e3e3e6', padding: 16 }}>
-                        <div style={{ textAlign: 'right', paddingRight: 16, color: '#555', userSelect: 'none', borderRight: '1px solid rgba(255,255,255,0.05)', marginRight: 16 }}>
+                    <div style={{ display: 'flex', fontFamily: 'monospace', fontSize: 13, lineHeight: '20px', color: 'var(--color-text-primary)', padding: 16 }}>
+                        <div style={{ textAlign: 'right', paddingRight: 16, color: 'var(--color-text-tertiary)', userSelect: 'none', borderRight: '1px solid var(--color-border)', marginRight: 16 }}>
                             {lines.map((_, i) => (
                                 <div key={i}>{i + 1}</div>
                             ))}
@@ -592,30 +591,29 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
 }
 
 // ── 5. FALLBACK / IMAGE VIEWER ─────────────────────────────────────
-function FallbackViewer({ file, theme = 'light' }: { file: { name: string; path: string }; theme?: 'light' | 'dark' }) {
-    const isDark = theme === 'dark';
+function FallbackViewer({ file }: { file: { name: string; path: string } }) {
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext);
 
     if (isImage) {
         const src = 'file:///' + file.path.replace(/\\/g, '/');
         return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: isDark ? '#131316' : '#f0efe9', padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: 'var(--color-bg-base)', padding: 24 }}>
                 <img 
                     src={src} 
                     alt={file.name} 
-                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }} 
+                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 32px var(--color-bg-overlay)' }} 
                 />
             </div>
         );
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: isDark ? '#18181c' : '#fcfbfa', padding: 32, gap: 16, textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: 'var(--color-bg-base)', padding: 32, gap: 16, textAlign: 'center' }}>
             <FileIcon size="lg" fileName={file.name} />
             <div>
-                <h3 style={{ fontSize: 16, fontWeight: 600, color: isDark ? '#ffffff' : '#111', margin: '0 0 4px 0' }}>{file.name}</h3>
-                <p style={{ fontSize: 13, color: '#888', margin: 0 }}>This file type is not natively previewed, but you can open it externally.</p>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px 0' }}>{file.name}</h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>This file type is not natively previewed, but you can open it externally.</p>
             </div>
             <button
                 onClick={() => {
@@ -627,9 +625,9 @@ function FallbackViewer({ file, theme = 'light' }: { file: { name: string; path:
                     gap: 8,
                     padding: '8px 16px',
                     borderRadius: 6,
-                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e8e6d9'}`,
-                    backgroundColor: isDark ? '#232329' : '#ffffff',
-                    color: '#3b82f6',
+                    border: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    color: 'var(--color-accent)',
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontSize: 13
@@ -839,7 +837,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                     style={{
                         position: 'absolute',
                         inset: 0,
-                        backgroundColor: 'rgba(10, 10, 12, 0.65)',
+                        backgroundColor: 'var(--color-bg-overlay)',
                         pointerEvents: 'none'
                     }}
                 />
@@ -855,9 +853,9 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                         width: isFullscreen ? '100vw' : '90%',
                         maxWidth: isFullscreen ? '100vw' : 1200,
                         height: isFullscreen ? '100vh' : '85vh',
-                        backgroundColor: '#121214',
-                        boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
-                        border: isFullscreen ? 'none' : "1px solid rgba(255,255,255,0.08)",
+                        backgroundColor: 'var(--color-bg-surface)',
+                        boxShadow: 'var(--shadow-lg)',
+                        border: isFullscreen ? 'none' : "1px solid var(--color-border)",
                         borderRadius: isFullscreen ? 0 : 16,
                         display: 'flex',
                         flexDirection: 'column',
@@ -871,8 +869,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '16px 24px',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        backgroundColor: '#141416'
+                        borderBottom: '1px solid var(--color-border)',
+                        backgroundColor: 'var(--color-bg-subtle)'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {/* Blue/Green Docs Icon */}
@@ -880,22 +878,22 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 width: 36,
                                 height: 36,
                                 borderRadius: 8,
-                                backgroundColor: ['xlsx', 'xls', 'csv'].includes(extension) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                                border: `1px solid ${['xlsx', 'xls', 'csv'].includes(extension) ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                                backgroundColor: 'var(--color-bg-base)',
+                                border: '1px solid var(--color-border)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 flexShrink: 0
                             }}>
                                 {['xlsx', 'xls', 'csv'].includes(extension) ? (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5">
                                         <rect x="3" y="3" width="18" height="18" rx="2" />
                                         <line x1="3" y1="9" x2="21" y2="9" />
                                         <line x1="3" y1="15" x2="21" y2="15" />
                                         <line x1="10" y1="3" x2="10" y2="21" />
                                     </svg>
                                 ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2.5">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                         <polyline points="14 2 14 8 20 8" />
                                         <line x1="16" y1="13" x2="8" y2="13" />
@@ -906,10 +904,10 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                             </div>
                             
                             <div>
-                                <h2 style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {file.name}
                                 </h2>
-                                <p style={{ fontSize: 11, color: '#88888d', margin: 0, fontWeight: 500, marginTop: 1 }}>
+                                <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0, fontWeight: 500, marginTop: 1 }}>
                                     {lastModifiedText}
                                 </p>
                             </div>
@@ -924,7 +922,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 style={{
                                     border: 'none',
                                     background: 'transparent',
-                                    color: 'rgba(255,255,255,0.6)',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -933,8 +931,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff'; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
@@ -950,7 +948,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 style={{
                                     border: 'none',
                                     background: 'transparent',
-                                    color: 'rgba(255,255,255,0.6)',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -959,8 +957,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff'; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <ArrowDownTrayIcon width={20} height={20} />
                             </button>
@@ -971,7 +969,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 style={{
                                     border: 'none',
                                     background: 'transparent',
-                                    color: 'rgba(255,255,255,0.6)',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -980,8 +978,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff'; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="1" />
@@ -996,8 +994,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 title="Toggle File Details Sidebar"
                                 style={{
                                     border: 'none',
-                                    background: showSidebar ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                    color: showSidebar ? '#3b82f6' : 'rgba(255,255,255,0.6)',
+                                    background: showSidebar ? 'var(--color-bg-active)' : 'transparent',
+                                    color: showSidebar ? 'var(--color-accent)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -1006,7 +1004,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { if(!showSidebar) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; }}
+                                onMouseEnter={e => { if(!showSidebar) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                 onMouseLeave={e => { if(!showSidebar) e.currentTarget.style.backgroundColor = 'transparent'; }}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1022,7 +1020,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 style={{
                                     border: 'none',
                                     background: 'transparent',
-                                    color: 'rgba(255,255,255,0.6)',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -1031,8 +1029,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff'; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     {isFullscreen ? (
@@ -1043,7 +1041,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 </svg>
                             </button>
 
-                            <div style={{ height: 16, borderLeft: '1px solid rgba(255,255,255,0.1)', margin: '0 8px' }} />
+                            <div style={{ height: 16, borderLeft: '1px solid var(--color-border)', margin: '0 8px' }} />
 
                             {/* Close */}
                             <button
@@ -1051,7 +1049,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 style={{
                                     border: 'none',
                                     background: 'transparent',
-                                    color: 'rgba(255,255,255,0.5)',
+                                    color: 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     padding: '6px 8px',
                                     borderRadius: 6,
@@ -1060,8 +1058,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = '#ffffff'; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.5)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-error)'; e.currentTarget.style.color = 'var(--color-text-inverse)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <XMarkIcon width={20} height={20} />
                             </button>
@@ -1073,16 +1071,16 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                         {/* Left: Centered Content Area */}
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
                             {loading ? (
-                                <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'rgba(255,255,255,0.4)', backgroundColor: '#18181c' }}>
+                                <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-bg-surface)' }}>
                                     Loading file content...
                                 </div>
                             ) : (
                                 <>
-                                    {viewerType === 'markdown' && <MarkdownViewer content={content || ''} theme="dark" />}
-                                    {viewerType === 'excel' && <ExcelViewer filename={file.name} content={content} theme="dark" />}
-                                    {viewerType === 'ppt' && <PPTViewer filename={file.name} filePath={file.path} theme="dark" />}
+                                    {viewerType === 'markdown' && <MarkdownViewer content={content || ''} />}
+                                    {viewerType === 'excel' && <ExcelViewer filename={file.name} content={content} />}
+                                    {viewerType === 'ppt' && <PPTViewer filename={file.name} filePath={file.path} />}
                                     {viewerType === 'code' && <CodeTextViewer filename={file.name} content={content} extension={extension} />}
-                                    {viewerType === 'fallback' && <FallbackViewer file={file} theme="dark" />}
+                                    {viewerType === 'fallback' && <FallbackViewer file={file} />}
                                 </>
                             )}
 
@@ -1097,29 +1095,29 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                         bottom: 24,
                                         left: '50%',
                                         zIndex: 50,
-                                        backgroundColor: '#1b1b1f',
-                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        backgroundColor: 'var(--color-bg-elevated)',
+                                        border: '1px solid var(--color-border)',
                                         borderRadius: 24,
                                         padding: '6px 6px 6px 18px',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 16,
-                                        boxShadow: '0 10px 32px rgba(0,0,0,0.45)',
+                                        boxShadow: 'var(--shadow-md)',
                                         maxWidth: '90%',
                                         whiteSpace: 'nowrap'
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                         <span style={{ fontSize: 14 }}>{viewerType === 'excel' ? '📊' : '💬'}</span>
-                                        <span style={{ fontSize: 12.5, color: '#e3e3e6', fontWeight: 500 }}>
+                                        <span style={{ fontSize: 12.5, color: 'var(--color-text-primary)', fontWeight: 500 }}>
                                             {pillDetails.text}
                                         </span>
                                     </div>
                                     <button
                                         onClick={handlePillAction}
                                         style={{
-                                            backgroundColor: '#ffffff',
-                                            color: '#111111',
+                                            backgroundColor: 'var(--color-text-primary)',
+                                            color: 'var(--color-text-inverse)',
                                             border: 'none',
                                             borderRadius: 18,
                                             padding: '8px 16px',
@@ -1128,8 +1126,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                             cursor: 'pointer',
                                             transition: 'all 0.15s'
                                         }}
-                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f1f1f3'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                                     >
                                         {pillDetails.btnText}
                                     </button>
@@ -1146,8 +1144,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     exit={{ width: 0, opacity: 0 }}
                                     transition={{ type: 'spring', damping: 28, stiffness: 220 }}
                                     style={{
-                                        backgroundColor: '#141416',
-                                        borderLeft: '1px solid rgba(255,255,255,0.05)',
+                                        backgroundColor: 'var(--color-bg-subtle)',
+                                        borderLeft: '1px solid var(--color-border)',
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: 20,
@@ -1159,53 +1157,53 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 >
                                     {/* File Info */}
                                     <div style={{ minWidth: 240 }}>
-                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 0' }}>File Info</h4>
+                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 0' }}>File Info</h4>
                                         <div style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: 12,
-                                            backgroundColor: '#1b1b1f',
+                                            backgroundColor: 'var(--color-bg-surface)',
                                             padding: 14,
                                             borderRadius: 10,
-                                            border: '1px solid rgba(255,255,255,0.05)'
+                                            border: '1px solid var(--color-border)'
                                         }}>
                                             <div>
-                                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Filename</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', wordBreak: 'break-all', marginTop: 2 }}>{file.name}</div>
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Filename</div>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', wordBreak: 'break-all', marginTop: 2 }}>{file.name}</div>
                                             </div>
                                             <div>
-                                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Extension</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', textTransform: 'uppercase', marginTop: 2 }}>{extension || 'Unknown'}</div>
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Extension</div>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', textTransform: 'uppercase', marginTop: 2 }}>{extension || 'Unknown'}</div>
                                             </div>
                                             <div>
-                                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Size</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', marginTop: 2 }}>
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Size</div>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', marginTop: 2 }}>
                                                     {content ? `${(content.length / 1024).toFixed(2)} KB` : 'Loading...'}
                                                 </div>
                                             </div>
                                             <div>
-                                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Status</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: '#34d399', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                                                    <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981' }} />
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Status</div>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                                    <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)' }} />
                                                     Saved to Artifacts
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.05)', margin: 0 }} />
+                                    <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: 0 }} />
 
                                     {/* File Location path */}
                                     <div style={{ minWidth: 240 }}>
-                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 0' }}>Storage Path</h4>
+                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 0' }}>Storage Path</h4>
                                         <div style={{ 
                                             fontSize: 11, 
                                             fontFamily: 'monospace', 
-                                            color: '#b0b0b5', 
-                                            backgroundColor: '#1b1b1f', 
+                                            color: 'var(--color-text-secondary)', 
+                                            backgroundColor: 'var(--color-bg-base)', 
                                             padding: '10px 12px', 
                                             borderRadius: 8, 
-                                            border: '1px solid rgba(255,255,255,0.05)', 
+                                            border: '1px solid var(--color-border)', 
                                             wordBreak: 'break-all',
                                             maxHeight: 120,
                                             overflowY: 'auto'
@@ -1225,16 +1223,16 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                                 width: '100%',
                                                 padding: '10px 14px',
                                                 borderRadius: 8,
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                backgroundColor: '#1b1b1f',
-                                                color: '#ffffff',
+                                                border: '1px solid var(--color-border)',
+                                                backgroundColor: 'var(--color-bg-surface)',
+                                                color: 'var(--color-text-primary)',
                                                 fontSize: 12,
                                                 fontWeight: 600,
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s'
                                             }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#232329'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#1b1b1f'; }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                                         >
                                             <ArrowDownTrayIcon width={16} height={16} />
                                             Download File
@@ -1248,16 +1246,16 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                                 width: '100%',
                                                 padding: '10px 14px',
                                                 borderRadius: 8,
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                backgroundColor: '#1b1b1f',
-                                                color: '#ffffff',
+                                                border: '1px solid var(--color-border)',
+                                                backgroundColor: 'var(--color-bg-surface)',
+                                                color: 'var(--color-text-primary)',
                                                 fontSize: 12,
                                                 fontWeight: 600,
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s'
                                             }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#232329'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#1b1b1f'; }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                                         >
                                             <DocumentDuplicateIcon width={16} height={16} />
                                             {copyPathSuccess ? 'Copied path!' : 'Copy absolute path'}
@@ -1272,16 +1270,16 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                                 width: '100%',
                                                 padding: '10px 14px',
                                                 borderRadius: 8,
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                backgroundColor: '#1b1b1f',
-                                                color: '#ffffff',
+                                                border: '1px solid var(--color-border)',
+                                                backgroundColor: 'var(--color-bg-surface)',
+                                                color: 'var(--color-text-primary)',
                                                 fontSize: 12,
                                                 fontWeight: 600,
                                                 cursor: 'pointer',
                                                 transition: 'all 0.15s'
                                             }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#232329'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#1b1b1f'; }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                                         >
                                             <ArrowTopRightOnSquareIcon width={16} height={16} />
                                             Show in folder

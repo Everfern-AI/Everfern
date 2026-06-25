@@ -152,7 +152,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             fontSize: 36,
             fontWeight: 500,
             letterSpacing: "-0.03em",
-            color: "#201e24",
+            color: "var(--color-text-primary)",
             marginBottom: 10,
             lineHeight: 1.1,
           }}
@@ -162,7 +162,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
         <p
           style={{
             fontSize: 14,
-            color: "#8a8886",
+            color: "var(--color-text-tertiary)",
             lineHeight: 1.6,
             maxWidth: 340,
             margin: "0 auto",
@@ -178,17 +178,17 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           width: "100%",
           padding: "24px",
           borderRadius: 16,
-          border: "1px solid #e5e7eb",
-          background: vmStatus === "ready" ? "rgba(34,197,94,0.04)" : "rgba(59,130,246,0.04)",
+          border: "1px solid var(--color-border)",
+          background: vmStatus === "ready" ? "rgba(34, 197, 94, 0.08)" : "rgba(59, 130, 246, 0.08)",
           marginBottom: 24,
         }}
       >
         {vmStatus === "checking" && (
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Loader size={20} style={{ color: "#3b82f6", animation: "spin 1s linear infinite" }} />
+            <Loader size={20} style={{ color: "var(--color-accent)", animation: "spin 1s linear infinite" }} />
             <div>
-              <p style={{ fontSize: 14, fontWeight: 500, color: "#201e24", margin: 0 }}>Checking VM status...</p>
-              <p style={{ fontSize: 12, color: "#8a8886", margin: "4px 0 0" }}>Please wait while we detect your system configuration.</p>
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>Checking VM status...</p>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>Please wait while we detect your system configuration.</p>
             </div>
           </div>
         )}
@@ -198,7 +198,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             <CheckCircle2 size={20} style={{ color: "#22c55e" }} />
             <div>
               <p style={{ fontSize: 14, fontWeight: 500, color: "#16a34a", margin: 0 }}>✓ Linux VM ready</p>
-              <p style={{ fontSize: 12, color: "#8a8886", margin: "4px 0 0" }}>Your system is configured and ready to use EverFern.</p>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>Your system is configured and ready to use EverFern.</p>
             </div>
           </div>
         )}
@@ -210,7 +210,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               <p style={{ fontSize: 14, fontWeight: 500, color: "#d97706", margin: 0 }}>
                 {platform === "windows" || platform === "win32" ? "WSL not detected" : "Docker not detected"}
               </p>
-              <p style={{ fontSize: 12, color: "#8a8886", margin: "4px 0 0" }}>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
                 {platform === "windows" || platform === "win32"
                   ? "Windows Subsystem for Linux (WSL) is required to run the Linux VM."
                   : "Docker is required to run the Linux VM."}
@@ -222,10 +222,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
         {vmStatus === "installing" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-              <Loader size={20} style={{ color: "#3b82f6", animation: "spin 1s linear infinite" }} />
-              <p style={{ fontSize: 14, fontWeight: 500, color: "#201e24", margin: 0 }}>{installMessage}</p>
+              <Loader size={20} style={{ color: "var(--color-accent)", animation: "spin 1s linear infinite" }} />
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{installMessage}</p>
             </div>
-            <div style={{ height: 6, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ height: 6, background: "var(--color-border)", borderRadius: 999, overflow: "hidden" }}>
               <div
                 style={{
                   height: "100%",
@@ -235,7 +235,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 }}
               />
             </div>
-            <p style={{ fontSize: 11, color: "#8a8886", margin: "8px 0 0", textAlign: "right" }}>
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "8px 0 0", textAlign: "right" }}>
               {Math.round(installProgress)}%
             </p>
           </div>
@@ -246,7 +246,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             <AlertCircle size={20} style={{ color: "#ef4444", flexShrink: 0, marginTop: 2 }} />
             <div>
               <p style={{ fontSize: 14, fontWeight: 500, color: "#dc2626", margin: 0 }}>Setup failed</p>
-              <p style={{ fontSize: 12, color: "#8a8886", margin: "4px 0 0", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0", lineHeight: 1.5 }}>
                 {errorMessage}
               </p>
               <a
@@ -255,7 +255,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 rel="noopener noreferrer"
                 style={{
                   fontSize: 11,
-                  color: "#3b82f6",
+                  color: "var(--color-accent)",
                   textDecoration: "none",
                   marginTop: 8,
                   display: "inline-block",
@@ -277,8 +277,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               style={{
                 flex: 1,
                 height: 48,
-                background: "#201e24",
-                color: "#ffffff",
+                background: "var(--color-text-primary)",
+                color: "var(--color-bg-base)",
                 border: "none",
                 borderRadius: 12,
                 fontWeight: 600,
@@ -291,10 +291,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 transition: "all 0.15s",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "#3f3f46";
+                (e.currentTarget as HTMLElement).style.opacity = "0.9";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "#201e24";
+                (e.currentTarget as HTMLElement).style.opacity = "1";
               }}
             >
               <Download size={16} /> Install Now
@@ -305,8 +305,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 flex: 1,
                 height: 48,
                 background: "transparent",
-                color: "#8a8886",
-                border: "1px solid #e5e7eb",
+                color: "var(--color-text-tertiary)",
+                border: "1px solid var(--color-border)",
                 borderRadius: 12,
                 fontWeight: 600,
                 fontSize: 14,
@@ -314,12 +314,12 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 transition: "all 0.15s",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#201e24";
-                (e.currentTarget as HTMLElement).style.color = "#201e24";
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-text-primary)";
+                (e.currentTarget as HTMLElement).style.color = "var(--color-text-primary)";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#e5e7eb";
-                (e.currentTarget as HTMLElement).style.color = "#8a8886";
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border)";
+                (e.currentTarget as HTMLElement).style.color = "var(--color-text-tertiary)";
               }}
             >
               Skip for now
@@ -333,8 +333,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             style={{
               flex: 1,
               height: 48,
-              background: "#201e24",
-              color: "#ffffff",
+              background: "var(--color-text-primary)",
+              color: "var(--color-bg-base)",
               border: "none",
               borderRadius: 12,
               fontWeight: 600,
@@ -343,10 +343,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               transition: "all 0.15s",
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#3f3f46";
+              (e.currentTarget as HTMLElement).style.opacity = "0.9";
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#201e24";
+              (e.currentTarget as HTMLElement).style.opacity = "1";
             }}
           >
             Continue
@@ -359,8 +359,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             style={{
               flex: 1,
               height: 48,
-              background: "#201e24",
-              color: "#ffffff",
+              background: "var(--color-text-primary)",
+              color: "var(--color-bg-base)",
               border: "none",
               borderRadius: 12,
               fontWeight: 600,
@@ -369,10 +369,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               transition: "all 0.15s",
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#3f3f46";
+              (e.currentTarget as HTMLElement).style.opacity = "0.9";
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "#201e24";
+              (e.currentTarget as HTMLElement).style.opacity = "1";
             }}
           >
             Continue
@@ -386,8 +386,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               style={{
                 flex: 1,
                 height: 48,
-                background: "#201e24",
-                color: "#ffffff",
+                background: "var(--color-text-primary)",
+                color: "var(--color-bg-base)",
                 border: "none",
                 borderRadius: 12,
                 fontWeight: 600,
@@ -400,10 +400,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 transition: "all 0.15s",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "#3f3f46";
+                (e.currentTarget as HTMLElement).style.opacity = "0.9";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "#201e24";
+                (e.currentTarget as HTMLElement).style.opacity = "1";
               }}
             >
               <Download size={16} /> Retry
@@ -414,8 +414,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 flex: 1,
                 height: 48,
                 background: "transparent",
-                color: "#8a8886",
-                border: "1px solid #e5e7eb",
+                color: "var(--color-text-tertiary)",
+                border: "1px solid var(--color-border)",
                 borderRadius: 12,
                 fontWeight: 600,
                 fontSize: 14,
@@ -423,12 +423,12 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 transition: "all 0.15s",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#201e24";
-                (e.currentTarget as HTMLElement).style.color = "#201e24";
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-text-primary)";
+                (e.currentTarget as HTMLElement).style.color = "var(--color-text-primary)";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#e5e7eb";
-                (e.currentTarget as HTMLElement).style.color = "#8a8886";
+                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border)";
+                (e.currentTarget as HTMLElement).style.color = "var(--color-text-tertiary)";
               }}
             >
               Skip for now
@@ -443,15 +443,15 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           marginTop: 24,
           padding: "14px 16px",
           borderRadius: 12,
-          background: "rgba(59,130,246,0.04)",
-          border: "1px solid rgba(59,130,246,0.15)",
+          background: "var(--color-bg-subtle)",
+          border: "1px solid var(--color-border)",
           display: "flex",
           alignItems: "flex-start",
           gap: 10,
         }}
       >
-        <Terminal size={16} style={{ color: "#3b82f6", flexShrink: 0, marginTop: 2 }} />
-        <p style={{ fontSize: 12, color: "#8a8886", lineHeight: 1.6, margin: 0 }}>
+        <Terminal size={16} style={{ color: "var(--color-accent)", flexShrink: 0, marginTop: 2 }} />
+        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.6, margin: 0 }}>
           You can set up the Linux VM later from the settings. Skipping this step will allow commands to run locally with permission prompts.
         </p>
       </div>

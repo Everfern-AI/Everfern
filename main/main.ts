@@ -46,6 +46,7 @@ import { integrationService } from './integrations/integration-service';
 import { MessageHandler } from './integrations/message-handler';
 import { DiscordPlatform } from './integrations/discord-platform';
 import { TelegramPlatform } from './integrations/telegram-platform';
+import { checkDatabaseConnection, checkVectorStore } from './lib/health-check';
 
 // ── Initialize Logging ──────────────────────────────────────────────
 setupLogging();
@@ -74,6 +75,9 @@ import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
 import { ensurePlaywrightChromium } from './lib/playwright-setup';
 import { ensureWSLSetup } from './agent/tools/linux-vm-executor';
+import { shutdownMCPTools } from './agent/tools/mcp';
+import { backgroundProcessor } from './agent/learning/background-processor';
+import { initializeUpdater } from './updater';
 
 // ── GPU / Cache Startup Fixes (must run before app.whenReady) ───────────────
 // Disable GPU shader disk cache — prevents "Access is denied (0x5)" on Windows
@@ -693,52 +697,49 @@ Your goal is to be the ultimate workplace companion.
       let absPath = path.join(baseDir, filePath);
       console.log(`[Protocol] Request: ${request.url} -> ${absPath} (baseDir: ${baseDir}, isPackaged: ${app.isPackaged})`);
 
-      // Check if path exists
-      if (fs.existsSync(absPath)) {
-        const stats = fs.statSync(absPath);
+      // Async helper to get stats
+      const getStats = async (p: string) => { try { return await fs.promises.stat(p); } catch { return null; } };
 
-        // If it's a directory, try to serve index.html from that directory
-        if (stats.isDirectory()) {
-          const dirIndexPath = path.join(absPath, 'index.html');
-          if (fs.existsSync(dirIndexPath)) {
-            console.log(`[Protocol] Directory detected, serving ${dirIndexPath}`);
-            const data = fs.readFileSync(dirIndexPath);
-            return new Response(data, {
-              headers: { 'Content-Type': 'text/html' }
-            });
-          }
-          // Directory exists but no index.html — fall back to root index.html for SPA routing
-          console.log(`[Protocol] Directory ${absPath} has no index.html, falling back to root index.html`);
-          absPath = path.join(baseDir, 'index.html');
+      let stats = await getStats(absPath);
+
+      // If it's a directory, try to serve index.html from that directory
+      if (stats && stats.isDirectory()) {
+        const dirIndexPath = path.join(absPath, 'index.html');
+        if (await getStats(dirIndexPath)) {
+          console.log(`[Protocol] Directory detected, serving ${dirIndexPath}`);
+          const data = await fs.promises.readFile(dirIndexPath);
+          return new Response(data, { headers: { 'Content-Type': 'text/html' } });
         }
+        // Directory exists but no index.html — fall back to root index.html for SPA routing
+        console.log(`[Protocol] Directory ${absPath} has no index.html, falling back to root index.html`);
+        absPath = path.join(baseDir, 'index.html');
+        stats = await getStats(absPath);
+      }
 
-        // It's a file — serve it
-        if (fs.existsSync(absPath) && fs.statSync(absPath).isFile()) {
-          const extension = path.extname(absPath).toLowerCase();
-          const mimeTypes: Record<string, string> = {
-            '.html': 'text/html',
-            '.js':   'text/javascript',
-            '.css':  'text/css',
-            '.json': 'application/json',
-            '.png':  'image/png',
-            '.jpg':  'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.gif':  'image/gif',
-            '.svg':  'image/svg+xml',
-            '.ico':  'image/x-icon',
-            '.woff': 'font/woff',
-            '.woff2': 'font/woff2',
-            '.ttf':  'font/ttf',
-            '.otf':  'font/otf',
-          };
+      // It's a file — serve it
+      if (stats && stats.isFile()) {
+        const extension = path.extname(absPath).toLowerCase();
+        const mimeTypes: Record<string, string> = {
+          '.html': 'text/html',
+          '.js':   'text/javascript',
+          '.css':  'text/css',
+          '.json': 'application/json',
+          '.png':  'image/png',
+          '.jpg':  'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif':  'image/gif',
+          '.svg':  'image/svg+xml',
+          '.ico':  'image/x-icon',
+          '.woff': 'font/woff',
+          '.woff2': 'font/woff2',
+          '.ttf':  'font/ttf',
+          '.otf':  'font/otf',
+        };
 
-          const contentType = mimeTypes[extension] || 'application/octet-stream';
-          const data = fs.readFileSync(absPath);
+        const contentType = mimeTypes[extension] || 'application/octet-stream';
+        const data = await fs.promises.readFile(absPath);
 
-          return new Response(data, {
-            headers: { 'Content-Type': contentType }
-          });
-        }
+        return new Response(data, { headers: { 'Content-Type': contentType } });
       }
 
       // File not found — try index.html for client-side routing (SPA fallback)
@@ -746,19 +747,18 @@ Your goal is to be the ultimate workplace companion.
       const indexPath = path.join(baseDir, 'index.html');
       console.log(`[Protocol] Checking for index.html at: ${indexPath}`);
 
-      if (fs.existsSync(indexPath)) {
+      if (await getStats(indexPath)) {
         console.log(`[Protocol] ✅ Found index.html, serving for SPA routing`);
-        const data = fs.readFileSync(indexPath);
-        return new Response(data, {
-          headers: { 'Content-Type': 'text/html' }
-        });
+        const data = await fs.promises.readFile(indexPath);
+        return new Response(data, { headers: { 'Content-Type': 'text/html' } });
       }
 
       console.warn(`[Protocol] ❌ 404: ${absPath} and index.html not found`);
-      console.warn(`[Protocol] baseDir exists: ${fs.existsSync(baseDir)}`);
-      if (fs.existsSync(baseDir)) {
-        const files = fs.readdirSync(baseDir).slice(0, 10);
-        console.warn(`[Protocol] Files in baseDir: ${files.join(', ')}`);
+      if (await getStats(baseDir)) {
+        try {
+          const files = (await fs.promises.readdir(baseDir)).slice(0, 10);
+          console.warn(`[Protocol] Files in baseDir: ${files.join(', ')}`);
+        } catch { /* ignore */ }
       }
       return new Response('Not Found', { status: 404 });
     } catch (err) {
@@ -769,7 +769,7 @@ Your goal is to be the ultimate workplace companion.
   });
 
   // Custom protocol for local sites
-  protocol.handle('everfern-site', (request) => {
+  protocol.handle('everfern-site', async (request) => {
 // ... existing site logic ...
     const url = new URL(request.url);
     const chatId = url.hostname;
@@ -777,13 +777,16 @@ Your goal is to be the ultimate workplace companion.
 
     if (filePath === '/' || !filePath) filePath = '/index.html';
 
+    // Async file existence check helper
+    const fileExists = async (p: string) => { try { await fs.promises.access(p); return true; } catch { return false; } };
+
     // Try sites folder first, then artifacts folder
     let absPath = path.join(os.homedir(), '.everfern', 'sites', chatId, filePath);
-    if (!fs.existsSync(absPath)) {
+    if (!(await fileExists(absPath))) {
       absPath = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filePath);
     }
 
-    if (!fs.existsSync(absPath)) return new Response('Not Found', { status: 404 });
+    if (!(await fileExists(absPath))) return new Response('Not Found', { status: 404 });
 
     // Safety check: ensure path is within ~/.everfern/sites or ~/.everfern/artifacts
     const sitesRoot = path.join(os.homedir(), '.everfern', 'sites');
@@ -801,6 +804,10 @@ Your goal is to be the ultimate workplace companion.
 
   // ── Create Main Window ─────────────────────────────────────────────
   createWindow();
+  
+  if (mainWindow) {
+    initializeUpdater(mainWindow);
+  }
 
   // Register as default protocol client for everfern-app
   if (process.defaultApp) {
@@ -917,6 +924,42 @@ app.on('before-quit', async () => {
   // Kill the server managed by showui-server.ts (e.g. from showui:launch)
   killShowUIServer();
 
+  // Stop extension bridge server
+  try {
+    console.log('[App] Stopping extension bridge server...');
+    bridgeServer.stop();
+    console.log('[App] Extension bridge server stopped successfully');
+  } catch (error) {
+    console.error('[App] Error stopping extension bridge server:', error);
+  }
+
+  // Shutdown background processor
+  try {
+    console.log('[App] Shutting down background processor...');
+    await backgroundProcessor.shutdown();
+    console.log('[App] Background processor shutdown complete');
+  } catch (error) {
+    console.error('[App] Error shutting down background processor:', error);
+  }
+
+  // Shutdown MCP tools
+  try {
+    console.log('[App] Shutting down MCP tools...');
+    await shutdownMCPTools();
+    console.log('[App] MCP tools shutdown complete');
+  } catch (error) {
+    console.error('[App] Error shutting down MCP tools:', error);
+  }
+
+  // Close database connection
+  try {
+    console.log('[App] Closing database connection...');
+    await closeDb();
+    console.log('[App] Database connection closed successfully');
+  } catch (error) {
+    console.error('[App] Error closing database connection:', error);
+  }
+
   // Clean up system tray
   systemTrayManager.destroy();
 });
@@ -932,43 +975,11 @@ ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() || false);
 // ── IPC: Health Check ────────────────────────────────────────────────
 
 ipcMain.handle('db:checkConnection', async () => {
-  try {
-    // Check database connection
-    // TODO: Implement actual database connection check
-    console.log('[HealthCheck] Checking database connection...');
-    return {
-      success: true,
-      details: 'Database check skipped (not yet configured)'
-    };
-  } catch (error) {
-    console.error('[HealthCheck] Database check failed:', error);
-    return {
-      success: true,
-      details: 'Database check skipped (not yet configured)',
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
+  return await checkDatabaseConnection();
 });
 
 ipcMain.handle('db:checkVectors', async () => {
-  try {
-    // Check vector store status
-    // TODO: Implement actual vector store check
-    console.log('[HealthCheck] Checking vector store...');
-    return {
-      success: true,
-      count: 0,
-      details: 'Vector store check skipped (not yet configured)'
-    };
-  } catch (error) {
-    console.error('[HealthCheck] Vector store check failed:', error);
-    return {
-      success: true,
-      count: 0,
-      details: 'Vector store check skipped (not yet configured)',
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
+  return await checkVectorStore();
 });
 
 // ── IPC: System Tray ────────────────────────────────────────────────

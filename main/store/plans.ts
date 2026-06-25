@@ -8,16 +8,28 @@ function planDir(chatId: string): string {
   return path.join(PLAN_BASE, chatId);
 }
 
-function ensurePlanDir(chatId: string): void {
+/**
+ * Helper to check if file/dir exists asynchronously
+ */
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensurePlanDir(chatId: string): Promise<void> {
   const dir = planDir(chatId);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!(await exists(dir))) await fs.promises.mkdir(dir, { recursive: true });
 }
 
 /** Write a plan file for a given chat. */
-export function writePlan(chatId: string, filename: string, content: string): { success: boolean; error?: string } {
+export async function writePlan(chatId: string, filename: string, content: string): Promise<{ success: boolean; error?: string }> {
   try {
-    ensurePlanDir(chatId);
-    fs.writeFileSync(path.join(planDir(chatId), filename), content, 'utf-8');
+    await ensurePlanDir(chatId);
+    await fs.promises.writeFile(path.join(planDir(chatId), filename), content, 'utf-8');
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -25,32 +37,39 @@ export function writePlan(chatId: string, filename: string, content: string): { 
 }
 
 /** Read a plan file. Returns null if not found. */
-export function readPlan(chatId: string, filename: string): string | null {
+export async function readPlan(chatId: string, filename: string): Promise<string | null> {
   const p = path.join(planDir(chatId), filename);
-  if (!fs.existsSync(p)) return null;
+  if (!(await exists(p))) return null;
   try {
-    return fs.readFileSync(p, 'utf-8');
+    return await fs.promises.readFile(p, 'utf-8');
   } catch {
     return null;
   }
 }
 
 /** Check whether any plan files exist for a chat. Returns the list of filenames. */
-export function listPlans(chatId: string): string[] {
+export async function listPlans(chatId: string): Promise<string[]> {
   const dir = planDir(chatId);
-  if (!fs.existsSync(dir)) return [];
+  if (!(await exists(dir))) return [];
   try {
-    return fs.readdirSync(dir).filter(f => !f.startsWith('.') && fs.statSync(path.join(dir, f)).isFile());
+    const entries = await fs.promises.readdir(dir);
+    const results: string[] = [];
+    for (const f of entries) {
+      if (f.startsWith('.')) continue;
+      const stat = await fs.promises.stat(path.join(dir, f));
+      if (stat.isFile()) results.push(f);
+    }
+    return results;
   } catch {
     return [];
   }
 }
 
 /** Delete a single plan file. */
-export function deletePlan(chatId: string, filename: string): { success: boolean } {
+export async function deletePlan(chatId: string, filename: string): Promise<{ success: boolean }> {
   try {
     const p = path.join(planDir(chatId), filename);
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (await exists(p)) await fs.promises.unlink(p);
     return { success: true };
   } catch {
     return { success: false };

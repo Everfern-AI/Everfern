@@ -57,7 +57,7 @@ export default function IDEMode({ visible, onClose, projectPath }: IDEModeProps)
     <div style={styles.container}>
       <div style={styles.header}>
         <span style={styles.title}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#201e24" strokeWidth="1.5" style={{ marginRight: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="1.5" style={{ marginRight: 6 }}>
             <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
           </svg>
           Code
@@ -125,7 +125,7 @@ export default function IDEMode({ visible, onClose, projectPath }: IDEModeProps)
                 {fileContent.split('\n').map((line: string, i: number) => (
                   <div key={i} style={styles.codeLine}>
                     <span style={styles.lineNum}>{i + 1}</span>
-                    <span style={{ color: '#374151' }}>{line}</span>
+                    <span style={{ color: 'var(--color-text-primary)' }}>{line}</span>
                   </div>
                 ))}
               </pre>
@@ -158,8 +158,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    backgroundColor: '#ffffff',
-    color: '#201e24',
+    backgroundColor: 'var(--color-bg-surface)',
+    color: 'var(--color-text-primary)',
     fontFamily: "'Figtree', system-ui, sans-serif",
     fontSize: 13,
   },
@@ -167,19 +167,19 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     padding: '10px 14px',
-    borderBottom: '1px solid #f4f4f4',
+    borderBottom: '1px solid var(--color-border)',
     gap: 8,
   },
   title: {
     fontSize: 13,
     fontWeight: 600,
-    color: '#201e24',
+    color: 'var(--color-text-primary)',
     display: 'flex',
     alignItems: 'center',
   },
   path: {
     fontSize: 11,
-    color: '#8a8886',
+    color: 'var(--color-text-secondary)',
     flex: 1,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -194,7 +194,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     borderRadius: 6,
     backgroundColor: 'transparent',
-    color: '#8a8886',
+    color: 'var(--color-text-secondary)',
     cursor: 'pointer',
     flexShrink: 0,
   },
@@ -202,8 +202,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 2,
     padding: '6px 10px',
-    borderBottom: '1px solid #f4f4f4',
-    backgroundColor: '#fafafa',
+    borderBottom: '1px solid var(--color-border)',
+    backgroundColor: 'var(--color-bg-subtle)',
   },
   body: {
     flex: 1,
@@ -218,7 +218,7 @@ const styles: Record<string, React.CSSProperties> = {
   emptyState: {
     padding: '24px 16px',
     textAlign: 'center',
-    color: '#8a8886',
+    color: 'var(--color-text-tertiary)',
     fontSize: 12,
   },
   editor: {
@@ -240,7 +240,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
   },
   lineNum: {
-    color: '#c5c2bc',
+    color: 'var(--color-text-tertiary)',
     marginRight: 16,
     userSelect: 'none',
     minWidth: 24,
@@ -252,13 +252,13 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
     fontFamily: "'SF Mono', 'Fira Code', monospace",
     fontSize: 12,
-    color: '#374151',
+    color: 'var(--color-text-primary)',
   },
   termLine: {
     marginBottom: 4,
   },
   prompt: {
-    color: '#059669',
+    color: 'var(--color-accent)',
     marginRight: 8,
   },
 };
@@ -270,8 +270,8 @@ function tabBtnStyle(active: boolean): React.CSSProperties {
     padding: '5px 10px',
     border: 'none',
     borderRadius: 6,
-    backgroundColor: active ? '#e8e6d9' : 'transparent',
-    color: active ? '#201e24' : '#8a8886',
+    backgroundColor: active ? 'var(--color-bg-selected)' : 'transparent',
+    color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
     cursor: 'pointer',
     fontSize: 11,
     fontWeight: 500,
@@ -286,8 +286,8 @@ function fileItemStyle(selected: boolean): React.CSSProperties {
     padding: '5px 14px',
     cursor: 'pointer',
     fontSize: 12,
-    color: '#374151',
-    backgroundColor: selected ? '#f5f4f0' : 'transparent',
+    color: 'var(--color-text-primary)',
+    backgroundColor: selected ? 'var(--color-bg-selected)' : 'transparent',
     transition: 'background 0.1s',
   };
 }

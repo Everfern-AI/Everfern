@@ -129,9 +129,11 @@ async function buildCompletionSignal(
 ): Promise<{ reason: CompletionReason; explanation: string } | null> {
   if (!runner.client) {
     console.warn('[Brain] No client available for completion signal');
-    // Return fallback signal instead of null
-    console.warn('[Brain] Using fallback completion signal (no client)');
-    return { reason: 'task_complete' as const, explanation: 'Task completed (fallback signal - no client)' };
+    // BUG-12 FIX: Return null instead of fallback task_complete.
+    // When null is returned, the brain node's existing fallback routing logic
+    // kicks in (intent-based routing), which is much safer than silently ending.
+    console.warn('[Brain] No client available for completion signal — returning null for fallback routing');
+    return null;
   }
 
   try {
@@ -223,17 +225,17 @@ Respond with JSON only:
       const parseErrorMsg = parseError instanceof Error ? parseError.message : String(parseError);
       console.warn('[Brain] Failed to parse completion signal JSON:', parseErrorMsg);
       console.warn('[Brain] Content was:', content.slice(0, 200));
-      // Return fallback signal instead of null (Sub-task 3.1)
-      console.warn('[Brain] Using fallback completion signal (JSON parse failed)');
-      return { reason: 'task_complete' as const, explanation: 'Task completed (fallback signal - parse error)' };
+      // BUG-12 FIX: Return null instead of fallback task_complete
+      console.warn('[Brain] Completion signal JSON parse failed — returning null for fallback routing');
+      return null;
     }
 
     const validReasons: CompletionReason[] = ['task_complete', 'waiting_for_user_input', 'needs_hitl', 'cannot_proceed'];
     if (!validReasons.includes(signal.reason)) {
       console.warn('[Brain] Invalid completion signal reason:', signal.reason);
-      // Return fallback signal instead of null (Sub-task 3.1)
-      console.warn('[Brain] Using fallback completion signal (invalid reason)');
-      return { reason: 'task_complete' as const, explanation: 'Task completed (fallback signal - invalid reason)' };
+      // BUG-12 FIX: Return null instead of fallback task_complete
+      console.warn('[Brain] Invalid completion signal reason — returning null for fallback routing');
+      return null;
     }
 
     console.log(`[Brain] Completion signal built successfully in ${duration}ms: ${signal.reason}`);
@@ -242,9 +244,9 @@ Respond with JSON only:
     // Log the specific error for debugging (Sub-task 3.1)
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.warn('[Brain] Completion signal failed:', errorMessage);
-    // Return fallback signal instead of null (Sub-task 3.1)
-    console.warn('[Brain] Using fallback completion signal (exception)');
-    return { reason: 'task_complete' as const, explanation: 'Task completed (fallback signal - exception)' };
+    // BUG-12 FIX: Return null instead of fallback task_complete
+    console.warn('[Brain] Completion signal exception — returning null for fallback routing');
+    return null;
   }
 }
 
@@ -497,6 +499,11 @@ export const createBrainNode = (
     if (state.currentIntent === 'research' && !state.returningFromSpecialist && !state.webExplorerComplete) {
       console.log('[Brain] Research intent detected → routing to web-explorer immediately');
 
+      eventQueue?.push({
+        type: 'thought',
+        content: 'Research intent detected — delegating to web-explorer.'
+      });
+
       return {
         pendingToolCalls: [],
         routingDecision: {
@@ -533,6 +540,11 @@ export const createBrainNode = (
 
       if (bookingKeywords.test(userText) || bookingKeywords.test(lower)) {
         console.log('[Brain] Booking keywords detected in non-research intent → overriding to web-explorer');
+
+        eventQueue?.push({
+          type: 'thought',
+          content: 'Booking/transactional task detected — delegating to web-explorer.'
+        });
 
         return {
           pendingToolCalls: [],
@@ -629,13 +641,14 @@ export const createBrainNode = (
           : JSON.stringify((firstUserMsg as any).content))
       : '';
 
+    let skipRouting = false;
     // ── EARLY CHECK FOR WEB_EXPLORER COMPLETION (Sub-task 3.2) ──────────────
     // If web_explorer has completed (webExplorerComplete: true) and we're returning from it,
     // skip routing to another specialist and go directly to completion signal generation.
     // This prevents unnecessary specialist routing when the task is already done.
     if (state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer') {
       console.log('[Brain] Web explorer complete detected → skipping specialist routing, generating completion signal');
-
+      skipRouting = true;
       // Skip to completion signal generation below
     } else if (state.returningFromSpecialist) {
       console.log(`[Brain] Clearing returningFromSpecialist flag: ${state.returningFromSpecialist}`);
@@ -766,10 +779,10 @@ export const createBrainNode = (
     }
 
     // Determine routing decision
-    // Skip routing decision if web_explorer has completed (Sub-task 3.2)
+    // Skip routing decision if web_explorer has completed and we're returning from it (Sub-task 3.2)
     let routingDecision: { decision: RoutingDecision; explanation: string } | null = null;
 
-    if (!state.webExplorerComplete) {
+    if (!skipRouting) {
       routingDecision = await determineRouting(runner, state, responseContent, eventQueue);
 
       if (routingDecision) {
@@ -799,7 +812,7 @@ export const createBrainNode = (
         }
       }
     } else {
-      console.log('[Brain] Skipping routing decision because webExplorerComplete is true');
+      console.log('[Brain] Skipping routing decision because web explorer complete and returning from it');
     }
 
     // If routing to a specialized agent, set the routing decision

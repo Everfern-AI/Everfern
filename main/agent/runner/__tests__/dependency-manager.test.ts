@@ -55,6 +55,22 @@ describe('DependencyManager', () => {
       expect(imports).toHaveLength(1);
       expect(imports[0].isTypeOnly).toBe(true);
     });
+
+    it('should parse multi-line named imports and ignore trailing commas', () => {
+      const content = `import {
+        foo,
+        bar as baz,
+      } from './utils';`;
+      manager.addFile('src/test.ts', content);
+
+      const imports = manager.getImports('src/test.ts');
+      expect(imports).toHaveLength(1);
+      expect(imports[0].importPath).toBe('./utils');
+      expect(imports[0].specifiers).toHaveLength(2);
+      expect(imports[0].specifiers[0].name).toBe('foo');
+      expect(imports[0].specifiers[1].name).toBe('bar');
+      expect(imports[0].specifiers[1].alias).toBe('baz');
+    });
   });
 
   describe('Export Parsing', () => {
@@ -88,6 +104,21 @@ describe('DependencyManager', () => {
       expect(names).toContain('foo');
       expect(names).toContain('bar');
       expect(names).toContain('Baz');
+    });
+
+    it('should parse multi-line exports correctly and ignore trailing commas', () => {
+      const content = `export {
+        foo,
+        bar as baz,
+      };`;
+      manager.addFile('src/test.ts', content);
+
+      const exports = manager.getExports('src/test.ts');
+      expect(exports).toHaveLength(1);
+      expect(exports[0].specifiers).toHaveLength(2);
+      expect(exports[0].specifiers[0].name).toBe('foo');
+      expect(exports[0].specifiers[1].name).toBe('bar');
+      expect(exports[0].specifiers[1].alias).toBe('baz');
     });
   });
 

@@ -141,7 +141,7 @@ const TreeRow = ({ node, depth, defaultOpen }: { node: TreeNode; depth: number; 
                     borderRadius: 6,
                     fontSize: 12,
                     fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-                    color: node.highlight ? node.highlight : '#a1a1aa',
+                    color: node.highlight ? node.highlight : 'var(--color-text-tertiary)',
                     background: node.highlight ? `${node.highlight}10` : 'transparent',
                     transition: 'background 0.15s',
                 }}
@@ -149,13 +149,13 @@ const TreeRow = ({ node, depth, defaultOpen }: { node: TreeNode; depth: number; 
                 onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.background = node.highlight ? `${node.highlight}10` : 'transparent'}
             >
                 {isDir && (
-                    <span style={{ fontSize: 9, color: '#52525b', width: 10, textAlign: 'center', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
+                    <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', width: 10, textAlign: 'center', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
                 )}
                 {!isDir && <span style={{ width: 10 }} />}
                 <span style={{ fontSize: 13 }}>{getFileIcon(node.name, node.type)}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
                 {node.size !== undefined && (
-                    <span style={{ fontSize: 10, color: '#52525b', flexShrink: 0 }}>{formatSize(node.size)}</span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{formatSize(node.size)}</span>
                 )}
                 {node.highlight && (
                     <span style={{ fontSize: 9, color: node.highlight, border: `1px solid ${node.highlight}40`, borderRadius: 4, padding: '0 4px', flexShrink: 0 }}>
@@ -189,7 +189,7 @@ const OperationLog = ({ op, index }: { op: FileOp; index: number }) => {
         >
             <span>{cfg.icon}</span>
             <span style={{ color: cfg.color, fontWeight: 600, flexShrink: 0 }}>{cfg.verb}</span>
-            <span style={{ color: '#a1a1aa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {op.action === 'move' || op.action === 'rename'
                     ? `${basename(op.from || '')} → ${basename(op.to || '')}`
                     : basename(op.path || op.root || '')}
@@ -234,8 +234,8 @@ export const FileExplorerView: React.FC<FileExplorerViewProps> = ({ operations }
                 background: 'rgba(255,255,255,0.02)',
             }}>
                 <span style={{ fontSize: 14 }}>📂</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#d4d4d8' }}>File Explorer</span>
-                <span style={{ fontSize: 10, color: '#52525b', marginLeft: 'auto' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-border)' }}>File Explorer</span>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>
                     {allEntries.length} items
                 </span>
             </div>

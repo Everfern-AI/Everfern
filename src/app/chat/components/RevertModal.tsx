@@ -47,17 +47,17 @@ const getIconForChangeType = (type: RevertChange['type']) => {
 const getColorForChangeType = (type: RevertChange['type']) => {
     switch (type) {
         case 'file_write':
-            return '#10b981'; // green
+            return 'var(--color-success)';
         case 'file_delete':
-            return '#ef4444'; // red
+            return 'var(--color-error)';
         case 'file_edit':
-            return '#f59e0b'; // amber
+            return 'var(--color-warning)';
         case 'command':
-            return '#3b82f6'; // blue
+            return 'var(--color-info)';
         case 'folder_create':
-            return '#8b5cf6'; // purple
+            return 'var(--color-navis-icon-color)';
         default:
-            return '#6b7280'; // gray
+            return 'var(--color-text-tertiary)';
     }
 };
 
@@ -144,7 +144,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
             <div style={{
                 position: 'fixed',
                 inset: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                backgroundColor: 'var(--color-bg-overlay)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -157,9 +157,9 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
                     style={{
-                        backgroundColor: '#ffffff',
+                        backgroundColor: 'var(--color-bg-surface)',
                         borderRadius: '24px',
-                        border: '1px solid #e5e7eb',
+                        border: '1px solid var(--color-border)',
                         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
                         width: '100%',
                         maxWidth: '600px',
@@ -172,7 +172,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                     {/* Header */}
                     <div style={{
                         padding: '24px 32px',
-                        borderBottom: '1px solid #f3f4f6',
+                        borderBottom: '1px solid var(--color-border-subtle)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between'
@@ -181,19 +181,19 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                             <div style={{
                                 width: '40px',
                                 height: '40px',
-                                backgroundColor: '#fef3c7',
+                                backgroundColor: 'var(--color-warning-dim)',
                                 borderRadius: '12px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}>
-                                <ArrowPathIcon style={{ width: '20px', height: '20px', color: '#d97706' }} />
+                                <ArrowPathIcon style={{ width: '20px', height: '20px', color: 'var(--color-warning)' }} />
                             </div>
                             <div>
                                 <h2 style={{
                                     fontSize: '20px',
                                     fontWeight: 600,
-                                    color: '#111827',
+                                    color: 'var(--color-text-primary)',
                                     margin: 0,
                                     fontFamily: "'Figtree', system-ui, sans-serif"
                                 }}>
@@ -201,7 +201,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 </h2>
                                 <p style={{
                                     fontSize: '14px',
-                                    color: '#6b7280',
+                                    color: 'var(--color-text-secondary)',
                                     margin: '4px 0 0',
                                     fontFamily: "'Figtree', system-ui, sans-serif"
                                 }}>
@@ -217,18 +217,18 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 border: 'none',
                                 borderRadius: '8px',
                                 cursor: 'pointer',
-                                color: '#6b7280',
+                                color: 'var(--color-text-tertiary)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}
                             onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = '#f3f4f6';
-                                e.currentTarget.style.color = '#374151';
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                e.currentTarget.style.color = 'var(--color-text-secondary)';
                             }}
                             onMouseLeave={e => {
                                 e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.color = '#6b7280';
+                                e.currentTarget.style.color = 'var(--color-text-tertiary)';
                             }}
                         >
                             <XMarkIcon style={{ width: '20px', height: '20px' }} />
@@ -248,14 +248,14 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 <div style={{
                                     width: '32px',
                                     height: '32px',
-                                    border: '3px solid #f3f4f6',
-                                    borderTop: '3px solid #3b82f6',
+                                    border: '3px solid var(--color-border-subtle)',
+                                    borderTop: '3px solid var(--color-info)',
                                     borderRadius: '50%',
                                     animation: 'spin 1s linear infinite'
                                 }} />
                                 <p style={{
                                     marginLeft: '16px',
-                                    color: '#6b7280',
+                                    color: 'var(--color-text-tertiary)',
                                     fontSize: '14px',
                                     fontFamily: "'Figtree', system-ui, sans-serif"
                                 }}>
@@ -271,9 +271,9 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 padding: '40px',
                                 flexDirection: 'column'
                             }}>
-                                <ExclamationTriangleIcon style={{ width: '48px', height: '48px', color: '#ef4444', marginBottom: '16px' }} />
+                                <ExclamationTriangleIcon style={{ width: '48px', height: '48px', color: 'var(--color-error)', marginBottom: '16px' }} />
                                 <p style={{
-                                    color: '#ef4444',
+                                    color: 'var(--color-error)',
                                     fontSize: '16px',
                                     fontWeight: 500,
                                     marginBottom: '8px',
@@ -282,7 +282,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                     Error Loading Changes
                                 </p>
                                 <p style={{
-                                    color: '#6b7280',
+                                    color: 'var(--color-text-secondary)',
                                     fontSize: '14px',
                                     textAlign: 'center',
                                     fontFamily: "'Figtree', system-ui, sans-serif"
@@ -299,9 +299,9 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 padding: '40px',
                                 flexDirection: 'column'
                             }}>
-                                <ArrowPathIcon style={{ width: '48px', height: '48px', color: '#6b7280', marginBottom: '16px' }} />
+                                <ArrowPathIcon style={{ width: '48px', height: '48px', color: 'var(--color-text-placeholder)', marginBottom: '16px' }} />
                                 <p style={{
-                                    color: '#6b7280',
+                                    color: 'var(--color-text-secondary)',
                                     fontSize: '16px',
                                     fontWeight: 500,
                                     marginBottom: '8px',
@@ -310,7 +310,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                     No Changes to Revert
                                 </p>
                                 <p style={{
-                                    color: '#9ca3af',
+                                    color: 'var(--color-text-tertiary)',
                                     fontSize: '14px',
                                     textAlign: 'center',
                                     fontFamily: "'Figtree', system-ui, sans-serif"
@@ -324,19 +324,19 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                 <div style={{
                                     margin: '24px 32px 16px',
                                     padding: '16px',
-                                    backgroundColor: '#fef3c7',
-                                    border: '1px solid #fcd34d',
+                                    backgroundColor: 'var(--color-warning-dim)',
+                                    border: '1px solid var(--color-warning)',
                                     borderRadius: '12px',
                                     display: 'flex',
                                     alignItems: 'flex-start',
                                     gap: '12px'
                                 }}>
-                                    <ExclamationTriangleIcon style={{ width: '20px', height: '20px', color: '#d97706', flexShrink: 0, marginTop: '1px' }} />
+                                    <ExclamationTriangleIcon style={{ width: '20px', height: '20px', color: 'var(--color-warning)', flexShrink: 0, marginTop: '1px' }} />
                                     <div>
                                         <p style={{
                                             fontSize: '14px',
                                             fontWeight: 600,
-                                            color: '#92400e',
+                                            color: 'var(--color-warning)',
                                             margin: '0 0 4px',
                                             fontFamily: "'Figtree', system-ui, sans-serif"
                                         }}>
@@ -344,7 +344,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                         </p>
                                         <p style={{
                                             fontSize: '13px',
-                                            color: '#a16207',
+                                            color: 'var(--color-text-secondary)',
                                             margin: 0,
                                             lineHeight: '1.4',
                                             fontFamily: "'Figtree', system-ui, sans-serif"
@@ -364,7 +364,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                     <h3 style={{
                                         fontSize: '16px',
                                         fontWeight: 600,
-                                        color: '#111827',
+                                        color: 'var(--color-text-primary)',
                                         margin: '0 0 16px',
                                         fontFamily: "'Figtree', system-ui, sans-serif"
                                     }}>
@@ -377,8 +377,8 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                                 key={index}
                                                 style={{
                                                     padding: '16px',
-                                                    backgroundColor: '#f9fafb',
-                                                    border: '1px solid #f3f4f6',
+                                                    backgroundColor: 'var(--color-bg-base)',
+                                                    border: '1px solid var(--color-border-subtle)',
                                                     borderRadius: '12px',
                                                     display: 'flex',
                                                     alignItems: 'flex-start',
@@ -388,8 +388,8 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                                 <div style={{
                                                     width: '32px',
                                                     height: '32px',
-                                                    backgroundColor: 'white',
-                                                    border: '1px solid #e5e7eb',
+                                                    backgroundColor: 'var(--color-bg-surface)',
+                                                    border: '1px solid var(--color-border)',
                                                     borderRadius: '8px',
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -403,7 +403,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                                     <div style={{
                                                         fontSize: '14px',
                                                         fontWeight: 500,
-                                                        color: '#111827',
+                                                        color: 'var(--color-text-primary)',
                                                         marginBottom: '4px',
                                                         fontFamily: "'Figtree', system-ui, sans-serif"
                                                     }}>
@@ -412,7 +412,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                                     {change.path && (
                                                         <div style={{
                                                             fontSize: '12px',
-                                                            color: '#6b7280',
+                                                            color: 'var(--color-text-secondary)',
                                                             fontFamily: "'JetBrains Mono', monospace",
                                                             marginBottom: '4px',
                                                             wordBreak: 'break-all'
@@ -423,7 +423,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                                                     {change.details && (
                                                         <div style={{
                                                             fontSize: '12px',
-                                                            color: '#9ca3af',
+                                                            color: 'var(--color-text-tertiary)',
                                                             fontFamily: "'Figtree', system-ui, sans-serif"
                                                         }}>
                                                             {change.details}
@@ -441,7 +441,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                     {/* Footer */}
                     <div style={{
                         padding: '24px 32px',
-                        borderTop: '1px solid #f3f4f6',
+                        borderTop: '1px solid var(--color-border)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'flex-end',
@@ -452,21 +452,21 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                             style={{
                                 padding: '12px 20px',
                                 backgroundColor: 'transparent',
-                                border: '1px solid #d1d5db',
+                                border: '1px solid var(--color-border)',
                                 borderRadius: '12px',
                                 cursor: 'pointer',
                                 fontSize: '14px',
                                 fontWeight: 500,
-                                color: '#374151',
+                                color: 'var(--color-text-secondary)',
                                 fontFamily: "'Figtree', system-ui, sans-serif"
                             }}
                             onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = '#f9fafb';
-                                e.currentTarget.style.borderColor = '#9ca3af';
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                e.currentTarget.style.borderColor = 'var(--color-border-strong)';
                             }}
                             onMouseLeave={e => {
                                 e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.borderColor = '#d1d5db';
+                                e.currentTarget.style.borderColor = 'var(--color-border)';
                             }}
                         >
                             Cancel
@@ -476,13 +476,13 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                             disabled={loading || error !== null}
                             style={{
                                 padding: '12px 20px',
-                                backgroundColor: loading || error !== null ? '#f3f4f6' : '#ef4444',
+                                backgroundColor: loading || error !== null ? 'var(--color-bg-subtle)' : 'var(--color-error)',
                                 border: 'none',
                                 borderRadius: '12px',
                                 cursor: loading || error !== null ? 'not-allowed' : 'pointer',
                                 fontSize: '14px',
                                 fontWeight: 600,
-                                color: loading || error !== null ? '#9ca3af' : '#ffffff',
+                                color: loading || error !== null ? 'var(--color-text-placeholder)' : 'var(--color-text-inverse)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '8px',
@@ -490,12 +490,12 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                             }}
                             onMouseEnter={e => {
                                 if (!loading && error === null) {
-                                    e.currentTarget.style.backgroundColor = '#dc2626';
+                                    e.currentTarget.style.opacity = '0.9';
                                 }
                             }}
                             onMouseLeave={e => {
                                 if (!loading && error === null) {
-                                    e.currentTarget.style.backgroundColor = '#ef4444';
+                                    e.currentTarget.style.opacity = '1.0';
                                 }
                             }}
                         >

@@ -34,6 +34,7 @@ describe('Bug Condition: Graph Build Hang from Synchronous File I/O', () => {
       model: 'test-model',
       chat: vi.fn(),
       setModel: vi.fn(),
+      getFullConfig: vi.fn().mockReturnValue({}),
     } as unknown as AIClient;
     
     const runner = new AgentRunner(mockClient, { maxIterations: 50 });

@@ -26,9 +26,9 @@ export function IDEPane({ visible = true }: any) {
         <span style={{ fontSize: '12px', fontWeight: 500 }}>EverFern IDE</span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '2px' }}>
-          <button onClick={() => setActiveTab('explorer')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'explorer' ? '#3e3e42' : 'transparent', color: activeTab === 'explorer' ? '#fff' : '#858587', cursor: 'pointer', fontSize: '11px' }}>📂 Explorer</button>
-          <button onClick={() => setActiveTab('editor')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'editor' ? '#3e3e42' : 'transparent', color: activeTab === 'editor' ? '#fff' : '#858587', cursor: 'pointer', fontSize: '11px' }}>⚛ Editor</button>
-          <button onClick={() => setActiveTab('terminal')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'terminal' ? '#3e3e42' : 'transparent', color: activeTab === 'terminal' ? '#fff' : '#858587', cursor: 'pointer', fontSize: '11px' }}>💻 Terminal</button>
+          <button onClick={() => setActiveTab('explorer')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'explorer' ? '#3e3e42' : 'transparent', color: activeTab === 'explorer' ? 'var(--color-bg-surface)' : '#858587', cursor: 'pointer', fontSize: '11px' }}>📂 Explorer</button>
+          <button onClick={() => setActiveTab('editor')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'editor' ? '#3e3e42' : 'transparent', color: activeTab === 'editor' ? 'var(--color-bg-surface)' : '#858587', cursor: 'pointer', fontSize: '11px' }}>⚛ Editor</button>
+          <button onClick={() => setActiveTab('terminal')} style={{ padding: '4px 12px', border: 'none', borderRadius: '6px', backgroundColor: activeTab === 'terminal' ? '#3e3e42' : 'transparent', color: activeTab === 'terminal' ? 'var(--color-bg-surface)' : '#858587', cursor: 'pointer', fontSize: '11px' }}>💻 Terminal</button>
         </div>
       </div>
 

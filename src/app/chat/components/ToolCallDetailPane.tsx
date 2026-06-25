@@ -25,13 +25,13 @@ export interface ToolCallDetail {
 }
 
 const T = {
-  bg: '#fafafa',
-  surface: '#fff',
-  surfaceRaised: '#f5f5f4',
-  border: '#e8e8e6',
-  text: '#141412',
-  textSecondary: '#6b6b67',
-  textMuted: '#a8a8a3',
+  bg: 'var(--color-bg-subtle)',
+  surface: 'var(--color-bg-surface)',
+  surfaceRaised: 'var(--color-bg-subtle)',
+  border: 'var(--color-border)',
+  text: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textMuted: 'var(--color-text-tertiary)',
   green: '#22c55e',
   greenFaint: 'rgba(34,197,94,0.08)',
   red: '#ef4444',
@@ -106,7 +106,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
   return (
     <div
       style={{
-        background: '#f5f5f4',
+        background: 'var(--color-bg-subtle)',
         border: `1px solid ${T.border}`,
         borderRadius: T.r8,
         fontFamily: T.mono,

@@ -22,6 +22,8 @@ export interface SubagentPhase {
   endTime?: number;
   output?: string;
   metrics?: Record<string, any>;
+  depth?: number;
+  toolCallId?: string;
 }
 
 export interface SubagentCoordination {
@@ -38,13 +40,13 @@ export interface SubagentCoordination {
 }
 
 const T = {
-  bg: '#fafafa',
-  surface: '#fff',
-  surfaceRaised: '#f5f5f4',
-  border: '#e8e8e6',
-  text: '#141412',
-  textSecondary: '#6b6b67',
-  textMuted: '#a8a8a3',
+  bg: 'var(--color-bg-subtle)',
+  surface: 'var(--color-bg-surface)',
+  surfaceRaised: 'var(--color-bg-subtle)',
+  border: 'var(--color-border)',
+  text: 'var(--color-text-primary)',
+  textSecondary: 'var(--color-text-secondary)',
+  textMuted: 'var(--color-text-tertiary)',
   green: '#22c55e',
   greenFaint: 'rgba(34,197,94,0.08)',
   red: '#ef4444',
@@ -173,194 +175,210 @@ function PhaseCard({
   const meta = AGENTS_META[phase.agent] || AGENTS_META.exploration_agent;
   const Icon = meta.icon;
   const duration = phase.endTime && phase.startTime ? phase.endTime - phase.startTime : null;
+  const depth = phase.depth || 1;
+  const indent = (depth - 1) * 16;
 
   return (
-    <motion.div
-      style={{
-        borderRadius: T.r12,
-        border: `1px solid ${T.border}`,
-        background: T.surface,
-        overflow: 'hidden',
-        boxShadow: isActive ? '0 4px 12px rgba(59,130,246,0.15)' : 'none',
-        borderColor: isActive ? T.blue : T.border,
-      }}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      {/* Header */}
-      <div
+    <div style={{ display: 'flex', width: '100%', gap: 8, paddingLeft: indent, position: 'relative' }}>
+      {depth > 1 && (
+        <div style={{
+          position: 'absolute',
+          left: indent - 8,
+          top: -12,
+          bottom: '50%',
+          width: 8,
+          borderLeft: `1.5px solid ${T.border}`,
+          borderBottom: `1.5px solid ${T.border}`,
+          borderBottomLeftRadius: 6,
+        }} />
+      )}
+      <motion.div
         style={{
-          padding: '14px 18px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          cursor: expanded ? 'pointer' : 'default',
-          borderBottom: expanded ? `1px solid ${T.border}` : 'none',
+          flex: 1,
+          borderRadius: T.r12,
+          border: `1px solid ${T.border}`,
+          background: T.surface,
+          overflow: 'hidden',
+          boxShadow: isActive ? '0 4px 12px rgba(59,130,246,0.15)' : 'none',
+          borderColor: isActive ? T.blue : T.border,
         }}
-        onClick={() => setExpanded(!expanded)}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
       >
-        {/* Status Indicator */}
+        {/* Header */}
         <div
           style={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            background:
-              phase.status === 'completed'
-                ? T.green
-                : phase.status === 'in-progress'
-                  ? T.blue
-                  : phase.status === 'failed'
-                    ? T.red
-                    : T.textMuted,
-            animation: phase.status === 'in-progress' ? 'pulse 2s infinite' : 'none',
-          }}
-        />
-
-        {/* Icon */}
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: T.r8,
-            background: `${meta.color}15`,
-            border: `1px solid ${meta.color}30`,
+            padding: '14px 18px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: meta.color,
+            gap: 12,
+            cursor: expanded ? 'pointer' : 'default',
+            borderBottom: expanded ? `1px solid ${T.border}` : 'none',
           }}
+          onClick={() => setExpanded(!expanded)}
         >
-          <Icon size={16} strokeWidth={2} />
-        </div>
-
-        {/* Title & Description */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
-            {meta.label}
-          </div>
-          <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.sans }}>
-            {meta.description}
-          </div>
-        </div>
-
-        {/* Duration */}
-        {duration && (
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500, fontFamily: T.mono }}>
-            {(duration / 1000).toFixed(1)}s
-          </div>
-        )}
-
-        {/* Expand icon */}
-        {phase.output || phase.metrics ? (
-          <ChevronDown
-            size={16}
+          {/* Status Indicator */}
+          <div
             style={{
-              color: T.textMuted,
-              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s',
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background:
+                phase.status === 'completed'
+                  ? T.green
+                  : phase.status === 'in-progress'
+                    ? T.blue
+                    : phase.status === 'failed'
+                      ? T.red
+                      : T.textMuted,
+              animation: phase.status === 'in-progress' ? 'pulse 2s infinite' : 'none',
             }}
           />
-        ) : null}
-      </div>
 
-      {/* Status Bar */}
-      <div style={{ height: 3, background: T.surfaceRaised }}>
-        <motion.div
-          style={{
-            height: '100%',
-            background: meta.color,
-            borderRadius: '0 2px 0 0',
-          }}
-          initial={{ scaleX: 0 }}
-          animate={{ scaleX: phase.status === 'completed' || phase.status === 'failed' ? 1 : 0.3 }}
-          transition={{ duration: 0.5 }}
-        />
-      </div>
-
-      {/* Expanded Content */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+          {/* Icon */}
+          <div
             style={{
-              overflow: 'hidden',
-              padding: '14px 18px',
-              borderTop: `1px solid ${T.border}`,
-              background: T.bg,
+              width: 32,
+              height: 32,
+              borderRadius: T.r8,
+              background: `${meta.color}15`,
+              border: `1px solid ${meta.color}30`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: meta.color,
             }}
           >
-            {/* Output */}
-            {phase.output && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
-                  Output
-                </div>
-                <code
-                  style={{
-                    fontSize: 11,
-                    color: T.text,
-                    background: T.surface,
-                    border: `1px solid ${T.border}`,
-                    padding: '10px 12px',
-                    borderRadius: T.r8,
-                    display: 'block',
-                    fontFamily: T.mono,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    maxHeight: 200,
-                    overflow: 'auto',
-                  }}
-                >
-                  {phase.output.substring(0, 500)}
-                  {phase.output.length > 500 ? '...' : ''}
-                </code>
-              </div>
-            )}
+            <Icon size={16} strokeWidth={2} />
+          </div>
 
-            {/* Metrics */}
-            {phase.metrics && Object.keys(phase.metrics).length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
-                  Metrics
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {Object.entries(phase.metrics).map(([key, value]) => (
-                    <div
-                      key={key}
-                      style={{
-                        background: T.surface,
-                        border: `1px solid ${T.border}`,
-                        padding: '8px 10px',
-                        borderRadius: T.r8,
-                      }}
-                    >
-                      <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500, marginBottom: 2, fontFamily: T.sans }}>
-                        {key}
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text, fontFamily: T.mono }}>
-                        {typeof value === 'number' ? value.toFixed(2) : String(value)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {/* Title & Description */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
+              {meta.label}
+            </div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.sans }}>
+              {meta.description}
+            </div>
+          </div>
 
+          {/* Duration */}
+          {duration && (
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500, fontFamily: T.mono }}>
+              {(duration / 1000).toFixed(1)}s
+            </div>
+          )}
+
+          {/* Expand icon */}
+          {phase.output || phase.metrics ? (
+            <ChevronDown
+              size={16}
+              style={{
+                color: T.textMuted,
+                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s',
+              }}
+            />
+          ) : null}
+        </div>
+
+        {/* Status Bar */}
+        <div style={{ height: 3, background: T.surfaceRaised }}>
+          <motion.div
+            style={{
+              height: '100%',
+              background: meta.color,
+              borderRadius: '0 2px 0 0',
+            }}
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: phase.status === 'completed' || phase.status === 'failed' ? 1 : 0.3 }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+
+        {/* Expanded Content */}
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{
+                overflow: 'hidden',
+                padding: '14px 18px',
+                borderTop: `1px solid ${T.border}`,
+                background: T.bg,
+              }}
+            >
+              {/* Output */}
+              {phase.output && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                    Output
+                  </div>
+                  <code
+                    style={{
+                      fontSize: 11,
+                      color: T.text,
+                      background: T.surface,
+                      border: `1px solid ${T.border}`,
+                      padding: '10px 12px',
+                      borderRadius: T.r8,
+                      display: 'block',
+                      fontFamily: T.mono,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: 200,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {phase.output.substring(0, 500)}
+                    {phase.output.length > 500 ? '...' : ''}
+                  </code>
+                </div>
+              )}
+
+              {/* Metrics */}
+              {phase.metrics && Object.keys(phase.metrics).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                    Metrics
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {Object.entries(phase.metrics).map(([key, value]) => (
+                      <div
+                        key={key}
+                        style={{
+                          background: T.surface,
+                          border: `1px solid ${T.border}`,
+                          padding: '8px 10px',
+                          borderRadius: T.r8,
+                        }}
+                      >
+                        <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500, marginBottom: 2, fontFamily: T.sans }}>
+                          {key}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.text, fontFamily: T.mono }}>
+                          {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
       `}</style>
-    </motion.div>
+    </div>
   );
 }
 

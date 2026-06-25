@@ -69,7 +69,7 @@ const ToggleSwitch: React.FC<{
                 height: 24,
                 borderRadius: 12,
                 border: "none",
-                backgroundColor: enabled ? "#111111" : "#e5e5e0",
+                backgroundColor: enabled ? "var(--color-success)" : "var(--color-border)",
                 position: "relative",
                 cursor: disabled ? "not-allowed" : "pointer",
                 transition: "all 0.2s ease",
@@ -85,7 +85,7 @@ const ToggleSwitch: React.FC<{
                     width: 20,
                     height: 20,
                     borderRadius: 10,
-                    backgroundColor: "#ffffff",
+                    backgroundColor: 'var(--color-bg-surface)', // Keep white thumb for toggle switch in both themes
                     position: "absolute",
                     top: 2,
                     left: 2,
@@ -109,18 +109,18 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
     testing = false,
 }) => {
     const colors = {
-        cardBg: "#ffffff",
-        cardHover: "#fbfbfb",
-        border: "#e5e5e0",
-        textPrimary: "#111111",
-        textSecondary: "#666666",
-        textMuted: "#999999",
-        success: "#10b981",
-        warning: "#f59e0b",
-        error: "#ef4444",
-        successBg: "#f0fdf4",
-        errorBg: "#fef2f2",
-        infoBg: "#f0f9ff",
+        cardBg: "var(--color-bg-surface)",
+        cardHover: "var(--color-bg-subtle)",
+        border: "var(--color-border)",
+        textPrimary: "var(--color-text-primary)",
+        textSecondary: "var(--color-text-secondary)",
+        textMuted: "var(--color-text-tertiary)",
+        success: "var(--color-success)",
+        warning: "var(--color-warning)",
+        error: "var(--color-error)",
+        successBg: "var(--color-success-dim)",
+        errorBg: "var(--color-error-dim)",
+        infoBg: "var(--color-bg-subtle)",
     };
 
     const getStatusIcon = () => {
@@ -192,7 +192,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
             }}
             onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = colors.cardHover;
-                e.currentTarget.style.borderColor = "#d0d0d0";
+                e.currentTarget.style.borderColor = "var(--color-border-strong)";
                 e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.03)";
             }}
             onMouseLeave={(e) => {
@@ -209,7 +209,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
                             width: 40,
                             height: 40,
                             borderRadius: 10,
-                            backgroundColor: "#f5f5f5",
+                            backgroundColor: 'var(--color-bg-subtle)',
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -267,7 +267,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
                             transition: "all 0.2s ease",
                         }}
                         onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "#f0f0f0";
+                            e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
                         }}
                         onMouseLeave={(e) => {
                             e.currentTarget.style.backgroundColor = "transparent";
@@ -405,23 +405,23 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
     }, [isOpen]);
 
     const colors = {
-        overlay: "rgba(0, 0, 0, 0.2)",
-        background: "#ffffff",
-        sidebarBg: "#f9f9f8",
-        border: "#e5e5e0",
-        textPrimary: "#111111",
-        textSecondary: "#666666",
-        textMuted: "#999999",
-        accent: "#000000",
-        accentHover: "rgba(0,0,0,0.05)",
-        cardBg: "#ffffff",
-        cardHover: "#fbfbfb",
-        inputBg: "#ffffff",
-        buttonBg: "#ffffff",
-        buttonHover: "#f0f0f0",
-        primaryButton: "#111111",
-        primaryButtonText: "#ffffff",
-        primaryButtonHover: "#333333",
+        overlay: "rgba(0, 0, 0, 0.4)",
+        background: "var(--color-bg-surface)",
+        sidebarBg: "var(--color-bg-subtle)",
+        border: "var(--color-border)",
+        textPrimary: "var(--color-text-primary)",
+        textSecondary: "var(--color-text-secondary)",
+        textMuted: "var(--color-text-tertiary)",
+        accent: "var(--color-text-primary)",
+        accentHover: "var(--color-bg-hover)",
+        cardBg: "var(--color-bg-surface)",
+        cardHover: "var(--color-bg-subtle)",
+        inputBg: "var(--color-bg-surface)",
+        buttonBg: "var(--color-bg-surface)",
+        buttonHover: "var(--color-bg-hover)",
+        primaryButton: "var(--color-text-primary)",
+        primaryButtonText: "var(--color-bg-surface)",
+        primaryButtonHover: "var(--color-text-secondary)",
     };
 
     const handleToggleIntegration = async (platform: 'telegram' | 'discord', enabled: boolean) => {
@@ -615,7 +615,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                     style={{
                                         position: "absolute",
                                         inset: 0,
-                                        backgroundColor: "rgba(255, 255, 255, 0.8)",
+                                        backgroundColor: "var(--color-bg-overlay, rgba(0,0,0,0.4))",
                                         backdropFilter: "blur(4px)",
                                         zIndex: 1100,
                                         display: "flex",
@@ -633,7 +633,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                             maxWidth: "600px",
                                             maxHeight: "80vh",
                                             overflowY: "auto",
-                                            backgroundColor: "#ffffff",
+                                            backgroundColor: colors.background,
                                             borderRadius: "16px",
                                             boxShadow: "0 24px 48px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)",
                                             position: "relative"

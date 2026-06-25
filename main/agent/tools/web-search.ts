@@ -152,16 +152,12 @@ async function search(query: string): Promise<SearchResult[]> {
 
 async function fetchUrlMetadata(url: string): Promise<{ title?: string; description?: string }> {
   try {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 3000); // 3-second timeout per site
-
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
       },
-      signal: controller.signal
+      signal: AbortSignal.timeout(3000)
     });
-    clearTimeout(id);
 
     if (!res.ok) return {};
     const html = await res.text();

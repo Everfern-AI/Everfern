@@ -17,9 +17,28 @@ const LEGACY_TIMELINE_DIR = path.join(os.homedir(), '.everfern', 'store', 'timel
 
 export class ChatHistoryStore {
   private migrated = false;
+  private saveMutex = false;
+  private saveQueue: (() => void)[] = [];
 
   constructor() {
     // Migration is handled asynchronously via init()
+  }
+
+  private async acquireSaveLock(): Promise<void> {
+    if (!this.saveMutex) {
+      this.saveMutex = true;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => this.saveQueue.push(resolve));
+  }
+
+  private releaseSaveLock() {
+    if (this.saveQueue.length > 0) {
+      const next = this.saveQueue.shift();
+      next?.();
+    } else {
+      this.saveMutex = false;
+    }
   }
 
   async init() {
@@ -219,7 +238,11 @@ export class ChatHistoryStore {
        await this.init();
     }
 
+    await this.acquireSaveLock();
+
     try {
+      await dbOps.run('BEGIN TRANSACTION');
+
       // 1. Upsert Conversation — use INSERT OR REPLACE to avoid race conditions
       // when saveConversation is called concurrently from the frontend.
       await dbOps.run(
@@ -305,11 +328,15 @@ export class ChatHistoryStore {
         );
       }
 
+      await dbOps.run('COMMIT');
       return { success: true };
     } catch (err) {
+      await dbOps.run('ROLLBACK').catch(e => console.error('[History] Failed to rollback:', e));
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[History] Failed to save conversation:`, msg);
       return { success: false, error: msg };
+    } finally {
+      this.releaseSaveLock();
     }
   }
 

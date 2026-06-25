@@ -76,7 +76,7 @@ export function InlineDebateProgress({
     if (debate?.finalPlan.goNogo === 'go') {
       return (
         <div className="w-5 h-5 rounded-full bg-[#10b981] flex items-center justify-center z-1">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 6L9 17l-5-5" />
           </svg>
         </div>
@@ -86,7 +86,7 @@ export function InlineDebateProgress({
     if (debate?.finalPlan.goNogo === 'no-go') {
       return (
         <div className="w-5 h-5 rounded-full bg-[#ef4444] flex items-center justify-center z-1">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3">
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </div>
@@ -96,7 +96,7 @@ export function InlineDebateProgress({
     // proceed-with-caution
     return (
       <div className="w-5 h-5 rounded-full bg-[#f59e0b] flex items-center justify-center z-1">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
       </div>

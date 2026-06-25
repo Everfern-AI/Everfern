@@ -23,11 +23,12 @@ import {
 
 import WindowControls from "../components/WindowControls";
 import LinuxVMSetupStep from "./LinuxVMSetupStep";
+import { useTheme } from "@/components/ThemeProvider";
 
 // ── Provider Logos ────────────────
 
 const OpenAILogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} />
+    <Image src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="dark:invert opacity-90" />
 );
 
 const AnthropicLogo = ({ size = 20 }: { size?: number }) => (
@@ -55,7 +56,7 @@ const MiniMaxLogo = ({ size = 20 }: { size?: number }) => (
 );
 
 const OllamaLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} />
+    <Image src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="dark:invert opacity-90" />
 );
 
 const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
@@ -63,7 +64,7 @@ const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
 );
 
 const EverFernBglessLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/logos/black-logo-withoutbg.png" alt="EverFern Cloud" width={size} height={size} />
+    <Image src="/images/logos/black-logo-withoutbg.png" alt="EverFern Cloud" width={size} height={size} className="dark:invert opacity-90" />
 );
 
 
@@ -93,7 +94,7 @@ function logColor(kind: LogKind): string {
         case "done": return "#4ade80";   // bright green
         case "warn": return "#fb923c";   // orange — warnings
         case "err": return "#f87171";   // red — errors
-        case "fail": return "#ef4444";   // red — fatal
+        case "fail": return 'var(--color-error)';   // red — fatal
         case "muted": return "#3f3f46";   // very dim — separators
         default: return "#71717a";   // gray — generic output
     }
@@ -115,7 +116,7 @@ const BackButton = ({ onClick }: { onClick: () => void }) => (
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            color: "#8a8886",
+            color: 'var(--color-text-tertiary)',
             background: "none",
             border: "none",
             cursor: "pointer",
@@ -126,8 +127,8 @@ const BackButton = ({ onClick }: { onClick: () => void }) => (
             marginBottom: 32,
             transition: "color 0.15s",
         }}
-        onMouseEnter={e => (e.currentTarget.style.color = "#201e24")}
-        onMouseLeave={e => (e.currentTarget.style.color = "#8a8886")}
+        onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
+        onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
     >
         <ChevronLeft size={15} strokeWidth={2} />
         Back
@@ -169,11 +170,11 @@ function CoffeeBreakBanner({ currentPkg, pipPct, pipSpeed, overallPct }: {
             <div style={{ flexShrink: 0, position: "relative" }}>
                 <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
                     {/* Steam trails */}
-                    <path d="M17 12 Q19 7 17 2" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round"
+                    <path d="M17 12 Q19 7 17 2" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
                         style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0s", opacity: 0.7 }} />
-                    <path d="M23 12 Q25 6 23 1" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round"
+                    <path d="M23 12 Q25 6 23 1" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
                         style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0.4s", opacity: 0.7 }} />
-                    <path d="M29 12 Q31 7 29 2" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round"
+                    <path d="M29 12 Q31 7 29 2" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
                         style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0.8s", opacity: 0.7 }} />
                     {/* Cup body */}
                     <rect x="9" y="15" width="28" height="22" rx="4"
@@ -192,24 +193,24 @@ function CoffeeBreakBanner({ currentPkg, pipPct, pipSpeed, overallPct }: {
 
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "#201e24" }}>Take a coffee break</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>Take a coffee break</span>
                     <span style={{
                         fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const,
                         letterSpacing: "0.12em", background: "rgba(59,130,246,0.15)",
-                        color: "#3b82f6", padding: "2px 7px", borderRadius: 999,
+                        color: 'var(--color-primary)', padding: "2px 7px", borderRadius: 999,
                     }}>Installing</span>
                 </div>
-                <p style={{ fontSize: 12, color: "#8a8886", lineHeight: 1.6, margin: "0 0 10px" }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.6, margin: "0 0 10px" }}>
                     This might take a few minutes. Dependencies are being downloaded automatically.
                 </p>
 
                 {/* Overall progress */}
                 <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: "#8a8886", textTransform: "uppercase" as const, letterSpacing: "0.1em", fontWeight: 600 }}>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: "uppercase" as const, letterSpacing: "0.1em", fontWeight: 600 }}>
                             Overall Progress
                         </span>
-                        <span style={{ fontSize: 10, color: "#201e24", fontFamily: "monospace" }}>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-primary)', fontFamily: "monospace" }}>
                             {Math.round(overallPct)}%
                         </span>
                     </div>
@@ -241,9 +242,9 @@ function PipProgressBar({ pkg, pct, speed, eta }: {
         }}>
             {/* Package name line */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, fontFamily: "monospace", fontSize: 11.5 }}>
-                <span style={{ color: "#3b82f6" }}>Downloading</span>
-                <span style={{ color: "#201e24", fontWeight: 700 }}>{pkg}</span>
-                {speed && <span style={{ color: "#8a8886", marginLeft: "auto" }}>{speed}</span>}
+                <span style={{ color: 'var(--color-primary)' }}>Downloading</span>
+                <span style={{ color: 'var(--color-text-primary)', fontWeight: 700 }}>{pkg}</span>
+                {speed && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: "auto" }}>{speed}</span>}
                 {eta && <span style={{ color: "#a1a1aa" }}>eta {eta}</span>}
             </div>
             {/* Progress bar row */}
@@ -257,14 +258,14 @@ function PipProgressBar({ pkg, pct, speed, eta }: {
                     <div style={{
                         height: "100%",
                         width: `${pct}%`,
-                        background: "#2563eb",
+                        background: 'var(--color-primary)',
                         borderRadius: 3,
                         transition: "width 0.2s linear",
                     }} />
                 </div>
                 <span style={{
                     fontSize: 10, fontFamily: "monospace",
-                    color: pct === 100 ? "#16a34a" : "#8a8886",
+                    color: pct === 100 ? "#16a34a" : 'var(--color-text-tertiary)',
                     minWidth: 32, textAlign: "right" as const,
                 }}>
                     {pct}%
@@ -310,10 +311,10 @@ function StepPills({ installStep }: { installStep: number }) {
                         <span style={{ fontSize: 18 }}>{s.icon}</span>
                         <div style={{
                             fontSize: 10, fontWeight: 700,
-                            color: isDone ? "#16a34a" : isActive ? "#2563eb" : "#8a8886",
+                            color: isDone ? "#16a34a" : isActive ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
                             textTransform: "uppercase" as const, letterSpacing: "0.1em",
                         }}>{s.title}</div>
-                        <div style={{ fontSize: 10, color: "#8a8886" }}>{s.desc}</div>
+                        <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{s.desc}</div>
                     </div>
                 );
             })}
@@ -323,7 +324,30 @@ function StepPills({ installStep }: { installStep: number }) {
 
 export default function SetupPage() {
     const router = useRouter();
+    const { theme, setTheme } = useTheme();
     const [step, setStep] = useState(1);
+    const [selectedTheme, setSelectedTheme] = useState<'light' | 'dark'>('light');
+
+    // Force light theme by default during onboarding
+    useEffect(() => {
+        if (theme !== 'light') {
+            setTheme('light');
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Track app install once
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !localStorage.getItem('everfern_install_tracked')) {
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+            fetch(`${API_URL}/api/analytics/install`, { method: "POST" })
+                .then(() => {
+                    localStorage.setItem('everfern_install_tracked', 'true');
+                })
+                .catch(err => console.error("Failed to track install:", err));
+        }
+    }, []);
+
     const [engine, setEngine] = useState<"local" | "online" | "everfern" | null>(null);
     const [provider, setProvider] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState("");
@@ -630,7 +654,7 @@ export default function SetupPage() {
 
     return (
         <div
-            className="flex flex-col min-h-screen bg-[#f5f4f0] text-[#201e24] overflow-y-auto"
+            className="flex flex-col min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)] overflow-y-auto"
             style={{ fontFamily: "var(--font-sans)" }}
         >
             {/* ── Header ── */}
@@ -639,21 +663,21 @@ export default function SetupPage() {
                 style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} />
+                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                 </div>
                 <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
                     <WindowControls />
                 </div>
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
-                {[1, 2, 3, 4, 5, 6, 7].map(s => (
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
                     <div
                         key={s}
                         style={{
                             width: s === step ? 20 : 6,
                             height: 4,
                             borderRadius: 999,
-                            background: s === step ? "#201e24" : s < step ? "#4b5563" : "#d1d5db",
+                            background: s === step ? 'var(--color-text-primary)' : s < step ? 'var(--color-text-secondary)' : 'var(--color-border)',
                             transition: "all 0.3s ease",
                         }}
                     />
@@ -676,10 +700,10 @@ export default function SetupPage() {
                             <BackButton onClick={() => router.push("/auth")} />
 
                             <div style={{ textAlign: "center", marginBottom: 40 }}>
-                                <h1 style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.03em", color: "#201e24", marginBottom: 10, lineHeight: 1.1 }}>
+                                <h1 style={{ fontSize: 36, fontWeight: 500, letterSpacing: "-0.03em", color: 'var(--color-text-primary)', marginBottom: 10, lineHeight: 1.1 }}>
                                     Choose your engine
                                 </h1>
-                                <p style={{ fontSize: 14, color: "#8a8886", lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
+                                <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
                                     EverFern can power your workspace using local infrastructure or top-tier cloud providers.
                                 </p>
                             </div>
@@ -704,7 +728,7 @@ export default function SetupPage() {
                                         disabled={false}
                                         style={{
                                             background: "rgba(255,255,255,0.02)",
-                                            border: "1px solid #e2e2e2",
+                                            border: '1px solid var(--color-border)',
                                             borderRadius: 16,
                                             padding: "28px 20px",
                                             display: "flex",
@@ -721,12 +745,12 @@ export default function SetupPage() {
                                         }}
                                         onMouseEnter={e => {
                                             (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
+                                            (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-text-tertiary)';
                                             (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
                                         }}
                                         onMouseLeave={e => {
                                             (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "#e2e2e2";
+                                            (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)';
                                             (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
                                         }}
                                     >
@@ -741,10 +765,10 @@ export default function SetupPage() {
                                             <opt.icon size={24} />
                                         </div>
                                         <div style={{ textAlign: "center" }}>
-                                            <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 5, color: "#201e24" }}>
+                                            <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 5, color: 'var(--color-text-primary)' }}>
                                                 {opt.name}
                                             </div>
-                                            <div style={{ fontSize: 12, color: "#8a8886", lineHeight: 1.4 }}>
+                                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.4 }}>
                                                 {opt.desc}
                                             </div>
                                         </div>
@@ -768,10 +792,10 @@ export default function SetupPage() {
                             <BackButton onClick={() => setStep(1)} />
 
                             <div style={{ marginBottom: 32 }}>
-                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.025em", color: "#201e24", marginBottom: 8, lineHeight: 1.2 }}>
+                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.025em", color: 'var(--color-text-primary)', marginBottom: 8, lineHeight: 1.2 }}>
                                     Select AI Provider
                                 </h2>
-                                <p style={{ fontSize: 13, color: "#8a8886", lineHeight: 1.5 }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
                                     Pick the provider you want to connect.
                                 </p>
                             </div>
@@ -821,7 +845,16 @@ export default function SetupPage() {
                                     </>
                                 ) : (
                                     <button
-                                        onClick={() => { setProvider("everfern"); setStep(4); }}
+                                        onClick={() => {
+                                            const sessionStr = localStorage.getItem("everfern_cloud_session");
+                                            if (!sessionStr) {
+                                                if (window.confirm("You must be logged in to EverFern Cloud to use this option. Go to login?")) {
+                                                    router.push("/auth");
+                                                }
+                                                return;
+                                            }
+                                            setProvider("everfern"); setStep(4);
+                                        }}
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
@@ -842,8 +875,8 @@ export default function SetupPage() {
                                                 <EverFernBglessLogo size={18} />
                                             </div>
                                             <div style={{ textAlign: "left" }}>
-                                                <span style={{ fontWeight: 500, fontSize: 14, color: "#201e24", display: "block" }}>EverFern Cloud</span>
-                                                <span style={{ fontSize: 11, color: "#8a8886" }}>Uses front tier models</span>
+                                                <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--color-text-primary)', display: "block" }}>EverFern Cloud</span>
+                                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Uses front tier models</span>
                                             </div>
                                         </div>
                                     </button>
@@ -873,17 +906,17 @@ export default function SetupPage() {
                                     background: "rgba(32,30,36,0.04)",
                                     border: "1px solid rgba(32,30,36,0.1)",
                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                    marginBottom: 20, color: "#8a8886",
+                                    marginBottom: 20, color: 'var(--color-text-tertiary)',
                                 }}>
                                     <Key size={24} strokeWidth={1.5} />
                                 </div>
-                                <h2 style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em", color: "#201e24", marginBottom: 8 }}>
+                                <h2 style={{ fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em", color: 'var(--color-text-primary)', marginBottom: 8 }}>
                                     Authenticator
                                 </h2>
-                                <p style={{ fontSize: 13, color: "#8a8886", lineHeight: 1.6, maxWidth: 280 }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6, maxWidth: 280 }}>
                                     {engine === "local"
-                                        ? <>Enter your <span style={{ color: "#8a8886", fontWeight: 500 }}>{provider}</span> Server URL below, or leave blank for default.</>
-                                        : <>Enter your <span style={{ color: "#8a8886", fontWeight: 500 }}>{provider}</span> API key below.</>
+                                        ? <>Enter your <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 500 }}>{provider}</span> Server URL below, or leave blank for default.</>
+                                        : <>Enter your <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 500 }}>{provider}</span> API key below.</>
                                     }
                                 </p>
                             </div>
@@ -900,7 +933,7 @@ export default function SetupPage() {
                                         border: "1px solid rgba(32,30,36,0.1)",
                                         borderRadius: 12,
                                         padding: "0 16px",
-                                        color: "#201e24", fontSize: 14,
+                                        color: 'var(--color-text-primary)', fontSize: 14,
                                         outline: "none",
                                         transition: "border-color 0.15s",
                                         boxSizing: "border-box",
@@ -915,22 +948,22 @@ export default function SetupPage() {
                                     }}
                                     style={{
                                         width: "100%", height: 52,
-                                        background: "#201e24", color: "#f5f4f0",
+                                        background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
                                         borderRadius: 12, fontWeight: 600, fontSize: 14,
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         gap: 8, cursor: "pointer", border: "none",
                                         transition: "background 0.15s", letterSpacing: "0.01em",
                                     }}
-                                    onMouseEnter={e => (e.currentTarget.style.background = "#111111")}
-                                    onMouseLeave={e => (e.currentTarget.style.background = "#201e24")}
+                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                                 >
                                     Continue <ArrowRight size={16} strokeWidth={2.5} />
                                 </button>
                             </div>
 
-                            <p style={{ fontSize: 11, color: "#8a8886", textAlign: "center", marginTop: 20, lineHeight: 1.6 }}>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: "center", marginTop: 20, lineHeight: 1.6 }}>
                                 Keys are stored locally at{" "}
-                                <code style={{ fontFamily: "monospace", color: "#8a8886", fontSize: 10.5 }}>~/.everfern/config.json</code>{" "}
+                                <code style={{ fontFamily: "monospace", color: 'var(--color-text-tertiary)', fontSize: 10.5 }}>~/.everfern/config.json</code>{" "}
                                 and never sent to our servers.
                             </p>
                         </motion.div>
@@ -961,10 +994,10 @@ export default function SetupPage() {
                                 }}>
                                     <Cpu size={24} strokeWidth={1.5} />
                                 </div>
-                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: "#201e24", marginBottom: 12, lineHeight: 1.1 }}>
+                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: 'var(--color-text-primary)', marginBottom: 12, lineHeight: 1.1 }}>
                                     Vision AI Setup
                                 </h2>
-                                <p style={{ fontSize: 13, color: "#8a8886", lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
                                     Install Ollama to run the Qwen3 VL 2B model locally, or connect your EverFern agent to a cloud-hosted vision API.
                                 </p>
                             </div>
@@ -981,7 +1014,7 @@ export default function SetupPage() {
                                         onClick={() => setVlmMode(opt.id as any)}
                                         style={{
                                             background: vlmMode === opt.id ? "rgba(32,30,36,0.06)" : "rgba(255,255,255,0.02)",
-                                            border: `1px solid ${vlmMode === opt.id ? "#8a8886" : "#e2e2e2"}`,
+                                            border: `1px solid ${vlmMode === opt.id ? 'var(--color-text-tertiary)' : 'var(--color-border)'}`,
                                             borderRadius: 16,
                                             padding: "24px 16px",
                                             display: "flex",
@@ -997,16 +1030,16 @@ export default function SetupPage() {
                                         onMouseEnter={e => {
                                             if (vlmMode === opt.id) return;
                                             (e.currentTarget as HTMLElement).style.background = "rgba(32,30,36,0.02)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
+                                            (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-text-tertiary)';
                                         }}
                                         onMouseLeave={e => {
                                             if (vlmMode === opt.id) return;
                                             (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
-                                            (e.currentTarget as HTMLElement).style.borderColor = "#e2e2e2";
+                                            (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)';
                                         }}
                                     >
                                         {vlmMode === opt.id && (
-                                            <div style={{ position: "absolute", top: 12, right: 12, color: "#111111" }}>
+                                            <div style={{ position: "absolute", top: 12, right: 12, color: 'var(--color-text-primary)' }}>
                                                 <Check width={16} height={16} strokeWidth={2.5} />
                                             </div>
                                         )}
@@ -1020,10 +1053,10 @@ export default function SetupPage() {
                                             <opt.icon size={22} />
                                         </div>
                                         <div style={{ textAlign: "center" }}>
-                                            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: "#201e24" }}>
+                                            <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'var(--color-text-primary)' }}>
                                                 {opt.name}
                                             </div>
-                                            <div style={{ fontSize: 11, color: "#8a8886", lineHeight: 1.4 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.4 }}>
                                                 {opt.desc}
                                             </div>
                                         </div>
@@ -1041,12 +1074,12 @@ export default function SetupPage() {
                                                         <OllamaLogo size={22} />
                                                     </div>
                                                     <div style={{ textAlign: "left" }}>
-                                                        <div style={{ fontSize: 15, fontWeight: 600, color: "#201e24" }}>Install Ollama</div>
-                                                        <div style={{ fontSize: 12, color: "#8a8886" }}>Required to run the local vision model</div>
+                                                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>Install Ollama</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Required to run the local vision model</div>
                                                     </div>
                                                 </div>
                                                 <button onClick={handleInstallOllama} disabled={isInstallingOllama}
-                                                    style={{ width: "100%", padding: "14px", backgroundColor: "#201e24", color: "#f5f4f0", borderRadius: 12, fontWeight: 600, fontSize: 14, border: "none", cursor: isInstallingOllama ? "wait" : "pointer", opacity: isInstallingOllama ? 0.7 : 1 }}>
+                                                    style={{ width: "100%", padding: "14px", backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-base)', borderRadius: 12, fontWeight: 600, fontSize: 14, border: "none", cursor: isInstallingOllama ? "wait" : "pointer", opacity: isInstallingOllama ? 0.7 : 1 }}>
                                                     {isInstallingOllama ? "Installing..." : "Install Automatically"}
                                                 </button>
 
@@ -1063,7 +1096,7 @@ export default function SetupPage() {
                                                                 )}
                                                                 {ollamaInstallPhase === "done" && <span>✓ Installation complete!</span>}
                                                             </span>
-                                                            <span style={{ fontSize: 12, color: "#8a8886", fontFamily: "monospace" }}>
+                                                            <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: "monospace" }}>
                                                                 {ollamaInstallPhase !== "done" ? `${ollamaInstallPct.toFixed(1)}%` : "100%"}
                                                             </span>
                                                         </div>
@@ -1090,12 +1123,12 @@ export default function SetupPage() {
                                                         <OllamaLogo size={22} />
                                                     </div>
                                                     <div style={{ textAlign: "left" }}>
-                                                        <div style={{ fontSize: 15, fontWeight: 600, color: "#201e24" }}>Qwen3 VL (2B)</div>
-                                                        <div style={{ fontSize: 12, color: "#8a8886" }}>~2.5 GB • Fast Local Inference</div>
+                                                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>Qwen3 VL (2B)</div>
+                                                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>~2.5 GB • Fast Local Inference</div>
                                                     </div>
                                                 </div>
                                                 <button onClick={handlePullModel} disabled={isPullingModel || isInstallingOllama}
-                                                    style={{ width: "100%", padding: "14px", backgroundColor: "#3b82f6", color: "#ffffff", borderRadius: 12, fontWeight: 600, fontSize: 14, border: "none", cursor: (isPullingModel || isInstallingOllama) ? "wait" : "pointer", opacity: (isPullingModel || isInstallingOllama) ? 0.7 : 1 }}>
+                                                    style={{ width: "100%", padding: "14px", backgroundColor: 'var(--color-primary)', color: 'var(--color-bg-surface)', borderRadius: 12, fontWeight: 600, fontSize: 14, border: "none", cursor: (isPullingModel || isInstallingOllama) ? "wait" : "pointer", opacity: (isPullingModel || isInstallingOllama) ? 0.7 : 1 }}>
                                                     {isPullingModel ? `Downloading... ${pullPct.toFixed(1)}%` : "Download & Set as Default"}
                                                 </button>
 
@@ -1109,7 +1142,7 @@ export default function SetupPage() {
                                                                 style={{ height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #3b82f6, #60a5fa)" }}
                                                             />
                                                         </div>
-                                                        <p style={{ fontSize: 11, color: "#8a8886", marginTop: 8, textAlign: "center" }}>Downloading model weights... ~2.5 GB total</p>
+                                                        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8, textAlign: "center" }}>Downloading model weights... ~2.5 GB total</p>
                                                     </div>
                                                 )}
                                             </div>
@@ -1117,8 +1150,8 @@ export default function SetupPage() {
 
                                         {/* Terminal Output for Ollama */}
                                         {(ollamaLogs.length > 0) && (
-                                            <div style={{ width: "100%", height: 120, backgroundColor: "#f5f4f0", borderRadius: 12, padding: 12, border: "1px solid rgba(32,30,36,0.1)", overflowY: "auto", textAlign: "left" }}>
-                                                <pre style={{ margin: 0, color: "#8a8886", fontSize: 11, fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                                            <div style={{ width: "100%", height: 120, backgroundColor: 'var(--color-bg-base)', borderRadius: 12, padding: 12, border: "1px solid rgba(32,30,36,0.1)", overflowY: "auto", textAlign: "left" }}>
+                                                <pre style={{ margin: 0, color: 'var(--color-text-tertiary)', fontSize: 11, fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                                                     {ollamaLogs.join('\n')}
                                                 </pre>
                                             </div>
@@ -1129,74 +1162,74 @@ export default function SetupPage() {
                                 {vlmMode === "cloud" && (
                                     <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
                                         <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                            <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Provider</label>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Provider</label>
                                             <select value={vlmCloudProvider} onChange={(e) => {
                                                 const provider = e.target.value;
                                                 setVlmCloudProvider(provider);
                                                 setVlmCloudModel(getVisionDefaultModel(provider));
                                                 setVlmCloudUrl(getVisionDefaultBaseUrl(provider));
                                             }}
-                                                style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
-                                                <option value="ollama" style={{ background: "#f5f4f0" }}>Ollama Compatible Endpoint</option>
-                                                <option value="everfern" style={{ background: "#f5f4f0" }}>EverFern Cloud</option>
-                                                <option value="openrouter" style={{ background: "#f5f4f0" }}>OpenRouter</option>
-                                                <option value="minimax" style={{ background: "#f5f4f0" }}>MiniMax API</option>
-                                                <option value="openai" style={{ background: "#f5f4f0" }}>OpenAI</option>
-                                                <option value="anthropic" style={{ background: "#f5f4f0" }}>Anthropic</option>
-                                                <option value="nvidia" style={{ background: "#f5f4f0" }}>Nvidia NIM</option>
+                                                style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
+                                                <option value="ollama" style={{ background: 'var(--color-bg-base)' }}>Ollama Compatible Endpoint</option>
+                                                <option value="everfern" style={{ background: 'var(--color-bg-base)' }}>EverFern Cloud</option>
+                                                <option value="openrouter" style={{ background: 'var(--color-bg-base)' }}>OpenRouter</option>
+                                                <option value="minimax" style={{ background: 'var(--color-bg-base)' }}>MiniMax API</option>
+                                                <option value="openai" style={{ background: 'var(--color-bg-base)' }}>OpenAI</option>
+                                                <option value="anthropic" style={{ background: 'var(--color-bg-base)' }}>Anthropic</option>
+                                                <option value="nvidia" style={{ background: 'var(--color-bg-base)' }}>Nvidia NIM</option>
                                             </select>
                                         </div>
                                         <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                            <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Model Name</label>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Model Name</label>
                                             <div style={{ position: "relative" }}>
                                                 {vlmCloudProvider === 'ollama' ? (
                                                     <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
-                                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
+                                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                         <option value="qwen3-vl:235b-cloud">Qwen3 VL 235B (Default)</option>
                                                         <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
                                                         <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
                                                     </select>
                                                 ) : vlmCloudProvider === 'everfern' ? (
                                                     <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
-                                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
+                                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                         <option value="everfern-vision-v1">EverFern Vision v1 (Default)</option>
                                                     </select>
                                                 ) : (
                                                     <>
                                                         <input type="text" placeholder={getVisionDefaultModel(vlmCloudProvider)} value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
-                                                            style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                            style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                             onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                             onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
-                                                        <Cpu size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
+                                                        <Cpu size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
                                                     </>
                                                 )}
                                             </div>
                                         </div>
                                         {vlmCloudProvider !== 'ollama' && vlmCloudProvider !== 'everfern' && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
+                                                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
                                                 <div style={{ position: "relative" }}>
                                                     <input type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => setVlmCloudUrl(e.target.value)}
-                                                        style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                        style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                         onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                         onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
-                                                    <Globe size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
+                                                    <Globe size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
                                                 </div>
                                             </div>
                                         )}
                                         {vlmCloudProvider !== 'everfern' && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                <label style={{ fontSize: 12, fontWeight: 600, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
+                                                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
                                                 <div style={{ position: "relative" }}>
                                                     <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
-                                                        style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: "#201e24", fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                        style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                         onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                         onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
-                                                    <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#8a8886" }} />
+                                                    <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
                                                 </div>
                                             </div>
                                         )}
-                                        <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? "#201e24" : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? "#f5f4f0" : "#8a8886", borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+                                        <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                             {isSaving ? "Saving..." : "Save & Continue"}
                                         </button>
                                     </div>
@@ -1207,7 +1240,7 @@ export default function SetupPage() {
                                         onClick={() => setStep(5)}
                                         style={{
                                             width: "100%", height: 52,
-                                            background: "#201e24", color: "#f5f4f0",
+                                            background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
                                             borderRadius: 12, fontWeight: 600, fontSize: 14,
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             gap: 8, cursor: "pointer", border: "none",
@@ -1219,7 +1252,7 @@ export default function SetupPage() {
                                 )}
                             </div>
 
-                            <button onClick={() => setStep(5)} style={{ marginTop: 24, fontSize: 13, color: "#8a8886", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = "#201e24"} onMouseLeave={e => e.currentTarget.style.color = "#8a8886"}>
+                            <button onClick={() => setStep(5)} style={{ marginTop: 24, fontSize: 13, color: 'var(--color-text-tertiary)', background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                 Skip local AI setup & Continue
                             </button>
                         </motion.div>
@@ -1262,10 +1295,10 @@ export default function SetupPage() {
                             </div>
 
                             <div style={{ marginBottom: 16 }}>
-                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: "#201e24", marginBottom: 12, lineHeight: 1.1 }}>
+                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: 'var(--color-text-primary)', marginBottom: 12, lineHeight: 1.1 }}>
                                     Install Navis Extension
                                 </h2>
-                                <p style={{ fontSize: 13, color: "#8a8886", lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
                                     Navis browses the web for you — booking flights, filling forms, and more. Install the extension to get started.
                                 </p>
                             </div>
@@ -1281,7 +1314,7 @@ export default function SetupPage() {
                             <div style={{
                                 width: "100%",
                                 maxWidth: 520,
-                                background: "#ffffff",
+                                background: 'var(--color-bg-surface)',
                                 border: "1px solid rgba(32, 30, 36, 0.1)",
                                 borderRadius: 16,
                                 overflow: "hidden",
@@ -1293,8 +1326,8 @@ export default function SetupPage() {
                                     display: "flex",
                                     alignItems: "center",
                                     padding: "10px 14px 0",
-                                    background: "#f7f7f6",
-                                    borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                    background: theme === 'dark' ? "#201e24" : "#f7f7f6",
+                                    borderBottom: theme === 'dark' ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(32,30,36,0.06)",
                                 }}>
                                     {/* Window dots */}
                                     <div style={{ display: "flex", gap: 6, marginRight: 14 }}>
@@ -1310,8 +1343,8 @@ export default function SetupPage() {
                                             padding: "7px 14px",
                                             fontSize: 11,
                                             fontWeight: 600,
-                                            color: "#201e24",
-                                            background: "#ffffff",
+                                            color: 'var(--color-text-primary)',
+                                            background: 'var(--color-bg-surface)',
                                             borderRadius: "8px 8px 0 0",
                                             border: "1px solid rgba(32,30,36,0.08)",
                                             borderBottom: "1px solid #ffffff",
@@ -1321,15 +1354,15 @@ export default function SetupPage() {
                                             alignItems: "center",
                                             gap: 6,
                                         }}>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8a8886" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                                             SkyBooker.com
                                         </div>
                                         <div style={{
                                             padding: "7px 14px",
                                             fontSize: 11,
                                             fontWeight: 500,
-                                            color: "#a09f9c",
-                                            background: "#f0efed",
+                                            color: theme === 'dark' ? "#71717a" : "#a09f9c",
+                                            background: theme === 'dark' ? "#27272a" : "#f0efed",
                                             borderRadius: "8px 8px 0 0",
                                             position: "relative",
                                             bottom: -1,
@@ -1345,11 +1378,11 @@ export default function SetupPage() {
                                     alignItems: "center",
                                     padding: "8px 14px",
                                     gap: 8,
-                                    background: "#ffffff",
-                                    borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                    background: 'var(--color-bg-surface)',
+                                    borderBottom: theme === 'dark' ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(32,30,36,0.06)",
                                 }}>
                                     {/* Nav buttons */}
-                                    <div style={{ display: "flex", gap: 10, color: "#8a8886", alignItems: "center" }}>
+                                    <div style={{ display: "flex", gap: 10, color: 'var(--color-text-tertiary)', alignItems: "center" }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
                                         {/* Reload icon */}
@@ -1359,18 +1392,18 @@ export default function SetupPage() {
                                     </div>
                                     <div style={{
                                         flex: 1,
-                                        background: "#f5f4f2",
+                                        background: theme === 'dark' ? "#27272a" : "#f5f4f2",
                                         borderRadius: 8,
                                         padding: "6px 12px",
                                         fontSize: 11,
-                                        color: "#8a8886",
+                                        color: 'var(--color-text-tertiary)',
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "space-between",
                                     }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                            <span style={{ color: "#10b981", fontWeight: 500 }}>Secure |</span>
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-success)' strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                            <span style={{ color: 'var(--color-success)', fontWeight: 500 }}>Secure |</span>
                                             <span>skybooker.com/flights/NYC-to-LAX</span>
                                         </div>
                                         {/* Bookmark Star Icon */}
@@ -1379,15 +1412,15 @@ export default function SetupPage() {
                                     {/* Extension Icon & Navis icon in toolbar */}
                                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                         {/* Puzzle icon */}
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a8886" strokeWidth="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v12M6 12h12"/></svg>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v12M6 12h12"/></svg>
                                         {/* Navis extension icon */}
                                         <div style={{
                                             width: 22, height: 22, borderRadius: 6,
-                                            background: "#201e24",
+                                            background: 'var(--color-text-primary)',
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             boxShadow: "0 0 8px rgba(32,30,36,0.25)"
                                         }}>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f5f4f0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-base)' strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                                         </div>
                                     </div>
                                 </div>
@@ -1395,7 +1428,7 @@ export default function SetupPage() {
                                 {/* Main Browser Body */}
                                 <div style={{
                                     display: "flex",
-                                    background: "#fdfdfc",
+                                    background: theme === 'dark' ? "#18181b" : "#fdfdfc",
                                     height: 290,
                                     position: "relative",
                                     overflow: "hidden"
@@ -1407,7 +1440,7 @@ export default function SetupPage() {
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: 8,
-                                        background: "#faf9f6",
+                                        background: theme === 'dark' ? "#1f1f22" : "#faf9f6",
                                         height: "100%",
                                         position: "relative",
                                         overflow: "hidden",
@@ -1418,11 +1451,11 @@ export default function SetupPage() {
                                             display: "flex",
                                             justifyContent: "space-between",
                                             alignItems: "center",
-                                            borderBottom: "1px solid rgba(32,30,36,0.06)",
+                                            borderBottom: theme === 'dark' ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(32,30,36,0.06)",
                                             paddingBottom: 6,
                                             marginBottom: 2,
                                         }}>
-                                            <span style={{ fontSize: 10, fontWeight: 700, color: "#8a8886", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                                 SkyBooker
                                             </span>
                                             {/* Page control buttons */}
@@ -1434,8 +1467,8 @@ export default function SetupPage() {
                                                     fontSize: 10,
                                                     fontWeight: 600,
                                                     borderRadius: 4,
-                                                    background: mockStep >= 2 ? "#201e24" : "rgba(32,30,36,0.05)",
-                                                    color: mockStep >= 2 ? "#ffffff" : "#8a8886",
+                                                    background: mockStep >= 2 ? 'var(--color-text-primary)' : "rgba(32,30,36,0.05)",
+                                                    color: mockStep >= 2 ? 'var(--color-bg-surface)' : 'var(--color-text-tertiary)',
                                                     border: "1px solid rgba(32,30,36,0.08)",
                                                     transition: "all 0.2s ease",
                                                     transform: mockStep === 2 ? "scale(0.9)" : "scale(1)",
@@ -1471,7 +1504,7 @@ export default function SetupPage() {
                                                     fontWeight: 600,
                                                     borderRadius: 4,
                                                     background: mockStep >= 4 ? "#16a34a" : "rgba(32,30,36,0.05)",
-                                                    color: mockStep >= 4 ? "#ffffff" : "#8a8886",
+                                                    color: mockStep >= 4 ? 'var(--color-bg-surface)' : 'var(--color-text-tertiary)',
                                                     border: "1px solid rgba(32,30,36,0.08)",
                                                     transition: "all 0.2s ease",
                                                     transform: mockStep === 4 ? "scale(0.9)" : "scale(1)",
@@ -1516,7 +1549,7 @@ export default function SetupPage() {
                                         }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                                 <span style={{ fontWeight: 600, color: "#374151" }}>JFK</span>
-                                                <span style={{ color: "#9ca3af" }}>⇄</span>
+                                                <span style={{ color: 'var(--color-text-tertiary)' }}>⇄</span>
                                                 <span style={{ fontWeight: 600, color: "#374151" }}>LAX</span>
                                             </div>
                                             <div>June 15 • 1 Adult • Economy</div>
@@ -1532,10 +1565,10 @@ export default function SetupPage() {
                                                 <div key={i} style={{
                                                     fontSize: 7.5,
                                                     padding: "2px 6px",
-                                                    background: "#ffffff",
+                                                    background: 'var(--color-bg-surface)',
                                                     border: "1px solid #e5e7eb",
                                                     borderRadius: 4,
-                                                    color: "#4b5563",
+                                                    color: 'var(--color-text-secondary)',
                                                 }}>
                                                     {filter}
                                                 </div>
@@ -1548,7 +1581,7 @@ export default function SetupPage() {
                                             flexDirection: "column",
                                             gap: mockStep >= 3 ? 10 : 6,
                                             padding: mockStep >= 3 ? "12px 14px" : "8px 10px",
-                                            background: mockStep >= 4 ? "#ffffff" : "#fafaf9",
+                                            background: mockStep >= 4 ? 'var(--color-bg-surface)' : "#fafaf9",
                                             borderRadius: 10,
                                             border: mockStep >= 4 ? "1.5px solid #201e24" : "1px solid rgba(32,30,36,0.06)",
                                             boxShadow: mockStep >= 4 ? "0 4px 12px rgba(32,30,36,0.06)" : "none",
@@ -1559,7 +1592,7 @@ export default function SetupPage() {
                                                 <span style={{
                                                     fontSize: mockStep >= 3 ? 13 : 10,
                                                     fontWeight: 700,
-                                                    color: "#201e24",
+                                                    color: 'var(--color-text-primary)',
                                                     transition: "font-size 0.3s ease"
                                                 }}>
                                                     JFK → LAX (JetStream)
@@ -1588,10 +1621,10 @@ export default function SetupPage() {
                                                     <div style={{
                                                         fontSize: mockStep >= 3 ? 17 : 13,
                                                         fontWeight: 800,
-                                                        color: "#201e24",
+                                                        color: 'var(--color-text-primary)',
                                                         transition: "font-size 0.3s ease"
                                                     }}>06:30 AM</div>
-                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: "#8a8886" }}>JFK</div>
+                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: 'var(--color-text-tertiary)' }}>JFK</div>
                                                 </div>
                                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
                                                     <div style={{ fontSize: 7.5, color: "#a09f9c" }}>5h 20m</div>
@@ -1600,7 +1633,7 @@ export default function SetupPage() {
                                                             style={{
                                                                 position: "absolute", top: -2.5, left: 0,
                                                                 width: 6, height: 6, borderRadius: "50%",
-                                                                background: "#201e24",
+                                                                background: 'var(--color-text-primary)',
                                                             }}
                                                             animate={{ left: ["0%", "90%"] }}
                                                             transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
@@ -1612,10 +1645,10 @@ export default function SetupPage() {
                                                     <div style={{
                                                         fontSize: mockStep >= 3 ? 17 : 13,
                                                         fontWeight: 800,
-                                                        color: "#201e24",
+                                                        color: 'var(--color-text-primary)',
                                                         transition: "font-size 0.3s ease"
                                                     }}>11:50 AM</div>
-                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: "#8a8886" }}>LAX</div>
+                                                    <div style={{ fontSize: mockStep >= 3 ? 9.5 : 8, color: 'var(--color-text-tertiary)' }}>LAX</div>
                                                 </div>
                                             </div>
 
@@ -1624,13 +1657,13 @@ export default function SetupPage() {
                                                 <div style={{
                                                     fontSize: mockStep >= 3 ? 16 : 12,
                                                     fontWeight: 800,
-                                                    color: "#201e24",
+                                                    color: 'var(--color-text-primary)',
                                                     transition: "font-size 0.3s ease"
                                                 }}>$127</div>
                                                 <div style={{
                                                     padding: mockStep >= 3 ? "5px 10px" : "3px 6px",
-                                                    background: mockStep >= 4 ? "#16a34a" : "#201e24",
-                                                    color: "#f5f4f0",
+                                                    background: mockStep >= 4 ? "#16a34a" : 'var(--color-text-primary)',
+                                                    color: 'var(--color-bg-base)',
                                                     borderRadius: 5,
                                                     fontSize: mockStep >= 3 ? 9.5 : 8,
                                                     fontWeight: 600,
@@ -1655,7 +1688,7 @@ export default function SetupPage() {
                                         }}>
                                             {/* Flight header */}
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                                <span style={{ fontSize: 9.5, fontWeight: 600, color: "#4b5563" }}>
+                                                <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
                                                     JFK → LAX (United Airlines)
                                                 </span>
                                             </div>
@@ -1668,23 +1701,23 @@ export default function SetupPage() {
                                                 alignItems: "center",
                                             }}>
                                                 <div>
-                                                    <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>08:15 AM</div>
-                                                    <div style={{ fontSize: 7.5, color: "#9ca3af" }}>JFK</div>
+                                                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)' }}>08:15 AM</div>
+                                                    <div style={{ fontSize: 7.5, color: 'var(--color-text-tertiary)' }}>JFK</div>
                                                 </div>
                                                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                                                    <div style={{ fontSize: 7, color: "#9ca3af" }}>6h 40m</div>
-                                                    <div style={{ width: 35, height: 1, background: "#e5e7eb" }} />
-                                                    <div style={{ fontSize: 6.5, color: "#9ca3af" }}>1 stop (ORD)</div>
+                                                    <div style={{ fontSize: 7, color: 'var(--color-text-tertiary)' }}>6h 40m</div>
+                                                    <div style={{ width: 35, height: 1, background: 'var(--color-border)' }} />
+                                                    <div style={{ fontSize: 6.5, color: 'var(--color-text-tertiary)' }}>1 stop (ORD)</div>
                                                 </div>
                                                 <div style={{ textAlign: "right" }}>
-                                                    <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>02:55 PM</div>
-                                                    <div style={{ fontSize: 7.5, color: "#9ca3af" }}>LAX</div>
+                                                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)' }}>02:55 PM</div>
+                                                    <div style={{ fontSize: 7.5, color: 'var(--color-text-tertiary)' }}>LAX</div>
                                                 </div>
                                             </div>
 
                                             {/* Price */}
                                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 1 }}>
-                                                <div style={{ fontSize: 11, fontWeight: 700, color: "#4b5563" }}>$154</div>
+                                                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)' }}>$154</div>
                                             </div>
                                         </div>
 
@@ -1718,7 +1751,7 @@ export default function SetupPage() {
                                             transition={{ duration: 0.8, ease: "easeInOut" }}
                                         >
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                                <path d="M4 4l7.67 18.25 2.55-7.7 7.7-2.55L4 4z" fill="#201e24" stroke="#ffffff" strokeWidth="2.5" />
+                                                <path d="M4 4l7.67 18.25 2.55-7.7 7.7-2.55L4 4z" fill='var(--color-text-primary)' stroke='var(--color-bg-surface)' strokeWidth="2.5" />
                                             </svg>
                                         </motion.div>
                                     </div>
@@ -1726,8 +1759,8 @@ export default function SetupPage() {
                                     {/* Navis AI Panel Sidebar (Right) */}
                                     <div style={{
                                         width: 180,
-                                        background: "#201e24",
-                                        color: "#f5f4f0",
+                                        background: 'var(--color-text-primary)',
+                                        color: 'var(--color-bg-base)',
                                         borderLeft: "1px solid rgba(255,255,255,0.08)",
                                         padding: "12px 10px",
                                         display: "flex",
@@ -1740,7 +1773,7 @@ export default function SetupPage() {
                                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                             <span style={{
                                                 width: 6, height: 6, borderRadius: "50%",
-                                                background: mockStep === 5 ? "#10b981" : "#a78bfa",
+                                                background: mockStep === 5 ? 'var(--color-success)' : "#a78bfa",
                                                 boxShadow: mockStep === 5 ? "0 0 6px #10b981" : "0 0 6px #a78bfa",
                                                 animation: "pulseDot 1.5s infinite"
                                             }} />
@@ -1756,11 +1789,11 @@ export default function SetupPage() {
                                             borderRadius: 6,
                                             padding: "6px 8px",
                                         }}>
-                                            <div style={{ fontSize: 7, color: "#8a8886", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 2 }}>
+                                            <div style={{ fontSize: 7, color: 'var(--color-text-tertiary)', textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 2 }}>
                                                 User Request
                                             </div>
-                                            <div style={{ fontSize: 9.5, color: "#ffffff", fontWeight: 500, lineHeight: 1.3 }}>
-                                                "make booking page better, increase size"
+                                            <div style={{ fontSize: 9.5, color: 'var(--color-bg-surface)', fontWeight: 500, lineHeight: 1.3 }}>
+                                                &quot;make booking page better, increase size&quot;
                                             </div>
                                         </div>
 
@@ -1786,11 +1819,11 @@ export default function SetupPage() {
                                                         gap: 6,
                                                         fontSize: 9,
                                                         fontWeight: isActive ? 600 : 400,
-                                                        color: isDone ? "#a1a1aa" : isActive ? "#ffffff" : "#8a8886",
+                                                        color: isDone ? "#a1a1aa" : isActive ? 'var(--color-bg-surface)' : 'var(--color-text-tertiary)',
                                                         transition: "all 0.3s ease",
                                                     }}>
                                                         {isDone ? (
-                                                            <span style={{ color: "#10b981", fontWeight: "bold" }}>✓</span>
+                                                            <span style={{ color: 'var(--color-success)', fontWeight: "bold" }}>✓</span>
                                                         ) : (
                                                             <span style={{
                                                                 display: "inline-block",
@@ -1825,12 +1858,12 @@ export default function SetupPage() {
                                         gap: 10,
                                         padding: "14px 18px",
                                         borderRadius: 14,
-                                        background: "#ffffff",
+                                        background: 'var(--color-bg-surface)',
                                         border: "1px solid rgba(32,30,36,0.1)",
                                         cursor: "pointer",
                                         fontWeight: 600,
                                         fontSize: 13,
-                                        color: "#201e24",
+                                        color: 'var(--color-text-primary)',
                                         boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                                         transition: "all 0.15s ease",
                                     }}
@@ -1839,14 +1872,14 @@ export default function SetupPage() {
                                         e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
                                     }}
                                     onMouseLeave={e => {
-                                        e.currentTarget.style.background = "#ffffff";
+                                        e.currentTarget.style.background = 'var(--color-bg-surface)';
                                         e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
                                     }}
                                 >
                                     {/* Chrome Grey SVG */}
                                     <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
                                         <circle cx="24" cy="24" r="22" fill="#d4d4d4"/>
-                                        <circle cx="24" cy="24" r="9" fill="#fff"/>
+                                        <circle cx="24" cy="24" r="9" fill='var(--color-bg-surface)'/>
                                         <circle cx="24" cy="24" r="5.5" fill="#a3a3a3"/>
                                         <path d="M24 2C14 2 5.7 8.4 3 17l12.5.5L24 15a9 9 0 0 1 8.5 5H46A22 22 0 0 0 24 2z" fill="#b0b0b0"/>
                                         <path d="M32.5 20A9 9 0 0 1 28 32.5L34 44A22 22 0 0 0 46 20H32.5z" fill="#c0c0c0"/>
@@ -1870,12 +1903,12 @@ export default function SetupPage() {
                                         gap: 10,
                                         padding: "14px 18px",
                                         borderRadius: 14,
-                                        background: "#ffffff",
+                                        background: 'var(--color-bg-surface)',
                                         border: "1px solid rgba(32,30,36,0.1)",
                                         cursor: "pointer",
                                         fontWeight: 600,
                                         fontSize: 13,
-                                        color: "#201e24",
+                                        color: 'var(--color-text-primary)',
                                         boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                                         transition: "all 0.15s ease",
                                     }}
@@ -1884,7 +1917,7 @@ export default function SetupPage() {
                                         e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
                                     }}
                                     onMouseLeave={e => {
-                                        e.currentTarget.style.background = "#ffffff";
+                                        e.currentTarget.style.background = 'var(--color-bg-surface)';
                                         e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
                                     }}
                                 >
@@ -1913,7 +1946,7 @@ export default function SetupPage() {
                                     alignItems: "center",
                                     gap: 6,
                                     fontSize: 12,
-                                    color: "#8a8886",
+                                    color: 'var(--color-text-tertiary)',
                                     background: "none",
                                     border: "none",
                                     cursor: "pointer",
@@ -1922,8 +1955,8 @@ export default function SetupPage() {
                                     fontWeight: 500,
                                     transition: "color 0.15s",
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.color = "#201e24"}
-                                onMouseLeave={e => e.currentTarget.style.color = "#8a8886"}
+                                onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
+                                onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
                             >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle" }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
                                 View source code on GitHub
@@ -1936,8 +1969,8 @@ export default function SetupPage() {
                                     width: "100%",
                                     maxWidth: 420,
                                     height: 52,
-                                    background: "#201e24",
-                                    color: "#f5f4f0",
+                                    background: 'var(--color-text-primary)',
+                                    color: 'var(--color-bg-base)',
                                     borderRadius: 12,
                                     fontWeight: 600,
                                     fontSize: 14,
@@ -1950,15 +1983,15 @@ export default function SetupPage() {
                                     transition: "background 0.15s",
                                     letterSpacing: "0.01em",
                                 }}
-                                onMouseEnter={e => (e.currentTarget.style.background = "#111111")}
-                                onMouseLeave={e => (e.currentTarget.style.background = "#201e24")}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 Continue <ArrowRight size={16} strokeWidth={2.5} />
                             </button>
                         </motion.div>
                     )}
 
-                    {/* ── Step 7: Privacy & Security ── */}
+                    {/* ── Step 7: Choose Theme ── */}
                     {step === 7 && (
                         <motion.div
                             key="step7"
@@ -1967,10 +2000,171 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
-                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                            style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(6)} />
+                            </div>
+
+                            <div style={{ textAlign: "center", marginBottom: 40 }}>
+                                <h1 style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-0.03em", color: "var(--color-text-primary)", marginBottom: 10, lineHeight: 1.1 }}>
+                                    Choose your theme
+                                </h1>
+                                <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
+                                    Pick the look that feels right. You can always change this later in Settings.
+                                </p>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, width: "100%", maxWidth: 480, marginBottom: 36 }}>
+                                {/* Light Theme Card */}
+                                <button
+                                    onClick={() => {
+                                        setSelectedTheme('light');
+                                        setTheme('light');
+                                    }}
+                                    style={{
+                                        background: selectedTheme === 'light' ? "var(--color-bg-surface)" : "var(--color-bg-subtle)",
+                                        border: selectedTheme === 'light' ? "2px solid #10b981" : "2px solid var(--color-border)",
+                                        borderRadius: 20,
+                                        padding: 0,
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        overflow: "hidden",
+                                        boxShadow: selectedTheme === 'light' ? "0 0 0 4px rgba(16,185,129,0.15)" : "none",
+                                    }}
+                                >
+                                    {/* Light mode preview */}
+                                    <div style={{ background: "#f5f4f1", padding: "14px 14px 10px", borderBottom: '1px solid var(--color-border)' }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
+                                        </div>
+                                        <div style={{ display: "flex", gap: 6, height: 70 }}>
+                                            {/* Sidebar strip */}
+                                            <div style={{ width: 28, background: "#eceae6", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 6 }}>
+                                                {[1,2,3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#c4c2bc" }} />)}
+                                            </div>
+                                            {/* Content area */}
+                                            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                                                <div style={{ height: 10, background: "#e2e0dc", borderRadius: 4, width: "70%" }} />
+                                                <div style={{ height: 8, background: "#e9e7e3", borderRadius: 4, width: "90%" }} />
+                                                <div style={{ height: 8, background: "#e9e7e3", borderRadius: 4, width: "80%" }} />
+                                                <div style={{ marginTop: 4, height: 20, background: 'var(--color-text-primary)', borderRadius: 6, width: "60%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                    <div style={{ width: 24, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.6)" }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", textAlign: "left" }}>Light</div>
+                                            <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", textAlign: "left" }}>Clean & bright</div>
+                                        </div>
+                                        {selectedTheme === 'light' && (
+                                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: 'var(--color-success)', display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                <Check size={11} strokeWidth={3} color="white" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </button>
+
+                                {/* Dark Theme Card */}
+                                <button
+                                    onClick={() => {
+                                        setSelectedTheme('dark');
+                                        setTheme('dark');
+                                    }}
+                                    style={{
+                                        background: selectedTheme === 'dark' ? "var(--color-bg-surface)" : "var(--color-bg-subtle)",
+                                        border: selectedTheme === 'dark' ? "2px solid #10b981" : "2px solid var(--color-border)",
+                                        borderRadius: 20,
+                                        padding: 0,
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        overflow: "hidden",
+                                        boxShadow: selectedTheme === 'dark' ? "0 0 0 4px rgba(16,185,129,0.15)" : "none",
+                                    }}
+                                >
+                                    {/* Dark mode preview */}
+                                    <div style={{ background: "#1a1917", padding: "14px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
+                                        </div>
+                                        <div style={{ display: "flex", gap: 6, height: 70 }}>
+                                            {/* Sidebar strip */}
+                                            <div style={{ width: 28, background: "#201e1c", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 6 }}>
+                                                {[1,2,3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#3a3835" }} />)}
+                                            </div>
+                                            {/* Content area */}
+                                            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                                                <div style={{ height: 10, background: "#2e2c29", borderRadius: 4, width: "70%" }} />
+                                                <div style={{ height: 8, background: "#252320", borderRadius: 4, width: "90%" }} />
+                                                <div style={{ height: 8, background: "#252320", borderRadius: 4, width: "80%" }} />
+                                                <div style={{ marginTop: 4, height: 20, background: 'var(--color-success)', borderRadius: 6, width: "60%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                    <div style={{ width: 24, height: 2, borderRadius: 1, background: "rgba(255,255,255,0.6)" }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", textAlign: "left" }}>Dark</div>
+                                            <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", textAlign: "left" }}>Easy on the eyes</div>
+                                        </div>
+                                        {selectedTheme === 'dark' && (
+                                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: 'var(--color-success)', display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                <Check size={11} strokeWidth={3} color="white" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => setStep(8)}
+                                style={{
+                                    width: "100%",
+                                    maxWidth: 420,
+                                    height: 52,
+                                    background: 'var(--color-text-primary)',
+                                    color: 'var(--color-bg-base)',
+                                    borderRadius: 12,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 8,
+                                    cursor: "pointer",
+                                    border: "none",
+                                    transition: "background 0.15s",
+                                    letterSpacing: "0.01em",
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                            >
+                                Continue <ArrowRight size={16} strokeWidth={2.5} />
+                            </button>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 8: Privacy & Security ── */}
+
+                    {step === 8 && (
+                        <motion.div
+                            key="step8"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(7)} />
                             </div>
 
                             {/* Static Padlock SVG */}
@@ -1979,15 +2173,15 @@ export default function SetupPage() {
                                     {/* Shackle */}
                                     <path
                                         d="M44 66 L44 50 Q44 36 60 36 Q76 36 76 50 L76 66"
-                                        stroke="#201e24" strokeWidth="6" strokeLinecap="round"
+                                        stroke='var(--color-text-primary)' strokeWidth="6" strokeLinecap="round"
                                         fill="none"
                                     />
                                     {/* Lock body */}
-                                    <rect x="38" y="64" width="44" height="32" rx="6" fill="#201e24" />
+                                    <rect x="38" y="64" width="44" height="32" rx="6" fill='var(--color-text-primary)' />
                                     {/* Keyhole circle */}
-                                    <circle cx="60" cy="76" r="4" fill="#f5f4f0" />
+                                    <circle cx="60" cy="76" r="4" fill='var(--color-bg-base)' />
                                     {/* Keyhole slot */}
-                                    <rect x="58" y="76" width="4" height="8" rx="2" fill="#f5f4f0" />
+                                    <rect x="58" y="76" width="4" height="8" rx="2" fill='var(--color-bg-base)' />
                                 </svg>
                             </div>
 
@@ -1996,7 +2190,7 @@ export default function SetupPage() {
                                 fontSize: 32,
                                 fontWeight: 500,
                                 letterSpacing: "-0.03em",
-                                color: "#201e24",
+                                color: 'var(--color-text-primary)',
                                 marginBottom: 12,
                                 lineHeight: 1.1,
                             }}>
@@ -2006,15 +2200,15 @@ export default function SetupPage() {
                             {/* Subtitle */}
                             <p style={{
                                 fontSize: 14,
-                                color: "#8a8886",
+                                color: 'var(--color-text-tertiary)',
                                 lineHeight: 1.7,
                                 maxWidth: 360,
                                 marginBottom: 32,
                             }}>
                                 {engine === "everfern" ? (
-                                    <>EverFern Cloud runs on our own self-hosted infrastructure. We <strong style={{ color: "#201e24" }}>never send your data to third parties</strong>, host all models ourselves, and <strong style={{ color: "#201e24" }}>don't store any of your conversations or code</strong>.  Your work stays yours.</>
+                                    <>EverFern Cloud runs on our own self-hosted infrastructure. We <strong style={{ color: 'var(--color-text-primary)' }}>never send your data to third parties</strong>, host all models ourselves, and <strong style={{ color: 'var(--color-text-primary)' }}>don&apos;t store any of your conversations or code</strong>.  Your work stays yours.</>
                                 ) : (
-                                    <>All your API keys and credentials are stored <strong style={{ color: "#201e24" }}>locally on your device</strong> and never leave your machine. EverFern doesn't collect, track, or transmit any of your data.</>
+                                    <>All your API keys and credentials are stored <strong style={{ color: 'var(--color-text-primary)' }}>locally on your device</strong> and never leave your machine. EverFern doesn&apos;t collect, track, or transmit any of your data.</>
                                 )}
                             </p>
 
@@ -2047,8 +2241,8 @@ export default function SetupPage() {
                                     >
                                         <span style={{ fontSize: 20, flexShrink: 0 }}>{feature.icon}</span>
                                         <div>
-                                            <div style={{ fontSize: 13, fontWeight: 600, color: "#201e24", marginBottom: 2 }}>{feature.title}</div>
-                                            <div style={{ fontSize: 12, color: "#8a8886", lineHeight: 1.5 }}>{feature.desc}</div>
+                                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>{feature.title}</div>
+                                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>{feature.desc}</div>
                                         </div>
                                     </motion.div>
                                 ))}
@@ -2064,8 +2258,8 @@ export default function SetupPage() {
                                 style={{
                                     width: "100%",
                                     height: 52,
-                                    background: "#201e24",
-                                    color: "#f5f4f0",
+                                    background: 'var(--color-text-primary)',
+                                    color: 'var(--color-bg-base)',
                                     borderRadius: 12,
                                     fontWeight: 600,
                                     fontSize: 14,
@@ -2079,8 +2273,8 @@ export default function SetupPage() {
                                     letterSpacing: "0.01em",
                                     opacity: isSaving ? 0.7 : 1,
                                 }}
-                                onMouseEnter={e => !isSaving && (e.currentTarget.style.background = "#111111")}
-                                onMouseLeave={e => (e.currentTarget.style.background = "#201e24")}
+                                onMouseEnter={e => !isSaving && (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 {isSaving ? "Finishing setup..." : (<>Get Started <ArrowRight size={16} strokeWidth={2.5} /></>)}
                             </motion.button>
@@ -2156,9 +2350,9 @@ function ProviderRow({ p, onClick }: { p: { id: string; name: string; logo: any 
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(32,30,36,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <p.logo size={18} />
                 </div>
-                <span style={{ fontWeight: 500, fontSize: 14, color: "#201e24", letterSpacing: "-0.01em" }}>{p.name}</span>
+                <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--color-text-primary)', letterSpacing: "-0.01em" }}>{p.name}</span>
             </div>
-            <ChevronRight size={15} style={{ color: "#8a8886" }} />
+            <ChevronRight size={15} style={{ color: 'var(--color-text-tertiary)' }} />
         </button>
     );
 }

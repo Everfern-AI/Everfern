@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getEmbeddingModel, getSystemEmbeddingConfig } from '../../../lib/embeddings';
 
 export interface GraphNode {
   id: string;
@@ -58,16 +59,26 @@ export function saveMemoryGraph(graph: MemoryGraph): void {
   }
 }
 
-export function addOrUpdateMemory(
+export async function addOrUpdateMemory(
   type: 'preference' | 'habit' | 'fact',
   category: string,
   value: string,
   linkedFile: string,
   metadata: Record<string, any> = {}
-): void {
+): Promise<void> {
   const graph = loadMemoryGraph();
   const memoryDir = getMemoryDir();
   const now = new Date().toISOString();
+
+  // Generate 1536-dimensional embedding vector
+  let embedding: number[] | undefined = undefined;
+  try {
+    const config = getSystemEmbeddingConfig();
+    const { embeddings } = getEmbeddingModel(config);
+    embedding = await embeddings.embedQuery(value);
+  } catch (err) {
+    console.warn('[PersistentMemory] Failed to generate embedding for memory value:', err);
+  }
 
   // Find if there is an existing node of same type and category
   const existingNodeIndex = graph.nodes.findIndex(
@@ -81,6 +92,7 @@ export function addOrUpdateMemory(
     oldNode.metadata = {
       ...oldNode.metadata,
       ...metadata,
+      embedding: embedding || oldNode.metadata?.embedding,
       lastUpdated: now
     };
     id = oldNode.id;
@@ -96,6 +108,7 @@ export function addOrUpdateMemory(
       linkedFile,
       metadata: {
         ...metadata,
+        embedding,
         created: now,
         lastUpdated: now
       }

@@ -59,7 +59,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: "#f5f4f0", // Matches sidebar/background
+                backgroundColor: "var(--color-bg-base)", // Matches sidebar/background
                 zIndex: 40,
                 display: "flex",
                 flexDirection: "column",
@@ -71,7 +71,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 
                 {/* Header Row */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h1 style={{ fontSize: 32, fontWeight: 700, color: "#111", margin: 0, fontFamily: 'var(--font-serif)' }}>Projects</h1>
+                    <h1 style={{ fontSize: 32, fontWeight: 700, color: "var(--color-text-primary)", margin: 0, fontFamily: 'var(--font-serif)' }}>Projects</h1>
                     <div style={{ display: "flex", gap: 12 }}>
                         <button
                             onClick={onCreateNew}
@@ -80,8 +80,8 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                                 alignItems: "center",
                                 gap: 8,
                                 padding: "8px 16px",
-                                backgroundColor: "#111",
-                                color: "#fff",
+                                backgroundColor: "var(--color-text-primary)",
+                                color: "var(--color-text-inverse)",
                                 border: "none",
                                 borderRadius: 8,
                                 fontSize: 14,
@@ -89,8 +89,8 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                                 cursor: "pointer",
                                 transition: "background-color 0.2s"
                             }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = "#333"}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = "#111"}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-text-secondary)"}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = "var(--color-text-primary)"}
                         >
                             <PlusIcon width={16} height={16} />
                             New project
@@ -104,15 +104,15 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                                 width: 36,
                                 height: 36,
                                 backgroundColor: "transparent",
-                                color: "#666",
-                                border: "1px solid #dcdad0",
+                                color: "var(--color-text-secondary)",
+                                border: "1px solid var(--color-border-strong)",
                                 borderRadius: 8,
                                 cursor: "pointer",
                                 transition: "background-color 0.2s"
                             }}
                             title="Close Projects"
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"; e.currentTarget.style.color = "#111"; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#666"; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-secondary)"; }}
                         >
                             <XMarkIcon width={20} height={20} />
                         </button>
@@ -121,7 +121,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
 
                 {/* Search Bar */}
                 <div style={{ position: "relative", width: "100%" }}>
-                    <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#888" }}>
+                    <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}>
                         <MagnifyingGlassIcon width={18} height={18} />
                     </div>
                     <input 
@@ -132,13 +132,13 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                         style={{
                             width: "100%",
                             padding: "12px 16px 12px 40px",
-                            backgroundColor: "#fff",
-                            border: "1px solid #e8e6d9",
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
                             borderRadius: 12,
                             fontSize: 15,
                             outline: "none",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
-                            color: "#111"
+                            boxShadow: "var(--shadow-xs)",
+                            color: "var(--color-text-primary)"
                         }}
                     />
                 </div>
@@ -146,9 +146,9 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 {/* Projects List */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
                     {isLoading ? (
-                        <div style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>Loading projects...</div>
+                        <div style={{ color: "var(--color-text-tertiary)", textAlign: "center", padding: "40px 0" }}>Loading projects...</div>
                     ) : filteredProjects.length === 0 ? (
-                        <div style={{ color: "#888", textAlign: "center", padding: "40px 0" }}>
+                        <div style={{ color: "var(--color-text-tertiary)", textAlign: "center", padding: "40px 0" }}>
                             {searchQuery ? "No projects found matching your search." : "No projects yet. Create one to get started!"}
                         </div>
                     ) : (
@@ -166,15 +166,15 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                                     cursor: "pointer",
                                     transition: "background-color 0.2s"
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.03)"}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
                                 onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                             >
-                                <div style={{ color: "#888", paddingTop: 2 }}>
+                                <div style={{ color: "var(--color-text-tertiary)", paddingTop: 2 }}>
                                     <FolderIcon width={24} height={24} />
                                 </div>
                                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    <span style={{ fontSize: 16, fontWeight: 600, color: "#111" }}>{project.name}</span>
-                                    <span style={{ fontSize: 13, color: "#888", wordBreak: "break-all" }}>{project.path}</span>
+                                    <span style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)" }}>{project.name}</span>
+                                    <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", wordBreak: "break-all" }}>{project.path}</span>
                                 </div>
                             </div>
                         ))

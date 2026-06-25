@@ -14,33 +14,53 @@ export interface ArtifactMeta {
 }
 
 /**
+ * Helper to check if file/dir exists asynchronously
+ */
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Lists all artifacts, optionally filtering by chatId and/or projectPath.
  * Scans ~/.everfern/artifacts/ and projectPath/.everfern/artifacts/ if provided.
  */
-export function listArtifacts(chatId?: string, projectPath?: string): ArtifactMeta[] {
+export async function listArtifacts(chatId?: string, projectPath?: string): Promise<ArtifactMeta[]> {
   const globalArtifactsDir = path.join(os.homedir(), '.everfern', 'artifacts');
   const results: ArtifactMeta[] = [];
 
   // 1. Scan global artifacts
-  if (fs.existsSync(globalArtifactsDir)) {
+  if (await exists(globalArtifactsDir)) {
     let dirsToScan: string[] = [];
     try {
-        dirsToScan = chatId ? [chatId] : fs.readdirSync(globalArtifactsDir).filter(f => fs.statSync(path.join(globalArtifactsDir, f)).isDirectory());
+      if (chatId) {
+        dirsToScan = [chatId];
+      } else {
+        const entries = await fs.promises.readdir(globalArtifactsDir);
+        for (const f of entries) {
+          const stat = await fs.promises.stat(path.join(globalArtifactsDir, f));
+          if (stat.isDirectory()) dirsToScan.push(f);
+        }
+      }
     } catch (e) {
-        // Continue to project scan
+      // Continue to project scan
     }
 
     for (const dir of dirsToScan) {
       const dirPath = path.join(globalArtifactsDir, dir);
-      scanDir(dirPath, dir, results);
+      await scanDir(dirPath, dir, results);
     }
   }
 
   // 2. Scan project artifacts if projectPath is provided
   if (projectPath) {
     const projectArtifactsDir = path.join(projectPath, '.everfern', 'artifacts');
-    if (fs.existsSync(projectArtifactsDir)) {
-      scanDir(projectArtifactsDir, 'project', results);
+    if (await exists(projectArtifactsDir)) {
+      await scanDir(projectArtifactsDir, 'project', results);
     }
   }
 
@@ -48,14 +68,18 @@ export function listArtifacts(chatId?: string, projectPath?: string): ArtifactMe
   return results.sort((a, b) => b.lastEdited - a.lastEdited);
 }
 
-function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
-  if (!fs.existsSync(dirPath)) return;
+async function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
+  if (!(await exists(dirPath))) return;
 
   let files: string[] = [];
   try {
-      files = fs.readdirSync(dirPath).filter(f => fs.statSync(path.join(dirPath, f)).isFile());
+    const entries = await fs.promises.readdir(dirPath);
+    for (const f of entries) {
+      const stat = await fs.promises.stat(path.join(dirPath, f));
+      if (stat.isFile()) files.push(f);
+    }
   } catch (e) {
-      return;
+    return;
   }
 
   for (const file of files) {
@@ -66,27 +90,27 @@ function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
 
     const filePath = path.join(dirPath, file);
     try {
-        const stats = fs.statSync(filePath);
-        // Read snippet securely if text, otherwise show binary file info
-        let snippet = '';
-        const isText = ['.html', '.htm', '.txt', '.md', '.json', '.csv'].includes(ext);
-        if (isText) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          snippet = content.slice(0, 500).trim();
-        } else {
-          snippet = `[Binary File] Size: ${(stats.size / 1024).toFixed(2)} KB`;
-        }
+      const stats = await fs.promises.stat(filePath);
+      // Read snippet securely if text, otherwise show binary file info
+      let snippet = '';
+      const isText = ['.html', '.htm', '.txt', '.md', '.json', '.csv'].includes(ext);
+      if (isText) {
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        snippet = content.slice(0, 500).trim();
+      } else {
+        snippet = `[Binary File] Size: ${(stats.size / 1024).toFixed(2)} KB`;
+      }
 
-        results.push({
-          id: file,
-          chatId: chatId,
-          name: file,
-          lastEdited: stats.mtimeMs,
-          snippet,
-          size: stats.size
-        });
+      results.push({
+        id: file,
+        chatId: chatId,
+        name: file,
+        lastEdited: stats.mtimeMs,
+        snippet,
+        size: stats.size
+      });
     } catch (e) {
-        console.error(`Failed to read artifact ${filePath}:`, e);
+      console.error(`Failed to read artifact ${filePath}:`, e);
     }
   }
 }
@@ -94,7 +118,7 @@ function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[]) {
 /**
  * Reads the actual content of an artifact.
  */
-export function readArtifact(chatId: string, filename: string, projectPath?: string): string | null {
+export async function readArtifact(chatId: string, filename: string, projectPath?: string): Promise<string | null> {
   let filepath: string;
   
   if (projectPath && chatId === 'project') {
@@ -103,17 +127,18 @@ export function readArtifact(chatId: string, filename: string, projectPath?: str
     filepath = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
   }
 
-  if (fs.existsSync(filepath)) {
+  if (await exists(filepath)) {
     try {
-        const ext = path.extname(filepath).toLowerCase();
-        if (ext === '.pdf') {
-          const mimeType = 'application/pdf';
-          const base64 = fs.readFileSync(filepath).toString('base64');
-          return `data:${mimeType};base64,${base64}`;
-        }
-        return fs.readFileSync(filepath, 'utf-8');
+      const ext = path.extname(filepath).toLowerCase();
+      if (ext === '.pdf') {
+        const mimeType = 'application/pdf';
+        const buf = await fs.promises.readFile(filepath);
+        const base64 = buf.toString('base64');
+        return `data:${mimeType};base64,${base64}`;
+      }
+      return await fs.promises.readFile(filepath, 'utf-8');
     } catch (e) {
-        return null;
+      return null;
     }
   }
   return null;
@@ -122,7 +147,7 @@ export function readArtifact(chatId: string, filename: string, projectPath?: str
 /**
  * Writes (creates or overwrites) an artifact file.
  */
-export function writeArtifact(chatId: string, filename: string, content: string, projectPath?: string): { success: boolean; error?: string } {
+export async function writeArtifact(chatId: string, filename: string, content: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
   try {
     let dir: string;
     if (projectPath) {
@@ -131,8 +156,10 @@ export function writeArtifact(chatId: string, filename: string, content: string,
       dir = path.join(os.homedir(), '.everfern', 'artifacts', chatId);
     }
     
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, filename), content, 'utf-8');
+    if (!(await exists(dir))) {
+      await fs.promises.mkdir(dir, { recursive: true });
+    }
+    await fs.promises.writeFile(path.join(dir, filename), content, 'utf-8');
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -142,7 +169,7 @@ export function writeArtifact(chatId: string, filename: string, content: string,
 /**
  * Deletes an artifact file.
  */
-export function deleteArtifact(chatId: string, filename: string, projectPath?: string): { success: boolean } {
+export async function deleteArtifact(chatId: string, filename: string, projectPath?: string): Promise<{ success: boolean }> {
   try {
     let p: string;
     if (projectPath && chatId === 'project') {
@@ -151,7 +178,9 @@ export function deleteArtifact(chatId: string, filename: string, projectPath?: s
       p = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
     }
     
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (await exists(p)) {
+      await fs.promises.unlink(p);
+    }
     return { success: true };
   } catch {
     return { success: false };
@@ -162,7 +191,7 @@ export function deleteArtifact(chatId: string, filename: string, projectPath?: s
  * Writes an artifact file atomically using a temporary file.
  * This prevents corruption if the write operation is interrupted.
  */
-export function writeArtifactAtomic(chatId: string, filename: string, content: string, projectPath?: string): { success: boolean; error?: string } {
+export async function writeArtifactAtomic(chatId: string, filename: string, content: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
   try {
     let dir: string;
     if (projectPath) {
@@ -171,16 +200,18 @@ export function writeArtifactAtomic(chatId: string, filename: string, content: s
       dir = path.join(os.homedir(), '.everfern', 'artifacts', chatId);
     }
     
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!(await exists(dir))) {
+      await fs.promises.mkdir(dir, { recursive: true });
+    }
 
     const filePath = path.join(dir, filename);
     const tempPath = `${filePath}.tmp`;
 
     // Write to temporary file
-    fs.writeFileSync(tempPath, content, 'utf-8');
+    await fs.promises.writeFile(tempPath, content, 'utf-8');
 
     // Atomic rename
-    fs.renameSync(tempPath, filePath);
+    await fs.promises.rename(tempPath, filePath);
 
     return { success: true };
   } catch (e) {
@@ -194,8 +225,8 @@ export function writeArtifactAtomic(chatId: string, filename: string, content: s
       }
       const filePath = path.join(dir, filename);
       const tempPath = `${filePath}.tmp`;
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
+      if (await exists(tempPath)) {
+        await fs.promises.unlink(tempPath);
       }
     } catch {
       // Ignore cleanup errors
@@ -207,7 +238,7 @@ export function writeArtifactAtomic(chatId: string, filename: string, content: s
 /**
  * Updates the last modified timestamp of an artifact file.
  */
-export function updateArtifactTimestamp(chatId: string, filename: string, projectPath?: string): { success: boolean; error?: string } {
+export async function updateArtifactTimestamp(chatId: string, filename: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
   try {
     let filePath: string;
     if (projectPath && chatId === 'project') {
@@ -216,12 +247,12 @@ export function updateArtifactTimestamp(chatId: string, filename: string, projec
       filePath = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
     }
     
-    if (!fs.existsSync(filePath)) {
+    if (!(await exists(filePath))) {
       return { success: false, error: 'Artifact file not found' };
     }
 
     const now = new Date();
-    fs.utimesSync(filePath, now, now);
+    await fs.promises.utimes(filePath, now, now);
 
     return { success: true };
   } catch (e) {

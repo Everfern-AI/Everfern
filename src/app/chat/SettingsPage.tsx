@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
 import {
     XMarkIcon,
     CheckIcon,
@@ -50,23 +51,23 @@ const navSections = [
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: '#201e24', margin: '0 0 6px', letterSpacing: '-0.01em' }}>
+    <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: 'var(--color-text-primary)', margin: '0 0 6px', letterSpacing: '-0.01em' }}>
         {children}
     </h2>
 );
 
 const SectionSubtitle = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 14, color: '#8a8886', margin: '0 0 28px', lineHeight: 1.5 }}>{children}</p>
+    <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', margin: '0 0 28px', lineHeight: 1.5 }}>{children}</p>
 );
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
-    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 16, padding: 24, marginBottom: 16, ...style }}>
+    <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16, ...style }}>
         {children}
     </div>
 );
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
         {children}
     </p>
 );
@@ -75,14 +76,14 @@ const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input
         {...props}
         style={{
-            width: '100%', padding: '12px 16px', backgroundColor: '#f4f4f4',
-            border: '1px solid #e8e6d9', borderRadius: 12, color: '#111111',
+            width: '100%', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)',
+            border: '1px solid var(--color-border)', borderRadius: 12, color: 'var(--color-text-primary)',
             fontSize: 14, outline: 'none', transition: 'border 0.2s', boxSizing: 'border-box',
             fontFamily: 'var(--font-sans)',
             ...props.style,
         }}
-        onFocus={e => { e.target.style.borderColor = '#111111'; }}
-        onBlur={e => { e.target.style.borderColor = '#e8e6d9'; }}
+        onFocus={e => { e.target.style.borderColor = 'var(--color-border-focus)'; }}
+        onBlur={e => { e.target.style.borderColor = 'var(--color-border)'; }}
         onMouseDown={e => e.stopPropagation()}
     />
 );
@@ -137,12 +138,12 @@ const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => {
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 style={{
-                    width: '100%', padding: '12px 40px 12px 16px', backgroundColor: isFocused || isOpen ? '#ffffff' : '#fcfcfb',
-                    border: `1px solid ${isFocused || isOpen ? '#111111' : '#e8e6d9'}`, borderRadius: 12, color: '#201e24',
+                    width: '100%', padding: '12px 40px 12px 16px', backgroundColor: isFocused || isOpen ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)',
+                    border: `1px solid ${isFocused || isOpen ? 'var(--color-border-focus)' : 'var(--color-border)'}`, borderRadius: 12, color: 'var(--color-text-primary)',
                     fontSize: 14, outline: 'none', cursor: 'pointer', appearance: 'none',
                     fontFamily: 'var(--font-sans)', boxSizing: 'border-box',
                     transition: 'all 0.2s',
-                    boxShadow: isFocused || isOpen ? '0 0 0 3px rgba(17, 17, 17, 0.08)' : 'none',
+                    boxShadow: isFocused || isOpen ? '0 0 0 3px var(--color-bg-overlay)' : 'none',
                     display: 'flex', alignItems: 'center', userSelect: 'none',
                 }}
                 tabIndex={0}
@@ -155,7 +156,7 @@ const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => {
                 height={14}
                 style={{
                     position: 'absolute', right: 14, top: '50%', transform: `translateY(-50%) rotate(${isOpen ? 90 : 90}deg)`,
-                    color: isFocused || isOpen ? '#111111' : '#8a8886',
+                    color: isFocused || isOpen ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                     pointerEvents: 'none',
                     transition: 'all 0.2s'
                 }}
@@ -169,8 +170,8 @@ const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => {
                     transition={{ duration: 0.15 }}
                     style={{
                         position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6,
-                        backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 12,
-                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)', zIndex: 1000,
+                        backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 12,
+                        boxShadow: '0 4px 16px var(--color-bg-overlay)', zIndex: 1000,
                         maxHeight: 240, overflowY: 'auto',
                     }}
                 >
@@ -179,14 +180,14 @@ const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => {
                             key={idx}
                             onClick={() => handleSelect(option.value)}
                             style={{
-                                padding: '10px 16px', fontSize: 14, color: selectedValue === option.value ? '#111111' : '#4a4846',
-                                backgroundColor: selectedValue === option.value ? '#f4f4f4' : '#ffffff',
+                                padding: '10px 16px', fontSize: 14, color: selectedValue === option.value ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                backgroundColor: selectedValue === option.value ? 'var(--color-bg-hover)' : 'var(--color-bg-surface)',
                                 cursor: 'pointer', transition: 'all 0.1s',
-                                borderBottom: idx < options.length - 1 ? '1px solid #f0f0f0' : 'none',
+                                borderBottom: idx < options.length - 1 ? '1px solid var(--color-border-subtle)' : 'none',
                                 fontWeight: selectedValue === option.value ? 600 : 400,
                             }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9f9f9'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = selectedValue === option.value ? '#f4f4f4' : '#ffffff'}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = selectedValue === option.value ? 'var(--color-bg-hover)' : 'var(--color-bg-surface)'}
                         >
                             {option.label}
                         </div>
@@ -231,24 +232,24 @@ const RegisteredToolsList = () => {
         loadTools();
     }, []);
 
-    if (isLoading) return <div style={{ textAlign: 'center', padding: 40, color: '#8a8886' }}>Loading tools...</div>;
+    if (isLoading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>Loading tools...</div>;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {tools.length === 0 ? (
                 <Card>
-                    <p style={{ textAlign: 'center', fontSize: 14, color: '#8a8886', margin: 0 }}>No tools registered</p>
+                    <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--color-text-tertiary)', margin: 0 }}>No tools registered</p>
                 </Card>
             ) : (
                 tools.map(tool => (
                     <Card key={tool.name} style={{ padding: '16px 20px' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                            <div style={{ padding: '8px', backgroundColor: '#f4f4f4', borderRadius: 10, color: '#111111' }}>
+                            <div style={{ padding: '8px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: 10, color: 'var(--color-text-primary)' }}>
                                 <ServerIcon width={18} height={18} />
                             </div>
                             <div style={{ flex: 1 }}>
-                                <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 4px', fontFamily: 'monospace' }}>{tool.name}</h4>
-                                <p style={{ fontSize: 13, color: '#8a8886', margin: 0, lineHeight: 1.4 }}>{tool.description}</p>
+                                <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px', fontFamily: 'monospace' }}>{tool.name}</h4>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.4 }}>{tool.description}</p>
                             </div>
                         </div>
                     </Card>
@@ -392,9 +393,9 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                 <SectionTitle>EverFern Dispatch</SectionTitle>
                 <SectionSubtitle>Control your desktop remotely from EverFern Cloud.</SectionSubtitle>
                 <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
-                    <ServerIcon width={48} height={48} style={{ color: '#8a8886', margin: '0 auto 16px' }} />
-                    <h3 style={{ fontSize: 18, color: '#111111', margin: '0 0 8px' }}>EverFern Cloud Required</h3>
-                    <p style={{ fontSize: 14, color: '#8a8886', margin: '0 auto', maxWidth: 400, lineHeight: 1.5 }}>
+                    <ServerIcon width={48} height={48} style={{ color: 'var(--color-text-tertiary)', margin: '0 auto 16px' }} />
+                    <h3 style={{ fontSize: 18, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>EverFern Cloud Required</h3>
+                    <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', margin: '0 auto', maxWidth: 400, lineHeight: 1.5 }}>
                         To use EverFern Dispatch, please log into EverFern Cloud in the <strong>Profile</strong> tab first.
                     </p>
                 </Card>
@@ -411,7 +412,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {status === 'idle' && (
                         <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                            <p style={{ fontSize: 14, color: '#4a4846', marginBottom: 20 }}>
+                            <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 20 }}>
                                 Start dispatch to generate a secure PIN. You can then enter this PIN on <strong>everfern.app/dispatch</strong> from your phone or another device.
                             </p>
                             
@@ -423,14 +424,14 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                                     onChange={(e) => setIsForever(e.target.checked)} 
                                     style={{ cursor: 'pointer' }}
                                 />
-                                <label htmlFor="foreverToggle" style={{ fontSize: 13, color: '#4a4846', cursor: 'pointer' }}>
+                                <label htmlFor="foreverToggle" style={{ fontSize: 13, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
                                     Keep session active forever (default: 10 minutes)
                                 </label>
                             </div>
 
                             <button
                                 onClick={handleStartDispatch}
-                                style={{ padding: '12px 24px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 12, fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer' }}
+                                style={{ padding: '12px 24px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 12, fontWeight: 600, fontSize: 14, border: 'none', cursor: 'pointer' }}
                             >
                                 Start Dispatch Session
                             </button>
@@ -440,38 +441,38 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                     {(status === 'pending' || status === 'connected') && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: '10px 0' }}>
                             <div style={{ textAlign: 'center' }}>
-                                <p style={{ fontSize: 13, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 8 }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 8 }}>
                                     Your Dispatch PIN
                                 </p>
-                                <div style={{ fontSize: 42, letterSpacing: '0.2em', fontFamily: 'monospace', color: '#111111', fontWeight: 600, backgroundColor: '#f4f4f4', padding: '12px 32px', borderRadius: 16 }}>
+                                <div style={{ fontSize: 42, letterSpacing: '0.2em', fontFamily: 'monospace', color: 'var(--color-text-primary)', fontWeight: 600, backgroundColor: 'var(--color-bg-subtle)', padding: '12px 32px', borderRadius: 16 }}>
                                     {pinCode}
                                 </div>
                             </div>
                             
                             <div style={{ textAlign: 'center' }}>
-                                <p style={{ fontSize: 14, color: '#4a4846' }}>
-                                    Go to <a href="https://everfern.app/dispatch" target="_blank" rel="noreferrer" style={{ color: '#111111', fontWeight: 600, textDecoration: 'underline' }}>everfern.app/dispatch</a> and enter this PIN.
+                                <p style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>
+                                    Go to <a href="https://everfern.app/dispatch" target="_blank" rel="noreferrer" style={{ color: 'var(--color-text-primary)', fontWeight: 600, textDecoration: 'underline' }}>everfern.app/dispatch</a> and enter this PIN.
                                 </p>
                             </div>
 
                             <div style={{ display: 'flex', gap: 12, marginTop: 8, alignItems: 'center' }}>
                                 <button
                                     onClick={handleDisconnect}
-                                    style={{ padding: '10px 20px', backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer' }}
+                                    style={{ padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer' }}
                                 >
                                     Stop Dispatch
                                 </button>
                                 
                                 {status === 'pending' && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f59e0b', fontSize: 13, fontWeight: 600 }}>
-                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b', animation: 'pulse 2s infinite' }} />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-warning)', fontSize: 13, fontWeight: 600 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-warning)', animation: 'pulse 2s infinite' }} />
                                         Waiting for someone to connect...
                                     </div>
                                 )}
                                 
                                 {status === 'connected' && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e', fontSize: 13, fontWeight: 600 }}>
-                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e' }} />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-success)', fontSize: 13, fontWeight: 600 }}>
+                                        <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-success)' }} />
                                         Connected & Active
                                     </div>
                                 )}
@@ -481,12 +482,12 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
 
                     {status === 'error' && (
                         <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                            <div style={{ color: '#dc2626', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
+                            <div style={{ color: 'var(--color-error)', fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
                                 Failed to start dispatch session. Please try again.
                             </div>
                             <button
                                 onClick={() => setStatus('idle')}
-                                style={{ padding: '10px 20px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                                style={{ padding: '10px 20px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-border)', cursor: 'pointer' }}
                             >
                                 Try Again
                             </button>
@@ -495,22 +496,22 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                 </div>
 
                 {existingSessions.length > 0 && (
-                    <div style={{ marginTop: 32, borderTop: '1px solid #e8e6d9', paddingTop: 20 }}>
-                        <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 12 }}>Existing Sessions</h4>
+                    <div style={{ marginTop: 32, borderTop: '1px solid var(--color-border)', paddingTop: 20 }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 12 }}>Existing Sessions</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {existingSessions.map(session => (
-                                <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#fbfbe6', border: '1px solid #e8e6d9', borderRadius: 12 }}>
+                                <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
                                     <div>
-                                        <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>{session.device_name}</div>
-                                        <div style={{ fontSize: 12, color: '#8a8886', marginTop: 4 }}>
-                                            Status: <span style={{ color: session.status === 'active' ? '#22c55e' : '#f59e0b' }}>{session.status}</span>
+                                        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>{session.device_name}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+                                            Status: <span style={{ color: session.status === 'active' ? 'var(--color-success)' : 'var(--color-warning)' }}>{session.status}</span>
                                             <span style={{ margin: '0 6px' }}>&bull;</span>
                                             PIN: {session.pin_code}
                                         </div>
                                     </div>
                                     <button 
                                         onClick={() => handleStopExisting(session.id)}
-                                        style={{ padding: '6px 12px', backgroundColor: 'transparent', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', backgroundColor: 'transparent', color: 'var(--color-error)', border: '1px solid var(--color-error-dim)', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}
                                     >
                                         Stop
                                     </button>
@@ -649,6 +650,7 @@ export default function SettingsPage({
     handleSaveSettings,
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
+    const { theme, setTheme } = useTheme();
     const [activeSection, setActiveSection] = useState('general');
     const [soul, setSoul] = useState('');
     const [agents, setAgents] = useState('');
@@ -769,14 +771,159 @@ export default function SettingsPage({
             <SectionSubtitle>Manage how EverFern behaves globally.</SectionSubtitle>
 
             <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Interface</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Interface</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
                         <Label>App Theme</Label>
-                        <Select defaultValue="light">
-                            <option value="light">Light (Beach)</option>
-                            <option value="system">System Default</option>
-                        </Select>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 8, marginBottom: 12 }}>
+                            {/* Light Mode Selector Card */}
+                            <div 
+                                onClick={() => setTheme('light')}
+                                style={{ 
+                                    border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                                    borderRadius: 16, 
+                                    padding: 16, 
+                                    cursor: 'pointer',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: theme === 'light' ? '0 4px 12px rgba(20, 184, 166, 0.1)' : 'none'
+                                }}
+                            >
+                                {/* Mini Window Mockup */}
+                                <div style={{ 
+                                    backgroundColor: '#f5f4f0', 
+                                    border: '1px solid #e8e6d9', 
+                                    borderRadius: 8, 
+                                    height: 100, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    overflow: 'hidden',
+                                    userSelect: 'none'
+                                }}>
+                                    {/* Mock Title Bar */}
+                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#fcfcfb' }}>
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                                    </div>
+                                    {/* Mock Layout */}
+                                    <div style={{ display: 'flex', flex: 1 }}>
+                                        {/* Mock Sidebar */}
+                                        <div style={{ width: '25%', borderRight: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ width: '100%', height: 6, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                            <div style={{ width: '80%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                            <div style={{ width: '90%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                        </div>
+                                        {/* Mock Content / Chat */}
+                                        <div style={{ flex: 1, backgroundColor: '#ffffff', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#edeacc', border: '1px solid #e0ddbc', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#4a4846', borderRadius: 1 }} />
+                                            </div>
+                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#8a8886', borderRadius: 1 }} />
+                                                <div style={{ width: '60%', height: 3, backgroundColor: '#8a8886', borderRadius: 1, marginTop: 2 }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Radio Button Selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        {theme === 'light' && (
+                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: 13, fontWeight: theme === 'light' ? 600 : 500, color: 'var(--color-text-primary)' }}>Light (Beach)</span>
+                                </div>
+                            </div>
+
+                            {/* Dark Mode Selector Card */}
+                            <div 
+                                onClick={() => setTheme('dark')}
+                                style={{ 
+                                    border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                                    borderRadius: 16, 
+                                    padding: 16, 
+                                    cursor: 'pointer',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: theme === 'dark' ? '0 4px 12px rgba(20, 184, 166, 0.15)' : 'none'
+                                }}
+                            >
+                                {/* Mini Window Mockup */}
+                                <div style={{ 
+                                    backgroundColor: '#22201b', 
+                                    border: '1px solid #333029', 
+                                    borderRadius: 8, 
+                                    height: 100, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    overflow: 'hidden',
+                                    userSelect: 'none'
+                                }}>
+                                    {/* Mock Title Bar */}
+                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #333029', backgroundColor: '#181714' }}>
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                                    </div>
+                                    {/* Mock Layout */}
+                                    <div style={{ display: 'flex', flex: 1 }}>
+                                        {/* Mock Sidebar */}
+                                        <div style={{ width: '25%', borderRight: '1px solid #333029', backgroundColor: '#22201b', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ width: '100%', height: 6, backgroundColor: '#333029', borderRadius: 2 }} />
+                                            <div style={{ width: '80%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                                            <div style={{ width: '90%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                                        </div>
+                                        {/* Mock Content / Chat */}
+                                        <div style={{ flex: 1, backgroundColor: '#181714', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#2d2a20', border: '1px solid #3e3a2c', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#c2c0b8', borderRadius: 1 }} />
+                                            </div>
+                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#181714', border: '1px solid #333029', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#96948d', borderRadius: 1 }} />
+                                                <div style={{ width: '60%', height: 3, backgroundColor: '#96948d', borderRadius: 1, marginTop: 2 }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Radio Button Selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        {theme === 'dark' && (
+                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: 13, fontWeight: theme === 'dark' ? 600 : 500, color: 'var(--color-text-primary)' }}>Dark (Charcoal)</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <Label>Language</Label>
@@ -788,7 +935,7 @@ export default function SettingsPage({
             </Card>
 
             <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Defaults</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Defaults</h3>
                 <div>
                     <Label>Default Home View</Label>
                     <Select defaultValue="chat">
@@ -811,8 +958,8 @@ export default function SettingsPage({
                     <div>
                         <Label>Full name</Label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: '#111111', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: '#ffffff' }}>{profileName.charAt(0).toUpperCase()}</span>
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-inverse)' }}>{profileName.charAt(0).toUpperCase()}</span>
                             </div>
                             <Input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your full name" />
                         </div>
@@ -837,48 +984,45 @@ export default function SettingsPage({
                 </div>
 
                 <div>
-                    <Label>Personal preferences for responses</Label>
-                    <p style={{ fontSize: 12, color: '#8a8886', marginBottom: 8 }}>These will apply to all conversations.</p>
-                    <textarea
-                        value={preferences}
-                        onChange={e => setPreferences(e.target.value)}
-                        placeholder="e.g. keep explanations brief and to the point"
-                        rows={4}
-                        style={{ width: '100%', padding: '12px 16px', backgroundColor: '#f4f4f4', border: '1px solid #e8e6d9', borderRadius: 12, color: '#111111', fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', lineHeight: 1.6 }}
-                        onFocus={e => e.target.style.borderColor = '#111111'}
-                        onBlur={e => e.target.style.borderColor = '#e8e6d9'}
+                    <Label>Custom preferences</Label>
+                    <textarea 
+                        value={preferences} onChange={e => setPreferences(e.target.value)}
+                        style={{ width: '100%', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 12, color: 'var(--color-text-primary)', fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'var(--font-sans)', boxSizing: 'border-box', lineHeight: 1.6 }}
+                        onFocus={e => e.target.style.borderColor = 'var(--color-border-focus)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        placeholder="E.g. Use TypeScript for all code examples, explain concepts simply..."
                     />
                 </div>
 
                 {isCloudUser ? (
-                    <div style={{ marginTop: 24, padding: 20, backgroundColor: '#fcfcfb', border: '1px solid #e8e6d9', borderRadius: 16 }}>
+                    <div style={{ marginTop: 24, padding: 20, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 16 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 4 }}>EverFern Cloud Session</h3>
-                                <p style={{ fontSize: 12, color: '#8a8886', margin: 0 }}>Logged in as {cloudEmail}</p>
+                                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>EverFern Cloud Session</h3>
+                                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Logged in as {cloudEmail}</p>
                             </div>
                             <button
                                 onClick={handleSignOut}
-                                style={{ padding: '8px 16px', backgroundColor: '#ffffff', color: '#dc2626', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.04)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                style={{ padding: '8px 16px', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
                             >
                                 Sign Out
                             </button>
                         </div>
                     </div>
                 ) : (
-                    <div style={{ marginTop: 24, padding: 20, backgroundColor: '#fcfcfb', border: '1px solid #e8e6d9', borderRadius: 16 }}>
+                    <div style={{ marginTop: 24, padding: 20, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 16 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 4 }}>EverFern Cloud</h3>
-                                <p style={{ fontSize: 12, color: '#8a8886', margin: 0 }}>Login to access cloud models, dispatch, and sync.</p>
+                                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>EverFern Cloud</h3>
+                                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Login to access cloud models, dispatch, and sync.</p>
                             </div>
                             <button
                                 onClick={() => router.push('/auth')}
-                                style={{ padding: '8px 16px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#333333'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#111111'}
+                                style={{ padding: '8px 16px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'}
                             >
                                 Login
                             </button>
@@ -899,7 +1043,7 @@ export default function SettingsPage({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
                 {[
                     { id: 'local', label: 'Local Engine', desc: 'On-device via Ollama or LMStudio.', icon: <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={24} height={24} style={{ filter: settingsEngine !== 'local' ? 'grayscale(1) opacity(0.6)' : 'none', transition: 'all 0.3s' }} /> },
-                    { id: 'online', label: 'Web API', desc: 'OpenAI, Anthropic, or NVIDIA NIM.', icon: <GlobeAltIcon width={22} height={22} style={{ color: '#8a8886' }} /> },
+                    { id: 'online', label: 'Web API', desc: 'OpenAI, Anthropic, or NVIDIA NIM.', icon: <GlobeAltIcon width={22} height={22} style={{ color: 'var(--color-text-tertiary)' }} /> },
                     { id: 'everfern', label: 'EverFern Cloud', desc: 'Uses front tier models', icon: <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={24} height={24} style={{ filter: settingsEngine !== 'everfern' ? 'grayscale(1) opacity(0.6)' : 'none', transition: 'all 0.3s' }} /> },
                 ].map(({ id, label, desc, icon }) => {
                     const sel = settingsEngine === id;
@@ -923,17 +1067,17 @@ export default function SettingsPage({
                                 cursor: 'pointer',
                                 padding: 20,
                                 borderRadius: 16,
-                                backgroundColor: sel ? '#f4f4f4' : '#ffffff',
-                                border: `1.5px solid ${sel ? '#111111' : '#e8e6d9'}`,
+                                backgroundColor: sel ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                border: `1.5px solid ${sel ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
                                 transition: 'all 0.2s',
                             }}
                         >
-                            {sel && <div style={{ position: 'absolute', top: 14, right: 14, color: '#111111' }}><CheckIcon width={16} height={16} strokeWidth={2.5} /></div>}
-                            <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: '#f4f4f4', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid #e8e6d9' }}>
+                            {sel && <div style={{ position: 'absolute', top: 14, right: 14, color: 'var(--color-text-primary)' }}><CheckIcon width={16} height={16} strokeWidth={2.5} /></div>}
+                            <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid var(--color-border)' }}>
                                 {icon}
                             </div>
-                            <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 4 }}>{label}</h3>
-                            <p style={{ fontSize: 12, color: '#8a8886', lineHeight: 1.5, margin: 0 }}>{desc}</p>
+                            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>{label}</h3>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5, margin: 0 }}>{desc}</p>
                         </div>
                     );
                 })}
@@ -946,10 +1090,10 @@ export default function SettingsPage({
                         <Card>
                             <Label>Local Server URL (Optional)</Label>
                             <div style={{ position: 'relative' }}>
-                                <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                 <Input type="text" placeholder="http://localhost:11434" value={settingsApiKey} onChange={e => setSettingsApiKey(e.target.value)} style={{ paddingLeft: 40 }} />
                             </div>
-                            <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 8 }}>Leave blank to use the default Ollama address. Stored locally — never sent to servers.</p>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>Leave blank to use the default Ollama address. Stored locally — never sent to servers.</p>
                         </Card>
                     </motion.div>
                 )}
@@ -970,8 +1114,8 @@ export default function SettingsPage({
                                             style={{
                                                 padding: '14px 12px',
                                                 borderRadius: 12,
-                                                border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
-                                                backgroundColor: isSel ? '#f4f4f4' : '#ffffff',
+                                                border: `1.5px solid ${isSel ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                                backgroundColor: isSel ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                                 cursor: 'pointer',
                                                 display: 'flex',
                                                 flexDirection: 'column',
@@ -983,8 +1127,8 @@ export default function SettingsPage({
                                                 outline: 'none'
                                             }}>
                                             <Logo size={20} />
-                                            <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center' }}>{name}</span>
-                                            {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                            <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center' }}>{name}</span>
+                                            {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                                         </div>
                                     );
                                 })}
@@ -994,16 +1138,16 @@ export default function SettingsPage({
                                     <motion.div key={`api-key-${settingsProvider}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }} style={{ pointerEvents: 'auto' }}>
                                         <Label>API Key</Label>
                                         <div style={{ position: 'relative', marginBottom: 8 }}>
-                                            <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886', pointerEvents: 'none' }} />
+                                            <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
                                             <Input type="password" placeholder="sk-proj-..." value={settingsApiKey} onChange={e => setSettingsApiKey(e.target.value)} style={{ paddingLeft: 40 }} />
                                         </div>
-                                        <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 4 }}>Stored locally in ~/.everfern/store — never leaves your device.</p>
+                                        <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Stored locally in ~/.everfern/store — never leaves your device.</p>
                                         {(settingsProvider === 'nvidia' || settingsProvider === 'openrouter' || settingsProvider === 'ollama-cloud') && (
                                             <div style={{ marginTop: 16 }}>
                                                 <Label>Custom Model ID</Label>
                                                 <div style={{ display: 'flex', gap: 10 }}>
                                                     <div style={{ position: 'relative', flex: 1 }}>
-                                                        <CpuChipIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                                        <CpuChipIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                                         <Input
                                                             type="text"
                                                             placeholder={settingsProvider === 'ollama-cloud' ? "e.g. llama3.3, qwen2.5:latest, mistral" : settingsProvider === 'openrouter' ? "e.g. meta-llama/llama-3.1-8b-instruct" : "e.g. moonshotai/kimi-k2.5"}
@@ -1024,21 +1168,21 @@ export default function SettingsPage({
                                                                 finally { setIsValidatingModel(false); }
                                                             }}
                                                             disabled={isValidatingModel || !settingsCustomModel.trim() || !settingsApiKey.trim()}
-                                                            style={{ padding: '0 20px', backgroundColor: '#111111', color: '#ffffff', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (isValidatingModel || !settingsCustomModel.trim() || !settingsApiKey.trim()) ? 0.4 : 1 }}
+                                                            style={{ padding: '0 20px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (isValidatingModel || !settingsCustomModel.trim() || !settingsApiKey.trim()) ? 0.4 : 1 }}
                                                         >
                                                             {isValidatingModel ? 'Checking…' : 'Validate'}
                                                         </button>
                                                     )}
                                                 </div>
-                                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 6 }}>
+                                                <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 6 }}>
                                                     {settingsProvider === 'ollama-cloud'
                                                         ? 'Enter any model available on Ollama Cloud. Visit cloud.ollama.ai to browse models.'
                                                         : settingsProvider === 'openrouter'
                                                         ? 'Enter the full model ID from OpenRouter.'
                                                         : 'Enter the full model ID (e.g., provider/model-name).'}
                                                 </p>
-                                                {modelValidationStatus === 'success' && <p style={{ fontSize: 12, color: '#16a34a', marginTop: 6 }}>✓ Model verified with vision capabilities.</p>}
-                                                {modelValidationStatus === 'error' && <p style={{ fontSize: 12, color: '#dc2626', marginTop: 6 }}>✗ Model not found or missing vision support.</p>}
+                                                {modelValidationStatus === 'success' && <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 6 }}>✓ Model verified with vision capabilities.</p>}
+                                                {modelValidationStatus === 'error' && <p style={{ fontSize: 12, color: 'var(--color-error)', marginTop: 6 }}>✗ Model not found or missing vision support.</p>}
                                             </div>
                                         )}
                                     </motion.div>
@@ -1072,8 +1216,8 @@ export default function SettingsPage({
                                 style={{
                                     padding: '16px 14px',
                                     borderRadius: 12,
-                                    border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
-                                    backgroundColor: isSel ? '#f4f4f4' : '#ffffff',
+                                    border: `1.5px solid ${isSel ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                    backgroundColor: isSel ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     flexDirection: 'column',
@@ -1085,8 +1229,8 @@ export default function SettingsPage({
                                 }}
                             >
                                 <Image unoptimized src={icon} alt={name} width={24} height={24} />
-                                <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center' }}>{name}</span>
-                                {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center' }}>{name}</span>
+                                {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                             </div>
                         );
                     })}
@@ -1097,28 +1241,28 @@ export default function SettingsPage({
                         <motion.div key="deepgram" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <Label>Deepgram API Key</Label>
                             <div style={{ position: 'relative', marginBottom: 8 }}>
-                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                 <Input type="password" placeholder="sk-..." value={voiceDeepgramKey} onChange={e => setVoiceDeepgramKey(e.target.value)} style={{ paddingLeft: 40 }} />
                             </div>
-                            <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 4 }}>Get your API key from <a href="https://console.deepgram.com" target="_blank" rel="noopener" style={{ color: '#111111', textDecoration: 'underline' }}>Deepgram Console</a></p>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Get your API key from <a href="https://console.deepgram.com" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>Deepgram Console</a></p>
                         </motion.div>
                     )}
                     {voiceProvider === 'elevenlabs' && (
                         <motion.div key="elevenlabs" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <Label>ElevenLabs API Key</Label>
                             <div style={{ position: 'relative', marginBottom: 8 }}>
-                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                 <Input type="password" placeholder="sk_..." value={voiceElevenlabsKey} onChange={e => setVoiceElevenlabsKey(e.target.value)} style={{ paddingLeft: 40 }} />
                             </div>
-                            <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 4 }}>Get your API key from <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style={{ color: '#111111', textDecoration: 'underline' }}>ElevenLabs Settings</a></p>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Get your API key from <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>ElevenLabs Settings</a></p>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </Card>
 
             <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 12px' }}>About Voice Mode</h3>
-                <p style={{ fontSize: 13, color: '#4a4846', lineHeight: 1.6, margin: 0 }}>Voice Mode enables natural conversation with Fern. Speak naturally, and Fern will understand context, execute tasks, and respond with both text and audio. Uses your configured AI model for reasoning.</p>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 12px' }}>About Voice Mode</h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: 0 }}>Voice Mode enables natural conversation with Fern. Speak naturally, and Fern will understand context, execute tasks, and respond with both text and audio. Uses your configured AI model for reasoning.</p>
             </Card>
         </div>
     );
@@ -1132,23 +1276,23 @@ export default function SettingsPage({
             <Card>
                 <Label>ShowUI Endpoint</Label>
                 <div style={{ position: 'relative', marginBottom: 16 }}>
-                    <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                    <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                     <Input type="text" placeholder="http://127.0.0.1:7860" value={settingsShowuiUrl} onChange={e => setSettingsShowuiUrl(e.target.value)} style={{ paddingLeft: 40 }} />
                 </div>
-                <p style={{ fontSize: 12, color: '#8a8886', lineHeight: 1.5, marginBottom: 0 }}>
-                    Start ShowUI with <code style={{ backgroundColor: '#f4f4f4', padding: '2px 6px', borderRadius: 6, fontSize: 11, color: '#111111' }}>python app.py</code> in your ShowUI directory.
+                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5, marginBottom: 0 }}>
+                    Start ShowUI with <code style={{ backgroundColor: 'var(--color-bg-subtle)', padding: '2px 6px', borderRadius: 6, fontSize: 11, color: 'var(--color-text-primary)' }}>python app.py</code> in your ShowUI directory.
                 </p>
             </Card>
 
             <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Vision Model Source</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Vision Model Source</h3>
                 {/* Toggle */}
-                <div style={{ display: 'flex', gap: 4, padding: 4, background: '#f4f4f4', borderRadius: 12, border: '1px solid #e8e6d9', marginBottom: 20, width: 'fit-content' }}>
+                <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)', marginBottom: 20, width: 'fit-content' }}>
                     {(['local', 'cloud'] as const).map(mode => (
                         <button
                             key={mode}
                             onClick={() => setSettingsVlmMode(mode)}
-                            style={{ padding: '8px 20px', borderRadius: 9, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: settingsVlmMode === mode ? '#111111' : 'transparent', color: settingsVlmMode === mode ? '#ffffff' : '#8a8886' }}
+                            style={{ padding: '8px 20px', borderRadius: 9, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: settingsVlmMode === mode ? 'var(--color-text-primary)' : 'transparent', color: settingsVlmMode === mode ? 'var(--color-text-inverse)' : 'var(--color-text-tertiary)' }}
                         >
                             {mode === 'local' ? 'Local GPU' : 'Cloud Provider'}
                         </button>
@@ -1158,12 +1302,12 @@ export default function SettingsPage({
                 {settingsVlmMode === 'local' && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
-                            <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 4px' }}>Local Vision Model (Qwen3-VL 2B)</h4>
-                            <p style={{ fontSize: 12, color: '#8a8886', margin: 0 }}>Requires Ollama to run on-device.</p>
+                            <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px' }}>Local Vision Model (Qwen3-VL 2B)</h4>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Requires Ollama to run on-device.</p>
                         </div>
                         <button
                             onClick={onOpenVlmOnboarding}
-                            style={{ padding: '10px 18px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                            style={{ padding: '10px 18px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
                         >
                             Install & Setup
                         </button>
@@ -1192,8 +1336,8 @@ export default function SettingsPage({
                                             style={{
                                                 padding: '14px 12px',
                                                 borderRadius: 12,
-                                                border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
-                                                backgroundColor: isSel ? '#f4f4f4' : '#ffffff',
+                                                border: `1.5px solid ${isSel ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                                backgroundColor: isSel ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                                 cursor: 'pointer',
                                                 display: 'flex',
                                                 flexDirection: 'column',
@@ -1205,8 +1349,8 @@ export default function SettingsPage({
                                                 outline: 'none'
                                             }}>
                                             <Logo size={20} />
-                                            <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center' }}>{name}</span>
-                                            {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                            <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center' }}>{name}</span>
+                                            {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                                         </div>
                                     );
                                 })}
@@ -1225,7 +1369,7 @@ export default function SettingsPage({
                                     <option value="affordable">Affordable (Fast & Economical — Qwen 3 VL)</option>
                                     <option value="accurate">Accurate (High Precision — GPT-5.4)</option>
                                 </Select>
-                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 8 }}>
+                                <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>
                                     Affordable uses Qwen 3 VL. Accurate uses GPT-5.4 via EverFern Cloud — token-optimized for low cost.
                                 </p>
                             </div>
@@ -1243,7 +1387,7 @@ export default function SettingsPage({
                                             </Select>
                                         ) : (
                                             <>
-                                                <CpuChipIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                                <CpuChipIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                                 <Input type="text" placeholder={getVisionDefaultModel(settingsVlmCloudProvider)} value={settingsVlmCloudModel} onChange={e => setSettingsVlmCloudModel(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
                                             </>
                                         )}
@@ -1253,7 +1397,7 @@ export default function SettingsPage({
                                     <div>
                                         <Label>Host URL (Optional)</Label>
                                         <div style={{ position: 'relative' }}>
-                                            <GlobeAltIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                            <GlobeAltIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                             <Input type="text" placeholder="Optional custom base URL" value={settingsVlmCloudUrl} onChange={e => setSettingsVlmCloudUrl(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
                                         </div>
                                     </div>
@@ -1261,7 +1405,7 @@ export default function SettingsPage({
                                 <div>
                                     <Label>API Key</Label>
                                     <div style={{ position: 'relative' }}>
-                                        <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                        <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                         <Input type="password" placeholder="sk-..." value={settingsVlmCloudKey} onChange={e => setSettingsVlmCloudKey(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
                                     </div>
                                 </div>
@@ -1297,7 +1441,7 @@ export default function SettingsPage({
 
                 {/* Provider Grid */}
                 <Card>
-                    <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Embedding Provider</h3>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Embedding Provider</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 8 }}>
                         {EMBEDDING_PROVIDERS.map(({ id, name, Logo, supportsEmbed }) => {
                             const isSel = embeddingProvider === id;
@@ -1313,20 +1457,20 @@ export default function SettingsPage({
                                     style={{
                                         padding: '14px 12px',
                                         borderRadius: 12,
-                                        border: `1.5px solid ${isSel ? '#111111' : '#e8e6d9'}`,
-                                        backgroundColor: isSel ? '#f4f4f4' : supportsEmbed ? '#ffffff' : '#f9f9f9',
+                                        border: `1.5px solid ${isSel ? 'var(--color-border-focus)' : 'var(--color-border)'}`,
+                                        backgroundColor: isSel ? 'var(--color-bg-hover)' : supportsEmbed ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)',
                                         cursor: supportsEmbed ? 'pointer' : 'not-allowed',
                                         opacity: supportsEmbed ? 1 : 0.45,
                                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
                                         transition: 'all 0.15s ease-out', position: 'relative', userSelect: 'none',
                                     }}
                                 >
-                                    {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: '#111111' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
+                                    {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                                     <div style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <Logo size={24} />
                                     </div>
-                                    <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: '#111111', textAlign: 'center', lineHeight: 1.3 }}>{name}</span>
-                                    {!supportsEmbed && <span style={{ fontSize: 10, color: '#a8a6a1', fontWeight: 500 }}>No embedding model</span>}
+                                    <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center', lineHeight: 1.3 }}>{name}</span>
+                                    {!supportsEmbed && <span style={{ fontSize: 10, color: 'var(--color-text-placeholder)', fontWeight: 500 }}>No embedding model</span>}
                                 </div>
                             );
                         })}
@@ -1346,34 +1490,34 @@ export default function SettingsPage({
                             ))}
                         </Select>
                         {embeddingProvider === 'ollama' && (
-                            <p style={{ fontSize: 12, color: '#8a8886', marginTop: 10, lineHeight: 1.6 }}>
-                                <strong>Hardware guide:</strong> Use <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:0.6b</code> (639MB) for low-RAM systems,{' '}
-                                <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:4b</code> (2.5GB) for mid-range,{' '}
-                                <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:latest</code> (4.7GB, 40K context) for best quality.
+                            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
+                                <strong>Hardware guide:</strong> Use <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:0.6b</code> (639MB) for low-RAM systems,{' '}
+                                <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:4b</code> (2.5GB) for mid-range,{' '}
+                                <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen3-embedding:latest</code> (4.7GB, 40K context) for best quality.
                             </p>
                         )}
                         {embeddingProvider === 'everfern' && (
-                            <p style={{ fontSize: 12, color: '#8a8886', marginTop: 10, lineHeight: 1.6 }}>
-                                EverFern Cloud uses <code style={{ backgroundColor: '#f4f4f4', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen/qwen3-embedding-8b</code> via OpenRouter on our backend. No API key needed if you're logged into EverFern Cloud.
+                            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
+                                EverFern Cloud uses <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '1px 5px', borderRadius: 4, fontSize: 11 }}>qwen/qwen3-embedding-8b</code> via OpenRouter on our backend. No API key needed if you're logged into EverFern Cloud.
                             </p>
                         )}
                         {embeddingProvider !== 'everfern' && embeddingProvider !== 'ollama' && (
                             <div style={{ marginTop: 16 }}>
                                 <Label>API Key</Label>
                                 <div style={{ position: 'relative' }}>
-                                    <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886' }} />
+                                    <KeyIcon width={14} height={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
                                     <Input type="password" placeholder="sk-..." value={embeddingApiKey} onChange={e => setEmbeddingApiKey(e.target.value)} style={{ paddingLeft: 40, fontFamily: 'monospace' }} />
                                 </div>
-                                <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 4 }}>Required for {selectedProvider?.name || 'this provider'}.</p>
+                                <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Required for {selectedProvider?.name || 'this provider'}.</p>
                             </div>
                         )}
                     </Card>
                 )}
 
                 {/* Info card */}
-                <Card style={{ backgroundColor: '#fafaf8' }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 8px' }}>How embeddings are used</h3>
-                    <p style={{ fontSize: 13, color: '#73716e', margin: 0, lineHeight: 1.7 }}>
+                <Card style={{ backgroundColor: 'var(--color-bg-subtle)' }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>How embeddings are used</h3>
+                    <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.7 }}>
                         Embeddings convert text into vectors for semantic search — used for memory recall, document retrieval, and RAG (retrieval-augmented generation). The selected model runs every time EverFern stores or searches through memory.
                     </p>
                     <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1382,7 +1526,7 @@ export default function SettingsPage({
                             { provider: 'DeepSeek', note: 'No embedding model available. Use OpenRouter or OpenAI instead.' },
                             { provider: 'Ollama Cloud', note: 'Embedding models only available for local Ollama, not Ollama Cloud.' },
                         ].map(({ provider, note }) => (
-                            <div key={provider} style={{ padding: '8px 12px', backgroundColor: '#fff8ed', border: '1px solid #f3e4c0', borderRadius: 10, fontSize: 12, color: '#6b5a2e' }}>
+                            <div key={provider} style={{ padding: '8px 12px', backgroundColor: 'var(--color-warning-dim)', border: '1px solid var(--color-warning-light)', borderRadius: 10, fontSize: 12, color: 'var(--color-warning)' }}>
                                 <strong>{provider}:</strong> {note}
                             </div>
                         ))}
@@ -1458,10 +1602,10 @@ export default function SettingsPage({
                 <SectionSubtitle>Create and manage your own custom skills.</SectionSubtitle>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <span style={{ fontSize: 13, color: '#8a8886' }}>{customSkills.length} custom skill{customSkills.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>{customSkills.length} custom skill{customSkills.length !== 1 ? 's' : ''}</span>
                     <button
                         onClick={() => { setIsAdding(true); setSaveResult(null); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer' }}
                     >
                         <span style={{ fontSize: 16 }}>+</span> Add Skill
                     </button>
@@ -1469,7 +1613,7 @@ export default function SettingsPage({
 
                 {isAdding && (
                     <Card>
-                        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 16px' }}>Create New Skill</h3>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Create New Skill</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             <div>
                                 <Label>Skill Name</Label>
@@ -1493,25 +1637,25 @@ export default function SettingsPage({
                                     placeholder="# My Custom Skill&#10;&#10;Write your skill instructions here..."
                                     value={newSkillContent}
                                     onChange={e => setNewSkillContent(e.target.value)}
-                                    style={{ width: '100%', minHeight: 150, padding: 12, borderRadius: 10, border: '1px solid #e8e6d9', fontSize: 13, fontFamily: 'monospace', resize: 'vertical' }}
+                                    style={{ width: '100%', minHeight: 150, padding: 12, borderRadius: 10, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'monospace', resize: 'vertical' }}
                                 />
                             </div>
                             {saveResult && (
-                                <div style={{ padding: '10px 14px', borderRadius: 10, backgroundColor: saveResult.success ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: saveResult.success ? '#16a34a' : '#dc2626', fontSize: 13 }}>
+                                <div style={{ padding: '10px 14px', borderRadius: 10, backgroundColor: saveResult.success ? 'var(--color-success-dim)' : 'var(--color-error-dim)', color: saveResult.success ? 'var(--color-success)' : 'var(--color-error)', border: `1px solid ${saveResult.success ? 'var(--color-success-dim)' : 'var(--color-error-dim)'}`, fontSize: 13 }}>
                                     {saveResult.success ? '✓ Skill saved successfully!' : `✗ ${saveResult.error}`}
                                 </div>
                             )}
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button
                                     onClick={() => setIsAdding(false)}
-                                    style={{ flex: 1, padding: '10px 20px', backgroundColor: 'transparent', color: '#4a4846', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                                    style={{ flex: 1, padding: '10px 20px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-border)', cursor: 'pointer' }}
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onClick={handleAddSkill}
                                     disabled={isSaving || !newSkillName.trim() || !newSkillDesc.trim()}
-                                    style={{ flex: 1, padding: '10px 20px', backgroundColor: '#111111', color: '#ffffff', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.6 : 1 }}
+                                    style={{ flex: 1, padding: '10px 20px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.6 : 1 }}
                                 >
                                     {isSaving ? 'Saving...' : 'Save Skill'}
                                 </button>
@@ -1521,12 +1665,12 @@ export default function SettingsPage({
                 )}
 
                 {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: 40, color: '#8a8886' }}>Loading...</div>
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>Loading...</div>
                 ) : customSkills.length === 0 && !isAdding ? (
                     <Card>
                         <div style={{ textAlign: 'center', padding: 20 }}>
-                            <p style={{ fontSize: 14, color: '#8a8886', marginBottom: 12 }}>No custom skills yet</p>
-                            <p style={{ fontSize: 12, color: '#a8a6a1', marginBottom: 16 }}>Create your first skill to extend EverFern's capabilities</p>
+                            <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', marginBottom: 12 }}>No custom skills yet</p>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-placeholder)', marginBottom: 16 }}>Create your first skill to extend EverFern's capabilities</p>
                         </div>
                     </Card>
                 ) : (
@@ -1534,12 +1678,12 @@ export default function SettingsPage({
                         <Card key={skill.name}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                    <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 4px' }}>{skill.name}</h4>
-                                    <p style={{ fontSize: 13, color: '#8a8886', margin: 0 }}>{skill.description}</p>
+                                    <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px' }}>{skill.name}</h4>
+                                    <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: 0 }}>{skill.description}</p>
                                 </div>
                                 <button
                                     onClick={() => handleDeleteSkill(skill.name)}
-                                    style={{ padding: '6px 10px', backgroundColor: 'transparent', color: '#dc2626', borderRadius: 8, fontSize: 12, fontWeight: 600, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer' }}
+                                    style={{ padding: '6px 10px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 8, fontSize: 12, fontWeight: 600, border: '1px solid var(--color-error-dim)', cursor: 'pointer' }}
                                 >
                                     Delete
                                 </button>
@@ -1549,13 +1693,13 @@ export default function SettingsPage({
                 )}
 
                 <Card style={{ marginTop: 16 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 8px' }}>Custom Skills Location</h3>
-                    <p style={{ fontSize: 12, color: '#8a8886', margin: '0 0 12px', lineHeight: 1.5 }}>
-                        Custom skills are stored in <code style={{ backgroundColor: '#f4f4f4', padding: '2px 6px', borderRadius: 6, fontSize: 11 }}>~/.everfern/custom_skills/</code>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>Custom Skills Location</h3>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                        Custom skills are stored in <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '2px 6px', borderRadius: 6, fontSize: 11 }}>~/.everfern/custom_skills/</code>
                     </p>
                     <button
                         onClick={openCustomFolder}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 10, fontWeight: 600, fontSize: 12, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 10, fontWeight: 600, fontSize: 12, border: '1px solid var(--color-border)', cursor: 'pointer' }}
                     >
                         Open Folder
                     </button>
@@ -1571,11 +1715,11 @@ export default function SettingsPage({
             <SectionSubtitle>Control your data and reset your account.</SectionSubtitle>
 
             <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: '0 0 8px' }}>Data Storage</h3>
-                <p style={{ fontSize: 13, color: '#8a8886', margin: '0 0 16px', lineHeight: 1.6 }}>
-                    All conversation history, memory embeddings, screenshots, and configuration are stored completely locally on your device in <code style={{ backgroundColor: '#f4f4f4', padding: '2px 6px', borderRadius: 6, fontSize: 11, color: '#111111' }}>~/.everfern/</code>. Nothing is sent to EverFern servers.
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>Data Storage</h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>
+                    All conversation history, memory embeddings, screenshots, and configuration are stored completely locally on your device in <code style={{ backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', padding: '2px 6px', borderRadius: 6, fontSize: 11 }}>~/.everfern/</code>. Nothing is sent to EverFern servers.
                 </p>
-                <div style={{ backgroundColor: '#f4f4f4', borderRadius: 12, border: '1px solid #e8e6d9', overflow: 'hidden' }}>
+                <div style={{ backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
                     {[
                         { label: 'Chat History (SQL)', path: '~/.everfern/sql/chat.sqlite' },
                         { label: 'AI Memory (Vectors)', path: '~/.everfern/sql/memory.sqlite' },
@@ -1583,16 +1727,16 @@ export default function SettingsPage({
                         { label: 'Custom Skills', path: '~/.everfern/skills/' },
                         { label: 'Configuration', path: '~/.everfern/config.json' }
                     ].map((item, index, arr) => (
-                        <div key={item.path} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', fontSize: 13, borderBottom: index < arr.length - 1 ? '1px solid #e8e6d9' : 'none' }}>
-                            <span style={{ color: '#4a4846' }}>{item.label}</span>
-                            <code style={{ color: '#111111', fontSize: 12 }}>{item.path}</code>
+                        <div key={item.path} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', fontSize: 13, borderBottom: index < arr.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>{item.label}</span>
+                            <code style={{ color: 'var(--color-text-primary)', fontSize: 12 }}>{item.path}</code>
                         </div>
                     ))}
                 </div>
 
-                <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e6d9' }}>
-                    <h4 style={{ fontSize: 14, fontWeight: 600, color: '#111111', margin: '0 0 6px' }}>Vector Search Backfill</h4>
-                    <p style={{ fontSize: 13, color: '#8a8886', margin: '0 0 12px', lineHeight: 1.5 }}>
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--color-border)' }}>
+                    <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>Vector Search Backfill</h4>
+                    <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 12px', lineHeight: 1.5 }}>
                         To enable semantic search for your older chats, you can manually generate their vector embeddings in the background. New chats are indexed automatically.
                     </p>
                     <button
@@ -1607,7 +1751,7 @@ export default function SettingsPage({
                                 alert('Failed to start backfill');
                             }
                         }}
-                        style={{ padding: '8px 16px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #e8e6d9', cursor: 'pointer' }}
+                        style={{ padding: '8px 16px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid var(--color-border)', cursor: 'pointer' }}
                     >
                         Backfill Missing Chats
                     </button>
@@ -1624,7 +1768,7 @@ export default function SettingsPage({
                                 setLoadingVectors(false);
                             }
                         }}
-                        style={{ padding: '8px 16px', backgroundColor: '#f4f4f4', color: '#111111', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #e8e6d9', cursor: 'pointer', marginLeft: 8 }}
+                        style={{ padding: '8px 16px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid var(--color-border)', cursor: 'pointer', marginLeft: 8 }}
                     >
                         View Vector Data
                     </button>
@@ -1632,36 +1776,36 @@ export default function SettingsPage({
             </Card>
 
             {showVectorsModal && (
-                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-                    <div style={{ backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 900, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
-                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e8e6d9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 style={{ margin: 0, fontSize: 18, color: '#111' }}>Raw Vector Database (Top 100)</h2>
-                            <button onClick={() => setShowVectorsModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#888' }}>&times;</button>
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--color-bg-overlay)', backdropFilter: 'var(--backdrop-blur)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                    <div style={{ backgroundColor: 'var(--color-bg-elevated)', borderRadius: 16, width: '100%', maxWidth: 900, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)', border: '1px solid var(--color-border)' }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ margin: 0, fontSize: 18, color: 'var(--color-text-primary)' }}>Raw Vector Database (Top 100)</h2>
+                            <button onClick={() => setShowVectorsModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--color-text-tertiary)' }}>&times;</button>
                         </div>
                         <div style={{ overflow: 'auto', flex: 1, padding: 24 }}>
                             {loadingVectors ? (
-                                <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>Loading vector rows...</div>
+                                <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>Loading vector rows...</div>
                             ) : vectorsData.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>No vector data found.</div>
+                                <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>No vector data found.</div>
                             ) : (
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                     <thead>
-                                        <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
-                                            <th style={{ padding: '8px 4px' }}>ID</th>
-                                            <th style={{ padding: '8px 4px' }}>Conversation</th>
-                                            <th style={{ padding: '8px 4px' }}>Role</th>
-                                            <th style={{ padding: '8px 4px' }}>Vector Size</th>
-                                            <th style={{ padding: '8px 4px' }}>Content Snippet</th>
+                                        <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--color-border-strong)' }}>
+                                            <th style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>ID</th>
+                                            <th style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>Conversation</th>
+                                            <th style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>Role</th>
+                                            <th style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>Vector Size</th>
+                                            <th style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>Content Snippet</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {vectorsData.map((row: any) => (
-                                            <tr key={row.id} style={{ borderBottom: '1px solid #eee' }}>
-                                                <td style={{ padding: '8px 4px', color: '#666' }}>{row.id.slice(0, 12)}...</td>
-                                                <td style={{ padding: '8px 4px', color: '#333' }}>{row.conversation_title || 'Unknown'}</td>
-                                                <td style={{ padding: '8px 4px' }}><span style={{ padding: '2px 6px', borderRadius: 4, background: row.role === 'user' ? '#e0f2fe' : '#f3e8ff', color: row.role === 'user' ? '#0284c7' : '#9333ea', fontSize: 11 }}>{row.role}</span></td>
-                                                <td style={{ padding: '8px 4px', color: '#10b981', fontFamily: 'monospace' }}>{row.embedding_bytes} bytes</td>
-                                                <td style={{ padding: '8px 4px', color: '#666', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <tr key={row.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                                                <td style={{ padding: '8px 4px', color: 'var(--color-text-tertiary)' }}>{row.id.slice(0, 12)}...</td>
+                                                <td style={{ padding: '8px 4px', color: 'var(--color-text-primary)' }}>{row.conversation_title || 'Unknown'}</td>
+                                                <td style={{ padding: '8px 4px' }}><span style={{ padding: '2px 6px', borderRadius: 4, background: row.role === 'user' ? 'var(--color-info-dim)' : 'var(--color-navis-active-bg)', color: row.role === 'user' ? 'var(--color-info)' : 'var(--color-navis-active-text)', fontSize: 11 }}>{row.role}</span></td>
+                                                <td style={{ padding: '8px 4px', color: 'var(--color-success)', fontFamily: 'monospace' }}>{row.embedding_bytes} bytes</td>
+                                                <td style={{ padding: '8px 4px', color: 'var(--color-text-secondary)', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {typeof row.content === 'string' ? row.content : JSON.stringify(row.content)}
                                                 </td>
                                             </tr>
@@ -1674,9 +1818,9 @@ export default function SettingsPage({
                 </div>
             )}
 
-            <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: 16, padding: 24 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#dc2626', margin: '0 0 8px' }}>Danger Zone</h3>
-                <p style={{ fontSize: 13, color: '#8a8886', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data and reset your account. This cannot be undone.</p>
+            <div style={{ backgroundColor: 'var(--color-error-dim)', border: '1px solid var(--color-error-dim)', borderRadius: 16, padding: 24 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-error)', margin: '0 0 8px' }}>Danger Zone</h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data and reset your account. This cannot be undone.</p>
                 <button
                     onClick={async () => {
                         if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, settings, and local data.')) return;
@@ -1692,9 +1836,9 @@ export default function SettingsPage({
                             alert(`Reset failed: ${err?.message || 'Unknown error'}`);
                         }
                     }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'rgba(239,68,68,0.08)', color: '#dc2626', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', transition: 'all 0.2s' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.14)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.08)'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
                 >
                     <TrashIcon width={16} height={16} />
                     Reset Account
@@ -1714,15 +1858,15 @@ export default function SettingsPage({
                 <div style={{
                     marginTop: 20,
                     padding: 24,
-                    backgroundColor: '#faf9f7',
+                    backgroundColor: 'var(--color-bg-subtle)',
                     borderRadius: 16,
-                    border: '1px solid #e8e6d9',
+                    border: '1px solid var(--color-border)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: 16
                 }}>
-                    <div style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', maxWidth: 500, marginBottom: 20 }}>
+                    <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', textAlign: 'center', maxWidth: 500, marginBottom: 20 }}>
                         EverFern uses a state-of-the-art Directed Acyclic Graph (DAG) powered by LangGraph to orchestrate complex reasoning and autonomous actions.
                     </div>
 
@@ -1732,50 +1876,50 @@ export default function SettingsPage({
                             {/* Lines/Edges */}
                             <defs>
                                 <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orientation="auto">
-                                    <polygon points="0 0, 10 3.5, 0 7" fill="#8a8886" />
+                                    <polygon points="0 0, 10 3.5, 0 7" fill="var(--color-text-tertiary)" />
                                 </marker>
                             </defs>
 
                             {/* START -> Triage */}
-                            <path d="M 200 20 L 200 50" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 20 L 200 50" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
                             {/* Triage -> Decomposer */}
-                            <path d="M 200 90 L 200 120" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 90 L 200 120" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
                             {/* Decomposer -> Swarm/Planner */}
-                            <path d="M 200 160 L 100 200" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                            <path d="M 200 160 L 300 200" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 160 L 100 200" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 160 L 300 200" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
                             {/* Swarm/Planner -> Brain */}
-                            <path d="M 100 240 L 190 280" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                            <path d="M 300 240 L 210 280" stroke="#8a8886" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 100 240 L 190 280" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
+                            <path d="M 300 240 L 210 280" stroke="var(--color-text-tertiary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
                             {/* Brain -> Specialists */}
-                            <path d="M 200 320 L 100 360" stroke="#6366f1" strokeWidth="2" strokeDasharray="4,4" markerEnd="url(#arrowhead)" />
-                            <path d="M 200 320 L 300 360" stroke="#6366f1" strokeWidth="2" strokeDasharray="4,4" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 320 L 100 360" stroke="var(--color-navis-active-border)" strokeWidth="2" strokeDasharray="4,4" markerEnd="url(#arrowhead)" />
+                            <path d="M 200 320 L 300 360" stroke="var(--color-navis-active-border)" strokeWidth="2" strokeDasharray="4,4" markerEnd="url(#arrowhead)" />
                             {/* Specialists -> Brain */}
-                            <path d="M 80 380 Q 20 380 20 300 Q 20 220 180 290" stroke="#6366f1" strokeWidth="1" opacity="0.4" fill="none" markerEnd="url(#arrowhead)" />
+                            <path d="M 80 380 Q 20 380 20 300 Q 20 220 180 290" stroke="var(--color-navis-active-border)" strokeWidth="1" opacity="0.4" fill="none" markerEnd="url(#arrowhead)" />
 
                             {/* Nodes */}
-                            <circle cx="200" cy="20" r="10" fill="#22c55e" />
+                            <circle cx="200" cy="20" r="10" fill="var(--color-success)" />
                             <text x="200" y="20" fontSize="8" fontWeight="700" textAnchor="middle" dy=".3em" fill="white">START</text>
 
-                            <rect x="150" y="50" width="100" height="40" rx="8" fill="#ffffff" stroke="#e8e6d9" strokeWidth="2" />
-                            <text x="200" y="70" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em">Triage</text>
+                            <rect x="150" y="50" width="100" height="40" rx="8" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="2" />
+                            <text x="200" y="70" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Triage</text>
 
-                            <rect x="150" y="120" width="100" height="40" rx="8" fill="#ffffff" stroke="#e8e6d9" strokeWidth="2" />
-                            <text x="200" y="140" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em">Decomposer</text>
+                            <rect x="150" y="120" width="100" height="40" rx="8" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="2" />
+                            <text x="200" y="140" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Decomposer</text>
 
-                            <rect x="50" y="200" width="100" height="40" rx="8" fill="#fef3c7" stroke="#f59e0b" strokeWidth="2" />
-                            <text x="100" y="220" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="#92400e">🐝 Swarm</text>
+                            <rect x="50" y="200" width="100" height="40" rx="8" fill="var(--color-warning-dim)" stroke="var(--color-warning)" strokeWidth="2" />
+                            <text x="100" y="220" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-warning)">🐝 Swarm</text>
 
-                            <rect x="250" y="200" width="100" height="40" rx="8" fill="#ffffff" stroke="#e8e6d9" strokeWidth="2" />
-                            <text x="300" y="220" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em">Planner</text>
+                            <rect x="250" y="200" width="100" height="40" rx="8" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="2" />
+                            <text x="300" y="220" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Planner</text>
 
-                            <rect x="150" y="280" width="100" height="40" rx="8" fill="#111111" stroke="#111111" strokeWidth="2" />
-                            <text x="200" y="300" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="white">🧠 Brain</text>
+                            <rect x="150" y="280" width="100" height="40" rx="8" fill="var(--color-text-primary)" stroke="var(--color-text-primary)" strokeWidth="2" />
+                            <text x="200" y="300" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-text-inverse)">🧠 Brain</text>
 
-                            <rect x="50" y="360" width="100" height="40" rx="8" fill="#e0e7ff" stroke="#6366f1" strokeWidth="2" />
-                            <text x="100" y="380" fontSize="10" fontWeight="600" textAnchor="middle" dy=".3em">Specialists</text>
+                            <rect x="50" y="360" width="100" height="40" rx="8" fill="var(--color-navis-active-bg)" stroke="var(--color-navis-active-border)" strokeWidth="2" />
+                            <text x="100" y="380" fontSize="10" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-navis-active-text)">Specialists</text>
 
-                            <rect x="250" y="360" width="100" height="40" rx="8" fill="#ffffff" stroke="#e8e6d9" strokeWidth="2" />
-                            <text x="300" y="380" fontSize="10" fontWeight="600" textAnchor="middle" dy=".3em">Tool Orchestrator</text>
+                            <rect x="250" y="360" width="100" height="40" rx="8" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="2" />
+                            <text x="300" y="380" fontSize="10" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Tool Orchestrator</text>
                         </svg>
                     </div>
                 </div>
@@ -1783,7 +1927,7 @@ export default function SettingsPage({
 
             <Card>
                 <Label>What is a Swarm?</Label>
-                <div style={{ fontSize: 14, color: '#201e24', lineHeight: 1.6 }}>
+                <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
                     A <strong>Swarm</strong> is a collective of specialized agents working in parallel to solve a complex task.
                     Unlike traditional agents that work one-by-one, EverFern's Swarm Architecture allows multiple "bees" to
                     investigate different sources or perform different tasks simultaneously, while sharing a
@@ -1806,16 +1950,16 @@ export default function SettingsPage({
                 {activeProjectId && (
                     <Card style={{ marginBottom: 20, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: '#111111', marginBottom: 2 }}>Configuration Scope</div>
-                            <div style={{ fontSize: 12, color: '#8a8886' }}>Edit configurations globally or for the current active project.</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>Configuration Scope</div>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Edit configurations globally or for the current active project.</div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                             <button
                                 onClick={() => setOpenClawScope('global')}
                                 style={{
-                                    padding: '6px 12px', borderRadius: 8, border: '1px solid #e8e6d9', fontSize: 13,
-                                    backgroundColor: openClawScope === 'global' ? '#111111' : '#ffffff',
-                                    color: openClawScope === 'global' ? '#ffffff' : '#4a4846',
+                                    padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border)', fontSize: 13,
+                                    backgroundColor: openClawScope === 'global' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                    color: openClawScope === 'global' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer', fontWeight: openClawScope === 'global' ? 600 : 400
                                 }}
                             >
@@ -1824,9 +1968,9 @@ export default function SettingsPage({
                             <button
                                 onClick={() => setOpenClawScope('workspace')}
                                 style={{
-                                    padding: '6px 12px', borderRadius: 8, border: '1px solid #e8e6d9', fontSize: 13,
-                                    backgroundColor: openClawScope === 'workspace' ? '#111111' : '#ffffff',
-                                    color: openClawScope === 'workspace' ? '#ffffff' : '#4a4846',
+                                    padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border)', fontSize: 13,
+                                    backgroundColor: openClawScope === 'workspace' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                    color: openClawScope === 'workspace' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer', fontWeight: openClawScope === 'workspace' ? 600 : 400
                                 }}
                             >
@@ -1839,15 +1983,15 @@ export default function SettingsPage({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: '#111111', marginBottom: 4 }}>SOUL.md (Personality Core)</div>
-                            <div style={{ fontSize: 12, color: '#8a8886' }}>Defines how the AI speaks, acts, and behaves. You can make it AGI-like, direct, concise, or give it a custom persona.</div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>SOUL.md (Personality Core)</div>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Defines how the AI speaks, acts, and behaves. You can make it AGI-like, direct, concise, or give it a custom persona.</div>
                         </div>
                         <textarea
                             value={soul}
                             onChange={(e) => setSoul(e.target.value)}
                             style={{
                                 width: '100%', height: 260, fontFamily: 'monospace', fontSize: 13, padding: 12,
-                                border: '1px solid #e8e6d9', borderRadius: 8, backgroundColor: '#faf9f6', resize: 'vertical'
+                                border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', resize: 'vertical'
                             }}
                             placeholder="Enter SOUL.md content..."
                         />
@@ -1855,15 +1999,15 @@ export default function SettingsPage({
 
                     <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: '#111111', marginBottom: 4 }}>agents.md (Routing Protocol)</div>
-                            <div style={{ fontSize: 12, color: '#8a8886' }}>Outlines the roles and operational rules for routing tasks to specialized sub-agents.</div>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>agents.md (Routing Protocol)</div>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Outlines the roles and operational rules for routing tasks to specialized sub-agents.</div>
                         </div>
                         <textarea
                             value={agents}
                             onChange={(e) => setAgents(e.target.value)}
                             style={{
                                 width: '100%', height: 260, fontFamily: 'monospace', fontSize: 13, padding: 12,
-                                border: '1px solid #e8e6d9', borderRadius: 8, backgroundColor: '#faf9f6', resize: 'vertical'
+                                border: '1px solid var(--color-border)', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', resize: 'vertical'
                             }}
                             placeholder="Enter agents.md content..."
                         />
@@ -1875,12 +2019,12 @@ export default function SettingsPage({
                             disabled={isSavingOpenClaw}
                             style={{
                                 padding: '10px 20px', borderRadius: 10, border: 'none',
-                                backgroundColor: '#111111', color: '#ffffff', fontSize: 14, fontWeight: 600,
+                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 14, fontWeight: 600,
                                 cursor: isSavingOpenClaw ? 'not-allowed' : 'pointer', opacity: isSavingOpenClaw ? 0.7 : 1,
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)', transition: 'all 0.2s'
                             }}
-                            onMouseEnter={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = '#2a2826'; }}
-                            onMouseLeave={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = '#111111'; }}
+                            onMouseEnter={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
+                            onMouseLeave={e => { if(!isSavingOpenClaw) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                         >
                             {isSavingOpenClaw ? 'Saving...' : 'Save Configuration'}
                         </button>
@@ -1901,6 +2045,21 @@ export default function SettingsPage({
         const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number; z: number }>>({});
         const [zoom, setZoom] = useState<number>(1);
         const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+        const isDark = theme === 'dark';
+        const globeBg0 = isDark ? '#181714' : '#fdfbf7';
+        const globeBg100 = isDark ? '#0f0e0c' : '#FEFAEF';
+        const globeShading = isDark ? '#0f0e0c' : '#FEFAEF';
+        const gridStrokeBack = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(32, 30, 36, 0.06)';
+        const gridStrokeFront = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(32, 30, 36, 0.12)';
+        const hubStrokeBack = isDark ? 'rgba(255,255,255,0.015)' : 'rgba(32, 30, 36, 0.02)';
+        const hubStrokeFront = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(32, 30, 36, 0.06)';
+        const edgeStrokeBack = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(32, 30, 36, 0.04)';
+        const edgeStrokeFront = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(32, 30, 36, 0.12)';
+        const nodeBorder = isDark ? '#181714' : '#ffffff';
+        const tooltipBg = isDark ? '#22201b' : '#FEFAEF';
+        const tooltipBorder = isDark ? '#333029' : 'rgba(32,30,36,0.15)';
+        const tooltipText = isDark ? '#e5e4df' : '#201e24';
 
         const node3DPositionsRef = React.useRef<Record<string, { x: number; y: number; z: number }>>({});
         const rotationRef = React.useRef({ yaw: 0, pitch: 0.2 });
@@ -2066,21 +2225,34 @@ export default function SettingsPage({
                 svgString = svgString.replace(/fill="url\(#graph-bg\)"/g, 'fill="transparent"');
                 svgString = svgString.replace(/stopColor="#090d16"/g, 'stopColor="#FEFAEF"');
                 svgString = svgString.replace(/stopColor="#1e293b"/g, 'stopColor="#FEFAEF"');
+                svgString = svgString.replace(/stopColor="#181714"/g, 'stopColor="#fdfbf7"');
+                svgString = svgString.replace(/stopColor="#0f0e0c"/g, 'stopColor="#FEFAEF"');
                 
                 // Convert grid line strokes from indigo/white to dark/subtle
                 svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.04\)"/g, 'stroke="rgba(32,30,36,0.06)"');
                 svgString = svgString.replace(/stroke="rgba\(99,102,241,0\.12\)"/g, 'stroke="rgba(32,30,36,0.15)"');
-                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.015\)"/g, 'stroke="rgba(32,30,36,0.03)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.015\)"/g, 'stroke="rgba(32,30,36,0.02)"');
                 svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.03\)"/g, 'stroke="rgba(32,30,36,0.06)"');
-                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.04\)"/g, 'stroke="rgba(32,30,36,0.08)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.04\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.06\)"/g, 'stroke="rgba(32,30,36,0.12)"');
+                svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.08\)"/g, 'stroke="rgba(32,30,36,0.12)"');
                 svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.1\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/stroke="rgba\(255,\s*255,\s*255,\s*0\.015\)"/g, 'stroke="rgba(32,30,36,0.02)"');
+                svgString = svgString.replace(/stroke="rgba\(255,\s*255,\s*255,\s*0\.03\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(255,\s*255,\s*255,\s*0\.04\)"/g, 'stroke="rgba(32,30,36,0.06)"');
+                svgString = svgString.replace(/stroke="rgba\(255,\s*255,\s*255,\s*0\.06\)"/g, 'stroke="rgba(32,30,36,0.12)"');
+                svgString = svgString.replace(/stroke="rgba\(255,\s*255,\s*255,\s*0\.08\)"/g, 'stroke="rgba(32,30,36,0.12)"');
                 
                 // Convert white nodes to dark slate to be visible on cream
                 svgString = svgString.replace(/fill="#ffffff" opacity/g, 'fill="#4f46e5" opacity');
+                svgString = svgString.replace(/stroke="#181714"/g, 'stroke="#ffffff"');
                 
                 // Tooltip and brain core text colors
                 svgString = svgString.replace(/fill="#0f172a"/g, 'fill="#FEFAEF"');
                 svgString = svgString.replace(/stroke="rgba\(255,255,255,0\.15\)"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/fill="#22201b"/g, 'fill="#FEFAEF"');
+                svgString = svgString.replace(/stroke="#333029"/g, 'stroke="rgba(32,30,36,0.15)"');
+                svgString = svgString.replace(/fill="#e5e4df"/g, 'fill="#201e24"');
                 svgString = svgString.replace(/fill="#ffffff"/g, 'fill="#201e24"');
 
                 const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -2542,14 +2714,14 @@ export default function SettingsPage({
                             disabled={!!isBusy}
                             title="Import a .json or .zip memory file and merge it with your current memory"
                             style={{
-                                padding: '7px 14px', borderRadius: 10, border: '1px solid #e8e6d9',
-                                backgroundColor: '#ffffff', color: '#111111', fontSize: 12.5, fontWeight: 600,
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 12.5, fontWeight: 600,
                                 cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy === 'import' ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                                boxShadow: 'var(--shadow-xs)'
                             }}
-                            onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#f4f4f4'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                            onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
                             {isBusy === 'import' ? '⏳' : '📥'} {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
                         </button>
@@ -2559,14 +2731,14 @@ export default function SettingsPage({
                             title="Export your full memory graph as a ZIP file (includes linked markdown files)"
                             style={{
                                 padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
                                 cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
                                 opacity: (isBusy === 'export' || graph.nodes.length === 0) ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                                boxShadow: 'var(--shadow-sm)'
                             }}
-                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                         >
                             {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
                         </button>
@@ -2576,14 +2748,14 @@ export default function SettingsPage({
                             title="Generate a beautiful image of your memory globe to share"
                             style={{
                                 padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: '#111111', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
                                 cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
                                 opacity: (isBusy || graph.nodes.length === 0) ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                                boxShadow: 'var(--shadow-sm)'
                             }}
-                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = '#2a2826'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = '#111111'; }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                         >
                             {isBusy === 'share' ? '⏳' : '✨'} {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
                         </button>
@@ -2592,15 +2764,15 @@ export default function SettingsPage({
 
                 {/* Help tip */}
                 <div style={{
-                    background: 'linear-gradient(135deg, rgba(20,184,166,0.06) 0%, rgba(99,102,241,0.04) 100%)',
-                    border: '1px solid rgba(20,184,166,0.2)',
+                    background: 'linear-gradient(135deg, var(--color-accent-dim) 0%, var(--color-navis-active-bg) 100%)',
+                    border: '1px solid var(--color-accent)',
                     borderRadius: 12, padding: '12px 16px', marginBottom: 20,
                     display: 'flex', gap: 10, alignItems: 'flex-start'
                 }}>
                     <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
                     <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: '#0d9488', marginBottom: 3 }}>How Memory Works</p>
-                        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#4a4846' }}>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark)', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
                             EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable — click any node to see full details.
                             Use <strong>Export ZIP</strong> to back up your memory, and <strong>Import &amp; Merge</strong> to restore or combine memories from another device.
                         </p>
@@ -2608,14 +2780,14 @@ export default function SettingsPage({
                 </div>
 
                 {/* Summary counters */}
-                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e8e6d9' }}>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
                     {[
-                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: '#10b981' },
-                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: '#10b981' },
-                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: '#0ea5e9' },
-                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: '#64748b' }
+                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: 'var(--color-success)' },
+                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: 'var(--color-success)' },
+                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: 'var(--color-info)' },
+                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: 'var(--color-text-tertiary)' }
                     ].map(stat => (
-                        <div key={stat.label} style={{ fontSize: 12, color: '#4a4846', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div key={stat.label} style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stat.color }} />
                             <strong>{stat.count}</strong> {stat.label}
                         </div>
@@ -2640,9 +2812,9 @@ export default function SettingsPage({
                                     borderRadius: 8,
                                     fontSize: 12,
                                     fontWeight: 600,
-                                    border: '1px solid #e8e6d9',
-                                    backgroundColor: filterType === f.id ? '#111111' : '#ffffff',
-                                    color: filterType === f.id ? '#ffffff' : '#4a4846',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: filterType === f.id ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                    color: filterType === f.id ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s'
                                 }}
@@ -2659,7 +2831,7 @@ export default function SettingsPage({
                             onChange={e => setSearchQuery(e.target.value)}
                             style={{ height: 34, padding: '4px 12px', borderRadius: 8, fontSize: 13, width: 150 }}
                         />
-                        <div style={{ display: 'flex', border: '1px solid #e8e6d9', borderRadius: 8, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
                             <button
                                 onClick={() => setViewMode('graph')}
                                 style={{
@@ -2667,8 +2839,8 @@ export default function SettingsPage({
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
-                                    backgroundColor: viewMode === 'graph' ? '#111111' : '#ffffff',
-                                    color: viewMode === 'graph' ? '#ffffff' : '#4a4846',
+                                    backgroundColor: viewMode === 'graph' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                    color: viewMode === 'graph' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer'
                                 }}
                             >
@@ -2681,8 +2853,8 @@ export default function SettingsPage({
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
-                                    backgroundColor: viewMode === 'list' ? '#111111' : '#ffffff',
-                                    color: viewMode === 'list' ? '#ffffff' : '#4a4846',
+                                    backgroundColor: viewMode === 'list' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                    color: viewMode === 'list' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
                                     cursor: 'pointer'
                                 }}
                             >
@@ -2694,11 +2866,11 @@ export default function SettingsPage({
 
                 {/* Main View Area */}
                 {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: 80, color: '#8a8886' }}>Loading Memory Graph...</div>
+                    <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)' }}>Loading Memory Graph...</div>
                 ) : graph.nodes.length === 0 ? (
-                    <Card style={{ padding: 40, textAlign: 'center', color: '#8a8886' }}>
+                    <Card style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
                         <span style={{ fontSize: 40 }}>🧠</span>
-                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: '#111111' }}>No memory established yet</h3>
+                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
                         <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>As you chat with the agent and state your airline, payment, or general preferences, EverFern will automatically compile them here.</p>
                     </Card>
                 ) : (
@@ -2719,19 +2891,19 @@ export default function SettingsPage({
                                             title={btn.title}
                                             onClick={btn.onClick}
                                             style={{
-                                                width: 28, height: 28, borderRadius: 8, border: '1px solid #e8e6d9',
-                                                backgroundColor: '#ffffff', color: '#4a4846', fontSize: 14,
+                                                width: 28, height: 28, borderRadius: 8, border: '1px solid var(--color-border)',
+                                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-secondary)', fontSize: 14,
                                                 fontWeight: 600, cursor: 'pointer', display: 'flex',
                                                 alignItems: 'center', justifyContent: 'center',
-                                                boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.15s'
+                                                boxShadow: 'var(--shadow-xs)', transition: 'all 0.15s'
                                             }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f4'; e.currentTarget.style.color = '#111111'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.color = '#4a4846'; }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                                         >
                                             {btn.label}
                                         </button>
                                     ))}
-                                    <div style={{ fontSize: 10, textAlign: 'center', color: '#8a8886', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
+                                    <div style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
                                 </div>
                                 <svg
                                         ref={svgRef}
@@ -2743,22 +2915,22 @@ export default function SettingsPage({
                                         onMouseUp={handleMouseUpSvg}
                                         onMouseLeave={handleMouseUpSvg}
                                         style={{
-                                            border: '1px solid #e8e6d9',
+                                            border: '1px solid var(--color-border)',
                                             borderRadius: 20,
-                                            backgroundColor: '#FEFAEF',
-                                            boxShadow: '0 4px 20px rgba(32, 30, 36, 0.04), inset 0 2px 10px rgba(255,255,255,0.6)',
+                                            backgroundColor: globeBg100,
+                                            boxShadow: 'var(--shadow-md)',
                                         }}
                                     >
                                         <defs>
                                             <radialGradient id="graph-bg" cx="50%" cy="50%" r="60%">
-                                                <stop offset="0%" stopColor="#fdfbf7" stopOpacity="0.8" />
-                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="1" />
+                                                <stop offset="0%" stopColor={globeBg0} stopOpacity="0.8" />
+                                                <stop offset="100%" stopColor={globeBg100} stopOpacity="1" />
                                             </radialGradient>
                                             
                                             <radialGradient id="globe-shading" cx="50%" cy="50%" r="50%">
-                                                <stop offset="85%" stopColor="#FEFAEF" stopOpacity="0" />
-                                                <stop offset="98%" stopColor="#FEFAEF" stopOpacity="0.75" />
-                                                <stop offset="100%" stopColor="#FEFAEF" stopOpacity="0.95" />
+                                                <stop offset="85%" stopColor={globeShading} stopOpacity="0" />
+                                                <stop offset="98%" stopColor={globeShading} stopOpacity="0.75" />
+                                                <stop offset="100%" stopColor={globeShading} stopOpacity="0.95" />
                                             </radialGradient>
 
                                             <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
@@ -2779,7 +2951,7 @@ export default function SettingsPage({
                                                     key={`bg-grid-back-${idx}`}
                                                     d={gp.path}
                                                     fill="none"
-                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    stroke={gridStrokeBack}
                                                     strokeWidth="0.75"
                                                     strokeDasharray="2,2"
                                                 />
@@ -2798,7 +2970,7 @@ export default function SettingsPage({
                                                     y1={rootPos.y}
                                                     x2={targetPos.x}
                                                     y2={targetPos.y}
-                                                    stroke="rgba(32, 30, 36, 0.02)"
+                                                    stroke={hubStrokeBack}
                                                     strokeWidth="0.5"
                                                 />
                                             );
@@ -2816,7 +2988,7 @@ export default function SettingsPage({
                                                     y1={sourcePos.y}
                                                     x2={targetPos.x}
                                                     y2={targetPos.y}
-                                                    stroke="rgba(32, 30, 36, 0.04)"
+                                                    stroke={edgeStrokeBack}
                                                     strokeWidth="0.75"
                                                     strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'}
                                                 />
@@ -2832,13 +3004,13 @@ export default function SettingsPage({
                                             const isHovered = hoveredNodeId === node.id;
                                             const isFocused = isSelected || isHovered;
 
-                                            let nodeColor = '#94a3b8';
+                                            let nodeColor = 'var(--color-text-tertiary)';
                                             if (node.type === 'preference') {
-                                                nodeColor = '#10b981';
+                                                nodeColor = 'var(--color-success)';
                                             } else if (node.type === 'habit') {
-                                                nodeColor = '#059669';
+                                                nodeColor = 'var(--color-success)';
                                             } else if (node.type === 'fact') {
-                                                nodeColor = '#6366f1';
+                                                nodeColor = 'var(--color-info)';
                                             }
 
                                             const zDepth = pos.z;
@@ -2858,7 +3030,7 @@ export default function SettingsPage({
                                                         r={isFocused ? size * 1.5 : size}
                                                         fill={nodeColor}
                                                         opacity={op}
-                                                        stroke="#e8e6d9"
+                                                        stroke="var(--color-border)"
                                                         strokeWidth={0.5}
                                                         style={{ transition: 'all 0.15s ease' }}
                                                     />
@@ -2868,7 +3040,7 @@ export default function SettingsPage({
 
                                         {/* Globe atmosphere & shading overlay */}
                                         <circle cx="300" cy="200" r="140" fill="url(#globe-shading)" pointerEvents="none" />
-                                        <circle cx="300" cy="200" r="140" fill="none" stroke="rgba(32, 30, 36, 0.12)" strokeWidth="1" pointerEvents="none" />
+                                        <circle cx="300" cy="200" r="140" fill="none" stroke={gridStrokeFront} strokeWidth="1" pointerEvents="none" />
 
                                         {/* 5. Front Globe Grid Lines */}
                                         <g opacity="0.3" pointerEvents="none">
@@ -2877,7 +3049,7 @@ export default function SettingsPage({
                                                     key={`bg-grid-front-${idx}`}
                                                     d={gp.path}
                                                     fill="none"
-                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    stroke={gridStrokeFront}
                                                     strokeWidth="0.75"
                                                 />
                                             ))}
@@ -2898,17 +3070,17 @@ export default function SettingsPage({
                                                 >
                                                     <motion.circle 
                                                         r="16" 
-                                                        fill="rgba(16,185,129,0.08)" 
-                                                        stroke="rgba(16,185,129,0.15)" 
+                                                        fill="var(--color-success-dim)" 
+                                                        stroke="var(--color-success-dim)" 
                                                         strokeWidth="1" 
                                                         animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
                                                         transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
                                                     />
                                                     <circle
                                                         r={isHovered ? 8 : 6}
-                                                        fill="#10b981"
+                                                        fill="var(--color-success)"
                                                         filter="url(#glow-strong)"
-                                                        stroke="#ffffff"
+                                                        stroke={nodeBorder}
                                                         strokeWidth="1.5"
                                                         style={{ transition: 'all 0.2s ease' }}
                                                     />
@@ -2920,15 +3092,15 @@ export default function SettingsPage({
                                                                 width="90"
                                                                 height="18"
                                                                 rx="6"
-                                                                fill="#FEFAEF"
-                                                                stroke="rgba(32,30,36,0.15)"
+                                                                fill={tooltipBg}
+                                                                stroke={tooltipBorder}
                                                                 strokeWidth="1"
                                                                 style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
                                                             />
                                                             <text
                                                                 textAnchor="middle"
                                                                 dy="-2"
-                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
                                                             >
                                                                 EverFern Brain
                                                             </text>
@@ -2950,7 +3122,7 @@ export default function SettingsPage({
                                                     y1={rootPos.y}
                                                     x2={targetPos.x}
                                                     y2={targetPos.y}
-                                                    stroke="rgba(32, 30, 36, 0.06)"
+                                                    stroke={hubStrokeFront}
                                                     strokeWidth="0.75"
                                                 />
                                             );
@@ -2968,7 +3140,7 @@ export default function SettingsPage({
                                                     y1={sourcePos.y}
                                                     x2={targetPos.x}
                                                     y2={targetPos.y}
-                                                    stroke="rgba(32, 30, 36, 0.12)"
+                                                    stroke={edgeStrokeFront}
                                                     strokeWidth="1.25"
                                                     strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'}
                                                 />
@@ -2984,17 +3156,17 @@ export default function SettingsPage({
                                             const isHovered = hoveredNodeId === node.id;
                                             const isFocused = isSelected || isHovered;
 
-                                            let nodeColor = '#94a3b8';
+                                            let nodeColor = 'var(--color-text-tertiary)';
                                             let useGlow = false;
 
                                             if (node.type === 'preference') {
-                                                nodeColor = '#10b981';
+                                                nodeColor = 'var(--color-success)';
                                                 useGlow = true;
                                             } else if (node.type === 'habit') {
-                                                nodeColor = '#059669';
+                                                nodeColor = 'var(--color-success)';
                                                 useGlow = true;
                                             } else if (node.type === 'fact') {
-                                                nodeColor = '#6366f1';
+                                                nodeColor = 'var(--color-info)';
                                                 useGlow = true;
                                             }
 
@@ -3017,7 +3189,7 @@ export default function SettingsPage({
                                                         <circle
                                                             r="12"
                                                             fill="none"
-                                                            stroke="rgba(32,30,36,0.4)"
+                                                            stroke="var(--color-border-strong)"
                                                             strokeWidth="1.5"
                                                             strokeDasharray="2,2"
                                                         />
@@ -3027,7 +3199,7 @@ export default function SettingsPage({
                                                         <circle
                                                             r="10"
                                                             fill="none"
-                                                            stroke="rgba(16,185,129,0.25)"
+                                                            stroke="var(--color-success-dim)"
                                                             strokeWidth="2"
                                                         />
                                                     )}
@@ -3038,7 +3210,7 @@ export default function SettingsPage({
                                                         fill={nodeColor}
                                                         opacity={op}
                                                         filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'}
-                                                        stroke="#ffffff"
+                                                        stroke={nodeBorder}
                                                         strokeWidth={isFocused ? 1.5 : 1}
                                                         style={{ transition: 'all 0.15s ease' }}
                                                     />
@@ -3051,15 +3223,15 @@ export default function SettingsPage({
                                                                 width={tooltipWidth}
                                                                 height={18}
                                                                 rx="6"
-                                                                fill="#FEFAEF"
-                                                                stroke="rgba(32,30,36,0.15)"
+                                                                fill={tooltipBg}
+                                                                stroke={tooltipBorder}
                                                                 strokeWidth="1"
                                                                 style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
                                                             />
                                                             <text
                                                                 textAnchor="middle"
                                                                 dy="-1"
-                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: '#201e24', userSelect: 'none', fontFamily: 'sans-serif' }}
+                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
                                                             >
                                                                 {labelText}
                                                             </text>
@@ -3071,20 +3243,20 @@ export default function SettingsPage({
                                      </svg>
                                 </div>
                             ) : (
-                                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #e8e6d9', borderRadius: 20, backgroundColor: '#ffffff', maxHeight: 400 }}>
+                                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 20, backgroundColor: 'var(--color-bg-surface)', maxHeight: 400 }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                         <thead>
-                                            <tr style={{ textAlign: 'left', borderBottom: '2px solid #e8e6d9', backgroundColor: '#faf9f6', position: 'sticky', top: 0, zIndex: 10 }}>
-                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Type</th>
-                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Category</th>
-                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Value</th>
-                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: '#111111' }}>Linked File</th>
+                                            <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--color-border-strong)', backgroundColor: 'var(--color-bg-subtle)', position: 'sticky', top: 0, zIndex: 10 }}>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Type</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Category</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Value</th>
+                                                <th style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Linked File</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {filteredNodes.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: '#8a8886' }}>
+                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
                                                         No matching memories found.
                                                     </td>
                                                 </tr>
@@ -3096,12 +3268,12 @@ export default function SettingsPage({
                                                             key={node.id}
                                                             onClick={() => setSelectedNode(node)}
                                                             style={{
-                                                                borderBottom: '1px solid #f0f0f0',
+                                                                borderBottom: '1px solid var(--color-border-subtle)',
                                                                 cursor: 'pointer',
-                                                                backgroundColor: isSelected ? '#faf9f6' : 'transparent',
+                                                                backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent',
                                                                 transition: 'background-color 0.15s'
                                                             }}
-                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = '#fbfbe6'; }}
+                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                                             onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
                                                         >
                                                             <td style={{ padding: '12px 16px' }}>
@@ -3111,17 +3283,17 @@ export default function SettingsPage({
                                                                     fontSize: 11,
                                                                     fontWeight: 600,
                                                                     textTransform: 'capitalize',
-                                                                    backgroundColor: node.type === 'preference' ? '#fef3c7' : node.type === 'habit' ? '#d1fae5' : node.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
-                                                                    color: node.type === 'preference' ? '#b45309' : node.type === 'habit' ? '#047857' : node.type === 'fact' ? '#0369a1' : '#475569'
+                                                                    backgroundColor: node.type === 'preference' ? 'var(--color-warning-dim)' : node.type === 'habit' ? 'var(--color-success-dim)' : node.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
+                                                                    color: node.type === 'preference' ? 'var(--color-warning)' : node.type === 'habit' ? 'var(--color-success)' : node.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
                                                                 }}>
                                                                     {node.type}
                                                                 </span>
                                                             </td>
-                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: '#111111' }}>{node.category}</td>
-                                                            <td style={{ padding: '12px 16px', color: '#4a4846', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: 'var(--color-text-primary)' }}>{node.category}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                 {node.value}
                                                             </td>
-                                                            <td style={{ padding: '12px 16px', color: '#8a8886', fontSize: 12 }}>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
                                                                 {node.linkedFile || node.name || ''}
                                                             </td>
                                                         </tr>
@@ -3136,7 +3308,7 @@ export default function SettingsPage({
 
                         {/* Details Sidebar panel */}
                         <div style={{ width: 240, flexShrink: 0 }}>
-                            <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: '#e8e6d9', backgroundColor: '#fcfcfb', margin: 0 }}>
+                            <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg-surface)', margin: 0 }}>
                                 {selectedNode ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
                                         <div>
@@ -3147,15 +3319,15 @@ export default function SettingsPage({
                                                 fontWeight: 700,
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.05em',
-                                                backgroundColor: selectedNode.type === 'preference' ? '#fef3c7' : selectedNode.type === 'habit' ? '#d1fae5' : selectedNode.type === 'fact' ? '#e0f2fe' : '#f1f5f9',
-                                                color: selectedNode.type === 'preference' ? '#b45309' : selectedNode.type === 'habit' ? '#047857' : selectedNode.type === 'fact' ? '#0369a1' : '#475569'
+                                                backgroundColor: selectedNode.type === 'preference' ? 'var(--color-warning-dim)' : selectedNode.type === 'habit' ? 'var(--color-success-dim)' : selectedNode.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
+                                                color: selectedNode.type === 'preference' ? 'var(--color-warning)' : selectedNode.type === 'habit' ? 'var(--color-success)' : selectedNode.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
                                             }}>
                                                 {selectedNode.type}
                                             </span>
-                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111', marginTop: 10, marginBottom: 4 }}>
+                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>
                                                 {selectedNode.name || selectedNode.category}
                                             </h3>
-                                            <span style={{ fontSize: 11, color: '#8a8886', fontFamily: 'monospace' }}>
+                                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
                                                 ID: {selectedNode.id.split('_').slice(-1)[0]}
                                             </span>
                                         </div>
@@ -3165,12 +3337,12 @@ export default function SettingsPage({
                                                 <Label>Value</Label>
                                                 <div style={{
                                                     padding: 10,
-                                                    backgroundColor: '#ffffff',
-                                                    border: '1px solid #e8e6d9',
+                                                    backgroundColor: 'var(--color-bg-subtle)',
+                                                    border: '1px solid var(--color-border)',
                                                     borderRadius: 10,
                                                     fontSize: 13,
                                                     lineHeight: 1.4,
-                                                    color: '#201e24',
+                                                    color: 'var(--color-text-primary)',
                                                     wordBreak: 'break-word',
                                                     maxHeight: 150,
                                                     overflowY: 'auto'
@@ -3180,7 +3352,7 @@ export default function SettingsPage({
                                             </div>
 
                                             {selectedNode.metadata && (
-                                                <div style={{ fontSize: 11, color: '#8a8886', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                     {selectedNode.metadata.created && (
                                                         <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>
                                                     )}
@@ -3197,9 +3369,9 @@ export default function SettingsPage({
                                                     onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)}
                                                     style={{
                                                         padding: '8px 12px',
-                                                        backgroundColor: '#ffffff',
-                                                        color: '#111111',
-                                                        border: '1px solid #e8e6d9',
+                                                        backgroundColor: 'var(--color-bg-surface)',
+                                                        color: 'var(--color-text-primary)',
+                                                        border: '1px solid var(--color-border)',
                                                         borderRadius: 10,
                                                         fontSize: 12,
                                                         fontWeight: 600,
@@ -3210,8 +3382,8 @@ export default function SettingsPage({
                                                         gap: 6,
                                                         transition: 'all 0.15s'
                                                     }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
                                                 >
                                                     📄 Open File
                                                 </button>
@@ -3221,9 +3393,9 @@ export default function SettingsPage({
                                                     onClick={() => handleDeleteNode(selectedNode.id)}
                                                     style={{
                                                         padding: '8px 12px',
-                                                        backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                                                        color: '#dc2626',
-                                                        border: '1px solid rgba(239, 68, 68, 0.15)',
+                                                        backgroundColor: 'var(--color-error-dim)',
+                                                        color: 'var(--color-error)',
+                                                        border: '1px solid var(--color-error-dim)',
                                                         borderRadius: 10,
                                                         fontSize: 12,
                                                         fontWeight: 600,
@@ -3235,7 +3407,7 @@ export default function SettingsPage({
                                                         transition: 'all 0.15s'
                                                     }}
                                                     onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.14)'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
                                                 >
                                                     🗑️ Forget Memory
                                                 </button>
@@ -3243,7 +3415,7 @@ export default function SettingsPage({
                                         </div>
                                     </div>
                                 ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8a8886', textAlign: 'center', padding: '40px 10px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '40px 10px' }}>
                                         <span style={{ fontSize: 32, marginBottom: 12 }}>🧠</span>
                                         <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>
                                             Click on a node in the graph or a row in the list to view its details.
@@ -3293,19 +3465,19 @@ export default function SettingsPage({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', backgroundColor: '#fcfcfb', fontFamily: 'var(--font-sans)' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--color-bg-base)', fontFamily: 'var(--font-sans)' }}
         >
             {/* Top bar */}
-            <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', flexShrink: 0, WebkitAppRegion: 'drag' } as any}>
+            <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)', flexShrink: 0, WebkitAppRegion: 'drag' } as any}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag' } as any}>
-                    <Cog6ToothIcon width={16} height={16} style={{ color: '#8a8886' }} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#111111' }}>Settings</span>
+                    <Cog6ToothIcon width={16} height={16} style={{ color: 'var(--color-text-tertiary)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>Settings</span>
                 </div>
                 <button
                     onClick={onClose}
-                    style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.05)', border: '1px solid #e8e6d9', color: '#4a4846', cursor: 'pointer', transition: 'all 0.2s', WebkitAppRegion: 'no-drag' } as any}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.05)'}
+                    style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-overlay)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer', transition: 'all 0.2s', WebkitAppRegion: 'no-drag' } as any}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-overlay)'}
                 >
                     <XMarkIcon width={16} height={16} />
                 </button>
@@ -3313,7 +3485,7 @@ export default function SettingsPage({
 
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                 {/* Left nav */}
-                <div style={{ width: 220, backgroundColor: '#f5f4f0', borderRight: '1px solid #e8e6d9', display: 'flex', flexDirection: 'column', padding: '20px 12px', flexShrink: 0, overflowY: 'auto' }}>
+                <div style={{ width: 220, backgroundColor: 'var(--color-bg-subtle)', borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', padding: '20px 12px', flexShrink: 0, overflowY: 'auto' }}>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {navSections.map(({ id, label, icon: Icon }) => {
                             const isActive = activeSection === id;
@@ -3324,14 +3496,14 @@ export default function SettingsPage({
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: 10,
                                         padding: '9px 14px', borderRadius: 10, border: 'none',
-                                        backgroundColor: isActive ? '#ffffff' : 'transparent',
-                                        color: isActive ? '#111111' : '#4a4846',
+                                        backgroundColor: isActive ? 'var(--color-bg-surface)' : 'transparent',
+                                        color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                                         fontSize: 14, fontWeight: isActive ? 600 : 400,
                                         cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                                        boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                                        boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
                                         fontFamily: 'var(--font-sans)',
                                     }}
-                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'; }}
+                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
                                 >
                                     <Icon width={16} height={16} />
@@ -3342,17 +3514,17 @@ export default function SettingsPage({
                     </nav>
 
                     {/* Version & Update Check */}
-                    <div style={{ marginTop: 'auto', padding: '12px 14px', borderTop: '1px solid #e8e6d9' }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: '#a8a6a1', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    <div style={{ marginTop: 'auto', padding: '12px 14px', borderTop: '1px solid var(--color-border)' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                             App Version
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: 13, color: '#4a4846', fontWeight: 500 }}>v{appVersion}</span>
+                            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>v{appVersion}</span>
                             <button 
                                 onClick={handleCheckUpdate}
                                 disabled={isCheckingUpdate}
                                 style={{ 
-                                    fontSize: 11, color: '#667eea', background: 'none', border: 'none', 
+                                    fontSize: 11, color: 'var(--color-navis-active-text)', background: 'none', border: 'none', 
                                     cursor: isCheckingUpdate ? 'default' : 'pointer', fontWeight: 600, padding: 0,
                                     opacity: isCheckingUpdate ? 0.6 : 1
                                 }}
@@ -3361,11 +3533,11 @@ export default function SettingsPage({
                             </button>
                         </div>
                         {updateInfo?.hasUpdate && (
-                            <div style={{ marginTop: 10, padding: 8, backgroundColor: '#f0ecff', borderRadius: 8, border: '1px solid #667eea' }}>
-                                <div style={{ fontSize: 11, color: '#111111', fontWeight: 600, marginBottom: 2 }}>Update Available: v{updateInfo.latestVersion}</div>
+                            <div style={{ marginTop: 10, padding: 8, backgroundColor: 'var(--color-navis-active-bg)', borderRadius: 8, border: '1px solid var(--color-navis-active-border)' }}>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600, marginBottom: 2 }}>Update Available: v{updateInfo.latestVersion}</div>
                                 <button 
                                     onClick={() => (window as any).electronAPI?.system?.openExternal?.(updateInfo.url)}
-                                    style={{ fontSize: 11, color: '#ffffff', backgroundColor: '#667eea', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
+                                    style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
                                 >
                                     Download from GitHub
                                 </button>
@@ -3375,16 +3547,16 @@ export default function SettingsPage({
                 </div>
 
                 {/* Right content area - Rounded floating sheet */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 32px', backgroundColor: '#f5f4f0' }}>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 32px', backgroundColor: 'var(--color-bg-base)' }}>
                     <div style={{
                         maxWidth: 720,
                         margin: '0 auto',
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #e8e6d9',
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-border)',
                         borderRadius: 28,
                         padding: '40px 52px',
                         minHeight: '100%',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.02)'
+                        boxShadow: 'var(--shadow-xs)'
                     }}>
                         <AnimatePresence mode="wait">
                             <motion.div
@@ -3402,11 +3574,11 @@ export default function SettingsPage({
             </div>
 
             {/* Footer save bar */}
-            <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, padding: '0 48px', borderTop: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', flexShrink: 0 }}>
+            <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, padding: '0 48px', borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)', flexShrink: 0 }}>
                 <button
                     onClick={onClose}
-                    style={{ padding: '9px 22px', backgroundColor: 'transparent', color: '#4a4846', border: '1px solid #e8e6d9', borderRadius: 10, fontWeight: 500, fontSize: 14, cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-sans)' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)'}
+                    style={{ padding: '9px 22px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: 10, fontWeight: 500, fontSize: 14, cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-sans)' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                     Cancel
@@ -3421,14 +3593,14 @@ export default function SettingsPage({
                     disabled={settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)}
                     style={{
                         display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '9px 22px', backgroundColor: '#111111', color: '#ffffff',
+                        padding: '9px 22px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)',
                         border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14,
                         cursor: (settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)) ? 'not-allowed' : 'pointer',
                         opacity: (settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)) ? 0.4 : 1,
                         transition: 'all 0.2s', fontFamily: 'var(--font-sans)',
                     }}
-                    onMouseEnter={e => { if (!(settingsEngine === 'online' && (!settingsProvider || !settingsApiKey))) e.currentTarget.style.backgroundColor = '#333333'; }}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#111111'}
+                    onMouseEnter={e => { if (!(settingsEngine === 'online' && (!settingsProvider || !settingsApiKey))) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'}
                 >
                     <ArrowDownOnSquareIcon width={16} height={16} />
                     Save Changes
@@ -3445,9 +3617,9 @@ export default function SettingsPage({
                         transition={{ type: "spring", damping: 15, stiffness: 300 }}
                         style={{
                             position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
-                            backgroundColor: '#111111', color: '#ffffff', borderRadius: 24,
+                            backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 24,
                             padding: '12px 24px', fontSize: 14, fontWeight: 600,
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                            boxShadow: 'var(--shadow-glow)',
                             zIndex: 10000, display: 'flex', alignItems: 'center', gap: 8,
                             fontFamily: 'var(--font-sans)',
                         }}

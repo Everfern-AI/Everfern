@@ -61,6 +61,8 @@ export function useSubagentTracking(conversationId: string | null) {
           description: subagentEvent.data?.description || '',
           startTime: subagentEvent.timestamp,
           metrics: subagentEvent.data?.initialMetrics,
+          depth: subagentEvent.data?.depth || subagentEvent.data?.initialMetrics?.depth || 1,
+          toolCallId: subagentEvent.data?.toolCallId,
         };
 
         phaseMapRef.current.set(phaseId, newPhase);

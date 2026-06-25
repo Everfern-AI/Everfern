@@ -192,17 +192,17 @@ const IconContainer = ({
             height: 24,
             flexShrink: 0,
             borderRadius: shape === "circle" ? "50%" : 7,
-            background: "#d3d3d0",
+            background: "var(--color-border)",
             boxShadow: [
                 "inset 0 1px 0 rgba(255,255,255,0.70)",
-                "inset 0 -1px 0 rgba(0,0,0,0.08)",
+                "inset 0 -1px 0 var(--color-border)",
                 "inset 1px 0 rgba(255,255,255,0.45)",
-                "inset -1px 0 rgba(0,0,0,0.04)",
+                "inset -1px 0 var(--color-border)",
             ].join(", "),
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#555",
+            color: 'var(--color-text-secondary)',
         }}
     >
         {icon}
@@ -215,12 +215,12 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
         return (
             <div style={{
                 width: 16, height: 16, borderRadius: "50%",
-                background: "#f4f4f5", border: "1.5px solid #d4d4d8",
+                background: 'var(--color-bg-subtle)', border: "1.5px solid var(--color-border)",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 position: "relative", zIndex: 1,
             }}>
                 <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 5L4 7L8 3" stroke="#71717a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2 5L4 7L8 3" stroke='var(--color-text-secondary)' strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
             </div>
         );
@@ -229,13 +229,13 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
         return (
             <div style={{
                 width: 16, height: 16, borderRadius: "50%",
-                background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center",
+                background: 'var(--color-bg-surface)', display: "flex", alignItems: "center", justifyContent: "center",
                 flexShrink: 0, position: "relative", zIndex: 1
             }}>
                 <motion.div
                     style={{
                         width: 16, height: 16, borderRadius: "50%",
-                        border: "2px solid #e4e4e7",
+                        border: "2px solid var(--color-border)",
                         borderTopColor: "#3b82f6",
                         position: "absolute", inset: 0,
                     }}
@@ -249,7 +249,7 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
         return (
             <div style={{
                 width: 16, height: 16, borderRadius: "50%",
-                background: "#fef2f2", border: "1.5px solid #fecaca",
+                background: 'var(--color-error-dim)', border: "1.5px solid #fecaca",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 position: "relative", zIndex: 1,
             }}>
@@ -260,8 +260,8 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
     return (
         <div style={{
             width: 16, height: 16, borderRadius: "50%",
-            border: "1.5px solid #e4e4e7",
-            background: "#fafafa", flexShrink: 0,
+            border: "1.5px solid var(--color-border)",
+            background: 'var(--color-bg-subtle)', flexShrink: 0,
             position: "relative", zIndex: 1,
         }} />
     );
@@ -269,15 +269,15 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
 
 // ── Gallium surface: layered inset shadows simulate liquid-metal light physics
 const galliumSurface = {
-    background: "#ececea",
+    background: "var(--color-bg-subtle)",
     boxShadow: [
-        "inset 0 1px 0 rgba(255,255,255,0.72)",
-        "inset 0 -1px 0 rgba(0,0,0,0.06)",
-        "inset 1px 0 rgba(255,255,255,0.50)",
-        "inset -1px 0 rgba(0,0,0,0.04)",
-        "0 1px 3px rgba(0,0,0,0.07)",
+        "inset 0 1px 0 rgba(255,255,255,0.1)",
+        "inset 0 -1px 0 var(--color-border)",
+        "inset 1px 0 rgba(255,255,255,0.08)",
+        "inset -1px 0 var(--color-border)",
+        "0 1px 3px var(--color-border)",
     ].join(", "),
-    border: "0.5px solid rgba(0,0,0,0.10)",
+    border: "0.5px solid var(--color-border)",
 } as const;
 
 const isComputerUseTool = (toolName?: string | null) => {
@@ -307,7 +307,7 @@ const getSubAgentEventColor = (event: SubAgentProgressEvent) => {
     if (event.type === 'screenshot') return "#10b981";
     if (event.type === 'complete') return "#22c55e";
     if (event.type === 'abort' || event.type === 'error') return "#ef4444";
-    return "#9ca3af";
+    return 'var(--color-text-tertiary)';
 };
 
 // ── Sub-Agent Progress Timeline ──────────────────────────────────────────────────
@@ -327,7 +327,7 @@ const SubAgentProgressTimeline = ({
             marginLeft: nested ? 46 : 32,
             marginTop: nested ? -1 : 4,
             marginBottom: nested ? 10 : 8,
-            borderLeft: nested ? "1.5px solid rgba(0,0,0,0.10)" : "1px dashed rgba(0,0,0,0.12)",
+            borderLeft: nested ? "1.5px solid var(--color-border)" : "1px dashed rgba(0,0,0,0.12)",
             paddingLeft: nested ? 12 : 14,
             display: "flex",
             flexDirection: "column",
@@ -357,7 +357,7 @@ const SubAgentProgressTimeline = ({
                             flexDirection: "column",
                             gap: 2,
                             fontSize: 11.5,
-                            color: "#555",
+                            color: 'var(--color-text-secondary)',
                         }}
                     >
                         {nested && (isAction || isStep || isScreenshot || isComplete || isAbort) ? (
@@ -370,10 +370,10 @@ const SubAgentProgressTimeline = ({
                                 padding: "5px 10px 5px 6px",
                                 borderRadius: 12,
                                 fontSize: 11.5,
-                                color: isComplete ? "#15803d" : isAbort ? "#b91c1c" : "#4b5563",
+                                color: isComplete ? "#15803d" : isAbort ? 'var(--color-error)' : 'var(--color-text-secondary)',
                                 lineHeight: 1.35,
-                                background: "#fbfbfa",
-                                border: "1px solid rgba(0,0,0,0.07)",
+                                background: 'var(--color-bg-base)',
+                                border: "1px solid var(--color-border)",
                                 boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                             }}>
                                 <IconContainer
@@ -392,7 +392,7 @@ const SubAgentProgressTimeline = ({
                                 padding: "7px 14px 7px 8px",
                                 borderRadius: 14,
                                 fontSize: 12.5,
-                                color: "#333",
+                                color: 'var(--color-text-primary)',
                                 lineHeight: 1.4,
                                 position: "relative",
                                 overflow: "hidden",
@@ -421,7 +421,7 @@ const SubAgentProgressTimeline = ({
                                 <div style={{ flex: 1, wordBreak: "break-word", lineHeight: 1.3 }}>
                                     <span style={{
                                         fontWeight: (isComplete || isAbort) ? 600 : 400,
-                                        color: (isComplete) ? "#15803d" : (isAbort) ? "#b91c1c" : "#444"
+                                        color: (isComplete) ? "#15803d" : (isAbort) ? 'var(--color-error)' : 'var(--color-text-primary)'
                                     }}>
                                         {text}
                                     </span>
@@ -435,9 +435,9 @@ const SubAgentProgressTimeline = ({
                                 marginTop: 4,
                                 borderRadius: 6,
                                 overflow: "hidden",
-                                border: "1px solid rgba(0,0,0,0.08)",
+                                border: "1px solid var(--color-border)",
                                 maxWidth: 240,
-                                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                                boxShadow: "0 1px 3px var(--color-border)",
                             }}>
                                 <img
                                     src={`data:image/png;base64,${event.screenshot.base64}`}
@@ -530,7 +530,7 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
                     borderRadius: 12,
                     cursor: onClick ? "pointer" : "default",
                     fontSize: 12,
-                    color: isDone ? "#aaa" : "#333",
+                    color: isDone ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
                     lineHeight: 1.25,
                     position: "relative",
                     overflow: "hidden",
@@ -811,7 +811,7 @@ const ToolActivityRow = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () =>
                 borderRadius: 7,
                 background: "transparent",
                 cursor: onClick ? "pointer" : "default",
-                color: "#4b5563",
+                color: 'var(--color-text-secondary)',
                 textAlign: "left",
                 fontFamily: "inherit",
             }}
@@ -837,7 +837,7 @@ const ToolActivityRow = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () =>
                 }}
                 transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
             />
-            <span style={{ fontSize: 11.5, fontWeight: 600, color: "#374151", flexShrink: 0 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-text-primary)', flexShrink: 0 }}>
                 {activity.verb}
             </span>
             <span
@@ -848,7 +848,7 @@ const ToolActivityRow = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () =>
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                     fontSize: 11,
-                    color: "#6b7280",
+                    color: 'var(--color-text-tertiary)',
                     fontFamily: "'Geist Mono', 'Berkeley Mono', ui-monospace, 'SF Mono', Menlo, monospace",
                 }}
             >
@@ -895,6 +895,420 @@ const getRepeatedToolGroupMeta = (toolName?: string) => {
 
 const normalizeToolGroupName = (toolName?: string) => (toolName || "tool").toLowerCase();
 
+const GlobeDotIcon = ({ isRunning, color }: { isRunning: boolean; color: string }) => {
+    return (
+        <div style={{
+            width: 28,
+            height: 28,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            flexShrink: 0,
+        }}>
+            <motion.div
+                style={{
+                    position: "absolute",
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    backgroundColor: `${color}14`,
+                    border: `1px solid ${color}26`,
+                }}
+                animate={isRunning ? { scale: [1, 1.35, 1], opacity: [0.6, 0.2, 0.6] } : { scale: [1, 1.15, 1], opacity: [0.4, 0.15, 0.4] }}
+                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            />
+            <div style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                backgroundColor: color,
+                border: "1.5px solid var(--color-bg-surface)",
+                boxShadow: `0 0 8px ${color}cc`,
+                position: "relative",
+                zIndex: 1,
+            }} />
+        </div>
+    );
+};
+
+interface ParsedFact {
+    timestamp?: string;
+    content: string;
+    tags: string[];
+}
+
+const TAG_COLORS: Record<string, { bg: string, text: string, border: string }> = {
+    identity: { bg: 'rgba(16, 185, 129, 0.08)', text: '#059669', border: 'rgba(16, 185, 129, 0.2)' },
+    preference: { bg: 'rgba(59, 130, 246, 0.08)', text: '#2563eb', border: 'rgba(59, 130, 246, 0.2)' },
+    habit: { bg: 'rgba(245, 158, 11, 0.08)', text: '#d97706', border: 'rgba(245, 158, 11, 0.2)' },
+    travel: { bg: 'rgba(139, 92, 246, 0.08)', text: '#7c3aed', border: 'rgba(139, 92, 246, 0.2)' },
+    payment: { bg: 'rgba(236, 72, 153, 0.08)', text: '#db2777', border: 'rgba(236, 72, 153, 0.2)' },
+    work: { bg: 'rgba(6, 182, 212, 0.08)', text: '#0891b2', border: 'rgba(6, 182, 212, 0.2)' },
+    contact: { bg: 'rgba(14, 165, 233, 0.08)', text: '#0284c7', border: 'rgba(14, 165, 233, 0.2)' },
+    fact: { bg: 'rgba(107, 114, 128, 0.08)', text: 'var(--color-text-secondary)', border: 'rgba(107, 114, 128, 0.2)' },
+};
+
+const formatTimestamp = (ts?: string): string => {
+    if (!ts) return "Recently";
+    try {
+        const date = new Date(ts);
+        if (isNaN(date.getTime())) return ts;
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } catch {
+        return ts;
+    }
+};
+
+const deduceTags = (content: string, existingTags: string[] = []): string[] => {
+    const tags = new Set<string>(existingTags.map(t => t.toLowerCase()));
+    const lower = content.toLowerCase();
+
+    if (lower.includes('name') || lower.includes('called') || lower.includes('username')) {
+        tags.add('identity');
+    }
+    if (lower.includes('like') || lower.includes('dislike') || lower.includes('love') || lower.includes('hate') || lower.includes('prefer') || lower.includes('favorite')) {
+        tags.add('preference');
+    }
+    if (lower.includes('always') || lower.includes('usually') || lower.includes('often') || lower.includes('every') || lower.includes('habit')) {
+        tags.add('habit');
+    }
+    if (lower.includes('flight') || lower.includes('airline') || lower.includes('travel') || lower.includes('seat') || lower.includes('hotel')) {
+        tags.add('travel');
+    }
+    if (lower.includes('card') || lower.includes('visa') || lower.includes('billing') || lower.includes('payment') || lower.includes('stripe')) {
+        tags.add('payment');
+    }
+    if (lower.includes('work') || lower.includes('company') || lower.includes('office') || lower.includes('job') || lower.includes('profession')) {
+        tags.add('work');
+    }
+    if (lower.includes('email') || lower.includes('phone') || lower.includes('contact') || lower.includes('address')) {
+        tags.add('contact');
+    }
+
+    if (tags.size === 0) {
+        tags.add('fact');
+    }
+
+    return Array.from(tags);
+};
+
+const parseFacts = (output: string): ParsedFact[] => {
+    if (!output) return [];
+
+    try {
+        const clean = output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        const parsed = JSON.parse(clean);
+        
+        if (parsed && Array.isArray(parsed.newMemories)) {
+            return parsed.newMemories.map((m: any) => {
+                const content = m.fact || m.content || JSON.stringify(m);
+                const tags = m.type ? [m.type] : m.category ? [m.category] : [];
+                return {
+                    timestamp: m.timestamp || m.created,
+                    content,
+                    tags: deduceTags(content, tags)
+                };
+            });
+        }
+        
+        if (parsed && (parsed.fact || parsed.content)) {
+            const content = parsed.fact || parsed.content;
+            const tags = parsed.type ? [parsed.type] : parsed.category ? [parsed.category] : [];
+            const ts = parsed.timestamp || parsed.created || parsed.metadata?.created;
+            return [{ timestamp: ts, content, tags: deduceTags(content, tags) }];
+        }
+    } catch (e) {}
+
+    const lines = output.split('\n');
+    const facts: ParsedFact[] = [];
+    let currentTimestamp: string | undefined = undefined;
+
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        const timeMatch = line.match(/^\((2\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\)$/i) || 
+                           line.match(/^\((2\d{3}-\d{2}-\d{2})\)$/);
+        if (timeMatch) {
+            currentTimestamp = timeMatch[1];
+            continue;
+        }
+
+        const inlineTimeMatch = line.match(/^\((.*?)\)\s*[-:]?\s*(.*)/);
+        if (inlineTimeMatch) {
+            const ts = inlineTimeMatch[1];
+            const content = inlineTimeMatch[2].replace(/^-\s*/, '').trim();
+            facts.push({ timestamp: ts, content, tags: deduceTags(content) });
+            continue;
+        }
+
+        if (line.startsWith('-')) {
+            const content = line.slice(1).trim();
+            facts.push({ timestamp: currentTimestamp, content, tags: deduceTags(content) });
+            continue;
+        }
+
+        if (line.toLowerCase().startsWith('found matches:')) continue;
+        if (line.toLowerCase().startsWith('no facts') || line.toLowerCase().startsWith('no memory')) continue;
+
+        const cleanContent = line.replace(/^-\s*/, '').trim();
+        if (cleanContent.length > 3) {
+            facts.push({ timestamp: currentTimestamp, content: cleanContent, tags: deduceTags(cleanContent) });
+        }
+    }
+
+    return facts;
+};
+
+const MemoryTimelineCard = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }) => {
+    const isRunning = tc.status === "running";
+    const isError = tc.status === "error";
+    
+    const tname = (tc.toolName || '').toLowerCase();
+    const isRecall = tname.includes('recall') || tname.includes('search');
+    const isSave = tname.includes('remember') || tname.includes('save') || tname.includes('consolidator');
+    const isUpdate = tname.includes('update') || tname.includes('profile') || tname.includes('preference');
+    
+    let opLabel = "Memory Access";
+    let themeColor = "#10b981"; // Unified EverFern emerald green brand theme
+    let glowColor = "rgba(16, 185, 129, 0.04)";
+    let accentGradient = "linear-gradient(135deg, rgba(16, 185, 129, 0.02) 0%, rgba(20, 184, 166, 0.02) 100%)";
+    let pulseColor = "#34d399";
+    
+    if (isSave) {
+        opLabel = "Memory Retained";
+    } else if (isUpdate) {
+        opLabel = "Memory Updated";
+    } else if (isRecall) {
+        opLabel = "Memory Recalled";
+    }
+    
+    if (isError) {
+        opLabel = "Memory Access Failed";
+        themeColor = "#ef4444";
+        glowColor = "rgba(239, 68, 68, 0.08)";
+        accentGradient = "linear-gradient(135deg, rgba(239, 68, 68, 0.04) 0%, rgba(220, 38, 38, 0.04) 100%)";
+        pulseColor = "#f87171";
+    }
+
+    const query = tc.args?.query || tc.args?.fact || tc.args?.content || tc.args?.preference || tc.args?.taskName || '';
+    
+    let previewText = "";
+    if (tc.output) {
+        try {
+            const clean = tc.output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+            const parsed = JSON.parse(clean);
+            if (parsed && Array.isArray(parsed.newMemories)) {
+                previewText = parsed.newMemories.map((m: any) => m.fact || m.content).join(", ");
+            } else if (parsed && parsed.fact) {
+                previewText = parsed.fact;
+            }
+        } catch {
+            previewText = tc.output.replace(/^Found matches:\s*/i, '').trim();
+            if (previewText.toLowerCase().startsWith('no ') || previewText.toLowerCase().startsWith('no facts')) {
+                previewText = "No memory records matched this context.";
+            } else {
+                previewText = previewText.split(/\n---\n|\n---\s*\n/)[0].trim();
+                const srcMatch = previewText.match(/^\[(.*?)\]\s*\[(.*?)\]/);
+                if (srcMatch) {
+                    previewText = previewText.slice(srcMatch[0].length).trim();
+                }
+            }
+        }
+    }
+
+    const [expanded, setExpanded] = useState(false);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.98, y: 5 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            style={{
+                width: "100%",
+                maxWidth: "620px",
+                borderRadius: 12,
+                border: `1px solid ${isRunning ? themeColor : 'var(--color-border)'}`,
+                background: isRunning ? glowColor : 'var(--color-bg-surface)',
+                boxShadow: isRunning 
+                    ? `0 4px 18px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.1)`
+                    : "0 1px 3px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.15)",
+                overflow: "hidden",
+                margin: "4px 0 8px",
+                cursor: "pointer",
+                transition: "border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease",
+            }}
+            onClick={(e) => {
+                setExpanded(!expanded);
+                e.stopPropagation();
+            }}
+            whileHover={{ 
+                boxShadow: isRunning 
+                    ? `0 6px 22px ${glowColor}, inset 0 1px 0 rgba(255,255,255,0.15)` 
+                    : "0 3px 12px var(--color-border), inset 0 1px 0 rgba(255,255,255,0.9)",
+                transform: "translateY(-1px)",
+                borderColor: isRunning ? themeColor : "rgba(0,0,0,0.16)"
+            }}
+        >
+            <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "8px 12px",
+                background: accentGradient,
+            }}>
+                <GlobeDotIcon isRunning={isRunning} color={themeColor} />
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ 
+                            fontSize: 12, 
+                            fontWeight: 700, 
+                            color: isRunning ? themeColor : 'var(--color-text-primary)',
+                            letterSpacing: "-0.015em"
+                        }}>
+                            {isRunning ? "Accessing EverFern Memory..." : opLabel}
+                        </span>
+                        {!isRunning && (
+                            <span style={{ 
+                                fontSize: 9, 
+                                fontWeight: 700, 
+                                padding: "1px 5px", 
+                                borderRadius: 6, 
+                                background: isError ? "rgba(239, 68, 68, 0.08)" : `${themeColor}12`, 
+                                color: themeColor,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.03em"
+                            }}>
+                                {tc.toolName}
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {onClick && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onClick();
+                            }}
+                            style={{
+                                border: "none",
+                                background: "var(--color-border)",
+                                padding: "3px 7px",
+                                borderRadius: 5,
+                                fontSize: 9.5,
+                                fontWeight: 600,
+                                color: 'var(--color-text-secondary)',
+                                cursor: "pointer",
+                                transition: "background 0.2s ease"
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--color-border)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "var(--color-border)"}
+                        >
+                            Trace
+                        </button>
+                    )}
+                    <motion.div 
+                        animate={{ rotate: expanded ? 180 : 0 }}
+                        style={{ color: 'var(--color-text-tertiary)', display: "flex", alignItems: "center" }}
+                    >
+                        <ChevronDownIcon style={{ width: 14, height: 14 }} />
+                    </motion.div>
+                </div>
+            </div>
+
+            <AnimatePresence>
+                {expanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                        style={{ overflow: "hidden", borderTop: "1px solid var(--color-border)", background: 'var(--color-bg-base)' }}
+                    >
+                        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+                            {query && (
+                                <div style={{ fontSize: 10.5, color: 'var(--color-text-secondary)' }}>
+                                    <span style={{ fontWeight: 600 }}>Query:</span> <code style={{ fontFamily: "monospace", color: 'var(--color-text-primary)' }}>{String(query)}</code>
+                                </div>
+                            )}
+                            
+                            {previewText && (() => {
+                                const parsedFacts = parseFacts(tc.output || '');
+                                return (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: query ? 4 : 0 }}>
+                                        {parsedFacts.length > 0 ? (
+                                            parsedFacts.map((fact, fIdx) => {
+                                                const formattedTime = formatTimestamp(fact.timestamp);
+                                                return (
+                                                    <div key={fIdx} style={{ 
+                                                        display: "flex", 
+                                                        alignItems: "flex-start", 
+                                                        justifyContent: "space-between", 
+                                                        gap: 16,
+                                                        padding: "4px 0",
+                                                        borderTop: fIdx > 0 ? "1px solid rgba(0,0,0,0.03)" : "none"
+                                                    }}>
+                                                        <div style={{ fontSize: 11.5, color: 'var(--color-text-primary)', lineHeight: 1.4, flex: 1 }}>
+                                                            {fact.content}
+                                                        </div>
+                                                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginTop: 2 }}>
+                                                            {fact.tags.map((tag) => (
+                                                                <span key={tag} style={{
+                                                                    fontSize: 8.5,
+                                                                    fontWeight: 600,
+                                                                    padding: "1px 4px",
+                                                                    borderRadius: 4,
+                                                                    backgroundColor: "var(--color-border)",
+                                                                    color: 'var(--color-text-secondary)',
+                                                                    border: "1px solid var(--color-border)",
+                                                                    textTransform: "uppercase"
+                                                                }}>
+                                                                    {tag}
+                                                                </span>
+                                                            ))}
+                                                            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                                                                {formattedTime}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                                                {previewText}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            {isError && tc.output && (
+                                <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: 6, marginTop: 2 }}>
+                                    <span style={{ fontSize: 9, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em" }}>Failure Output</span>
+                                    <p style={{ margin: "2px 0 0", fontSize: 11, color: 'var(--color-error)', fontFamily: "monospace" }}>
+                                        {String(tc.output)}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
+    );
+};
+
 const ToolTimelineItem = ({
     tc,
     onPillClick,
@@ -906,6 +1320,18 @@ const ToolTimelineItem = ({
     subAgentProgress?: Map<string, SubAgentProgressEvent[]>;
     index: number;
 }) => {
+    const tNameLower = String(tc.toolName || '').toLowerCase();
+    const isMemory = tc.toolName === 'fern' || tc.toolName === 'recall_fact' || tc.toolName === 'remember_fact' || tc.toolName === 'update_profile' || tNameLower.includes('fern') || tNameLower.includes('memory') || tNameLower.includes('consolidator') || tNameLower.includes('confirm_preference') || tNameLower.includes('recall') || tNameLower.includes('remember');
+
+    if (isMemory) {
+        return (
+            <MemoryTimelineCard
+                tc={tc}
+                onClick={onPillClick ? () => onPillClick(tc) : undefined}
+            />
+        );
+    }
+
     const events = tc.subAgentProgress || subAgentProgress?.get(tc.id) || [];
     const pinRunningActivityToBottom = tc.status === "running" && !!getToolActivity(tc);
 
@@ -962,7 +1388,7 @@ const RepeatedToolCollapse = ({
                     border: "none",
                     borderRadius: 999,
                     background: "transparent",
-                    color: "#9b9b9b",
+                    color: 'var(--color-text-tertiary)',
                     cursor: "pointer",
                     fontFamily: "inherit",
                     fontSize: 12.5,
@@ -982,7 +1408,7 @@ const RepeatedToolCollapse = ({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: "#8f8f8f",
+                        color: 'var(--color-text-tertiary)',
                         flexShrink: 0,
                     }}
                 >
@@ -1078,7 +1504,7 @@ const renderToolGroups = (
                         data-testid="tool-batch-narrative"
                         style={{
                             fontSize: 12,
-                            color: "#8f96a3",
+                            color: 'var(--color-text-tertiary)',
                             lineHeight: 1.65,
                             margin: "4px 2px 7px",
                             maxWidth: 820,
@@ -1203,7 +1629,7 @@ const MissionStepRow = ({
                     top: 14,
                     bottom: -18,
                     left: 7,
-                    borderLeft: "1.5px dashed #d4d4d8",
+                    borderLeft: "1.5px dashed var(--color-border)",
                     zIndex: 0,
                     pointerEvents: "none",
                 }} />
@@ -1220,7 +1646,7 @@ const MissionStepRow = ({
                 <StepStatusIcon status={effectiveStatus} />
                 <span style={{
                     fontSize: 13, fontWeight: isActive ? 600 : 500,
-                    color: isDone ? "#9ca3af" : isActive ? "#111827" : "#9ca3af",
+                    color: isDone ? 'var(--color-text-tertiary)' : isActive ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                     flex: 1, letterSpacing: "-0.01em",
                 }}>
                     {displayName}
@@ -1228,12 +1654,12 @@ const MissionStepRow = ({
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {step.duration != null && step.duration > 0 && !hasActiveToolsAfterCompletion && (
-                        <span style={{ fontSize: 10.5, color: "#d1d5db", fontWeight: 500 }}>
+                        <span style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
                             {(step.duration / 1000).toFixed(1)}s
                         </span>
                     )}
                     {hasContent && (
-                        <span style={{ color: "#d1d5db", display: "flex" }}>
+                        <span style={{ color: 'var(--color-text-tertiary)', display: "flex" }}>
                             {open
                                 ? <ChevronUpIcon style={{ width: 14, height: 14 }} />
                                 : <ChevronDownIcon style={{ width: 14, height: 14 }} />}
@@ -1260,7 +1686,7 @@ const MissionStepRow = ({
                         }}>
                             {step.description && (
                                 <p style={{
-                                    fontSize: 12, color: "#6b7280", lineHeight: 1.6,
+                                    fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.6,
                                     margin: "4px 0 10px", fontWeight: 400,
                                 }}>
                                     {step.description}
@@ -1284,7 +1710,7 @@ const MissionStepRow = ({
                                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                                         {toolCalls.length > 50 && (
-                                            <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                                            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: "center", paddingBottom: 4 }}>
                                                 ... {toolCalls.length - 50} older actions hidden for performance
                                             </div>
                                         )}
@@ -1321,9 +1747,9 @@ const MissionStepRow = ({
 
                             {step.result && isDone && !shouldHideStepResult(step.result) && (
                                 <div style={{
-                                    fontSize: 12, color: "#9ca3af", lineHeight: 1.5,
-                                    marginTop: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6,
-                                    border: "1px solid #f3f4f6",
+                                    fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5,
+                                    marginTop: 8, padding: "6px 8px", background: 'var(--color-bg-subtle)', borderRadius: 6,
+                                    border: "1px solid var(--color-border)",
                                 }}>
                                     {step.result.slice(0, 150)}{step.result.length > 150 ? "…" : ""}
                                 </div>
@@ -1377,7 +1803,7 @@ const TaskGroupRow = ({
         return (
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {toolCalls.length > 50 && (
-                    <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: "center", paddingBottom: 4 }}>
                         ... {toolCalls.length - 50} older actions hidden for performance
                     </div>
                 )}
@@ -1400,7 +1826,7 @@ const TaskGroupRow = ({
                     top: 14,
                     bottom: -18,
                     left: 7,
-                    borderLeft: "1.5px dashed #d4d4d8",
+                    borderLeft: "1.5px dashed var(--color-border)",
                     zIndex: 0,
                     pointerEvents: "none",
                 }} />
@@ -1419,7 +1845,7 @@ const TaskGroupRow = ({
                 <StepStatusIcon status={effectiveStatus} />
                 <span style={{
                     fontSize: 13, fontWeight: isActive ? 600 : 500,
-                    color: isDone ? "#9ca3af" : isActive ? "#111827" : "#6b7280",
+                    color: isDone ? 'var(--color-text-tertiary)' : isActive ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                     flex: 1, letterSpacing: "-0.01em",
                 }}>
                     {displayName}
@@ -1427,12 +1853,12 @@ const TaskGroupRow = ({
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{
-                        fontSize: 10.5, color: "#d1d5db", fontWeight: 500,
-                        background: "#f4f4f5", padding: "1px 6px", borderRadius: 4,
+                        fontSize: 10.5, color: 'var(--color-text-tertiary)', fontWeight: 500,
+                        background: 'var(--color-bg-subtle)', padding: "1px 6px", borderRadius: 4,
                     }}>
                         {toolCalls.length}
                     </span>
-                    <span style={{ color: "#d1d5db", display: "flex" }}>
+                    <span style={{ color: 'var(--color-text-tertiary)', display: "flex" }}>
                         {open
                             ? <ChevronUpIcon style={{ width: 14, height: 14 }} />
                             : <ChevronDownIcon style={{ width: 14, height: 14 }} />}
@@ -1458,7 +1884,7 @@ const TaskGroupRow = ({
                         }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                                 {toolCalls.length > 50 && (
-                                    <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", paddingBottom: 4 }}>
+                                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', textAlign: "center", paddingBottom: 4 }}>
                                         ... {toolCalls.length - 50} older actions hidden for performance
                                     </div>
                                 )}
@@ -1562,12 +1988,12 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                 padding: "16px 20px",
                 borderRadius: 16,
                 ...galliumSurface,
-                background: "linear-gradient(180deg, #fafafa 0%, #f4f4f4 100%)",
+                background: 'var(--color-bg-surface)',
             }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                     <div style={{
                         width: 24, height: 24, borderRadius: 6,
-                        background: "#111", color: "#fff",
+                        background: 'var(--color-text-primary)', color: 'var(--color-bg-surface)',
                         display: "flex", alignItems: "center", justifyContent: "center"
                     }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1575,7 +2001,7 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                             <path d="M9 3v18" />
                         </svg>
                     </div>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "#111", margin: 0, letterSpacing: "-0.01em" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, letterSpacing: "-0.01em" }}>
                         {planTitle || "Operator Objective"}
                     </h3>
                 </div>
@@ -1585,7 +2011,7 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                     <div style={{
                         position: "absolute",
                         top: 12, bottom: 12, left: 20,
-                        borderLeft: "2px dashed #d4d4d8",
+                        borderLeft: "2px dashed var(--color-border)",
                         zIndex: 0
                     }} />
 
@@ -1596,8 +2022,8 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                             const isFailed = step.status === "failed";
                             const isPending = !isDone && !isActive && !isFailed;
 
-                            const statusColor = isDone ? "#d4d4d8" : isActive ? "#3b82f6" : isFailed ? "#ef4444" : "#e4e4e7";
-                            const bgColor = isDone ? "#f4f4f5" : isActive ? "#eff6ff" : isFailed ? "#fef2f2" : "#f9fafb";
+                            const statusColor = isDone ? 'var(--color-border)' : isActive ? "#3b82f6" : isFailed ? "#ef4444" : 'var(--color-border)';
+                            const bgColor = isDone ? 'var(--color-bg-subtle)' : isActive ? 'var(--color-bg-hover)' : isFailed ? 'var(--color-error-dim)' : 'var(--color-bg-subtle)';
 
                             return (
                                 <motion.div
@@ -1624,7 +2050,7 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                         flexShrink: 0,
                                         boxShadow: isActive ? `0 0 0 4px rgba(59, 130, 246, 0.15)` : 'none'
                                     }}>
-                                        {isDone && <CheckIcon width={12} height={12} style={{ color: "#71717a", strokeWidth: 3 }} />}
+                                        {isDone && <CheckIcon width={12} height={12} style={{ color: 'var(--color-text-secondary)', strokeWidth: 3 }} />}
                                         {isActive && (
                                             <motion.div
                                                 animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
@@ -1640,21 +2066,21 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                     <div style={{
                                         flex: 1,
                                         padding: "10px 14px",
-                                        background: "#fff",
+                                        background: 'var(--color-bg-surface)',
                                         borderRadius: 12,
-                                        border: "1px solid rgba(0,0,0,0.06)",
+                                        border: "1px solid var(--color-border)",
                                         boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                                         opacity: isPending ? 0.7 : 1,
                                         transition: "all 0.2s"
                                     }}>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                                            <span style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                                                 {step.title || `Task ${idx + 1}`}
                                             </span>
                                             {step.tool && (
                                                 <span style={{
                                                     fontSize: 10, fontWeight: 600, textTransform: "uppercase",
-                                                    color: "#6b7280", background: "#f3f4f6",
+                                                    color: 'var(--color-text-tertiary)', background: 'var(--color-bg-subtle)',
                                                     padding: "2px 6px", borderRadius: 4, letterSpacing: "0.02em"
                                                 }}>
                                                     {step.tool.replace(/_/g, " ")}
@@ -1662,7 +2088,7 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                             )}
                                         </div>
                                         {step.description && (
-                                            <div style={{ fontSize: 11.5, color: "#6b7280", lineHeight: 1.5 }}>
+                                            <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
                                                 {step.description}
                                             </div>
                                         )}
@@ -1670,9 +2096,9 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                         {/* Show Dependencies if they exist and aren't strictly linear to the previous node */}
                                         {step.dependencies && step.dependencies.length > 0 && (
                                             <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                                <span style={{ fontSize: 10, color: "#9ca3af", marginRight: 4 }}>Depends on:</span>
+                                                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginRight: 4 }}>Depends on:</span>
                                                 {step.dependencies.map(dep => (
-                                                    <span key={dep} style={{ fontSize: 10, color: "#4b5563", background: "#f3f4f6", padding: "1px 6px", borderRadius: 4 }}>
+                                                    <span key={dep} style={{ fontSize: 10, color: 'var(--color-text-secondary)', background: 'var(--color-bg-subtle)', padding: "1px 6px", borderRadius: 4 }}>
                                                         {dep.substring(0, 8)}...
                                                     </span>
                                                 ))}
@@ -1690,7 +2116,7 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
 };
 
 // ── Main AgentTimeline ─────────────────────────────────────────────────────────
-export const AgentTimeline = ({
+export const AgentTimeline = React.memo(({
     toolCalls = [],
     thought,
     isLive,
@@ -1810,19 +2236,19 @@ export const AgentTimeline = ({
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 }}>
                     <img
-                        src="/images/logos/black-logo-withoutbg.png"
+                        src="/images/logos/everfern-withoutbg.png"
                         alt="EverFern"
                         width={40} height={40}
                         style={{ objectFit: "contain" }}
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
                 </div>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: "#111", letterSpacing: "-0.02em" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--color-text-secondary)", letterSpacing: "-0.02em" }}>
                     {generatedTitle || "EverFern"}
                 </span>
 
                 {isLive && (
-                    <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#bbb", fontFamily: "monospace" }}>
+                    <span style={{ marginLeft: "auto", fontSize: 11.5, color: 'var(--color-text-tertiary)', fontFamily: "monospace" }}>
                         {elapsed}
                     </span>
                 )}
@@ -1856,7 +2282,7 @@ export const AgentTimeline = ({
                             border: 'none',
                             cursor: 'pointer',
                             padding: '4px 0',
-                            color: '#9ca3af',
+                            color: 'var(--color-text-tertiary)',
                             fontSize: 12.5,
                             fontWeight: 500,
                             outline: 'none',
@@ -1885,14 +2311,14 @@ export const AgentTimeline = ({
                                 style={{ overflow: 'hidden' }}
                             >
                                 <div style={{
-                                    borderLeft: '1.5px solid #e5e7eb',
+                                    borderLeft: '1.5px solid var(--color-border)',
                                     paddingLeft: 14,
                                     marginLeft: 6,
                                     marginTop: 6,
                                     marginBottom: 6,
                                     fontSize: 12.5,
                                     lineHeight: 1.7,
-                                    color: '#6b7280',
+                                    color: 'var(--color-text-tertiary)',
                                     fontStyle: 'italic',
                                     whiteSpace: 'pre-wrap',
                                     wordBreak: 'break-word',
@@ -1940,6 +2366,6 @@ export const AgentTimeline = ({
             )}
         </motion.div>
     );
-};
+});
 
 export default AgentTimeline;

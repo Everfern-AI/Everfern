@@ -72,7 +72,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     style={{
-                        backgroundColor: "#fff",
+                        backgroundColor: "var(--color-bg-surface)",
                         borderRadius: 16,
                         width: "100%",
                         maxWidth: 500,
@@ -87,19 +87,19 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                             onClick={onClose}
                             style={{ 
                                 background: "none", border: "none", cursor: "pointer", 
-                                color: "#666", padding: 0, marginBottom: 12,
+                                color: "var(--color-text-secondary)", padding: 0, marginBottom: 12,
                                 display: "flex", alignItems: "center" 
                             }}
                         >
                             <ArrowLeftIcon width={20} height={20} />
                         </button>
                         
-                        <h2 style={{ fontSize: 22, fontWeight: 700, color: "#111", margin: "0 0 24px 0" }}>Start a new project</h2>
+                        <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>Start a new project</h2>
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                             {/* Name */}
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>Name <span style={{ color: "#e53e3e" }}>*</span></label>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Name <span style={{ color: "#e53e3e" }}>*</span></label>
                                 <input
                                     type="text"
                                     value={name}
@@ -107,8 +107,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                     placeholder="Project name"
                                     style={{
                                         width: "100%", padding: "10px 14px",
-                                        border: "1px solid #0066ff", borderRadius: 8,
+                                        border: "1px solid var(--color-border-focus, #0066ff)", borderRadius: 8,
                                         fontSize: 14, outline: "none",
+                                        backgroundColor: "var(--color-bg-surface)",
+                                        color: "var(--color-text-primary)",
                                         boxShadow: "0 0 0 2px rgba(0, 102, 255, 0.1)"
                                     }}
                                 />
@@ -116,7 +118,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                             {/* Instructions */}
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>Instructions</label>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Instructions</label>
                                 <textarea
                                     value={instructions}
                                     onChange={e => setInstructions(e.target.value)}
@@ -124,19 +126,21 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                     rows={3}
                                     style={{
                                         width: "100%", padding: "10px 14px",
-                                        border: "1px solid #dcdad0", borderRadius: 8,
-                                        fontSize: 14, outline: "none", resize: "none"
+                                        border: "1px solid var(--color-border)", borderRadius: 8,
+                                        fontSize: 14, outline: "none", resize: "none",
+                                        backgroundColor: "var(--color-bg-surface)",
+                                        color: "var(--color-text-primary)"
                                     }}
                                 />
                             </div>
 
                             {/* Add files (visual only for now as requested by user context) */}
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>Add files</label>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Add files</label>
                                 <div style={{
-                                    border: "1px dashed #dcdad0", borderRadius: 8,
+                                    border: "1px dashed var(--color-border)", borderRadius: 8,
                                     padding: "20px", display: "flex", alignItems: "center", justifyContent: "center",
-                                    color: "#666", cursor: "pointer", backgroundColor: "#faf9f7"
+                                    color: "var(--color-text-secondary)", cursor: "pointer", backgroundColor: "var(--color-bg-subtle)"
                                 }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                         <PlusIcon width={16} height={16} />
@@ -147,22 +151,22 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                             {/* Project location */}
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: "#333", display: "flex", justifyContent: "space-between" }}>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", display: "flex", justifyContent: "space-between" }}>
                                     <span>Choose project location</span>
-                                    <span style={{ cursor: "pointer", color: "#888" }}>ⓘ</span>
+                                    <span style={{ cursor: "pointer", color: "var(--color-text-placeholder)" }}>ⓘ</span>
                                 </label>
                                 <div 
                                     onClick={handleSelectPath}
                                     style={{
                                         display: "flex", alignItems: "center", gap: 10,
                                         width: "100%", padding: "10px 14px",
-                                        border: "1px solid #dcdad0", borderRadius: 8,
+                                        border: "1px solid var(--color-border)", borderRadius: 8,
                                         fontSize: 14, cursor: "pointer",
-                                        backgroundColor: "#faf9f7"
+                                        backgroundColor: "var(--color-bg-subtle)"
                                     }}
                                 >
-                                    <FolderIcon width={18} height={18} color="#666" />
-                                    <span style={{ color: path ? "#111" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <FolderIcon width={18} height={18} style={{ color: "var(--color-text-secondary)" }} />
+                                    <span style={{ color: path ? "var(--color-text-primary)" : "var(--color-text-placeholder)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                         {path || "Select a folder..."}
                                     </span>
                                 </div>
@@ -172,11 +176,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
                     <div style={{ 
                         padding: "16px 24px", 
-                        borderTop: "1px solid #f0eee1", 
+                        borderTop: "1px solid var(--color-border)", 
                         display: "flex", 
                         justifyContent: "space-between",
                         alignItems: "center",
-                        backgroundColor: "#faf9f7"
+                        backgroundColor: "var(--color-bg-subtle)"
                     }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0066ff", fontSize: 13, fontWeight: 500 }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -188,8 +192,8 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                             <button
                                 onClick={onClose}
                                 style={{
-                                    padding: "8px 16px", background: "transparent", border: "1px solid #dcdad0",
-                                    borderRadius: 8, fontSize: 14, fontWeight: 500, color: "#333", cursor: "pointer"
+                                    padding: "8px 16px", background: "transparent", border: "1px solid var(--color-border)",
+                                    borderRadius: 8, fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", cursor: "pointer"
                                 }}
                             >
                                 Cancel
@@ -198,9 +202,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                 onClick={handleCreate}
                                 disabled={!name.trim() || !path.trim() || isCreating}
                                 style={{
-                                    padding: "8px 16px", backgroundColor: (!name.trim() || !path.trim() || isCreating) ? "#ccc" : "#666",
-                                    border: "none", borderRadius: 8, fontSize: 14, fontWeight: 500, color: "#fff", cursor: (!name.trim() || !path.trim() || isCreating) ? "not-allowed" : "pointer",
-                                    transition: "background-color 0.2s"
+                                    padding: "8px 16px",
+                                    backgroundColor: (!name.trim() || !path.trim() || isCreating) ? "var(--color-bg-hover)" : "var(--color-text-primary)",
+                                    border: "none",
+                                    borderRadius: 8,
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    color: (!name.trim() || !path.trim() || isCreating) ? "var(--color-text-placeholder)" : "var(--color-bg-surface)",
+                                    cursor: (!name.trim() || !path.trim() || isCreating) ? "not-allowed" : "pointer",
+                                    transition: "all 0.2s"
                                 }}
                             >
                                 {isCreating ? "Creating..." : "Create"}

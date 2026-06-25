@@ -92,7 +92,7 @@ If no new memory should be saved, respond with:
       for (const mem of newMemories) {
         const { type, category, value, linkedFile } = mem;
         if (type && category && value && linkedFile) {
-          addOrUpdateMemory(type, category, value, linkedFile);
+          await addOrUpdateMemory(type, category, value, linkedFile);
           runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
         }
       }
@@ -167,7 +167,7 @@ If you agree that there is absolutely nothing to store, respond with:
           for (const mem of auditorNewMemories) {
             const { type, category, value, linkedFile } = mem;
             if (type && category && value && linkedFile) {
-              addOrUpdateMemory(type, category, value, linkedFile);
+              await addOrUpdateMemory(type, category, value, linkedFile);
               runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
               newMemories.push(mem);
             }
