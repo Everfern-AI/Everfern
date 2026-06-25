@@ -106,7 +106,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: (!projectName || isCreating) ? '#9ca3af' : '#3b82f6',
+              backgroundColor: (!projectName || isCreating) ? 'var(--color-text-tertiary)' : '#3b82f6',
               color: 'white',
               fontSize: '14px',
               fontWeight: 500,
@@ -131,7 +131,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
           </button>
         </div>
 
-        <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '12px', margin: 0 }}>
+        <p style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', marginTop: '12px', margin: 0 }}>
           💡 Tip: After creation, run 'npm install' and 'npm run dev' to start developing
         </p>
       </div>

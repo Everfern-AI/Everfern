@@ -148,7 +148,7 @@ export function formatDuration(ms: number): string {
  */
 export function getStatusColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
-    pending: '#f3f4f6',
+    pending: 'var(--color-bg-subtle)',
     'in-progress': '#dbeafe',
     completed: '#dcfce7',
     failed: '#fee2e2',
@@ -162,7 +162,7 @@ export function getStatusColor(status: TaskStatus): string {
  */
 export function getStatusTextColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
-    pending: '#6b7280',
+    pending: 'var(--color-text-tertiary)',
     'in-progress': '#0284c7',
     completed: '#16a34a',
     failed: '#dc2626',
@@ -176,7 +176,7 @@ export function getStatusTextColor(status: TaskStatus): string {
  */
 export function getStatusBorderColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
-    pending: '#d1d5db',
+    pending: 'var(--color-border)',
     'in-progress': '#0284c7',
     completed: '#16a34a',
     failed: '#dc2626',

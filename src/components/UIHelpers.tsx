@@ -17,14 +17,14 @@ const ContextTokenRing = ({ used, max }: { used: number; max: number }) => {
                 transition: 'opacity 0.15s ease', whiteSpace: 'nowrap', zIndex: 9999, marginBottom: 8,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
             }} className="token-ring-tooltip">
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-bg-surface)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
                     {displayTokens}
                 </span>
-                <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#9ca3af', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
                     {Math.round(max / 1000)}k
                 </span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
             </div>
             <svg width="32" height="32" viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="16" cy="16" r="12" fill="none" stroke={bgColor} strokeWidth="3" />
@@ -73,7 +73,7 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
             onMouseEnter={e => {
                 if (!isRecording) {
                     e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.07)";
-                    e.currentTarget.style.borderColor = "#a1a1aa";
+                    e.currentTarget.style.borderColor = 'var(--color-text-tertiary)';
                     e.currentTarget.style.color = "#333";
                 }
             }}

@@ -191,11 +191,14 @@
   /* ─────────────────────────────────────────────────────────────────── */
 
   /* Background Colors — Light Theme (Beach Vibe) */
-  --color-bg-base: #fcfcfb;
+  --color-bg-base: #f5f4f0;
   --color-bg-surface: #ffffff;
-  --color-bg-subtle: #f5f5e1;
+  --color-bg-subtle: #f4f4f4;
   --color-bg-elevated: #ffffff;
   --color-bg-overlay: rgba(0, 0, 0, 0.05);
+  --color-bg-base-transparent: rgba(245, 244, 240, 0);
+  --color-bg-surface-transparent: rgba(255, 255, 255, 0);
+  --color-bg-subtle-transparent: rgba(244, 244, 244, 0);
 
   /* Hover & Interactive States */
   --color-bg-hover: rgba(0, 0, 0, 0.04);
@@ -240,6 +243,13 @@
   /* Agent / Tool Colors */
   --color-analysing: #a1a1aa;
   --color-tool-call: var(--color-accent);
+
+  /* Navis Theme Colors */
+  --color-navis-active-bg: #f0ecff;
+  --color-navis-active-hover: #e8e4ff;
+  --color-navis-active-border: #667eea;
+  --color-navis-active-text: #667eea;
+  --color-navis-icon-color: #6366f1;
 
   /* Message Bubbles */
   --color-user-bubble: #edeacc;
@@ -378,6 +388,30 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Sidebar Theme Variables */
+  --sidebar-bg: #f5f4f0;
+  --sidebar-border: #e8e6d9;
+  --sidebar-btn-color: #73716e;
+  --sidebar-btn-hover-color: #111111;
+  --sidebar-brand-text: #201e24;
+  --sidebar-text-primary: #111111;
+  --sidebar-text-secondary: #4a4846;
+  --sidebar-text-tertiary: #8a8886;
+  --sidebar-bg-hover: rgba(0, 0, 0, 0.04);
+  --sidebar-bg-selected: rgba(0, 0, 0, 0.06);
+  --sidebar-bg-active: rgba(0, 0, 0, 0.08);
+  --sidebar-avatar-bg: #f0eee1;
+  --sidebar-avatar-border: #dcdad0;
+  --sidebar-limit-text: #a09e9c;
+  --sidebar-project-text: #666666;
+  
+  --sidebar-settings-bg: rgba(0, 0, 0, 0.03);
+  --sidebar-settings-border: rgba(0, 0, 0, 0.05);
+  --sidebar-settings-text: #717171;
+  --sidebar-settings-hover-bg: rgba(0, 0, 0, 0.06);
+  --sidebar-settings-hover-border: rgba(0, 0, 0, 0.15);
+  --sidebar-settings-hover-text: #111111;
 }
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
@@ -761,6 +795,71 @@ a:hover {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Background Colors — Dark Theme (Claude-inspired charcoal) */
+  --color-bg-base: #0f0e0c;
+  --color-bg-surface: #181714;
+  --color-bg-subtle: #22201b;
+  --color-bg-elevated: #2c2923;
+  --color-bg-overlay: rgba(255, 255, 255, 0.05);
+  --color-bg-base-transparent: rgba(15, 14, 12, 0);
+  --color-bg-surface-transparent: rgba(24, 23, 20, 0);
+  --color-bg-subtle-transparent: rgba(34, 32, 27, 0);
+
+  /* Hover & Interactive States */
+  --color-bg-hover: rgba(255, 255, 255, 0.04);
+  --color-bg-active: rgba(255, 255, 255, 0.08);
+  --color-bg-selected: rgba(255, 255, 255, 0.06);
+
+  /* Border Colors */
+  --color-border: #333029;
+  --color-border-subtle: #292721;
+  --color-border-strong: #403c33;
+  --color-border-focus: #e5e5e5;
+
+  /* Text Colors */
+  --color-text-primary: #e5e4df;
+  --color-text-secondary: #c2c0b8;
+  --color-text-tertiary: #96948d;
+  --color-text-placeholder: #73716a;
+  --color-text-inverse: #111111;
+
+  /* Message Bubbles */
+  --color-user-bubble: #2d2a20;
+  --color-user-bubble-border: #3e3a2c;
+  --color-assistant-bubble: #181714;
+  --color-assistant-bubble-border: #333029;
+
+  /* Navis Theme Colors */
+  --color-navis-active-bg: rgba(99, 102, 241, 0.15);
+  --color-navis-active-hover: rgba(99, 102, 241, 0.25);
+  --color-navis-active-border: #818cf8;
+  --color-navis-active-text: #a5b4fc;
+  --color-navis-icon-color: #818cf8;
+
+  /* Sidebar Theme Variables */
+  --sidebar-bg: #22201b; /* dark warm charcoal sidebar matching settings preview */
+  --sidebar-border: #333029;
+  --sidebar-btn-color: #96948d;
+  --sidebar-btn-hover-color: #e5e4df;
+  --sidebar-brand-text: #e5e4df;
+  --sidebar-text-primary: #e5e4df;
+  --sidebar-text-secondary: #c2c0b8;
+  --sidebar-text-tertiary: #96948d;
+  --sidebar-bg-hover: rgba(255, 255, 255, 0.04);
+  --sidebar-bg-selected: rgba(255, 255, 255, 0.06);
+  --sidebar-bg-active: rgba(255, 255, 255, 0.08);
+  --sidebar-avatar-bg: #22201b;
+  --sidebar-avatar-border: #333029;
+  --sidebar-limit-text: #96948d;
+  --sidebar-project-text: #c2c0b8;
+  
+  --sidebar-settings-bg: rgba(255, 255, 255, 0.03);
+  --sidebar-settings-border: rgba(255, 255, 255, 0.05);
+  --sidebar-settings-text: #96948d;
+  --sidebar-settings-hover-bg: rgba(255, 255, 255, 0.06);
+  --sidebar-settings-hover-border: rgba(255, 255, 255, 0.15);
+  --sidebar-settings-hover-text: #e5e4df;
 }
 
 @theme inline {

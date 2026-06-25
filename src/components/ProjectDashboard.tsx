@@ -58,7 +58,7 @@ export function ProjectDashboard() {
               <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 4px 0' }}>
                 {proj.name}
               </h3>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
+              <p style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', margin: 0 }}>
                 {proj.template} • {proj.path}
               </p>
             </div>

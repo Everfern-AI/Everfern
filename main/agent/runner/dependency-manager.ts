@@ -294,75 +294,93 @@ export class DependencyManager {
    */
   private parseImports(content: string): ImportStatement[] {
     const imports: ImportStatement[] = [];
-    const lines = content.split('\n');
 
-    // Parse named imports (including type imports)
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    const typeImportRegex = /import\s+type\s+{([^}]+)}\s+from\s+['"]([^'"]+)['"]/g;
+    const namedImportRegex = /import\s+{([^}]+)}\s+from\s+['"]([^'"]+)['"]/g;
+    const defaultImportRegex = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
+    const namespaceImportRegex = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
 
-      // Check for type-only imports first
-      const typeImportMatch = /import\s+type\s+{([^}]+)}\s+from\s+['"]([^'"]+)['"]/.exec(line);
-      if (typeImportMatch) {
-        const specifiersStr = typeImportMatch[1];
-        const importPath = typeImportMatch[2];
-        const specifiers = this.parseImportSpecifiers(specifiersStr);
+    interface TempImport {
+      start: number;
+      end: number;
+      statement: ImportStatement;
+    }
+    const matches: TempImport[] = [];
 
-        imports.push({
-          source: importPath,
-          specifiers,
-          importPath,
-          isTypeOnly: true,
-          line: i + 1,
-        });
-        continue;
+    const getLineNumber = (index: number): number => {
+      return content.substring(0, index).split('\n').length;
+    };
+
+    // Collect matches for each pattern
+    const collectMatches = (regex: RegExp, type: 'type' | 'named' | 'default' | 'namespace') => {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(content)) !== null) {
+        const start = match.index;
+        const end = regex.lastIndex;
+        const line = getLineNumber(start);
+
+        if (type === 'type' || type === 'named') {
+          const specifiersStr = match[1];
+          const importPath = match[2];
+          const specifiers = this.parseImportSpecifiers(specifiersStr);
+          matches.push({
+            start,
+            end,
+            statement: {
+              source: importPath,
+              specifiers,
+              importPath,
+              isTypeOnly: type === 'type',
+              line,
+            }
+          });
+        } else if (type === 'default') {
+          const name = match[1];
+          const importPath = match[2];
+          matches.push({
+            start,
+            end,
+            statement: {
+              source: importPath,
+              specifiers: [{ name, isDefault: true, isNamespace: false }],
+              importPath,
+              isTypeOnly: false,
+              line,
+            }
+          });
+        } else if (type === 'namespace') {
+          const name = match[1];
+          const importPath = match[2];
+          matches.push({
+            start,
+            end,
+            statement: {
+              source: importPath,
+              specifiers: [{ name, isDefault: false, isNamespace: true }],
+              importPath,
+              isTypeOnly: false,
+              line,
+            }
+          });
+        }
       }
+    };
 
-      // Parse regular named imports
-      const namedMatch = /import\s+{([^}]+)}\s+from\s+['"]([^'"]+)['"]/.exec(line);
-      if (namedMatch) {
-        const specifiersStr = namedMatch[1];
-        const importPath = namedMatch[2];
-        const specifiers = this.parseImportSpecifiers(specifiersStr);
+    collectMatches(typeImportRegex, 'type');
+    collectMatches(namedImportRegex, 'named');
+    collectMatches(defaultImportRegex, 'default');
+    collectMatches(namespaceImportRegex, 'namespace');
 
-        imports.push({
-          source: importPath,
-          specifiers,
-          importPath,
-          isTypeOnly: false,
-          line: i + 1,
-        });
-        continue;
-      }
+    // Sort by start index
+    matches.sort((a, b) => a.start - b.start);
 
-      // Parse default imports
-      const defaultMatch = /import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/.exec(line);
-      if (defaultMatch) {
-        const name = defaultMatch[1];
-        const importPath = defaultMatch[2];
-
-        imports.push({
-          source: importPath,
-          specifiers: [{ name, isDefault: true, isNamespace: false }],
-          importPath,
-          isTypeOnly: false,
-          line: i + 1,
-        });
-        continue;
-      }
-
-      // Parse namespace imports
-      const namespaceMatch = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/.exec(line);
-      if (namespaceMatch) {
-        const name = namespaceMatch[1];
-        const importPath = namespaceMatch[2];
-
-        imports.push({
-          source: importPath,
-          specifiers: [{ name, isDefault: false, isNamespace: true }],
-          importPath,
-          isTypeOnly: false,
-          line: i + 1,
-        });
+    // Filter out overlapping matches
+    let lastEnd = -1;
+    for (const m of matches) {
+      if (m.start >= lastEnd) {
+        imports.push(m.statement);
+        lastEnd = m.end;
       }
     }
 
@@ -374,39 +392,82 @@ export class DependencyManager {
    */
   private parseExports(content: string): ExportStatement[] {
     const exports: ExportStatement[] = [];
-    const lines = content.split('\n');
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    const namedExportRegex = /export\s+{([^}]+)}(?:\s+from\s+['"]([^'"]+)['"])?/g;
+    const defaultExportRegex = /export\s+default\b/g;
+    const declExportRegex = /export\s+(const|let|var|function|class|interface|type)\s+(\w+)/g;
 
-      // Parse named exports
-      const namedMatch = /export\s+{([^}]+)}/.exec(line);
-      if (namedMatch) {
-        const specifiersStr = namedMatch[1];
-        const specifiers = this.parseExportSpecifiers(specifiersStr);
+    interface TempExport {
+      start: number;
+      end: number;
+      statement: ExportStatement;
+    }
+    const matches: TempExport[] = [];
 
-        exports.push({
+    const getLineNumber = (index: number): number => {
+      return content.substring(0, index).split('\n').length;
+    };
+
+    // Collect named exports
+    namedExportRegex.lastIndex = 0;
+    let match;
+    while ((match = namedExportRegex.exec(content)) !== null) {
+      const start = match.index;
+      const end = namedExportRegex.lastIndex;
+      const specifiersStr = match[1];
+      const exportPath = match[2];
+      const specifiers = this.parseExportSpecifiers(specifiersStr);
+      matches.push({
+        start,
+        end,
+        statement: {
           specifiers,
-          line: i + 1,
-        });
-      }
+          exportPath,
+          line: getLineNumber(start),
+        }
+      });
+    }
 
-      // Parse default exports
-      if (line.includes('export default')) {
-        exports.push({
+    // Collect default exports
+    defaultExportRegex.lastIndex = 0;
+    while ((match = defaultExportRegex.exec(content)) !== null) {
+      const start = match.index;
+      const end = defaultExportRegex.lastIndex;
+      matches.push({
+        start,
+        end,
+        statement: {
           specifiers: [{ name: 'default', isDefault: true }],
-          line: i + 1,
-        });
-      }
+          line: getLineNumber(start),
+        }
+      });
+    }
 
-      // Parse export declarations
-      const declMatch = /export\s+(const|let|var|function|class|interface|type)\s+(\w+)/.exec(line);
-      if (declMatch) {
-        const name = declMatch[2];
-        exports.push({
+    // Collect declaration exports
+    declExportRegex.lastIndex = 0;
+    while ((match = declExportRegex.exec(content)) !== null) {
+      const start = match.index;
+      const end = declExportRegex.lastIndex;
+      const name = match[2];
+      matches.push({
+        start,
+        end,
+        statement: {
           specifiers: [{ name, isDefault: false }],
-          line: i + 1,
-        });
+          line: getLineNumber(start),
+        }
+      });
+    }
+
+    // Sort by start index
+    matches.sort((a, b) => a.start - b.start);
+
+    // Filter out overlapping matches
+    let lastEnd = -1;
+    for (const m of matches) {
+      if (m.start >= lastEnd) {
+        exports.push(m.statement);
+        lastEnd = m.end;
       }
     }
 
@@ -418,7 +479,7 @@ export class DependencyManager {
    */
   private parseImportSpecifiers(specifiersStr: string): ImportSpecifier[] {
     const specifiers: ImportSpecifier[] = [];
-    const parts = specifiersStr.split(',').map(s => s.trim());
+    const parts = specifiersStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     for (const part of parts) {
       if (part.includes(' as ')) {
@@ -437,7 +498,7 @@ export class DependencyManager {
    */
   private parseExportSpecifiers(specifiersStr: string): ExportSpecifier[] {
     const specifiers: ExportSpecifier[] = [];
-    const parts = specifiersStr.split(',').map(s => s.trim());
+    const parts = specifiersStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     for (const part of parts) {
       if (part.includes(' as ')) {

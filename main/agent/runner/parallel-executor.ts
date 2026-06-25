@@ -42,7 +42,10 @@ export function analyzeToolDependencies(
 
     return tools.map(tool => {
         const isWrite = fileWriteTools.has(tool.name);
-        const isGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh', 'navis'].includes(tool.name) && tool.args.safe_for_parallel !== true;
+        // BUG-16 FIX: Removed 'navis' from globally locking list. Navis is browser
+        // automation that doesn't touch the filesystem or terminal — it's safe to
+        // run in parallel with read-only tools like web_search and memory_search.
+        const isGlobalLocking = ['run_command', 'bash', 'apply_patch', 'executePwsh'].includes(tool.name) && tool.args.safe_for_parallel !== true;
         const isReadOnly = readOnlyTools.has(tool.name) || (!isWrite && !isGlobalLocking);
         // Detect potential conflicts (same file path)
         const conflicts: string[] = [];
@@ -232,11 +235,15 @@ export async function executeSynchronizedParallelGroup(
                 tc.id
             );
 
+            // BUG-09 FIX: Apply truncateToolResult to prevent OOM from huge outputs
+            // (e.g. read_file on a 50MB file). Previously this was defined but never called.
+            const truncatedResult = truncateToolResult(result);
+
             const record: ToolCallRecord = {
                 id: tc.id,
                 toolName: tc.name,
                 args: tc.args,
-                result,
+                result: truncatedResult,
                 timestamp: new Date().toISOString()
             };
 

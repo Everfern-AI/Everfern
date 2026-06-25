@@ -10,6 +10,16 @@ import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 import { getRollbackManager } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+
+async function existsAsync(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 import * as os from 'os';
 
 // Global map to store pending local execution request resolvers
@@ -125,11 +135,11 @@ function buildGrepMatcher(pattern: string, caseSensitive: boolean, regexRequeste
   return new RegExp(escapeRegExp(pattern), flags);
 }
 
-function shouldSkipGrepFile(filePath: string, maxBytes: number): { skip: boolean; reason?: string } {
+async function shouldSkipGrepFile(filePath: string, maxBytes: number): Promise<{ skip: boolean; reason?: string }> {
   const ext = path.extname(filePath).toLowerCase();
   if (GREP_BINARY_EXTS.has(ext)) return { skip: true, reason: 'binary extension' };
   try {
-    const stat = fs.statSync(filePath);
+    const stat = await fs.promises.stat(filePath);
     if (!stat.isFile()) return { skip: true, reason: 'not a file' };
     if (stat.size > maxBytes) return { skip: true, reason: `larger than ${maxBytes} bytes` };
   } catch (err: any) {
@@ -163,7 +173,7 @@ async function executeHostGrep(
   const searchPath = typeof args.path === 'string' && args.path.trim()
     ? path.resolve(args.path)
     : process.cwd();
-  if (!fs.existsSync(searchPath)) {
+  if (!(await existsAsync(searchPath))) {
     return { success: false, output: `Error: grep path does not exist\nPath: ${searchPath}`, error: 'path_not_found' };
   }
 
@@ -195,8 +205,8 @@ async function executeHostGrep(
     onUpdate?.(`grep: searched ${filesSearched} file${filesSearched === 1 ? '' : 's'}, found ${matches.length} match${matches.length === 1 ? '' : 'es'} in ${path.basename(searchPath) || searchPath}`);
   };
 
-  const searchFile = (filePath: string) => {
-    const skip = shouldSkipGrepFile(filePath, maxFileBytes);
+  const searchFile = async (filePath: string) => {
+    const skip = await shouldSkipGrepFile(filePath, maxFileBytes);
     if (skip.skip) {
       if (skipped.length < 25) skipped.push(`${filePath} (${skip.reason})`);
       return;
@@ -204,7 +214,7 @@ async function executeHostGrep(
 
     let content = '';
     try {
-      content = fs.readFileSync(filePath, 'utf8');
+      content = await fs.promises.readFile(filePath, 'utf8');
     } catch (err: any) {
       if (skipped.length < 25) skipped.push(`${filePath} (${err?.message || 'read failed'})`);
       return;
@@ -236,9 +246,9 @@ async function executeHostGrep(
   };
 
   try {
-    const rootStat = fs.statSync(searchPath);
+    const rootStat = await fs.promises.stat(searchPath);
     if (rootStat.isFile()) {
-      searchFile(searchPath);
+      await searchFile(searchPath);
     } else {
       dirs.push(searchPath);
     }
@@ -258,7 +268,7 @@ async function executeHostGrep(
     dirsScanned += 1;
     let entries: fs.Dirent[] = [];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (err: any) {
       if (skipped.length < 25) skipped.push(`${dir} (${err?.message || 'read directory failed'})`);
       continue;
@@ -877,8 +887,8 @@ function adaptTool(
         const editPath = name === 'edit' && typeof args?.path === 'string' ? path.resolve(args.path) : '';
         if (editPath) {
           try {
-            if (fs.existsSync(editPath)) {
-              editContentBefore = fs.readFileSync(editPath, 'utf-8');
+            if ((await existsAsync(editPath))) {
+              editContentBefore = await fs.promises.readFile(editPath, 'utf-8');
             }
           } catch (readErr) {
             console.warn(`[pi-tools] Could not read file before edit result payload: ${editPath}`, readErr);
@@ -932,8 +942,8 @@ function adaptTool(
           let editContentAfter: string | undefined;
           if (editedPath) {
             try {
-              if (fs.existsSync(editedPath)) {
-                editContentAfter = fs.readFileSync(editedPath, 'utf-8');
+              if ((await existsAsync(editedPath))) {
+                editContentAfter = await fs.promises.readFile(editedPath, 'utf-8');
               }
             } catch (readErr) {
               console.warn(`[pi-tools] Could not read file after edit result payload: ${editedPath}`, readErr);
@@ -959,18 +969,20 @@ function adaptTool(
           const listPath = typeof args.path === 'string' && args.path.trim()
             ? path.resolve(args.path)
             : process.cwd();
-          const files = stripAnsi(outputText)
+          
+          const rawFiles = stripAnsi(outputText)
             .split(/\r?\n/)
             .map(line => line.trim())
-            .filter(line => line && !/^\[.*\]$/.test(line))
-            .map((entry) => {
+            .filter(line => line && !/^\[.*\]$/.test(line));
+            
+          const files = await Promise.all(rawFiles.map(async (entry) => {
               const isDirectory = entry.endsWith('/');
               const cleanName = entry.replace(/[\\/]+$/g, '');
               const absolutePath = path.resolve(listPath, cleanName);
               let size: number | undefined;
               let modifiedAt: string | undefined;
               try {
-                const stat = fs.statSync(absolutePath);
+                const stat = await fs.promises.stat(absolutePath);
                 size = stat.isFile() ? stat.size : undefined;
                 modifiedAt = stat.mtime.toISOString();
               } catch {
@@ -984,7 +996,8 @@ function adaptTool(
                 size,
                 modifiedAt,
               };
-            });
+            }));
+
           return {
             success: true,
             output: stripAnsi(outputText),
@@ -1116,8 +1129,8 @@ async function withRollbackTracking(
       let fileExists = false;
 
       try {
-        if (fs.existsSync(filePath)) {
-          contentBefore = fs.readFileSync(filePath, 'utf-8');
+        if ((await existsAsync(filePath))) {
+          contentBefore = await fs.promises.readFile(filePath, 'utf-8');
           fileExists = true;
         }
       } catch (readError) {
@@ -1171,8 +1184,8 @@ async function withRollbackTracking(
       let contentBefore = '';
 
       try {
-        if (fs.existsSync(filePath)) {
-          contentBefore = fs.readFileSync(filePath, 'utf-8');
+        if ((await existsAsync(filePath))) {
+          contentBefore = await fs.promises.readFile(filePath, 'utf-8');
         }
       } catch (readError) {
         console.warn(`[pi-tools] Could not read file before edit: ${filePath}`, readError);
@@ -1187,8 +1200,8 @@ async function withRollbackTracking(
           // Read content after edit
           let contentAfter = '';
           try {
-            if (fs.existsSync(filePath)) {
-              contentAfter = fs.readFileSync(filePath, 'utf-8');
+            if ((await existsAsync(filePath))) {
+              contentAfter = await fs.promises.readFile(filePath, 'utf-8');
             }
           } catch (readError) {
             console.warn(`[pi-tools] Could not read file after edit: ${filePath}`, readError);
@@ -1277,7 +1290,7 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
 
     try {
       const fs = require('fs');
-      const stat = fs.statSync(path);
+      const stat = await fs.promises.stat(path);
       const cached = fileReadCache.get(path);
 
       if (cached && cached.mtime === stat.mtimeMs) {

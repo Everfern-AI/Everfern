@@ -37,9 +37,9 @@ const s = {
   overlay: {
     position: 'fixed' as const,
     inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    backdropFilter: 'blur(6px)',
-    WebkitBackdropFilter: 'blur(6px)',
+    backgroundColor: 'var(--color-bg-overlay)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     zIndex: 400,
     display: 'flex',
     alignItems: 'center',
@@ -51,7 +51,7 @@ const s = {
   modal: {
     width: '100%',
     maxWidth: 580,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'var(--color-bg-surface)',
     borderRadius: 20,
     boxShadow: '0 32px 64px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.08)',
     display: 'flex',
@@ -66,7 +66,7 @@ const s = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '20px 24px',
-    borderBottom: '1px solid #f0f0f0',
+    borderBottom: '1px solid var(--color-border)',
     flexShrink: 0,
   },
   headerLeft: {
@@ -78,7 +78,7 @@ const s = {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#111111',
+    backgroundColor: 'var(--color-text-primary)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -88,13 +88,13 @@ const s = {
     margin: 0,
     fontSize: 16,
     fontWeight: 600,
-    color: '#111111',
+    color: 'var(--color-text-primary)',
     letterSpacing: '-0.2px',
   },
   headerSubtitle: {
     margin: '2px 0 0',
     fontSize: 12,
-    color: '#9ca3af',
+    color: 'var(--color-text-tertiary)',
     fontWeight: 400,
   },
   closeBtn: {
@@ -106,7 +106,7 @@ const s = {
     justifyContent: 'center',
     background: 'transparent',
     border: '1px solid transparent',
-    color: '#9ca3af',
+    color: 'var(--color-text-tertiary)',
     cursor: 'pointer',
     flexShrink: 0,
     transition: 'background 0.15s, color 0.15s, border-color 0.15s',
@@ -138,17 +138,17 @@ const s = {
   label: {
     fontSize: 12,
     fontWeight: 600,
-    color: '#374151',
+    color: 'var(--color-text-secondary)',
     letterSpacing: '0.3px',
     textTransform: 'uppercase' as const,
   },
   required: {
-    color: '#ef4444',
+    color: 'var(--color-error)',
     marginLeft: 2,
   },
   hint: {
     fontSize: 11,
-    color: '#9ca3af',
+    color: 'var(--color-text-placeholder)',
     marginLeft: 4,
     fontWeight: 400,
     textTransform: 'none' as const,
@@ -159,27 +159,27 @@ const s = {
   input: {
     width: '100%',
     padding: '10px 14px',
-    border: '1.5px solid #e5e7eb',
+    border: '1.5px solid var(--color-border)',
     borderRadius: 10,
     fontSize: 14,
-    color: '#111111',
-    backgroundColor: '#ffffff',
+    color: 'var(--color-text-primary)',
+    backgroundColor: 'var(--color-bg-surface)',
     outline: 'none',
     transition: 'border-color 0.15s',
     boxSizing: 'border-box' as const,
     fontFamily: 'inherit',
   },
   inputMuted: {
-    backgroundColor: '#fafafa',
+    backgroundColor: 'var(--color-bg-subtle)',
   },
   textarea: {
     width: '100%',
     padding: '10px 14px',
-    border: '1.5px solid #e5e7eb',
+    border: '1.5px solid var(--color-border)',
     borderRadius: 10,
     fontSize: 14,
-    color: '#111111',
-    backgroundColor: '#ffffff',
+    color: 'var(--color-text-primary)',
+    backgroundColor: 'var(--color-bg-surface)',
     outline: 'none',
     resize: 'none' as const,
     transition: 'border-color 0.15s',
@@ -192,11 +192,11 @@ const s = {
   dropdownBtn: {
     width: '100%',
     padding: '10px 14px',
-    border: '1.5px solid #e5e7eb',
+    border: '1.5px solid var(--color-border)',
     borderRadius: 10,
     fontSize: 14,
-    color: '#111111',
-    backgroundColor: '#ffffff',
+    color: 'var(--color-text-primary)',
+    backgroundColor: 'var(--color-bg-surface)',
     outline: 'none',
     cursor: 'pointer',
     display: 'flex',
@@ -211,15 +211,15 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    color: '#6b7280',
+    color: 'var(--color-text-secondary)',
   },
   dropdownList: {
     position: 'absolute' as const,
     top: 'calc(100% + 4px)',
     left: 0,
     right: 0,
-    backgroundColor: '#ffffff',
-    border: '1.5px solid #e5e7eb',
+    backgroundColor: 'var(--color-bg-elevated)',
+    border: '1.5px solid var(--color-border)',
     borderRadius: 12,
     zIndex: 50,
     boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
@@ -235,45 +235,45 @@ const s = {
     textAlign: 'left' as const,
     border: 'none',
     backgroundColor: 'transparent',
-    color: '#374151',
+    color: 'var(--color-text-secondary)',
     cursor: 'pointer',
     transition: 'background 0.1s',
     boxSizing: 'border-box' as const,
     fontFamily: 'inherit',
   },
   dropdownItemActive: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'var(--color-bg-selected)',
     fontWeight: 700,
-    color: '#000000',
+    color: 'var(--color-text-primary)',
   },
   dropdownDivider: {
     height: '1px',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'var(--color-border-subtle)',
     margin: '4px 0',
   },
 
   /* ── Footer ── */
   footer: {
     padding: '16px 24px',
-    borderTop: '1px solid #f0f0f0',
+    borderTop: '1px solid var(--color-border)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     flexShrink: 0,
-    backgroundColor: '#fafafa',
+    backgroundColor: 'var(--color-bg-subtle)',
   },
   footerBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: 7,
     fontSize: 12,
-    color: '#6b7280',
+    color: 'var(--color-text-secondary)',
   },
   pulse: {
     width: 7,
     height: 7,
     borderRadius: '50%',
-    backgroundColor: '#22c55e',
+    backgroundColor: 'var(--color-success)',
     flexShrink: 0,
   },
   footerActions: {
@@ -285,11 +285,11 @@ const s = {
     height: 36,
     padding: '0 18px',
     borderRadius: 10,
-    border: '1.5px solid #e5e7eb',
-    backgroundColor: '#ffffff',
+    border: '1.5px solid var(--color-border)',
+    backgroundColor: 'var(--color-bg-surface)',
     fontSize: 13,
     fontWeight: 600,
-    color: '#374151',
+    color: 'var(--color-text-secondary)',
     cursor: 'pointer',
     transition: 'background 0.15s, border-color 0.15s',
     fontFamily: 'inherit',
@@ -301,10 +301,10 @@ const s = {
     padding: '0 18px',
     borderRadius: 10,
     border: '1.5px solid transparent',
-    backgroundColor: '#111111',
+    backgroundColor: 'var(--color-text-primary)',
     fontSize: 13,
     fontWeight: 600,
-    color: '#ffffff',
+    color: 'var(--color-bg-surface)',
     cursor: 'pointer',
     transition: 'background 0.15s, opacity 0.15s',
     fontFamily: 'inherit',
@@ -313,7 +313,8 @@ const s = {
     gap: 6,
   },
   submitBtnDisabled: {
-    backgroundColor: '#d1d5db',
+    backgroundColor: 'var(--color-bg-subtle)',
+    color: 'var(--color-text-placeholder)',
     cursor: 'not-allowed',
   },
 };
@@ -370,10 +371,10 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
 
   /* Focus ring helpers */
   const focusOn = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    e.currentTarget.style.borderColor = '#111111';
+    e.currentTarget.style.borderColor = 'var(--color-border-focus)';
   };
   const focusOff = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    e.currentTarget.style.borderColor = '#e5e7eb';
+    e.currentTarget.style.borderColor = 'var(--color-border)';
   };
 
   if (!isOpen) return null;
@@ -392,7 +393,7 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
           <div style={s.header}>
             <div style={s.headerLeft}>
               <div style={s.headerIcon}>
-                <ClockIcon width={18} height={18} color="#ffffff" />
+                <ClockIcon width={18} height={18} color="var(--color-text-inverse)" />
               </div>
               <div>
                 <h2 style={s.headerTitle}>Schedule Task</h2>
@@ -403,13 +404,13 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
               onClick={onClose}
               style={s.closeBtn}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f3f4f6';
-                (e.currentTarget as HTMLButtonElement).style.color = '#111111';
-                (e.currentTarget as HTMLButtonElement).style.borderColor = '#e5e7eb';
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
               }}
               onMouseLeave={e => {
                 (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
-                (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)';
                 (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent';
               }}
             >
@@ -460,22 +461,22 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
                 <label style={s.label}>Repeat Pattern</label>
                 <div style={{ position: 'relative' }} ref={dropdownRef}>
                   <button
-                    type="button"
-                    onClick={() => setIsDropdownOpen(v => !v)}
-                    style={{
-                      ...s.dropdownBtn,
-                      borderColor: isDropdownOpen ? '#111111' : '#e5e7eb',
-                    }}
+                     type="button"
+                     onClick={() => setIsDropdownOpen(v => !v)}
+                     style={{
+                       ...s.dropdownBtn,
+                       borderColor: isDropdownOpen ? 'var(--color-border-focus)' : 'var(--color-border)',
+                     }}
                   >
                     <span style={s.dropdownBtnInner}>
                       <CalendarDaysIcon width={15} height={15} />
-                      <span style={{ color: '#111111' }}>{selectedOption.label}</span>
+                      <span style={{ color: 'var(--color-text-primary)' }}>{selectedOption.label}</span>
                     </span>
                     <ChevronDownIcon
                       width={14}
                       height={14}
                       style={{
-                        color: '#9ca3af',
+                        color: 'var(--color-text-tertiary)',
                         transition: 'transform 0.2s',
                         transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                         flexShrink: 0,
@@ -507,7 +508,7 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
                                   ...(isActive ? s.dropdownItemActive : {}),
                                 }}
                                 onMouseEnter={e => {
-                                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f9fafb';
+                                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--color-bg-hover)';
                                 }}
                                 onMouseLeave={e => {
                                   if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
@@ -549,8 +550,8 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
                 placeholder="What should the AI do when this triggers?"
                 rows={4}
                 style={s.textarea}
-                onFocus={e => { e.currentTarget.style.borderColor = '#111111'; }}
-                onBlur={e => { e.currentTarget.style.borderColor = '#e5e7eb'; }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'var(--color-border-focus)'; }}
+                onBlur={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
               />
             </div>
 
@@ -585,12 +586,12 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
                 onClick={onClose}
                 style={s.cancelBtn}
                 onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#f9fafb';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#d1d5db';
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border-strong)';
                 }}
                 onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#ffffff';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#e5e7eb';
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--color-bg-surface)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-border)';
                 }}
               >
                 Cancel
@@ -605,10 +606,10 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
                   ...(isDisabled ? s.submitBtnDisabled : {}),
                 }}
                 onMouseEnter={e => {
-                  if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1a1a1a';
+                  if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.9';
                 }}
                 onMouseLeave={e => {
-                  if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#111111';
+                  if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.opacity = '1.0';
                 }}
               >
                 <SparklesIcon width={14} height={14} />

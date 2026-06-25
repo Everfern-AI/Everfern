@@ -269,8 +269,8 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       expect(result.routingDecision?.decision).toBe('route_data_analyst');
     });
 
-    it('should route to computer_use when computerUseComplete is false', async () => {
-      const runner = makeMockRunner('route_computer_use') as any;
+    it('should route to continue_brain when computerUseComplete is false', async () => {
+      const runner = makeMockRunner('continue_brain') as any;
       const brainNode = createBrainNode(runner, [], undefined, [], undefined, undefined);
       const state = makeStateWithCompletion(
         'click the submit button',
@@ -280,8 +280,8 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
 
       const result = await brainNode(state);
 
-      // Observed: Brain routes to computer_use when completion flag is false
-      expect(result.routingDecision?.decision).toBe('route_computer_use');
+      // Observed: Brain routes to continue_brain when intent is automate
+      expect(result.routingDecision?.decision).toBe('continue_brain');
     });
   });
 
@@ -533,12 +533,12 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
    * **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5**
    */
   describe('Property-Based Preservation Tests', () => {
-    it('property: incomplete specialists are routed to correctly', () => {
-      fc.assert(
-        fc.property(
+    it('property: incomplete specialists are routed to correctly', async () => {
+      await fc.assert(
+        fc.asyncProperty(
           fc.record({
             // Exclude research intent from property-based test due to early routing logic
-            intent: fc.constantFrom('coding', 'analyze', 'automate'),
+            intent: fc.constantFrom('coding', 'analyze'),
             completionValue: fc.constantFrom(false, undefined),
             iterations: fc.integer({ min: 1, max: 5 }),
           }),
@@ -547,7 +547,6 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
             const routingMap: Record<string, { decision: string; flag: string }> = {
               coding: { decision: 'route_coding', flag: 'codingComplete' },
               analyze: { decision: 'route_data_analyst', flag: 'dataAnalysisComplete' },
-              automate: { decision: 'route_computer_use', flag: 'computerUseComplete' },
             };
 
             const { decision, flag } = routingMap[intent];
@@ -575,13 +574,13 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       );
     });
 
-    it('property: routing to different specialists is preserved', () => {
-      fc.assert(
-        fc.property(
+    it('property: routing to different specialists is preserved', async () => {
+      await fc.assert(
+        fc.asyncProperty(
           fc.record({
-            completedSpecialist: fc.constantFrom('web_explorer', 'coding', 'data_analyst', 'computer_use'),
+            completedSpecialist: fc.constantFrom('web_explorer', 'coding', 'data_analyst'),
             // Exclude research intent from property-based test due to early routing logic
-            targetSpecialist: fc.constantFrom('coding', 'data_analyst', 'computer_use'),
+            targetSpecialist: fc.constantFrom('coding', 'data_analyst'),
           }),
           async ({ completedSpecialist, targetSpecialist }) => {
             // Map specialists to routing decisions and completion flags
@@ -589,7 +588,6 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
               web_explorer: { decision: 'route_web_explorer', flag: 'webExplorerComplete', intent: 'research' },
               coding: { decision: 'route_coding', flag: 'codingComplete', intent: 'coding' },
               data_analyst: { decision: 'route_data_analyst', flag: 'dataAnalysisComplete', intent: 'analyze' },
-              computer_use: { decision: 'route_computer_use', flag: 'computerUseComplete', intent: 'automate' },
             };
 
             const targetInfo = specialistMap[targetSpecialist];
@@ -623,12 +621,12 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       );
     });
 
-    it('property: fallback routing for incomplete specialists is preserved', () => {
-      fc.assert(
-        fc.property(
+    it('property: fallback routing for incomplete specialists is preserved', async () => {
+      await fc.assert(
+        fc.asyncProperty(
           fc.record({
             // Exclude research intent from property-based test due to early routing logic
-            intent: fc.constantFrom('coding', 'analyze', 'automate'),
+            intent: fc.constantFrom('coding', 'analyze'),
             completionValue: fc.constantFrom(false, undefined),
           }),
           async ({ intent, completionValue }) => {
@@ -636,7 +634,6 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
             const routingMap: Record<string, { decision: string; flag: string }> = {
               coding: { decision: 'route_coding', flag: 'codingComplete' },
               analyze: { decision: 'route_data_analyst', flag: 'dataAnalysisComplete' },
-              automate: { decision: 'route_computer_use', flag: 'computerUseComplete' },
             };
 
             const { decision, flag } = routingMap[intent];

@@ -59,7 +59,7 @@ const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
 // ── Shared sub-components (matching SettingsPage style) ───────────────────────
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: '#8a8886', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, margin: '0 0 8px' }}>
+    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, margin: '0 0 8px' }}>
         {children}
     </p>
 );
@@ -68,14 +68,14 @@ const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input
         {...props}
         style={{
-            width: '100%', padding: '12px 16px', backgroundColor: '#f4f4f4',
-            border: '1px solid #e8e6d9', borderRadius: 12, color: '#111111',
+            width: '100%', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)',
+            border: '1px solid var(--color-border)', borderRadius: 12, color: 'var(--color-text-primary)',
             fontSize: 14, outline: 'none', transition: 'border 0.2s', boxSizing: 'border-box',
             fontFamily: 'var(--font-sans)',
             ...props.style,
         }}
-        onFocus={e => { e.target.style.borderColor = '#111111'; }}
-        onBlur={e => { e.target.style.borderColor = '#e8e6d9'; }}
+        onFocus={e => { e.target.style.borderColor = 'var(--color-text-primary)'; }}
+        onBlur={e => { e.target.style.borderColor = 'var(--color-border)'; }}
         onMouseDown={e => e.stopPropagation()}
     />
 );
@@ -92,13 +92,13 @@ interface ToolConfigPanelProps {
 
 const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfigPanelProps) => {
     return (
-        <div style={{ backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 16, padding: 24, marginBottom: 16 }}>
+        <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16 }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#f4f4f4', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e8e6d9', color: '#4a4846' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
                     {icon}
                 </div>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: 0 }}>{title}</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>{title}</h3>
             </div>
 
             {/* Mode selector */}
@@ -114,25 +114,25 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                 style={{
                                     padding: '14px 16px',
                                     borderRadius: 12,
-                                    border: `1.5px solid ${isSelected ? '#111111' : '#e8e6d9'}`,
-                                    backgroundColor: isSelected ? '#f4f4f4' : '#ffffff',
+                                    border: `1.5px solid ${isSelected ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                    backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease-out',
                                     position: 'relative',
                                     userSelect: 'none',
                                 }}
-                                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '#fafafa'; }}
-                                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                             >
                                 {isSelected && (
-                                    <div style={{ position: 'absolute', top: 10, right: 10, color: '#111111' }}>
+                                    <div style={{ position: 'absolute', top: 10, right: 10, color: 'var(--color-text-primary)' }}>
                                         <CheckIcon width={14} height={14} strokeWidth={2.5} />
                                     </div>
                                 )}
-                                <div style={{ fontSize: 14, fontWeight: isSelected ? 600 : 500, color: '#111111', marginBottom: 2 }}>
+                                <div style={{ fontSize: 14, fontWeight: isSelected ? 600 : 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
                                     {mode === 'local' ? 'Local' : 'API'}
                                 </div>
-                                <div style={{ fontSize: 12, color: '#8a8886' }}>
+                                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
                                     {mode === 'local' ? 'Playwright browser' : 'External API'}
                                 </div>
                             </div>
@@ -158,31 +158,31 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                 onClick={() => onChange({ ...config, headless: !config.headless })}
                                 style={{
                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9',
+                                    padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
                                     borderRadius: 12, cursor: 'pointer', transition: 'background 0.15s',
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f4f4f4'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f9f9f8'}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-base)'}
                             >
                                 <div>
-                                    <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                                         {config.headless ? 'Headless' : 'Headful'}
                                     </div>
-                                    <div style={{ fontSize: 12, color: '#8a8886', marginTop: 2 }}>
+                                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                                         {config.headless ? 'Browser runs invisibly in the background' : 'Browser window is visible on screen'}
                                     </div>
                                 </div>
                                 {/* Toggle switch */}
                                 <div style={{
                                     width: 44, height: 24, borderRadius: 12, position: 'relative',
-                                    backgroundColor: config.headless ? '#111111' : '#e8e6d9',
+                                    backgroundColor: config.headless ? 'var(--color-text-primary)' : 'var(--color-border)',
                                     transition: 'background 0.2s', flexShrink: 0,
                                 }}>
                                     <div style={{
                                         position: 'absolute', top: 3,
                                         left: config.headless ? 23 : 3,
                                         width: 18, height: 18, borderRadius: '50%',
-                                        backgroundColor: '#ffffff',
+                                        backgroundColor: 'var(--color-bg-surface)',
                                         transition: 'left 0.2s',
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                                     }} />
@@ -207,7 +207,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                         <div style={{ paddingTop: 4 }}>
                             <Label>{apiLabel}</Label>
                             <div style={{ position: 'relative' }}>
-                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#8a8886', pointerEvents: 'none' }} />
+                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
                                 <Input
                                     type="password"
                                     placeholder="Enter API key..."
@@ -216,7 +216,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                     style={{ paddingLeft: 40 }}
                                 />
                             </div>
-                            <p style={{ fontSize: 11, color: '#a8a6a1', marginTop: 8 }}>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>
                                 Stored locally in ~/.everfern/ — never leaves your device.
                             </p>
                         </div>
@@ -304,7 +304,7 @@ export function ToolSettingsSection() {
 
     if (isLoading) {
         return (
-            <div style={{ textAlign: 'center', padding: 40, color: '#8a8886', fontSize: 14 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)', fontSize: 14 }}>
                 Loading tool settings...
             </div>
         );
@@ -335,15 +335,15 @@ export function ToolSettingsSection() {
             />
 
             {/* ── Navis (AI Browser) Panel ─────────────────────────────── */}
-            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 16, padding: 24, marginBottom: 16 }}>
+            <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16 }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-inverse)' }}>
                         <ComputerDesktopIcon width={18} height={18} />
                     </div>
                     <div>
-                        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111111', margin: 0 }}>Navis (AI Browser)</h3>
-                        <p style={{ fontSize: 11, color: '#8a8886', margin: '2px 0 0' }}>Autonomous browser research agent</p>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Navis (AI Browser)</h3>
+                        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '2px 0 0' }}>Autonomous browser research agent</p>
                     </div>
                 </div>
 
@@ -354,20 +354,20 @@ export function ToolSettingsSection() {
                         onClick={() => handleNavisChange({ ...config.navis, useVision: !config.navis.useVision })}
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '12px 16px', backgroundColor: config.navis.useVision ? '#f0ecff' : '#f9f9f8',
-                            border: `1px solid ${config.navis.useVision ? '#667eea' : '#e8e6d9'}`,
+                            padding: '12px 16px', backgroundColor: config.navis.useVision ? 'var(--color-navis-active-bg)' : 'var(--color-bg-base)',
+                            border: `1px solid ${config.navis.useVision ? 'var(--color-navis-active-border)' : 'var(--color-border)'}`,
                             borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
                         }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? '#e8e4ff' : '#f4f4f4'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? '#f0ecff' : '#f9f9f8'}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? 'var(--color-navis-active-hover)' : 'var(--color-bg-subtle)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.useVision ? 'var(--color-navis-active-bg)' : 'var(--color-bg-base)'}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <EyeIcon width={18} height={18} style={{ color: config.navis.useVision ? '#667eea' : '#8a8886' }} />
+                            <EyeIcon width={18} height={18} style={{ color: config.navis.useVision ? 'var(--color-navis-active-text)' : 'var(--color-text-tertiary)' }} />
                             <div>
-                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                                     {config.navis.useVision ? 'Vision Enabled' : 'Vision Disabled'}
                                 </div>
-                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, maxWidth: 300 }}>
                                     {config.navis.useVision
                                         ? 'Screenshots + VLM for precise visual element detection'
                                         : 'DOM accessibility tree only (faster, text-based)'}
@@ -376,14 +376,14 @@ export function ToolSettingsSection() {
                         </div>
                         <div style={{
                             width: 44, height: 24, borderRadius: 12, position: 'relative',
-                            backgroundColor: config.navis.useVision ? '#667eea' : '#e8e6d9',
+                            backgroundColor: config.navis.useVision ? 'var(--color-navis-active-border)' : 'var(--color-border)',
                             transition: 'background 0.2s', flexShrink: 0,
                         }}>
                             <div style={{
                                 position: 'absolute', top: 3,
                                 left: config.navis.useVision ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
-                                backgroundColor: '#ffffff',
+                                backgroundColor: 'var(--color-bg-surface)',
                                 transition: 'left 0.2s',
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                             }} />
@@ -398,20 +398,20 @@ export function ToolSettingsSection() {
                         onClick={() => handleNavisChange({ ...config.navis, onlyVision: !config.navis.onlyVision })}
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '12px 16px', backgroundColor: config.navis.onlyVision ? '#f0ecff' : '#f9f9f8',
-                            border: `1px solid ${config.navis.onlyVision ? '#667eea' : '#e8e6d9'}`,
+                            padding: '12px 16px', backgroundColor: config.navis.onlyVision ? 'var(--color-navis-active-bg)' : 'var(--color-bg-base)',
+                            border: `1px solid ${config.navis.onlyVision ? 'var(--color-navis-active-border)' : 'var(--color-border)'}`,
                             borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
                         }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? '#e8e4ff' : '#f4f4f4'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? '#f0ecff' : '#f9f9f8'}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? 'var(--color-navis-active-hover)' : 'var(--color-bg-subtle)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = config.navis.onlyVision ? 'var(--color-navis-active-bg)' : 'var(--color-bg-base)'}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <EyeIcon width={18} height={18} style={{ color: config.navis.onlyVision ? '#667eea' : '#8a8886' }} />
+                            <EyeIcon width={18} height={18} style={{ color: config.navis.onlyVision ? 'var(--color-navis-active-text)' : 'var(--color-text-tertiary)' }} />
                             <div>
-                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                                     {config.navis.onlyVision ? 'Only Vision Enabled' : 'Only Vision Disabled'}
                                 </div>
-                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 300 }}>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, maxWidth: 300 }}>
                                     {config.navis.onlyVision
                                         ? 'Coordinates-only navigation via VLM (bypasses DOM structure completely)'
                                         : 'Standard hybrid mode (prefer DOM structure, use vision on-demand)'}
@@ -420,14 +420,14 @@ export function ToolSettingsSection() {
                         </div>
                         <div style={{
                             width: 44, height: 24, borderRadius: 12, position: 'relative',
-                            backgroundColor: config.navis.onlyVision ? '#667eea' : '#e8e6d9',
+                            backgroundColor: config.navis.onlyVision ? 'var(--color-navis-active-border)' : 'var(--color-border)',
                             transition: 'background 0.2s', flexShrink: 0,
                         }}>
                             <div style={{
                                 position: 'absolute', top: 3,
                                 left: config.navis.onlyVision ? 23 : 3,
                                 width: 18, height: 18, borderRadius: '50%',
-                                backgroundColor: '#ffffff',
+                                backgroundColor: 'var(--color-bg-surface)',
                                 transition: 'left 0.2s',
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                             }} />
@@ -441,23 +441,23 @@ export function ToolSettingsSection() {
                     <div
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '12px 16px', backgroundColor: '#eef7f1',
-                            border: '1px solid #2f8f5b',
+                            padding: '12px 16px', backgroundColor: 'var(--color-success-dim)',
+                            border: '1px solid var(--color-success)',
                             borderRadius: 12, transition: 'all 0.2s',
                         }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <ComputerDesktopIcon width={18} height={18} style={{ color: '#2f8f5b' }} />
+                            <ComputerDesktopIcon width={18} height={18} style={{ color: 'var(--color-success)' }} />
                             <div>
-                                <div style={{ fontSize: 14, fontWeight: 500, color: '#111111' }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                                     Browser Extension Enabled
                                 </div>
-                                <div style={{ fontSize: 11, color: '#8a8886', marginTop: 2, maxWidth: 330 }}>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, maxWidth: 330 }}>
                                     Uses the installed Navis extension for fast logged-in Chrome/Firefox control
                                 </div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 20, backgroundColor: '#d1fae5', color: '#065f46', fontSize: 11, fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 20, backgroundColor: 'var(--color-success-dim)', color: 'var(--color-success)', fontSize: 11, fontWeight: 700 }}>
                             <CheckIcon width={12} height={12} strokeWidth={3} />
                             Required
                         </div>
@@ -471,9 +471,9 @@ export function ToolSettingsSection() {
                                 style={{
                                     padding: '9px 12px',
                                     borderRadius: 10,
-                                    border: '1px solid #ddd9cb',
-                                    backgroundColor: isPreparingMainProfileExtension ? '#f4f2ea' : '#ffffff',
-                                    color: '#111111',
+                                    border: '1px solid var(--color-border)',
+                                    backgroundColor: isPreparingMainProfileExtension ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                    color: 'var(--color-text-primary)',
                                     fontSize: 12,
                                     fontWeight: 600,
                                     cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
@@ -482,12 +482,12 @@ export function ToolSettingsSection() {
                                 {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
                             </button>
                         </div>
-                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? '#2f8f5b' : '#8a8886' }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? '#2f8f5b' : '#c9c4b8', display: 'inline-block' }} />
+                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-placeholder)', display: 'inline-block' }} />
                             {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
                         </div>
                         {extensionMessage && (
-                            <div style={{ marginTop: 8, fontSize: 11, color: '#6f6b63', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
                                 {extensionMessage}
                             </div>
                         )}
@@ -497,10 +497,10 @@ export function ToolSettingsSection() {
                 {/* Max Steps Slider */}
                 <div>
                     <Label>Max Steps Per Task</Label>
-                    <div style={{ padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9', borderRadius: 12 }}>
+                    <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <span style={{ fontSize: 13, color: '#111111', fontWeight: 500 }}>Steps limit</span>
-                            <span style={{ fontSize: 13, color: '#667eea', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{config.navis.maxSteps}</span>
+                            <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500 }}>Steps limit</span>
+                            <span style={{ fontSize: 13, color: 'var(--color-navis-active-text)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{config.navis.maxSteps}</span>
                         </div>
                         <input
                             type="range"
@@ -509,22 +509,22 @@ export function ToolSettingsSection() {
                             step={10}
                             value={config.navis.maxSteps}
                             onChange={e => handleNavisChange({ ...config.navis, maxSteps: parseInt(e.target.value) })}
-                            style={{ width: '100%', accentColor: '#667eea', cursor: 'pointer' }}
+                            style={{ width: '100%', accentColor: 'var(--color-navis-active-border)', cursor: 'pointer' }}
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                            <span style={{ fontSize: 10, color: '#a8a6a1' }}>10 (fast)</span>
-                            <span style={{ fontSize: 10, color: '#a8a6a1' }}>200 (thorough)</span>
+                            <span style={{ fontSize: 10, color: 'var(--color-text-placeholder)' }}>10 (fast)</span>
+                            <span style={{ fontSize: 10, color: 'var(--color-text-placeholder)' }}>200 (thorough)</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div style={{ padding: '12px 16px', backgroundColor: '#f9f9f8', border: '1px solid #e8e6d9', borderRadius: 12 }}>
+            <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <WrenchScrewdriverIcon width={14} height={14} style={{ color: '#8a8886' }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#4a4846' }}>About Tool Modes</span>
+                    <WrenchScrewdriverIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)' }}>About Tool Modes</span>
                 </div>
-                <p style={{ fontSize: 12, color: '#8a8886', margin: 0, lineHeight: 1.6 }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.6 }}>
                     <strong>Local</strong> mode uses a Playwright-controlled isolated browser. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> uses the installed Navis extension for Chrome/Chromium or Firefox when profile mode is enabled. <strong>Navis Vision</strong> sends screenshots to a vision AI model only when visual grounding is needed. Changes take effect immediately.
                 </p>
             </div>

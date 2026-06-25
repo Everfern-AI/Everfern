@@ -37,7 +37,7 @@ export const ReasoningBranch = ({
                 style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '0 0 8px', color: '#8a8886',
+                    padding: '0 0 8px', color: 'var(--color-text-tertiary)',
                 }}
             >
                 {isLive ? (
@@ -45,12 +45,12 @@ export const ReasoningBranch = ({
                     <Loader size={14} strokeWidth={2} className="text-zinc-500" />
                 ) : (
                     // Static icon when done — the chat bubble from the created SVG style
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
                 )}
 
-                <span style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>
+                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                     {isLive ? 'Thinking…' : `Thought for ${formatDuration(duration)}`}
                 </span>
 
@@ -59,7 +59,7 @@ export const ReasoningBranch = ({
                     transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                     style={{ display: 'flex', marginLeft: 2 }}
                 >
-                    <ChevronDownIcon width={12} height={12} color="#9ca3af" />
+                    <ChevronDownIcon width={12} height={12} color="var(--color-text-tertiary)" />
                 </motion.span>
             </motion.button>
 
@@ -74,7 +74,7 @@ export const ReasoningBranch = ({
                         style={{ overflow: 'hidden' }}
                     >
                         <div style={{
-                            borderLeft: '2px solid #e5e7eb',
+                            borderLeft: '2px solid var(--color-border)',
                             paddingLeft: 16,
                             marginLeft: 2,
                             marginBottom: 12,
@@ -82,7 +82,7 @@ export const ReasoningBranch = ({
                             <div style={{
                                 fontSize: 13.5,
                                 lineHeight: 1.75,
-                                color: '#9ca3af',
+                                color: 'var(--color-text-secondary)',
                                 fontStyle: 'italic',
                                 whiteSpace: 'pre-wrap',
                             }}>
@@ -100,7 +100,7 @@ export const ReasoningBranch = ({
                                     <motion.span
                                         animate={{ opacity: [1, 0] }}
                                         transition={{ repeat: Infinity, duration: 0.7, ease: 'linear' }}
-                                        style={{ display: 'inline-block', width: 2, height: '1em', backgroundColor: '#9ca3af', marginLeft: 2, verticalAlign: 'text-bottom' }}
+                                        style={{ display: 'inline-block', width: 2, height: '1em', backgroundColor: 'var(--color-text-secondary)', marginLeft: 2, verticalAlign: 'text-bottom' }}
                                     />
                                 )}
                             </div>
@@ -128,7 +128,7 @@ export const ProgressStepsIcon = ({ done = 0 }: { done?: number }) => {
                             <line
                                 x1={i === 1 ? 12 : 25} y1="6"
                                 x2={i === 1 ? 13 : 26} y2="6"
-                                stroke={filled ? 'currentColor' : '#d1d5db'}
+                                stroke={filled ? 'currentColor' : 'var(--color-border-strong)'}
                                 strokeWidth="1.5"
                                 strokeDasharray="2 1.5"
                                 strokeLinecap="round"
@@ -137,7 +137,7 @@ export const ProgressStepsIcon = ({ done = 0 }: { done?: number }) => {
                         <circle
                             cx={cx} cy="6" r="5"
                             fill={filled ? 'currentColor' : 'none'}
-                            stroke={filled ? 'none' : '#d1d5db'}
+                            stroke={filled ? 'none' : 'var(--color-border-strong)'}
                             strokeWidth="1.5"
                             opacity={filled ? 0.8 : 1}
                         />
@@ -187,17 +187,17 @@ export const PaneSection = ({
                     padding: '8px 0', background: 'none', border: 'none', cursor: 'pointer',
                 }}
             >
-                <span style={{ color: '#a1a1aa', display: 'flex', flexShrink: 0 }}>{icon}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1, textAlign: 'left' }}>
+                <span style={{ color: 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}>{icon}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1, textAlign: 'left' }}>
                     {label}
                 </span>
                 {badge !== undefined && (
-                    <span style={{ fontSize: 10, color: '#9ca3af', backgroundColor: '#f3f4f6', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>{badge}</span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-subtle)', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>{badge}</span>
                 )}
                 <motion.span
                     animate={{ rotate: open ? 180 : 0 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                    style={{ display: 'flex', color: '#9ca3af' }}
+                    style={{ display: 'flex', color: 'var(--color-text-tertiary)' }}
                 >
                     <ChevronDownIcon width={13} height={13} color="currentColor" />
                 </motion.span>
@@ -250,7 +250,7 @@ export const ReasoningPane = ({
                     transition={{ type: 'spring', damping: 28, stiffness: 220 }}
                     style={{
                         position: 'fixed', top: 52, right: 0, bottom: 0, width: 340,
-                        backgroundColor: '#ffffff', borderLeft: '1px solid #e5e7eb',
+                        backgroundColor: 'var(--color-bg-surface)', borderLeft: '1px solid var(--color-border)',
                         zIndex: 100, display: 'flex', flexDirection: 'column', overflow: 'hidden',
                         boxShadow: '-6px 0 24px rgba(0,0,0,0.04)',
                     }}
@@ -258,17 +258,17 @@ export const ReasoningPane = ({
                     {/* ── Header ── */}
                     <div style={{
                         padding: '16px 20px 14px',
-                        borderBottom: '1px solid #f3f4f6',
+                        borderBottom: '1px solid var(--color-border-subtle)',
                         display: 'flex', alignItems: 'center', gap: 12,
                     }}>
                         {/* Progress icon — updates as tools complete */}
-                        <div style={{ color: isLive ? '#6366f1' : '#6b7280', display: 'flex', flexShrink: 0 }}>
+                        <div style={{ color: isLive ? 'var(--color-accent)' : 'var(--color-text-secondary)', display: 'flex', flexShrink: 0 }}>
                             <ProgressStepsIcon done={doneCount} />
                         </div>
 
                         <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Agent Activity</div>
-                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Agent Activity</div>
+                            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
                                 {isLive ? (
                                     <>
                                         <motion.span
@@ -293,13 +293,13 @@ export const ReasoningPane = ({
                         <button
                             onClick={onClose}
                             style={{
-                                width: 26, height: 26, borderRadius: 7, border: '1px solid #e5e7eb',
-                                backgroundColor: 'transparent', color: '#9ca3af', cursor: 'pointer',
+                                width: 26, height: 26, borderRadius: 7, border: '1px solid var(--color-border)',
+                                backgroundColor: 'transparent', color: 'var(--color-text-tertiary)', cursor: 'pointer',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 0.15s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f3f4f6'; e.currentTarget.style.color = '#374151'; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#9ca3af'; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
                         >
                             <XMarkIcon width={13} height={13} />
                         </button>
@@ -332,7 +332,7 @@ export const ReasoningPane = ({
                                     <span style={{ display: 'flex', gap: 3 }}>
                                         {[0, 0.15, 0.3].map((delay, i) => (
                                             <motion.span key={i} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2, delay }}
-                                                style={{ display: 'block', width: 4, height: 4, borderRadius: '50%', backgroundColor: '#9ca3af' }} />
+                                                style={{ display: 'block', width: 4, height: 4, borderRadius: '50%', backgroundColor: 'var(--color-text-tertiary)' }} />
                                         ))}
                                     </span>
                                 ) : (
@@ -345,9 +345,9 @@ export const ReasoningPane = ({
                         >
                             {thought ? (
                                 <div style={{
-                                    fontSize: 12.5, lineHeight: 1.75, color: '#9ca3af',
+                                    fontSize: 12.5, lineHeight: 1.75, color: 'var(--color-text-secondary)',
                                     fontStyle: 'italic',
-                                    borderLeft: '2px solid #e5e7eb',
+                                    borderLeft: '2px solid var(--color-border)',
                                     paddingLeft: 12,
                                     maxHeight: 220, overflowY: 'auto',
                                 }}>
@@ -356,12 +356,12 @@ export const ReasoningPane = ({
                                         <motion.span
                                             animate={{ opacity: [1, 0] }}
                                             transition={{ repeat: Infinity, duration: 0.7, ease: 'linear' }}
-                                            style={{ display: 'inline-block', width: 2, height: '0.9em', backgroundColor: '#9ca3af', marginLeft: 2, verticalAlign: 'text-bottom' }}
+                                            style={{ display: 'inline-block', width: 2, height: '0.9em', backgroundColor: 'var(--color-text-secondary)', marginLeft: 2, verticalAlign: 'text-bottom' }}
                                         />
                                     )}
                                 </div>
                             ) : (
-                                <span style={{ fontSize: 12, color: '#d1d5db', fontStyle: 'italic' }}>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-placeholder)', fontStyle: 'italic' }}>
                                     Waiting for model to reason…
                                 </span>
                             )}
@@ -375,10 +375,10 @@ export const ReasoningPane = ({
                             >
                                 <div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <span style={{ fontSize: 12, color: '#6b7280' }}>Step {progress.current} of {progress.total}</span>
+                                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Step {progress.current} of {progress.total}</span>
                                         <span style={{ fontSize: 12, fontWeight: 600, color: '#22c55e' }}>{Math.round((progress.current / progress.total) * 100)}%</span>
                                     </div>
-                                    <div style={{ width: '100%', height: 3, borderRadius: 99, backgroundColor: '#f3f4f6', overflow: 'hidden' }}>
+                                    <div style={{ width: '100%', height: 3, borderRadius: 99, backgroundColor: 'var(--color-bg-subtle)', overflow: 'hidden' }}>
                                         <motion.div
                                             initial={{ width: 0 }}
                                             animate={{ width: `${(progress.current / progress.total) * 100}%` }}
@@ -400,9 +400,9 @@ export const ReasoningPane = ({
                             badge={toolCalls.length}
                         >
                             {toolCalls.length === 0 ? (
-                                <span style={{ fontSize: 12, color: '#d1d5db', fontStyle: 'italic' }}>No tools called yet</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-placeholder)', fontStyle: 'italic' }}>No tools called yet</span>
                             ) : (
-                                <div style={{ borderLeft: '2px solid #e5e7eb', marginLeft: 4, paddingLeft: 14, display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ borderLeft: '2px solid var(--color-border)', marginLeft: 4, paddingLeft: 14, display: 'flex', flexDirection: 'column' }}>
                                     {toolCalls.map((tc, idx) => (
                                         <motion.div
                                             key={tc.id || idx}
@@ -416,11 +416,11 @@ export const ReasoningPane = ({
                                                 position: 'absolute', left: -20, top: 8,
                                                 width: 8, height: 8, borderRadius: '50%',
                                                 backgroundColor:
-                                                    tc.status === 'running' ? '#f3f4f6'
+                                                    tc.status === 'running' ? 'var(--color-bg-subtle)'
                                                         : tc.status === 'error' ? 'rgba(239,68,68,0.15)'
                                                             : 'rgba(34,197,94,0.15)',
                                                 border:
-                                                    tc.status === 'running' ? '1.5px solid #d1d5db'
+                                                    tc.status === 'running' ? '1.5px solid var(--color-border-strong)'
                                                         : tc.status === 'error' ? '1.5px solid rgba(239,68,68,0.4)'
                                                             : '1.5px solid rgba(34,197,94,0.4)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -438,11 +438,11 @@ export const ReasoningPane = ({
 
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <span style={{ fontSize: 12, lineHeight: 1 }}>{tc.icon}</span>
-                                                <span style={{ fontSize: 12, color: tc.status === 'running' ? '#9ca3af' : '#374151', fontStyle: tc.status === 'running' ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                                <span style={{ fontSize: 12, color: tc.status === 'running' ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)', fontStyle: tc.status === 'running' ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                                     {tc.label || tc.toolName}
                                                 </span>
                                                 {tc.durationMs !== undefined && (
-                                                    <span style={{ fontSize: 10.5, color: '#9ca3af', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+                                                    <span style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
                                                         {(tc.durationMs / 1000).toFixed(1)}s
                                                     </span>
                                                 )}
@@ -462,24 +462,24 @@ export const ReasoningPane = ({
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                     {context.completedSteps.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Completed</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Completed</div>
                                             {context.completedSteps.map((step, i) => (
                                                 <div key={i} style={{ fontSize: 12, color: '#22c55e', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                                                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
                                                         <circle cx="5" cy="5" r="4.5" fill="rgba(34,197,94,0.1)" stroke="rgba(34,197,94,0.3)" strokeWidth="1" />
                                                         <path d="M3 5L4.5 6.5L7 3.5" stroke="#22c55e" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                                                     </svg>
-                                                    <span style={{ color: '#374151' }}>{step}</span>
+                                                    <span style={{ color: 'var(--color-text-primary)' }}>{step}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                     {context.pendingSteps.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Pending</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Pending</div>
                                             {context.pendingSteps.map((step, i) => (
-                                                <div key={i} style={{ fontSize: 12, color: '#9ca3af', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid #d1d5db', flexShrink: 0, marginTop: 2 }} />
+                                                <div key={i} style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid var(--color-border-strong)', flexShrink: 0, marginTop: 2 }} />
                                                     <span>{step}</span>
                                                 </div>
                                             ))}
@@ -487,9 +487,9 @@ export const ReasoningPane = ({
                                     )}
                                     {context.filesModified.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Files</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Files</div>
                                             {context.filesModified.map((file, i) => (
-                                                <div key={i} style={{ fontSize: 11, color: '#6b7280', fontFamily: "'JetBrains Mono', monospace", marginBottom: 2 }}>{file}</div>
+                                                <div key={i} style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontFamily: "'JetBrains Mono', monospace", marginBottom: 2 }}>{file}</div>
                                             ))}
                                         </div>
                                     )}
@@ -517,14 +517,14 @@ export const ReasoningBlock = ({ content }: { content: string }) => {
                 style={{
                     display: 'flex', alignItems: 'center', gap: 7,
                     background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '0 0 6px', color: '#9ca3af',
+                    padding: '0 0 6px', color: 'var(--color-text-tertiary)',
                 }}
             >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                    stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
-                <span style={{ fontSize: 12.5, color: '#9ca3af', fontStyle: 'italic' }}>
+                <span style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                     {open ? 'Hide reasoning' : 'Show reasoning'}
                 </span>
                 <motion.span
@@ -532,7 +532,7 @@ export const ReasoningBlock = ({ content }: { content: string }) => {
                     transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                     style={{ display: 'flex', marginLeft: 2 }}
                 >
-                    <ChevronDownIcon width={11} height={11} color="#9ca3af" />
+                    <ChevronDownIcon width={11} height={11} color="var(--color-text-tertiary)" />
                 </motion.span>
             </button>
 
@@ -546,7 +546,7 @@ export const ReasoningBlock = ({ content }: { content: string }) => {
                         style={{ overflow: 'hidden' }}
                     >
                         <div style={{
-                            borderLeft: '2px solid #e5e7eb',
+                            borderLeft: '2px solid var(--color-border)',
                             paddingLeft: 14,
                             marginLeft: 2,
                             marginBottom: 10,
@@ -556,7 +556,7 @@ export const ReasoningBlock = ({ content }: { content: string }) => {
                             <div style={{
                                 fontSize: 12.5,
                                 lineHeight: 1.75,
-                                color: '#9ca3af',
+                                color: 'var(--color-text-secondary)',
                                 fontStyle: 'italic',
                                 whiteSpace: 'pre-wrap',
                                 wordBreak: 'break-word',

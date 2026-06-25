@@ -63,6 +63,340 @@ const STATUS_ICONS: Record<ExecutionStatus, string> = {
 /**
  * Tool pill component
  */
+const GlobeDotIcon = ({ isRunning, color }: { isRunning: boolean; color: string }) => {
+  return (
+    <div className="w-7 h-7 flex items-center justify-center relative flex-shrink-0">
+      <motion.div
+        className="absolute w-7 h-7 rounded-full"
+        style={{
+          backgroundColor: `${color}14`, // 8% opacity
+          border: `1px solid ${color}26`, // 15% opacity
+        }}
+        animate={isRunning ? { scale: [1, 1.35, 1], opacity: [0.6, 0.2, 0.6] } : { scale: [1, 1.15, 1], opacity: [0.4, 0.15, 0.4] }}
+        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+      />
+      <div
+        className="w-2.5 h-2.5 rounded-full relative z-10"
+        style={{
+          backgroundColor: color,
+          border: "1.5px solid #ffffff",
+          boxShadow: `0 0 8px ${color}cc`,
+        }}
+      />
+    </div>
+  );
+};
+
+interface ParsedFact {
+  timestamp?: string;
+  content: string;
+  tags: string[];
+}
+
+const TAG_COLORS: Record<string, { bg: string, text: string, border: string }> = {
+  identity: { bg: 'rgba(16, 185, 129, 0.08)', text: '#059669', border: 'rgba(16, 185, 129, 0.2)' },
+  preference: { bg: 'rgba(59, 130, 246, 0.08)', text: '#2563eb', border: 'rgba(59, 130, 246, 0.2)' },
+  habit: { bg: 'rgba(245, 158, 11, 0.08)', text: '#d97706', border: 'rgba(245, 158, 11, 0.2)' },
+  travel: { bg: 'rgba(139, 92, 246, 0.08)', text: '#7c3aed', border: 'rgba(139, 92, 246, 0.2)' },
+  payment: { bg: 'rgba(236, 72, 153, 0.08)', text: '#db2777', border: 'rgba(236, 72, 153, 0.2)' },
+  work: { bg: 'rgba(6, 182, 212, 0.08)', text: '#0891b2', border: 'rgba(6, 182, 212, 0.2)' },
+  contact: { bg: 'rgba(14, 165, 233, 0.08)', text: '#0284c7', border: 'rgba(14, 165, 233, 0.2)' },
+  fact: { bg: 'rgba(107, 114, 128, 0.08)', text: 'var(--color-text-secondary)', border: 'rgba(107, 114, 128, 0.2)' },
+};
+
+const formatTimestamp = (ts?: string): string => {
+  if (!ts) return "Recently";
+  try {
+    const date = new Date(ts);
+    if (isNaN(date.getTime())) return ts;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+};
+
+const deduceTags = (content: string, existingTags: string[] = []): string[] => {
+  const tags = new Set<string>(existingTags.map(t => t.toLowerCase()));
+  const lower = content.toLowerCase();
+
+  if (lower.includes('name') || lower.includes('called') || lower.includes('username')) {
+    tags.add('identity');
+  }
+  if (lower.includes('like') || lower.includes('dislike') || lower.includes('love') || lower.includes('hate') || lower.includes('prefer') || lower.includes('favorite')) {
+    tags.add('preference');
+  }
+  if (lower.includes('always') || lower.includes('usually') || lower.includes('often') || lower.includes('every') || lower.includes('habit')) {
+    tags.add('habit');
+  }
+  if (lower.includes('flight') || lower.includes('airline') || lower.includes('travel') || lower.includes('seat') || lower.includes('hotel')) {
+    tags.add('travel');
+  }
+  if (lower.includes('card') || lower.includes('visa') || lower.includes('billing') || lower.includes('payment') || lower.includes('stripe')) {
+    tags.add('payment');
+  }
+  if (lower.includes('work') || lower.includes('company') || lower.includes('office') || lower.includes('job') || lower.includes('profession')) {
+    tags.add('work');
+  }
+  if (lower.includes('email') || lower.includes('phone') || lower.includes('contact') || lower.includes('address')) {
+    tags.add('contact');
+  }
+
+  if (tags.size === 0) {
+    tags.add('fact');
+  }
+
+  return Array.from(tags);
+};
+
+const parseFacts = (output: string): ParsedFact[] => {
+  if (!output) return [];
+
+  try {
+    const clean = output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(clean);
+    
+    if (parsed && Array.isArray(parsed.newMemories)) {
+      return parsed.newMemories.map((m: any) => {
+        const content = m.fact || m.content || JSON.stringify(m);
+        const tags = m.type ? [m.type] : m.category ? [m.category] : [];
+        return {
+          timestamp: m.timestamp || m.created,
+          content,
+          tags: deduceTags(content, tags)
+        };
+      });
+    }
+    
+    if (parsed && (parsed.fact || parsed.content)) {
+      const content = parsed.fact || parsed.content;
+      const tags = parsed.type ? [parsed.type] : parsed.category ? [parsed.category] : [];
+      const ts = parsed.timestamp || parsed.created || parsed.metadata?.created;
+      return [{ timestamp: ts, content, tags: deduceTags(content, tags) }];
+    }
+  } catch (e) {}
+
+  const lines = output.split('\n');
+  const facts: ParsedFact[] = [];
+  let currentTimestamp: string | undefined = undefined;
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    const timeMatch = line.match(/^\((2\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\)$/i) || 
+                       line.match(/^\((2\d{3}-\d{2}-\d{2})\)$/);
+    if (timeMatch) {
+      currentTimestamp = timeMatch[1];
+      continue;
+    }
+
+    const inlineTimeMatch = line.match(/^\((.*?)\)\s*[-:]?\s*(.*)/);
+    if (inlineTimeMatch) {
+      const ts = inlineTimeMatch[1];
+      const content = inlineTimeMatch[2].replace(/^-\s*/, '').trim();
+      facts.push({ timestamp: ts, content, tags: deduceTags(content) });
+      continue;
+    }
+
+    if (line.startsWith('-')) {
+      const content = line.slice(1).trim();
+      facts.push({ timestamp: currentTimestamp, content, tags: deduceTags(content) });
+      continue;
+    }
+
+    if (line.toLowerCase().startsWith('found matches:')) continue;
+    if (line.toLowerCase().startsWith('no facts') || line.toLowerCase().startsWith('no memory')) continue;
+
+    const cleanContent = line.replace(/^-\s*/, '').trim();
+    if (cleanContent.length > 3) {
+      facts.push({ timestamp: currentTimestamp, content: cleanContent, tags: deduceTags(cleanContent) });
+    }
+  }
+
+  return facts;
+};
+
+function MemoryTimelineCard({
+  pill,
+  onClick,
+}: {
+  pill: ToolPill;
+  onClick: (pill: ToolPill) => void;
+}) {
+  const isRunning = pill.status === 'in-progress';
+  const isError = pill.status === 'failed';
+  
+  const tname = (pill.toolName || pill.label || "").toLowerCase();
+  const isRecall = tname.includes('recall') || tname.includes('search');
+  const isSave = tname.includes('remember') || tname.includes('save') || tname.includes('consolidator');
+  const isUpdate = tname.includes('update') || tname.includes('profile') || tname.includes('preference');
+  
+  let opLabel = "Memory Access";
+  let themeColor = "#10b981"; // Unified EverFern emerald green brand theme
+  let cardClass = "bg-emerald-50/10 border-emerald-100/70 hover:border-gray-300 hover:shadow-sm";
+  let badgeClass = "bg-emerald-100 text-emerald-700";
+  
+  if (isSave) {
+    opLabel = "Memory Retained";
+  } else if (isUpdate) {
+    opLabel = "Memory Updated";
+  } else if (isRecall) {
+    opLabel = "Memory Recalled";
+  }
+  
+  if (isError) {
+    opLabel = "Memory Access Failed";
+    themeColor = "#ef4444";
+    cardClass = "bg-red-50/15 border-red-150/70 hover:border-gray-300 hover:shadow-sm";
+    badgeClass = "bg-red-100 text-red-700";
+  }
+
+  if (isRunning) {
+    cardClass = "bg-emerald-50/20 border-emerald-200 animate-pulse";
+  }
+
+  const query = pill.parameters?.query || pill.parameters?.fact || pill.parameters?.content || pill.parameters?.preference || pill.parameters?.taskName || '';
+  
+  let previewText = "";
+  if (pill.result) {
+    const output = typeof pill.result === 'string' ? pill.result : ((pill.result as any).output || '');
+    try {
+      const clean = output.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (parsed && Array.isArray(parsed.newMemories)) {
+        previewText = parsed.newMemories.map((m: any) => m.fact || m.content).join(", ");
+      } else if (parsed && parsed.fact) {
+        previewText = parsed.fact;
+      }
+    } catch {
+      previewText = output.replace(/^Found matches:\s*/i, '').trim();
+      if (previewText.toLowerCase().startsWith('no ') || previewText.toLowerCase().startsWith('no facts')) {
+        previewText = "No memory records matched this context.";
+      } else {
+        previewText = previewText.split(/\n---\n|\n---\s*\n/)[0].trim();
+        const srcMatch = previewText.match(/^\[(.*?)\]\s*\[(.*?)\]/);
+        if (srcMatch) {
+          previewText = previewText.slice(srcMatch[0].length).trim();
+        }
+      }
+    }
+  }
+
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98, y: 5 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+      onClick={(e) => {
+        setExpanded(!expanded);
+        e.stopPropagation();
+      }}
+      className={`w-full max-w-[620px] rounded-xl border p-3 cursor-pointer shadow-sm transition-all duration-200 ${cardClass}`}
+    >
+      <div className="flex items-center gap-3">
+        <GlobeDotIcon isRunning={isRunning} color={themeColor} />
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-800">
+              {isRunning ? "Accessing EverFern Memory..." : opLabel}
+            </span>
+            {!isRunning && (
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${badgeClass}`}>
+                {pill.toolName}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick(pill);
+            }}
+            className="px-2 py-1 bg-black/5 hover:bg-black/10 rounded text-[10px] font-semibold text-gray-600 transition-colors"
+          >
+            Trace
+          </button>
+          <motion.div animate={{ rotate: expanded ? 180 : 0 }} className="text-gray-400">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </motion.div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden mt-2 pt-2 border-t border-gray-100 flex flex-col gap-1.5"
+          >
+            {query && (
+              <div className="text-[11px] text-gray-500">
+                <span className="font-semibold">Query:</span> <code className="font-mono text-gray-700 break-all">{String(query)}</code>
+              </div>
+            )}
+            
+            {previewText && (() => {
+              const parsedFacts = parseFacts((pill.result as any)?.output || (typeof pill.result === 'string' ? pill.result : ''));
+              return (
+                <div className={`flex flex-col gap-1.5 ${query ? 'mt-1' : ''}`}>
+                  {parsedFacts.length > 0 ? (
+                    parsedFacts.map((fact, fIdx) => {
+                      const formattedTime = formatTimestamp(fact.timestamp);
+                      return (
+                        <div key={fIdx} className={`flex items-start justify-between gap-4 py-1 ${fIdx > 0 ? 'border-t border-gray-50' : ''}`}>
+                          <p className="text-xs text-gray-700 leading-normal flex-1">
+                            {fact.content}
+                          </p>
+                          <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                            {fact.tags.map((tag) => (
+                              <span key={tag} className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200/50 uppercase tracking-wide">
+                                {tag}
+                              </span>
+                            ))}
+                            <span className="text-[9.5px] text-gray-400 whitespace-nowrap">
+                              {formattedTime}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-xs text-gray-700 leading-normal">
+                      {previewText}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {isError && pill.error && (
+              <div className="border-t border-gray-50 pt-1.5 mt-1">
+                <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider font-sans">Failure Output</span>
+                <p className="text-xs text-red-700 font-mono break-all mt-0.5">{String(pill.error)}</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 function PillComponent({
   pill,
   onClick,
@@ -75,8 +409,13 @@ function PillComponent({
 
   const n = (pill.toolName || pill.label || "").toLowerCase();
   const isMemory = n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('fern') || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember');
-  const displayLabel = isMemory ? 'Memory' : (pill.label || pill.toolName);
-  const displayIcon = isMemory ? '🧠' : (pill.icon || '⚙️');
+
+  if (isMemory) {
+    return <MemoryTimelineCard pill={pill} onClick={onClick} />;
+  }
+
+  const displayLabel = pill.label || pill.toolName;
+  const displayIcon = pill.icon || '⚙️';
 
   return (
     <motion.button

@@ -36,14 +36,14 @@ const ContextTokenRing = ({
             }} className="token-ring-tooltip">
                 {/* Token count */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#ffffff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-bg-surface)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
                         {used.toLocaleString('en-US')}
                     </span>
-                    <span style={{ fontSize: 12, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: '#9ca3af', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
                         {actualMax.toLocaleString('en-US')}
                     </span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
                 </div>
 
                 {/* Pricing (only show for non-local models with cost) */}
@@ -51,7 +51,7 @@ const ContextTokenRing = ({
                 {!isLocalModel && estimatedCost !== null && estimatedCost !== undefined && estimatedCost > 0 && (
                     <div style={{
                         fontSize: 11,
-                        color: '#9ca3af',
+                        color: 'var(--color-text-tertiary)',
                         fontFamily: "'Figtree', system-ui, sans-serif",
                         borderTop: '1px solid rgba(255,255,255,0.1)',
                         paddingTop: 4
@@ -121,7 +121,7 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
             onMouseEnter={e => {
                 if (!isRecording) {
                     e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.07)";
-                    e.currentTarget.style.borderColor = "#a1a1aa";
+                    e.currentTarget.style.borderColor = 'var(--color-text-tertiary)';
                     e.currentTarget.style.color = "#333";
                 }
             }}

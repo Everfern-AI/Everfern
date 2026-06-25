@@ -23,9 +23,7 @@ let sharp: typeof import("sharp") | null = null;
 try { sharp = require("sharp"); }
 catch { console.warn("[ComputerUse] sharp unavailable — cursor circle disabled"); }
 
-let screenshotDesktop: any = null;
-try { screenshotDesktop = require("screenshot-desktop"); }
-catch { console.warn("[ComputerUse] screenshot-desktop unavailable"); }
+// Removed screenshot-desktop import - using native desktopCapturer
 
 // ── Sub-agent progress types (kept for app integration) ──────────────────────
 
@@ -1072,28 +1070,37 @@ class ComputerUseTool {
   private async attachScreenshot(payload: Record<string, any>): Promise<Record<string, any>> {
     const imgPath = path.join(this.screenshotDir, `${nowTs()}.png`);
 
-    // 1. Capture
+    // 1. Capture via Electron native API
     let rawBuffer: Buffer;
+    let monLeft = 0, monTop = 0;
 
     try {
-      if (screenshotDesktop) {
-        // Try to get displays, but fall back to default if listDisplays fails
-        let display: any = null;
-        try {
-          const displays = await screenshotDesktop.listDisplays?.();
-          if (displays && displays.length > 0) {
-            display = displays[this.monitorIndex - 1] ?? displays[0];
-          }
-        } catch (displayErr) {
-          console.warn("[ComputerUse] listDisplays failed, using default display:", displayErr);
-          // Fall through to use default display
-        }
+      const { screen, desktopCapturer } = require("electron");
+      const displays = screen.getAllDisplays();
+      const d = displays[this.monitorIndex - 1] ?? screen.getPrimaryDisplay();
+      monLeft = d.bounds.x;
+      monTop  = d.bounds.y;
+      
+      const scaleFactor = d.scaleFactor || 1;
+      const physicalWidth = Math.floor(d.size.width * scaleFactor);
+      const physicalHeight = Math.floor(d.size.height * scaleFactor);
 
-        rawBuffer = await screenshotDesktop({ filename: imgPath, screen: display?.id });
-        if (!rawBuffer) rawBuffer = fs.readFileSync(imgPath);
-      } else {
-        throw new Error("screenshot-desktop unavailable");
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: physicalWidth, height: physicalHeight }
+      });
+      const source = sources[this.monitorIndex - 1] || sources[0];
+      
+      if (!source) {
+         throw new Error("No displays found via desktopCapturer");
       }
+      
+      rawBuffer = source.thumbnail.toPNG();
+      
+      // Async write to disk for history/logs (non-blocking)
+      fs.writeFile(imgPath, rawBuffer, (err) => {
+         if (err) console.warn("[ComputerUse] Failed to write history screenshot to disk:", err);
+      });
     } catch (err) {
       console.error("[ComputerUse] Screenshot failed:", err);
       return { ...payload, status: "error", detail: "Screenshot failed." };
@@ -1104,16 +1111,6 @@ class ComputerUseTool {
 
     // 3. Cursor position
     const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
-
-    // Monitor offset (best-effort via Electron screen, fallback to 0)
-    let monLeft = 0, monTop = 0;
-    try {
-      const { screen } = require("electron");
-      const displays = screen.getAllDisplays();
-      const d = displays[this.monitorIndex - 1] ?? screen.getPrimaryDisplay();
-      monLeft = d.bounds.x;
-      monTop  = d.bounds.y;
-    } catch { /* non-Electron env */ }
 
     // 4. Draw cursor circle (matches Python: red outer ring + yellow inner dot)
     const relX = cursor.x - monLeft;

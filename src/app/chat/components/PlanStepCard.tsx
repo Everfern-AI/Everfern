@@ -36,7 +36,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
       exit={{ opacity: 0, y: -10 }}
       style={{
         marginBottom: 16,
-        backgroundColor: '#ffffff',
+        backgroundColor: 'var(--color-bg-surface)',
         border: '1px solid #e8e6d9',
         borderRadius: 20,
         overflow: 'hidden',
@@ -98,7 +98,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                 alignItems: 'center',
                 gap: 8,
                 fontSize: 12,
-                color: '#a1a1aa',
+                color: 'var(--color-text-tertiary)',
               }}>
                 <span style={{ fontWeight: 500 }}>Plan</span>
                 <span style={{ color: '#e8e6d9' }}>—</span>
@@ -147,7 +147,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                           width: 22,
                           height: 22,
                           borderRadius: 11,
-                          backgroundColor: '#f4f4f4',
+                          backgroundColor: 'var(--color-bg-subtle)',
                           border: '1px solid #e8e6d9',
                           display: 'flex',
                           alignItems: 'center',
@@ -160,7 +160,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                       <span style={{
                         fontSize: 14,
                         fontWeight: isInProgress ? 500 : 400,
-                        color: isDone ? '#8a8886' : isInProgress ? '#201e24' : '#6b7280',
+                        color: isDone ? '#8a8886' : isInProgress ? '#201e24' : 'var(--color-text-tertiary)',
                         textDecoration: isDone ? 'line-through' : 'none',
                       }}>
                         {step.description}
@@ -187,7 +187,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                     borderRadius: 12,
                     border: '1px solid #e8e6d9',
                     backgroundColor: 'transparent',
-                    color: '#6b7280',
+                    color: 'var(--color-text-tertiary)',
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -199,7 +199,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = '#6b7280';
+                    e.currentTarget.style.color = 'var(--color-text-tertiary)';
                   }}
                 >
                   Edit Plan
@@ -213,7 +213,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                   borderRadius: 12,
                   border: 'none',
                   backgroundColor: '#16a34a',
-                  color: '#ffffff',
+                  color: 'var(--color-bg-surface)',
                   fontSize: 13,
                   fontWeight: 700,
                   cursor: 'pointer',
@@ -303,14 +303,14 @@ export function InlinePlanSteps({ steps }: { steps: PlanStep[] }) {
                   width: 14,
                   height: 14,
                   borderRadius: 7,
-                  backgroundColor: '#f4f4f4',
+                  backgroundColor: 'var(--color-bg-subtle)',
                   border: '1px solid #e8e6d9',
                 }} />
               )}
               <span style={{
                 fontSize: 12,
                 fontWeight: isInProgress ? 600 : 400,
-                color: isDone ? '#8a8886' : isInProgress ? '#201e24' : '#a1a1aa',
+                color: isDone ? '#8a8886' : isInProgress ? '#201e24' : 'var(--color-text-tertiary)',
               }}>
                 {step.description.length > 20 ? step.description.substring(0, 20) + '...' : step.description}
               </span>

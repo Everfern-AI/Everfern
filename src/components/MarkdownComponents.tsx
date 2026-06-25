@@ -23,7 +23,7 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                 style={{
                     position: 'fixed', inset: 0, zIndex: 9999,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: 'rgba(0,0,0,0.35)',
+                    backgroundColor: 'var(--color-bg-overlay)',
                 }}
                 onClick={onClose}
             >
@@ -34,17 +34,17 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                     transition={{ duration: 0.15 }}
                     onClick={e => e.stopPropagation()}
                     style={{
-                        backgroundColor: '#ffffff',
+                        backgroundColor: 'var(--color-bg-surface)',
                         borderRadius: 16,
                         padding: '24px 24px 20px',
                         width: 360,
-                        boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
-                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 20px 60px var(--color-bg-overlay)',
+                        border: '1px solid var(--color-border)',
                     }}
                 >
                     {/* Icon */}
-                    <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'var(--color-info-dim)', border: '1px solid var(--color-info-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-info)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                             <polyline points="15 3 21 3 21 9" />
                             <line x1="10" y1="14" x2="21" y2="3" />
@@ -52,21 +52,21 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                     </div>
 
                     {/* Title */}
-                    <div style={{ fontSize: 15, fontWeight: 600, color: '#111827', marginBottom: 6, fontFamily: "'Matter', system-ui, sans-serif" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6, fontFamily: "'Matter', system-ui, sans-serif" }}>
                         This link takes you to an external site
                     </div>
 
                     {/* Label */}
                     {label && label !== url && (
-                        <div style={{ fontSize: 13, color: '#374151', marginBottom: 4, fontFamily: "'Matter', system-ui, sans-serif" }}>
+                        <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 4, fontFamily: "'Matter', system-ui, sans-serif" }}>
                             {label}
                         </div>
                     )}
 
                     {/* URL */}
                     <div style={{
-                        fontSize: 12, color: '#6b7280', backgroundColor: '#f9fafb',
-                        border: '1px solid #e5e7eb', borderRadius: 8,
+                        fontSize: 12, color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-bg-base)',
+                        border: '1px solid var(--color-border)', borderRadius: 8,
                         padding: '8px 12px', marginBottom: 20,
                         wordBreak: 'break-all', fontFamily: "'JetBrains Mono', monospace",
                     }}>
@@ -79,13 +79,13 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                             onClick={onClose}
                             style={{
                                 flex: 1, padding: '10px 0', borderRadius: 10,
-                                border: '1px solid #e5e7eb', backgroundColor: '#ffffff',
-                                color: '#374151', fontSize: 14, fontWeight: 500,
+                                border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)',
+                                color: 'var(--color-text-secondary)', fontSize: 14, fontWeight: 500,
                                 cursor: 'pointer', fontFamily: "'Matter', system-ui, sans-serif",
                                 transition: 'background 0.15s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f9fafb'; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
                             Close
                         </button>
@@ -93,13 +93,13 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                             onClick={openInBrowser}
                             style={{
                                 flex: 1, padding: '10px 0', borderRadius: 10,
-                                border: 'none', backgroundColor: '#3b82f6',
-                                color: '#ffffff', fontSize: 14, fontWeight: 600,
+                                border: 'none', backgroundColor: 'var(--color-info)',
+                                color: 'var(--color-text-inverse)', fontSize: 14, fontWeight: 600,
                                 cursor: 'pointer', fontFamily: "'Matter', system-ui, sans-serif",
-                                transition: 'background 0.15s',
+                                transition: 'background 0.15s, opacity 0.15s',
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#2563eb'; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#3b82f6'; }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
                         >
                             Open in Browser
                         </button>
@@ -112,31 +112,28 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
 
 // ── Inline Link Component ─────────────────────────────────────────────────────
 const InlineLink = ({ href, label }: { href: string, label: string }) => {
-    const openInBrowser = () => {
-        if ((window as any).electronAPI?.system?.openExternal) {
-            (window as any).electronAPI?.system.openExternal(href);
-        } else {
-            window.open(href, '_blank', 'noopener,noreferrer');
-        }
-    };
+    const [showPopup, setShowPopup] = useState(false);
 
     return (
-        <span
-            onClick={e => { e.preventDefault(); e.stopPropagation(); openInBrowser(); }}
-            style={{
-                color: '#2563eb',
-                textDecoration: 'underline',
-                textDecorationColor: 'rgba(37,99,235,0.4)',
-                textUnderlineOffset: 2,
-                cursor: 'pointer',
-                fontWeight: 'inherit',
-                transition: 'color 0.1s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#1d4ed8'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#2563eb'; }}
-        >
-            {label}
-        </span>
+        <>
+            <span
+                onClick={e => { e.preventDefault(); e.stopPropagation(); setShowPopup(true); }}
+                style={{
+                    color: 'var(--color-accent)',
+                    textDecoration: 'underline',
+                    textDecorationColor: 'var(--color-accent-dim)',
+                    textUnderlineOffset: 2,
+                    cursor: 'pointer',
+                    fontWeight: 'inherit',
+                    transition: 'color 0.1s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-accent-hover)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-accent)'; }}
+            >
+                {label}
+            </span>
+            {showPopup && <LinkPopup url={href} label={label} onClose={() => setShowPopup(false)} />}
+        </>
     );
 };
 
@@ -162,9 +159,9 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             [/\[([^\]]+)\]\(((?:https?|file):\/\/[^)]+)\)/, (m, k) => <InlineLink key={k} href={m[2]} label={m[1]} />],
             // Bare URLs
             [/(?:https?|file):\/\/[^\s"'<>)\]]+/, (m, k) => <InlineLink key={k} href={m[0]} label={m[0]} />],
-            [/\*\*(.+?)\*\*/, (m, k) => <strong key={k} style={{ color: '#111111', fontWeight: 600 }}>{inlineRender(m[1], k)}</strong>],
-            [/\*([^*]+)\*/, (m, k) => <em key={k} style={{ color: '#4a4846', fontStyle: 'italic' }}>{inlineRender(m[1], k)}</em>],
-            [/`([^`]+)`/, (m, k) => <code key={k} style={{ backgroundColor: 'rgba(0, 0, 0, 0.05)', borderRadius: 4, padding: '2px 6px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, color: '#111111' }}>{m[1]}</code>],
+            [/\*\*(.+?)\*\*/, (m, k) => <strong key={k} style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{inlineRender(m[1], k)}</strong>],
+            [/\*([^*]+)\*/, (m, k) => <em key={k} style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>{inlineRender(m[1], k)}</em>],
+            [/`([^`]+)`/, (m, k) => <code key={k} style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '2px 6px', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: 13, color: 'var(--color-text-primary)' }}>{m[1]}</code>],
         ];
         while (remaining.length > 0) {
             let earliest = -1, bestMatch: RegExpMatchArray | null = null, bestRenderer: ((m: RegExpMatchArray, k: string) => React.ReactNode) | null = null;
@@ -210,9 +207,9 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             } else {
                 elements.push(
                     <div key={`code-${blockStartIndex}`} style={{ margin: '16px 0' }}>
-                        <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(0, 0, 0, 0.08)', backgroundColor: '#fcfbf7' }}>
+                        <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)' }}>
                             {lang && (
-                                <div style={{ padding: '6px 14px', backgroundColor: '#f4f3ed', fontSize: 11, color: '#717171', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", letterSpacing: '0.05em', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ padding: '6px 14px', backgroundColor: 'var(--color-bg-subtle)', fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', 'Fira Code', monospace", letterSpacing: '0.05em', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
                                     {lang}
                                 </div>
@@ -231,7 +228,7 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             const bqLines: string[] = [];
             while (i < lines.length && lines[i].trim().startsWith('> ')) { bqLines.push(lines[i].trim().slice(2)); i++; }
             elements.push(
-                <blockquote key={`bq-${blockStartIndex}`} style={{ margin: '8px 0', paddingLeft: 14, borderLeft: '3px solid rgba(0, 0, 0, 0.2)', color: '#717171', fontStyle: 'italic' }}>
+                <blockquote key={`bq-${blockStartIndex}`} style={{ margin: '8px 0', paddingLeft: 14, borderLeft: '3px solid var(--color-border)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                     {bqLines.map((l, j) => <div key={j}>{inlineRender(l, j)}</div>)}
                 </blockquote>
             );
@@ -249,8 +246,8 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             elements.push(
                 <div key={`table-${blockStartIndex}`} style={{ overflowX: 'auto', margin: '10px 0' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead><tr>{headers.map((h, j) => <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid rgba(0, 0, 0, 0.12)', textAlign: 'left', color: '#717171', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{inlineRender(h, j)}</th>)}</tr></thead>
-                        <tbody>{rows.map((row, ri) => <tr key={ri} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>{row.map((cell, ci) => <td key={ci} style={{ padding: '8px 12px', color: '#4a4846' }}>{inlineRender(cell, ci)}</td>)}</tr>)}</tbody>
+                        <thead><tr>{headers.map((h, j) => <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{inlineRender(h, j)}</th>)}</tr></thead>
+                        <tbody>{rows.map((row, ri) => <tr key={ri} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>{row.map((cell, ci) => <td key={ci} style={{ padding: '8px 12px', color: 'var(--color-text-secondary)' }}>{inlineRender(cell, ci)}</td>)}</tr>)}</tbody>
                     </table>
                 </div>
             );
@@ -263,31 +260,31 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
         const h3 = line.match(/^### (.+)/);
         const h2 = line.match(/^## (.+)/);
         const h1 = line.match(/^# (.+)/);
-        if (h1) { elements.push(<h1 key={`h1-${blockStartIndex}`} style={{ fontSize: 24, fontWeight: 500, color: '#111111', margin: '14px 0 6px', fontFamily: 'var(--font-serif)' }}>{inlineRender(h1[1], i)}</h1>); i++; continue; }
-        if (h2) { elements.push(<h2 key={`h2-${blockStartIndex}`} style={{ fontSize: 20, fontWeight: 500, color: '#111111', margin: '12px 0 5px', fontFamily: 'var(--font-serif)' }}>{inlineRender(h2[1], i)}</h2>); i++; continue; }
-        if (h3) { elements.push(<h3 key={`h3-${blockStartIndex}`} style={{ fontSize: 16, fontWeight: 600, color: '#4a4846', margin: '10px 0 4px' }}>{inlineRender(h3[1], i)}</h3>); i++; continue; }
-        if (h4) { elements.push(<h4 key={`h4-${blockStartIndex}`} style={{ fontSize: 14, fontWeight: 700, color: '#717171', margin: '10px 0 4px', letterSpacing: '0.01em' }}>{inlineRender(h4[1], i)}</h4>); i++; continue; }
-        if (h5) { elements.push(<h5 key={`h5-${blockStartIndex}`} style={{ fontSize: 13, fontWeight: 700, color: '#717171', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h5[1], i)}</h5>); i++; continue; }
-        if (h6) { elements.push(<h6 key={`h6-${blockStartIndex}`} style={{ fontSize: 12, fontWeight: 700, color: '#8a8886', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h6[1], i)}</h6>); i++; continue; }
+        if (h1) { elements.push(<h1 key={`h1-${blockStartIndex}`} style={{ fontSize: 24, fontWeight: 500, color: 'var(--color-text-primary)', margin: '14px 0 6px', fontFamily: 'var(--font-serif)' }}>{inlineRender(h1[1], i)}</h1>); i++; continue; }
+        if (h2) { elements.push(<h2 key={`h2-${blockStartIndex}`} style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)', margin: '12px 0 5px', fontFamily: 'var(--font-serif)' }}>{inlineRender(h2[1], i)}</h2>); i++; continue; }
+        if (h3) { elements.push(<h3 key={`h3-${blockStartIndex}`} style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', margin: '10px 0 4px' }}>{inlineRender(h3[1], i)}</h3>); i++; continue; }
+        if (h4) { elements.push(<h4 key={`h4-${blockStartIndex}`} style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '10px 0 4px', letterSpacing: '0.01em' }}>{inlineRender(h4[1], i)}</h4>); i++; continue; }
+        if (h5) { elements.push(<h5 key={`h5-${blockStartIndex}`} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h5[1], i)}</h5>); i++; continue; }
+        if (h6) { elements.push(<h6 key={`h6-${blockStartIndex}`} style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h6[1], i)}</h6>); i++; continue; }
 
         if (line.match(/^[\-\*] /)) {
             const items: string[] = [];
             while (i < lines.length && lines[i].match(/^[\-\*] /)) { items.push(lines[i].slice(2)); i++; }
-            elements.push(<ul key={`ul-${blockStartIndex}`} style={{ margin: '6px 0', paddingLeft: 20, color: '#4a4846' }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.65 }}>{inlineRender(it, j)}</li>)}</ul>);
+            elements.push(<ul key={`ul-${blockStartIndex}`} style={{ margin: '6px 0', paddingLeft: 20, color: 'var(--color-text-secondary)' }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.65 }}>{inlineRender(it, j)}</li>)}</ul>);
             continue;
         }
 
         if (line.match(/^\d+\. /)) {
             const items: string[] = [];
             while (i < lines.length && lines[i].match(/^\d+\. /)) { items.push(lines[i].replace(/^\d+\. /, '')); i++; }
-            elements.push(<ol key={`ol-${blockStartIndex}`} style={{ margin: '6px 0', paddingLeft: 20, color: '#4a4846' }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.65 }}>{inlineRender(it, j)}</li>)}</ol>);
+            elements.push(<ol key={`ol-${blockStartIndex}`} style={{ margin: '6px 0', paddingLeft: 20, color: 'var(--color-text-secondary)' }}>{items.map((it, j) => <li key={j} style={{ marginBottom: 3, lineHeight: 1.65 }}>{inlineRender(it, j)}</li>)}</ol>);
             continue;
         }
 
-        if (line.match(/^[-*]{3,}$/)) { elements.push(<hr key={`hr-${blockStartIndex}`} style={{ border: 'none', borderTop: '1px solid rgba(0, 0, 0, 0.08)', margin: '12px 0' }} />); i++; continue; }
+        if (line.match(/^[-*]{3,}$/)) { elements.push(<hr key={`hr-${blockStartIndex}`} style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '12px 0' }} />); i++; continue; }
         if (line.trim() === '') { elements.push(<div key={`empty-${blockStartIndex}`} style={{ height: 8 }} />); i++; continue; }
 
-        elements.push(<p key={`p-${blockStartIndex}`} style={{ margin: '2px 0', lineHeight: 1.7, color: '#111111' }}>{inlineRender(line, i)}</p>);
+        elements.push(<p key={`p-${blockStartIndex}`} style={{ margin: '2px 0', lineHeight: 1.7, color: 'var(--color-text-primary)' }}>{inlineRender(line, i)}</p>);
         i++;
     }
 
@@ -305,7 +302,7 @@ const StreamingMarkdown = ({ content, isLive, isLatest }: { content: string; isL
                     transition={{ repeat: Infinity, duration: 0.6 }}
                     style={{
                         display: 'inline-block', width: 7, height: 15,
-                        backgroundColor: '#374151', borderRadius: 2,
+                        backgroundColor: 'var(--color-text-primary)', borderRadius: 2,
                         marginLeft: 2, verticalAlign: 'text-bottom', opacity: 0.7,
                     }}
                 />

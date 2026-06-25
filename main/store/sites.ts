@@ -14,22 +14,47 @@ export interface SiteMeta {
 const SITES_DIR = path.join(os.homedir(), '.everfern', 'sites');
 
 /**
+ * Helper to check if file/dir exists asynchronously
+ */
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Lists all generated sites/reports.
  */
-export function listSites(chatId?: string): SiteMeta[] {
-  if (!fs.existsSync(SITES_DIR)) return [];
+export async function listSites(chatId?: string): Promise<SiteMeta[]> {
+  if (!(await exists(SITES_DIR))) return [];
 
   const results: SiteMeta[] = [];
   try {
-    const dirs = chatId ? [chatId] : fs.readdirSync(SITES_DIR).filter(f => fs.statSync(path.join(SITES_DIR, f)).isDirectory());
+    let dirs: string[] = [];
+    if (chatId) {
+      dirs = [chatId];
+    } else {
+      const entries = await fs.promises.readdir(SITES_DIR);
+      for (const f of entries) {
+        const stat = await fs.promises.stat(path.join(SITES_DIR, f));
+        if (stat.isDirectory()) dirs.push(f);
+      }
+    }
+    
     for (const dir of dirs) {
       const dirPath = path.join(SITES_DIR, dir);
-      if (!fs.existsSync(dirPath)) continue;
-      const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.html'));
+      if (!(await exists(dirPath))) continue;
+      
+      const entries = await fs.promises.readdir(dirPath);
+      const files = entries.filter(f => f.endsWith('.html'));
+      
       for (const file of files) {
         const filePath = path.join(dirPath, file);
-        if (!fs.existsSync(filePath)) continue;
-        const stats = fs.statSync(filePath);
+        if (!(await exists(filePath))) continue;
+        const stats = await fs.promises.stat(filePath);
         results.push({
           id: file,
           chatId: dir,
@@ -49,11 +74,11 @@ export function listSites(chatId?: string): SiteMeta[] {
 /**
  * Reads a site file (usually index.html).
  */
-export function readSiteFile(chatId: string, filename: string): string | null {
+export async function readSiteFile(chatId: string, filename: string): Promise<string | null> {
   const p = path.join(SITES_DIR, chatId, filename);
-  if (!fs.existsSync(p)) return null;
+  if (!(await exists(p))) return null;
   try {
-    return fs.readFileSync(p, 'utf-8');
+    return await fs.promises.readFile(p, 'utf-8');
   } catch {
     return null;
   }
@@ -62,11 +87,11 @@ export function readSiteFile(chatId: string, filename: string): string | null {
 /**
  * Writes a file to a site project.
  */
-export function writeSiteFile(chatId: string, filename: string, content: string): { success: boolean; error?: string } {
+export async function writeSiteFile(chatId: string, filename: string, content: string): Promise<{ success: boolean; error?: string }> {
   try {
     const dir = path.join(SITES_DIR, chatId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, filename), content, 'utf-8');
+    if (!(await exists(dir))) await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(path.join(dir, filename), content, 'utf-8');
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -76,14 +101,15 @@ export function writeSiteFile(chatId: string, filename: string, content: string)
 /**
  * Deletes a site project or file.
  */
-export function deleteSite(chatId: string, filename?: string): { success: boolean } {
+export async function deleteSite(chatId: string, filename?: string): Promise<{ success: boolean }> {
   try {
     const p = filename ? path.join(SITES_DIR, chatId, filename) : path.join(SITES_DIR, chatId);
-    if (fs.existsSync(p)) {
-      if (fs.statSync(p).isDirectory()) {
-        fs.rmSync(p, { recursive: true, force: true });
+    if (await exists(p)) {
+      const stats = await fs.promises.stat(p);
+      if (stats.isDirectory()) {
+        await fs.promises.rm(p, { recursive: true, force: true });
       } else {
-        fs.unlinkSync(p);
+        await fs.promises.unlink(p);
       }
     }
     return { success: true };

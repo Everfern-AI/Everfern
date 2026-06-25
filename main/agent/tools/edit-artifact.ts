@@ -119,7 +119,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
 
       let artifactRef;
       try {
-        artifactRef = resolver.resolve(sessionId, operations.reference, operations.filename, projectPath);
+        artifactRef = await resolver.resolve(sessionId, operations.reference, operations.filename, projectPath);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
@@ -130,7 +130,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
       }
 
       if (!artifactRef) {
-        const available = resolver.listArtifacts(sessionId, projectPath);
+        const available = await resolver.listArtifacts(sessionId, projectPath);
         const availableList = available.length > 0
           ? '\n\nAvailable artifacts:\n' + available.map(a => `- ${a.title || a.filename}`).join('\n')
           : '\n\nNo artifacts found in this session.';
@@ -150,7 +150,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
       const effectiveChatId = isProjectArtifact ? 'project' : sessionId;
       const effectiveProjectPath = isProjectArtifact ? projectPath : undefined;
       
-      const htmlContent = readArtifact(effectiveChatId, artifactRef.filename, effectiveProjectPath);
+      const htmlContent = await readArtifact(effectiveChatId, artifactRef.filename, effectiveProjectPath);
 
       if (!htmlContent) {
         return {
@@ -222,7 +222,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
       }
 
       // Write atomically
-      const writeResult = writeArtifactAtomic(effectiveChatId, artifactRef.filename, updatedHTML, effectiveProjectPath);
+      const writeResult = await writeArtifactAtomic(effectiveChatId, artifactRef.filename, updatedHTML, effectiveProjectPath);
       if (!writeResult.success) {
         return {
           success: false,
@@ -233,7 +233,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
       }
 
       // Update timestamp
-      updateArtifactTimestamp(effectiveChatId, artifactRef.filename, effectiveProjectPath);
+      await updateArtifactTimestamp(effectiveChatId, artifactRef.filename, effectiveProjectPath);
 
       // Update most recent artifact
       resolver.setMostRecent(sessionId, artifactRef.filename);

@@ -20,7 +20,7 @@ export default function IntegrationSettingsExample() {
                     padding: '8px 16px',
                     borderRadius: '8px',
                     border: '1px solid #e5e5e0',
-                    backgroundColor: '#ffffff',
+                    backgroundColor: 'var(--color-bg-surface)',
                     cursor: 'pointer'
                 }}
             >

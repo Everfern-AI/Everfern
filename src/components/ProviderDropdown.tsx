@@ -115,7 +115,7 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                             top: "calc(100% + 6px)",
                             left: 0,
                             right: 0,
-                            backgroundColor: "#ffffff",
+                            backgroundColor: 'var(--color-bg-surface)',
                             border: `1px solid ${colors.border}`,
                             borderRadius: 8,
                             boxShadow: "0 4px 16px rgba(0, 0, 0, 0.08)",
@@ -143,18 +143,18 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                                         alignItems: "center",
                                         gap: 12,
                                         cursor: isDisabled ? "not-allowed" : "pointer",
-                                        backgroundColor: isSelected ? "#f4f4f4" : "#ffffff",
+                                        backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                         borderBottom: index < providers.length - 1 ? `1px solid #f0f0f0` : "none",
                                         opacity: isDisabled ? 0.4 : 1,
                                         transition: "background-color 0.1s"
                                     }}
                                     onMouseEnter={(e) => {
                                         if (!isDisabled) {
-                                            e.currentTarget.style.backgroundColor = isSelected ? "#f4f4f4" : "#f9f9f9";
+                                            e.currentTarget.style.backgroundColor = isSelected ? 'var(--color-bg-subtle)' : "#f9f9f9";
                                         }
                                     }}
                                     onMouseLeave={(e) => {
-                                        e.currentTarget.style.backgroundColor = isSelected ? "#f4f4f4" : "#ffffff";
+                                        e.currentTarget.style.backgroundColor = isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)';
                                     }}
                                 >
                                     {provider.image && (

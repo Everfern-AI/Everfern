@@ -59,7 +59,7 @@ describe('Bug Condition Exploration: Narrative Visibility and Positioning', () =
       expect(narrativeIndex).toBeLessThan(toolPillIndex);
     }
 
-    // Assert narrative styling: fontSize: 12, color: '#9ca3af', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic'
+    // Assert narrative styling: fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic'
     const computedStyle = window.getComputedStyle(narrativeElement!);
     expect(computedStyle.fontSize).toBe('12px');
     expect(computedStyle.color).toBe('rgb(156, 163, 175)'); // #9ca3af in RGB

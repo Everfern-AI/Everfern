@@ -12,7 +12,7 @@ const AGENT_DEFAULT_CWD = path.join(os.homedir(), '.everfern');
  */
 export const terminalTool: AgentTool = {
   name: 'terminal_execute',
-  description: `Execute a terminal command with persistence and tracking. IMPORTANT: target 'main' runs in the host machine's shell (PowerShell on Windows, Bash/Zsh on macOS/Linux). target 'vm' runs inside the Linux VM (WSL on Windows, Docker on macOS). Check which target you are using and write commands compatible with that target's shell syntax.`,
+  description: `[STRICT-EXECUTION-ONLY] Execute a terminal command. IMPORTANT: NEVER use this tool for file operations like cat, ls, grep, find, or sed. You MUST use the dedicated native tools (read, write, edit, ls, grep) instead. Use this tool ONLY for scripts, builds, testing, or package management. target 'main' runs in the host machine's shell (PowerShell on Windows). target 'vm' runs inside the Linux VM. Write commands compatible with that target's shell syntax.`,
   parameters: {
     type: 'object',
     properties: {

@@ -44,11 +44,11 @@ export class ArtifactResolver {
   /**
    * Gets the most recently created or edited artifact for a session.
    */
-  getMostRecent(chatId: string, projectPath?: string): ArtifactReference | null {
+  async getMostRecent(chatId: string, projectPath?: string): Promise<ArtifactReference | null> {
     const recent = this.recentCache[chatId];
     if (!recent) return null;
 
-    const artifacts = listArtifacts(chatId, projectPath);
+    const artifacts = await listArtifacts(chatId, projectPath);
     const artifact = artifacts.find(a => a.name === recent.filename);
 
     if (!artifact) return null;
@@ -66,15 +66,15 @@ export class ArtifactResolver {
    * @returns ArtifactReference or null if not found
    * @throws Error if reference is ambiguous
    */
-  resolve(
+  async resolve(
     chatId: string,
     reference?: string,
     filename?: string,
     projectPath?: string
-  ): ArtifactReference | null {
+  ): Promise<ArtifactReference | null> {
     // 1. Exact filename match (highest priority)
     if (filename) {
-      const artifacts = listArtifacts(chatId, projectPath);
+      const artifacts = await listArtifacts(chatId, projectPath);
       const artifact = artifacts.find(a => a.name === filename);
       return artifact ? this.toReference(artifact, projectPath) : null;
     }
@@ -83,11 +83,11 @@ export class ArtifactResolver {
     if (reference) {
       // 2a. Check for recency indicators
       if (/^(the|that|this|it)$/i.test(reference.trim())) {
-        return this.getMostRecent(chatId, projectPath);
+        return await this.getMostRecent(chatId, projectPath);
       }
 
       // 2b. Fuzzy match by title/description
-      const matches = this.fuzzyMatch(chatId, reference, projectPath);
+      const matches = await this.fuzzyMatch(chatId, reference, projectPath);
       if (matches.length === 1) {
         return matches[0];
       } else if (matches.length > 1) {
@@ -98,14 +98,14 @@ export class ArtifactResolver {
     }
 
     // 3. No reference provided - use most recent
-    return this.getMostRecent(chatId, projectPath);
+    return await this.getMostRecent(chatId, projectPath);
   }
 
   /**
    * Fuzzy matches artifacts by title or filename.
    */
-  private fuzzyMatch(chatId: string, query: string, projectPath?: string): ArtifactReference[] {
-    const artifacts = listArtifacts(chatId, projectPath);
+  private async fuzzyMatch(chatId: string, query: string, projectPath?: string): Promise<ArtifactReference[]> {
+    const artifacts = await listArtifacts(chatId, projectPath);
     const matches: Array<{ ref: ArtifactReference; score: number }> = [];
 
     for (const artifact of artifacts) {
@@ -129,8 +129,8 @@ export class ArtifactResolver {
   /**
    * Lists all artifacts for a session, sorted by lastEdited descending.
    */
-  listArtifacts(chatId: string, projectPath?: string): ArtifactReference[] {
-    const artifacts = listArtifacts(chatId, projectPath);
+  async listArtifacts(chatId: string, projectPath?: string): Promise<ArtifactReference[]> {
+    const artifacts = await listArtifacts(chatId, projectPath);
     return artifacts.map(a => this.toReference(a, projectPath));
   }
 

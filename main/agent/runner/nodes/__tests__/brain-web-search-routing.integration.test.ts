@@ -361,8 +361,8 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
       const runner = makeMockRunner() as any;
       runner.client.chat.mockResolvedValueOnce({
         content: JSON.stringify({
-          decision: 'route_computer_use',
-          explanation: 'Desktop automation task detected',
+          decision: 'continue_brain',
+          explanation: 'Desktop automation task handled directly by brain',
         }),
       });
 
@@ -371,9 +371,9 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
 
       const result = await brainNode(state);
 
-      // Verify brain routes to computer-use
-      expect(result.routingDecision?.decision).toBe('route_computer_use');
-      expect(result.taskPhase).toBe('specialized_agent');
+      // Verify brain routes to continue_brain
+      expect(result.routingDecision?.decision).toBe('continue_brain');
+      expect(result.taskPhase).not.toBe('specialized_agent');
 
       // Verify brain does NOT route to web-explorer
       expect(result.routingDecision?.decision).not.toBe('route_web_explorer');
@@ -553,15 +553,26 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
         { intent: 'fix', message: 'fix this bug', expectedRoute: 'route_coding' },
         { intent: 'build', message: 'build a Next.js app', expectedRoute: 'route_coding' },
         { intent: 'analyze', message: 'analyze this data', expectedRoute: 'route_data_analyst' },
-        { intent: 'automate', message: 'click the button', expectedRoute: 'route_computer_use' },
+        { intent: 'automate', message: 'click the button', expectedRoute: 'continue_brain' },
       ];
 
       for (const testCase of testCases) {
-        runner.client.chat.mockResolvedValueOnce({
-          content: JSON.stringify({
-            decision: testCase.expectedRoute,
-            explanation: `Routing for ${testCase.intent}`,
-          }),
+        runner.client.chat = vi.fn().mockImplementation(async (options) => {
+          const prompt = options.messages[0].content;
+          if (prompt.includes('determine the best routing decision') || prompt.includes('routing decision')) {
+            return {
+              content: JSON.stringify({
+                decision: testCase.expectedRoute,
+                explanation: `Routing for ${testCase.intent}`,
+              }),
+            };
+          }
+          return {
+            content: JSON.stringify({
+              reason: 'task_complete',
+              explanation: 'Done',
+            }),
+          };
         });
 
         const state = makeState(testCase.intent, testCase.message);
@@ -569,6 +580,11 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
 
         // Verify correct routing
         expect(result.routingDecision?.decision).toBe(testCase.expectedRoute);
+        if (testCase.intent === 'automate') {
+          expect(result.taskPhase).not.toBe('specialized_agent');
+        } else {
+          expect(result.taskPhase).toBe('specialized_agent');
+        }
 
         // Verify NOT routing to web-explorer
         expect(result.routingDecision?.decision).not.toBe('route_web_explorer');

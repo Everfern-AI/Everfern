@@ -65,8 +65,8 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
       <div
         style={{
           width: "100%",
-          backgroundColor: "#ffffff",
-          border: "1px solid #e8e6d9",
+          backgroundColor: "var(--color-bg-surface)",
+          border: "1px solid var(--color-border)",
           borderRadius: 16,
           boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
           overflow: "hidden",
@@ -79,8 +79,8 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             alignItems: "center",
             gap: 12,
             padding: "14px 20px 12px",
-            borderBottom: "1px solid #f0ede8",
-            backgroundColor: "#faf9f7",
+            borderBottom: "1px solid var(--color-border)",
+            backgroundColor: "var(--color-bg-subtle)",
           }}
         >
           {/* Shield / Terminal icon badge */}
@@ -89,8 +89,8 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               width: 34,
               height: 34,
               borderRadius: 10,
-              backgroundColor: "#f1f3f5",
-              border: "1px solid #e2e8f0",
+              backgroundColor: "var(--color-bg-base)",
+              border: "1px solid var(--color-border)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -102,7 +102,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               height="17"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#55555c"
+              stroke="var(--color-text-secondary)"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -117,7 +117,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               style={{
                 fontSize: 13.5,
                 fontWeight: 600,
-                color: "#201e24",
+                color: "var(--color-text-primary)",
                 lineHeight: 1.3,
                 fontFamily: "var(--font-sans)",
               }}
@@ -128,7 +128,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               <div
                 style={{
                   fontSize: 12,
-                  color: "#73716e",
+                  color: "var(--color-text-secondary)",
                   marginTop: 2,
                   lineHeight: 1.4,
                   fontFamily: "var(--font-sans)",
@@ -145,9 +145,9 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               flexShrink: 0,
               fontSize: 11,
               fontWeight: 600,
-              color: "#55555c",
-              backgroundColor: "#f1f3f5",
-              border: "1px solid #e2e8f0",
+              color: "var(--color-text-secondary)",
+              backgroundColor: "var(--color-bg-base)",
+              border: "1px solid var(--color-border)",
               padding: "3px 10px",
               borderRadius: 20,
               letterSpacing: "0.02em",
@@ -163,15 +163,15 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
         <div
           style={{
             padding: "12px 20px",
-            backgroundColor: "#f8f8fa",
-            borderBottom: "1px solid #f0ede8",
+            backgroundColor: "var(--color-bg-base)",
+            borderBottom: "1px solid var(--color-border)",
           }}
         >
           <code
             style={{
               fontFamily: "'Fira Code', 'Cascadia Code', 'Consolas', monospace",
               fontSize: 13,
-              color: "#2a2a2b",
+              color: "var(--color-text-primary)",
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
               lineHeight: 1.6,
@@ -190,7 +190,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             justifyContent: "flex-end",
             gap: 8,
             padding: "12px 20px",
-            backgroundColor: "#ffffff",
+            backgroundColor: "var(--color-bg-surface)",
           }}
         >
           {/* Amber "waiting" indicator — left side */}
@@ -231,9 +231,9 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             style={{
               padding: "7px 16px",
               borderRadius: 10,
-              border: "1px solid #e8e6d9",
-              backgroundColor: "#ffffff",
-              color: "#4a4846",
+              border: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-bg-surface)",
+              color: "var(--color-text-secondary)",
               fontSize: 13,
               fontWeight: 500,
               cursor: responded ? "default" : "pointer",
@@ -244,13 +244,13 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             }}
             onMouseEnter={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f4f0";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#d0cec8";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-hover)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-strong, var(--color-border))";
             }}
             onMouseLeave={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ffffff";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#e8e6d9";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-surface)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border)";
             }}
           >
             Deny
@@ -265,9 +265,9 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             style={{
               padding: "7px 16px",
               borderRadius: 10,
-              border: "1px solid #e8e6d9",
-              backgroundColor: "#ffffff",
-              color: "#4a4846",
+              border: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-bg-surface)",
+              color: "var(--color-text-secondary)",
               fontSize: 13,
               fontWeight: 500,
               cursor: responded ? "default" : "pointer",
@@ -278,13 +278,13 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             }}
             onMouseEnter={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f4f0";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#d0cec8";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-hover)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-strong, var(--color-border))";
             }}
             onMouseLeave={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ffffff";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#e8e6d9";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-surface)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border)";
             }}
           >
             Always allow
@@ -299,9 +299,9 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             style={{
               padding: "7px 18px",
               borderRadius: 10,
-              border: "1px solid #201e24",
-              backgroundColor: "#201e24",
-              color: "#ffffff",
+              border: "1px solid var(--color-text-primary)",
+              backgroundColor: "var(--color-text-primary)",
+              color: "var(--color-bg-surface)",
               fontSize: 13,
               fontWeight: 600,
               cursor: responded ? "default" : "pointer",
@@ -312,13 +312,13 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             }}
             onMouseEnter={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#111111";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#111111";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-text-primary)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-text-primary)";
             }}
             onMouseLeave={e => {
               if (responded) return;
-              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#201e24";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#201e24";
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-text-primary)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-text-primary)";
             }}
           >
             Allow once

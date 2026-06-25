@@ -24,7 +24,7 @@ export const STYLING = {
 
   // Status colors
   STATUS_COLORS: {
-    pending: '#f3f4f6', // light gray
+    pending: 'var(--color-bg-subtle)', // light gray
     'in-progress': '#dbeafe', // light blue
     completed: '#dcfce7', // light green
     failed: '#fee2e2', // light red
@@ -32,7 +32,7 @@ export const STYLING = {
 
   // Status text colors
   STATUS_TEXT_COLORS: {
-    pending: '#6b7280', // gray
+    pending: 'var(--color-text-tertiary)', // gray
     'in-progress': '#0284c7', // blue
     completed: '#16a34a', // green
     failed: '#dc2626', // red
@@ -40,7 +40,7 @@ export const STYLING = {
 
   // Status border colors
   STATUS_BORDER_COLORS: {
-    pending: '#d1d5db', // gray
+    pending: 'var(--color-border)', // gray
     'in-progress': '#0284c7', // blue
     completed: '#16a34a', // green
     failed: '#dc2626', // red
