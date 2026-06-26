@@ -247,7 +247,7 @@ export function ToolCallDetailPane({
       {/* Header */}
       <div
         style={{
-          padding: '16px 20px',
+          padding: '20px 24px',
           borderBottom: `1px solid ${T.border}`,
           background: T.surface,
           display: 'flex',
@@ -314,11 +314,11 @@ export function ToolCallDetailPane({
       {/* Meta Info */}
       <div
         style={{
-          padding: '12px 20px',
+          padding: '16px 24px',
           borderBottom: `1px solid ${T.border}`,
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 8,
+          gap: 12,
         }}
       >
         {[
@@ -362,7 +362,7 @@ export function ToolCallDetailPane({
               display: 'flex',
               borderBottom: `1px solid ${T.border}`,
               background: T.surface,
-              padding: '0 20px',
+              padding: '0 24px',
               gap: 0,
             }}
           >
@@ -371,7 +371,7 @@ export function ToolCallDetailPane({
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 style={{
-                  padding: '12px 16px',
+                  padding: '14px 18px',
                   fontSize: 12,
                   fontWeight: 600,
                   color: activeTab === tab ? T.text : T.textMuted,
@@ -390,7 +390,7 @@ export function ToolCallDetailPane({
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '22px 26px' }}>
             <AnimatePresence mode="wait">
               {activeTab === 'input' && (
                 <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

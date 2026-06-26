@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import UpdateNotification from "@/components/UpdateNotification";
+import Script from "next/script";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -27,8 +28,8 @@ const firaCode = Fira_Code({
 });
 
 export const metadata: Metadata = {
-  title: "EverFern Desktop",
-  description: "Next Generation Intelligent Desktop Orchestration",
+  title: "EverFern",
+  description: "Your autonomous AI workplace agent.",
 };
 
 export default function RootLayout({
@@ -44,18 +45,20 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Fira+Code:wght@300..700&display=swap" rel="stylesheet" />
-        <script dangerouslySetInnerHTML={{__html: `
-          try {
-            const theme = localStorage.getItem('everfern_theme') || 'light';
-            if (theme === 'dark') {
-              document.documentElement.classList.add('dark');
-            } else {
-              document.documentElement.classList.remove('dark');
-            }
-          } catch (_) {}
-        `}} />
       </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-background text-on-surface">
+        <Script id="theme-loader" strategy="beforeInteractive">
+          {`
+            try {
+              const theme = localStorage.getItem('everfern_theme') || 'light';
+              if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
+              }
+            } catch (_) {}
+          `}
+        </Script>
         <ThemeProvider>
           {children}
           <UpdateNotification />

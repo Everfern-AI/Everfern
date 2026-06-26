@@ -10,14 +10,24 @@ import type { ActionName } from './actions';
 import { bridgeServer } from '../../../lib/extension-server';
 
 const FALLBACK_EXTENSION_SYSTEM_PROMPT = `You are Navis, a fast AI browser agent running through the EverFern browser extension.
-Use DOM refs first. Do not request vision unless the DOM is unusable. Complete the task with actions and return strict JSON.
+
+OPERATING MODE: DOM-FIRST. You receive live DOM snapshots with interactive element refs ([ref=eN]) every step.
+- ALWAYS use DOM refs (click_element, input_text, smart_click etc.) for interactions — they are precise and reliable.
+- Only set current_state.request_vision=true when DOM refs are genuinely insufficient: e.g., canvas elements, visual CAPTCHAs, heavily overlapping UI, or image-based content with no accessible text.
+- Requesting vision costs an extra AI call — use it sparingly and only when it will actually help.
+
+Complete the task with actions and return strict JSON.
 Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, open_tab, switch_tab, close_tab, done.`;
 
 function loadExtensionPrompt(): string {
   const rawPrompt = loadPrompt('NAVIS.md');
   if (!rawPrompt) return FALLBACK_EXTENSION_SYSTEM_PROMPT;
   const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\\?\s*([\s\S]*?)"""/);
-  return systemMatch?.[1]?.trim() || FALLBACK_EXTENSION_SYSTEM_PROMPT;
+  if (!systemMatch) {
+    console.warn('[Navis] Warning: Failed to parse SYSTEM_PROMPT from NAVIS.md. Falling back to default system prompt.');
+    return FALLBACK_EXTENSION_SYSTEM_PROMPT;
+  }
+  return systemMatch[1].trim();
 }
 
 function clamp(value: unknown, max = 180): string {
@@ -44,7 +54,16 @@ function formatRefs(state: BrowserPageState): string {
 }
 
 function semanticDom(state: BrowserPageState): string {
-  const refs = Array.isArray(state.refs) ? state.refs : [];
+  // Strip rect, selector, disabled to save massive amounts of JSON tokens
+  const refs = (Array.isArray(state.refs) ? state.refs : []).map(r => ({
+    ref: r.ref,
+    tag: r.tag,
+    role: r.role,
+    name: clamp(r.name, 90),
+    type: r.type,
+    href: clamp(r.href, 120),
+    placeholder: clamp(r.placeholder, 70),
+  }));
   return JSON.stringify({
     mode: 'extension-first',
     page: {
@@ -52,7 +71,7 @@ function semanticDom(state: BrowserPageState): string {
       title: state.title,
       refsAvailable: refs.length,
     },
-    visibleInteractive: refs.slice(0, 100),
+    // We omit visibleInteractive array here to avoid duplicating formatRefs
     pageText: clamp(state.text || '', 5000),
   }, null, 2);
 }
@@ -103,7 +122,9 @@ function extractJson(raw: string): any {
 
 function tabsText(tabs: any[]): string {
   if (!Array.isArray(tabs) || tabs.length === 0) return 'No tab list available.';
-  return tabs.slice(0, 24).map((tab, index) => {
+  // Cap at 6 tabs to avoid prompt bloat, prioritizing the active tab
+  const displayTabs = tabs.slice(0, 6);
+  return displayTabs.map((tab, index) => {
     const active = tab.active ? ' active' : '';
     return `Tab ${index}${active}: ${tab.title || 'Untitled'} — ${tab.url || ''}`;
   }).join('\n');
@@ -187,216 +208,119 @@ export class NavisExtensionOrchestrator {
       );
 
       const visionAvailable = Boolean(useVision || forceVision || onlyVision);
-      const pageHasRenderedContent = state.url !== '' && !state.url.includes('about:blank');
-      const shouldCaptureVision = visionAvailable && pageHasRenderedContent;
-
-      let screenshotB64: string | null = null;
-      if (shouldCaptureVision) {
-        try {
-          screenshotB64 = await this.adapter.screenshot({ quality: 75 });
-          if (screenshotB64.includes('svg+xml') || screenshotB64.includes('%3Csvg') || screenshotB64.includes('<svg')) {
-            this.logger.error('Cannot access restricted browser page or capture failed.');
-            return { success: false, output: '[EXTENSION_FALLBACK_REQUIRED] Browser page is restricted or capture failed. Navis cannot operate on this page.', steps };
-          }
-          console.log('[Navis Extension] Screenshot captured');
-          this.logger.screenshot(steps, maxSteps, screenshotB64);
-        } catch (err) {
-          console.warn('[Navis Extension] Screenshot capture failed:', err);
-        }
-      } else {
-        try {
-          const uiScreenshotB64 = await this.adapter.screenshot({ quality: 40 });
-          if (uiScreenshotB64.includes('svg+xml') || uiScreenshotB64.includes('%3Csvg') || uiScreenshotB64.includes('<svg')) {
-            this.logger.error('Cannot access restricted browser page or capture failed.');
-            return { success: false, output: '[EXTENSION_FALLBACK_REQUIRED] Browser page is restricted or capture failed. Navis cannot operate on this page.', steps };
-          }
-          this.logger.screenshot(steps, maxSteps, uiScreenshotB64);
-        } catch (err) {
-          console.warn('[Navis Extension] UI screenshot capture failed:', err);
-        }
-      }
-
       const historyStr = compressHistory(history);
 
-      const userPrompt = [
-        `Task: ${task}`,
-        `Current Step: ${steps + 1}/${maxSteps}`,
-        `History:\n${historyStr || 'None yet'}`,
-        `Current Tab: ${state.url} (${state.title})`,
-        `Open Tabs:\n${tabsText(state.tabs)}`,
-        'Interactive elements:',
-        elements,
-        'DOM Grounding Context:',
-        dom,
-        `Vision Grounding: ${visionAvailable ? 'available on request; use current_state.request_vision=true only when DOM/refs are insufficient or visual layout matters' : 'disabled; rely on DOM refs and extraction'}`,
-        lastResult ? `Last result: ${lastResult}` : '',
-        finalTurn,
-      ].filter(Boolean).join('\n');
+        const userPrompt = [
+          `Task: ${task}`,
+          `Current Step: ${steps + 1}/${maxSteps}`,
+          `History:\n${historyStr || 'None yet'}`,
+          `Current Tab: ${state.url} (${state.title})`,
+          `Open Tabs:\n${tabsText(state.tabs)}`,
+          'Interactive elements:',
+          elements,
+          'DOM Grounding Context:',
+          dom,
+          visionAvailable
+            ? 'Vision: available on demand. Set current_state.request_vision=true ONLY when the DOM is insufficient (e.g. canvas, custom UI, overlapping elements, CAPTCHA, visual-only layout). Normally use DOM refs.'
+            : 'Vision: disabled. Rely exclusively on DOM refs and extract_content.',
+          lastResult ? `Last result: ${lastResult}` : '',
+          finalTurn,
+        ].filter(Boolean).join('\n');
 
-      let visionInstructions = '';
-      if (shouldCaptureVision) {
-        visionInstructions = `
-VISION GROUNDING ACTIVE — You are seeing a screenshot plus DOM context for the browser page.
+        let decision: any = await this.askAI(systemPrompt, userPrompt, null, dom);
 
-VISUAL ANALYSIS INSTRUCTIONS:
-1. DOM FIRST: Use refs, labels, hrefs, input types, and form metadata from the DOM context as the action source.
-   Use the screenshot to disambiguate visual layout, overlays, missing refs, and canvas/custom UI.
-2. LAYOUT: Identify the page structure — header/nav, main content, sidebar, footer.
-   Look for the primary content area and focus your actions there.
-3. INTERACTIVE ELEMENTS: The element list ([ref=eN]) maps to clickable/typeable items.
-   Match visual elements you see in the screenshot to their ref IDs for precise actions.
-4. POPUPS & OVERLAYS: If you see cookie banners, modals, login popups, or consent dialogs
-   overlaying the content — dismiss them FIRST (click accept/close/X) before proceeding.
-5. LOADING STATES: If the page appears to be loading (spinners, skeleton screens),
-   use the wait action before trying to interact.
-6. CAPTCHAS: If you see a CAPTCHA challenge (checkboxes, puzzles, "verify you're human"),
-   use solve_captcha immediately.
-7. SCROLL INDICATORS: If you can see that content continues below (e.g. partial text,
-   scrollbar visible), use scroll_down to reveal more content.
-8. SEARCH BOXES: When you see a search input, type SHORT keywords (1-2 words maximum).
-   Long queries rarely work well on website search.
-
-Use the [ref=eN] identifiers from the Elements list to perform actions.
-The screenshot confirms WHAT you see; the refs tell you HOW to interact.`;
-
-        if (onlyVision) {
-          visionInstructions = `
-ONLY VISION MODE ACTIVE — There is NO DOM context, NO interactive elements, and NO ref IDs available. You must rely SOLELY on visual analysis of the screenshot.
-
-VISUAL ANALYSIS INSTRUCTIONS:
-1. NO DOM/REFS: Do NOT attempt to use click_element, click_text, smart_click, input_text, smart_type, hold_element, drag_element, press_key, or any other ref-based or DOM-based actions, as there are no DOM element refs available.
-2. COORDINATE-BASED ACTIONS: You MUST interact with the page using ONLY the following coordinate-based actions:
-   - "browser_click": Click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
-   - "browser_double_click": Double-click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
-   - "browser_right_click": Right-click at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
-   - "browser_hover": Hover at normalized coordinate (x, y). Both x and y MUST be integers from 0 to 1000.
-   - "browser_type": Type text into the currently focused input. Normally, you should use browser_click to focus an input first, then browser_type to input text.
-3. COORDINATE CALCULATION: x and y represent coordinates on a [0, 1000] normalized grid where:
-   - (0, 0) is the top-left corner of the screenshot.
-   - (1000, 1000) is the bottom-right corner of the screenshot.
-   - (500, 500) is the center of the viewport.
-   Carefully estimate coordinates visually from the screenshot before clicking/hovering.
-4. POPUPS & OVERLAYS: If you see overlays, cookie banners, or modals, click them away first using browser_click with coordinates.
-5. GENERAL ACTIONS: You can still use browser-level actions like "go_to_url", "go_back", "wait", "open_tab", "switch_tab", "close_tab", "wait_for_navigation", and "done".
-6. CAPTCHAS: If you see a CAPTCHA, use "solve_captcha" (which operates at a session level).
-
-Estimate the coordinates accurately relative to the image size.`;
-        }
-      }
-
-      const fullUserPrompt = userPrompt + (visionInstructions ? '\n\n' + visionInstructions : '');
-
-      let decision: any;
-      try {
-        if (this.aiClient.provider === 'everfern') {
-          console.log('[Navis Extension] Using EverFern Cloud visual fallback');
-          decision = await this.callEverFernCloudVision(
-            fullUserPrompt,
-            screenshotB64 || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-            history,
-            onlyVision ? '' : dom,
-            onlyVision
+        if (visionAvailable && decision?.current_state?.request_vision === true) {
+          this.logger.thinking(
+            steps + 1,
+            maxSteps,
+            'AI requested visual grounding. Capturing screenshot and re-deciding.',
+            { url: state.url, mode: 'extension-first', phase: 'vision-request' },
           );
-        } else if (shouldCaptureVision && screenshotB64) {
-          const finalScreenshot = screenshotB64;
-          const imgSizeKB = Math.round((finalScreenshot.length * 3) / 4 / 1024);
-          const detail = imgSizeKB > 200 ? 'high' : 'low';
 
-          const response = await this.aiClient.chat({
-            model: this.model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:image/jpeg;base64,${finalScreenshot}`,
-                      detail: detail as 'low' | 'high',
-                    },
-                  },
-                  {
-                    type: 'text',
-                    text: fullUserPrompt,
-                  },
-                ],
-              },
-            ],
-            temperature: 0.1,
-            responseFormat: 'json',
-            jsonSchema: NAVIS_DECISION_SCHEMA,
-            abortSignal: globalAbortManager.abortController.signal,
-          });
-          const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-          decision = extractJson(raw);
-        } else {
-          const response = await this.aiClient.chat({
-            model: this.model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: fullUserPrompt },
-            ],
-            temperature: 0.1,
-            responseFormat: 'json',
-            jsonSchema: NAVIS_DECISION_SCHEMA,
-            abortSignal: globalAbortManager.abortController.signal,
-          });
-          const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-          decision = extractJson(raw);
+          let screenshotB64: string | null = null;
+          try {
+            screenshotB64 = await this.adapter.screenshot({ quality: 75 });
+            const isSvg = screenshotB64.includes('svg+xml') || screenshotB64.includes('%3Csvg') || screenshotB64.includes('<svg');
+            if (isSvg) {
+              screenshotB64 = null;
+              console.warn('[Navis Extension] Vision screenshot was SVG (restricted page), skipping vision retry.');
+            } else {
+              console.log('[Navis Extension] Screenshot captured for AI vision request.');
+              this.logger.screenshot(steps, maxSteps, screenshotB64);
+            }
+          } catch (err) {
+            console.warn('[Navis Extension] Vision screenshot capture failed:', err);
+          }
+
+          if (screenshotB64) {
+            const visionPrompt = userPrompt + `\n\nVISION GROUNDING ACTIVE — You requested a screenshot and are now seeing both the DOM context and the visual page.\n\nVISUAL ANALYSIS INSTRUCTIONS:\n1. DOM FIRST: Use [ref=eN] identifiers from the Elements list as the primary action source.\n   The screenshot shows visual layout, overlays, canvas, and custom UI that the DOM may not describe.\n2. MATCH VISUALS TO REFS: Identify elements in the screenshot and match them to ref IDs for precise actions.\n3. POPUPS & OVERLAYS: If you see cookie banners, modals, or consent dialogs — dismiss them FIRST.\n4. LOADING STATES: If the page is loading (spinners/skeletons), use the wait action.\n5. CAPTCHAS: If you see a CAPTCHA, use solve_captcha immediately.\n6. SCROLL: If content is cut off or scrollbar is visible, use scroll_down to reveal more.\n\nUse DOM ref IDs where possible. Use coordinates only for elements with no DOM ref.`;
+
+            decision = await this.askAI(systemPrompt, visionPrompt, screenshotB64, dom);
+          }
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Extension-first AI decision failed: ${message}`);
-        return { success: false, output: `[EXTENSION_FALLBACK_REQUIRED] Extension-first AI decision failed: ${message}`, steps };
-      }
 
-      steps += 1;
-      const nextGoal = clamp(decision?.current_state?.next_goal || 'Choose the next browser action', 240);
-      this.logger.aiDecision(steps, maxSteps, nextGoal);
+        steps += 1;
+        const nextGoal = clamp(decision?.current_state?.next_goal || 'Choose the next browser action', 240);
+        this.logger.aiDecision(steps, maxSteps, nextGoal);
 
-      const actions = Array.isArray(decision?.action) ? decision.action.slice(0, maxActionsPerStep) : [];
-      if (actions.length === 0) {
-        lastResult = 'AI returned no actions; retrying with the current DOM.';
-        history.push(`Step ${steps}: ${lastResult}`);
-        continue;
-      }
+        const actions = Array.isArray(decision?.action) ? decision.action.slice(0, maxActionsPerStep) : [];
+        if (actions.length === 0) {
+          lastResult = 'AI returned no actions; retrying with the current DOM.';
+          history.push(`Step ${steps}: ${lastResult}`);
+          continue;
+        }
 
-      for (const actionObj of actions) {
-        const actionName = Object.keys(actionObj || {})[0] as ActionName | undefined;
-        if (!actionName) continue;
-        const actionArgs = (actionObj as any)[actionName] || {};
-        this.logger.thinking(
-          steps,
-          maxSteps,
-          `Running ${actionName.replace(/_/g, ' ')}.`,
-          { actionName, mode: 'extension-first', phase: 'action' },
-        );
-        const result = await this.adapter.executeAction(actionName, actionArgs, steps, maxSteps);
-        lastResult = result.message;
-        history.push(`Step ${steps}: ${actionName} -> ${lastResult}`);
-        this.logger.stepComplete(
-          steps,
-          maxSteps,
-          `${actionName.replace(/_/g, ' ')} ${result.success ? 'succeeded' : 'failed'}: ${clamp(result.message, 220)}`,
-        );
-
-        if (!result.success && result.data?.unsupportedAction) {
-          return {
-            success: false,
-            output: `[EXTENSION_FALLBACK_REQUIRED] Extension-first Navis does not support action ${result.data.unsupportedAction}.`,
+        let navigationOccurred = false;
+        for (const actionObj of actions) {
+          const actionName = Object.keys(actionObj || {})[0] as ActionName | undefined;
+          if (!actionName) continue;
+          const actionArgs = (actionObj as any)[actionName] || {};
+          this.logger.thinking(
             steps,
-          };
+            maxSteps,
+            `Running ${actionName.replace(/_/g, ' ')}.`,
+            { actionName, mode: 'extension-first', phase: 'action' },
+          );
+          const result = await this.adapter.executeAction(actionName, actionArgs, steps, maxSteps);
+          lastResult = result.message;
+          history.push(`Step ${steps}: ${actionName} -> ${lastResult}`);
+          this.logger.stepComplete(
+            steps,
+            maxSteps,
+            `${actionName.replace(/_/g, ' ')} ${result.success ? 'succeeded' : 'failed'}: ${clamp(result.message, 220)}`,
+          );
+
+          if (!result.success && result.data?.unsupportedAction) {
+            return {
+              success: false,
+              output: `[EXTENSION_FALLBACK_REQUIRED] Extension-first Navis does not support action ${result.data.unsupportedAction}.`,
+              steps,
+            };
+          }
+
+          if (actionName === 'done') {
+            this.logger.taskComplete(result.success, steps, result.message);
+            return { success: result.success, output: result.message, steps };
+          }
+          
+          if (actionName === 'go_to_url' || actionName === 'go_back') {
+            navigationOccurred = true;
+          }
+
+          if (result.stateChanged) break;
         }
 
-        if (actionName === 'done') {
-          this.logger.taskComplete(result.success, steps, result.message);
-          return { success: result.success, output: result.message, steps };
+        // Wait for page stabilization after navigation before next DOM capture
+        if (navigationOccurred) {
+          this.logger.wait(steps, maxSteps, 'Waiting for page load after navigation');
+          await this.adapter.executeAction('wait_for_navigation', { timeoutMs: 3000 }, steps, maxSteps);
         }
-
-        if (result.stateChanged) break;
       }
-      }
+    } catch (err) {
+      // Global error boundary
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Navis task failed due to an error: ${errMsg}`);
+      return { success: false, output: `Task failed: ${errMsg}`, steps };
     } finally {
       bridgeServer.setSession(null);
     }
@@ -406,15 +330,83 @@ Estimate the coordinates accurately relative to the image size.`;
     return { success: false, output, steps };
   }
 
+  private async askAI(
+    systemPrompt: string,
+    userPrompt: string,
+    screenshotB64: string | null,
+    domContext: string,
+  ): Promise<any> {
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (this.aiClient.provider === 'everfern') {
+          return await this.callEverFernCloudVision(userPrompt, screenshotB64, [], domContext);
+        }
+
+        let response;
+        if (screenshotB64) {
+          const imgSizeKB = Math.round((screenshotB64.length * 3) / 4 / 1024);
+          const detail = imgSizeKB > 200 ? 'high' : 'low';
+          response = await this.aiClient.chat({
+            model: this.model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: screenshotB64.startsWith('data:') ? screenshotB64 : `data:image/jpeg;base64,${screenshotB64}`,
+                      detail: detail as 'low' | 'high',
+                    },
+                  },
+                  { type: 'text', text: userPrompt },
+                ],
+              },
+            ],
+            temperature: 0.1,
+            responseFormat: 'json',
+            jsonSchema: NAVIS_DECISION_SCHEMA,
+            abortSignal: globalAbortManager.abortController.signal,
+          });
+        } else {
+          response = await this.aiClient.chat({
+            model: this.model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.1,
+            responseFormat: 'json',
+            jsonSchema: NAVIS_DECISION_SCHEMA,
+            abortSignal: globalAbortManager.abortController.signal,
+          });
+        }
+        const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        return extractJson(raw);
+      } catch (err: any) {
+        if (globalAbortManager.streamAborted) throw err;
+        
+        const isTransient = err?.status === 429 || err?.status >= 500 || err?.message?.includes('network') || err?.message?.includes('timeout');
+        if (isTransient && attempt < maxRetries) {
+          const delay = (attempt + 1) * 1500;
+          console.warn(`[Navis] Transient AI error, retrying in ${delay}ms... (${err.message})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   private async callEverFernCloudVision(
     inputContext: string,
-    screenshotB64: string,
+    screenshotB64: string | null,
     history: string[] = [],
     domContext: string = '',
-    onlyVision: boolean = false,
   ): Promise<any | null> {
     try {
-      const dimensions = await getImageDimensions(screenshotB64);
       const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
       const objective = taskMatch ? taskMatch[1] : inputContext.substring(0, 200);
 
@@ -427,11 +419,13 @@ Estimate the coordinates accurately relative to the image size.`;
           ...(this.aiClient.apiKey && { 'Authorization': `Bearer ${this.aiClient.apiKey}` })
         },
         body: JSON.stringify({
-          screenshot: screenshotB64.startsWith('data:') ? screenshotB64 : `data:image/jpeg;base64,${screenshotB64}`,
-          dom: onlyVision ? '' : domContext,
+          screenshot: screenshotB64
+            ? (screenshotB64.startsWith('data:') ? screenshotB64 : `data:image/jpeg;base64,${screenshotB64}`)
+            : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+          dom: domContext,
           objective: objective,
           history: history.slice(-8),
-          only_vision: onlyVision
+          only_vision: false
         })
       });
 
@@ -462,6 +456,10 @@ Estimate the coordinates accurately relative to the image size.`;
           action: [{ done: { success: true, text: content } }]
         };
       }
+
+      // Check if there are any coordinate actions before spending time calculating image dimensions
+      const hasCoordinateActions = actions.some((a: string) => /(click|move|smooth|hover)\s*\(/i.test(a));
+      const dimensions = hasCoordinateActions ? await getImageDimensions(screenshotB64) : null;
 
       return this._convertTarsActionsToNavisDecision(actions, objective, content, dimensions);
     } catch (err: any) {
@@ -558,16 +556,27 @@ async function getImageDimensions(screenshotB64: string | null): Promise<{ width
   try {
     let cleanB64 = screenshotB64;
     if (cleanB64.startsWith('data:')) {
+      // Reject SVG data-URLs immediately — sharp cannot decode them
+      if (cleanB64.startsWith('data:image/svg')) return null;
       const parts = cleanB64.split(',');
       cleanB64 = parts[parts.length - 1];
     }
     const buffer = Buffer.from(cleanB64, 'base64');
+    // Quick magic-byte check before handing to sharp
+    // JPEG: FF D8 FF  |  PNG: 89 50 4E 47  |  WebP: 52 49 46 46
+    const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
+    const isPng  = buffer[0] === 0x89 && buffer[1] === 0x50;
+    const isWebp = buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46;
+    if (!isJpeg && !isPng && !isWebp) {
+      console.warn('[Navis] Skipping image dimensions — unrecognised format (likely SVG or error image)');
+      return null;
+    }
     const metadata = await sharp(buffer).metadata();
     if (metadata.width && metadata.height) {
       return { width: metadata.width, height: metadata.height };
     }
   } catch (err) {
-    console.error('[Navis] Failed to get image dimensions with sharp:', err);
+    console.warn('[Navis] Failed to get image dimensions, skipping dimension check:', (err as Error)?.message || err);
   }
   return null;
 }

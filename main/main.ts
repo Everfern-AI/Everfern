@@ -73,6 +73,7 @@ import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSk
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
+import { registerProjectsHandlers } from './ipc/projects';
 import { ensurePlaywrightChromium } from './lib/playwright-setup';
 import { ensureWSLSetup } from './agent/tools/linux-vm-executor';
 import { shutdownMCPTools } from './agent/tools/mcp';
@@ -1115,9 +1116,9 @@ function normalizeVlmConfig(config: any) {
     if (provider === 'minimax') return 'MiniMax-M3';
     if (provider === 'ollama' || provider === 'ollama-cloud') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';
-    if (provider === 'anthropic') return 'claude-opus-4.6';
+    if (provider === 'anthropic') return 'claude-sonnet-4-6';
     if (provider === 'everfern') return 'fern-1';
-    if (provider === 'gemini') return 'gemini-2.5-computer-use-preview-10-2025';
+    if (provider === 'gemini') return 'gemini-3.5-flash';
     return 'qwen3-vl:235b-cloud';
   };
 

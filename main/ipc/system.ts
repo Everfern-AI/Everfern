@@ -48,6 +48,42 @@ export function registerSystemHandlers() {
       return false;
     }
   });
+  ipcMain.handle('system:getWSLInfo', async () => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Check if it's responsive at all
+      await execAsync('wsl.exe -e echo ok', { timeout: 5000 });
+      
+      let osName = 'Unknown Linux OS';
+      let uptime = 'Unknown';
+      try {
+        const { stdout: osRelease } = await execAsync('wsl.exe -e cat /etc/os-release', { encoding: 'utf8', timeout: 5000 });
+        const prettyNameMatch = osRelease.match(/PRETTY_NAME="([^"]+)"/);
+        if (prettyNameMatch && prettyNameMatch[1]) {
+          osName = prettyNameMatch[1];
+        } else {
+            const nameMatch = osRelease.match(/^NAME="?([^"\n]+)"?/m);
+            if (nameMatch) osName = nameMatch[1];
+        }
+      } catch (e) {
+          console.error('[getWSLInfo] Error reading os-release:', e);
+      }
+
+      try {
+          const { stdout: uptimeOut } = await execAsync('wsl.exe -e uptime -p', { encoding: 'utf8', timeout: 5000 });
+          if (uptimeOut) uptime = uptimeOut.trim();
+      } catch (e) {
+          console.error('[getWSLInfo] Error reading uptime:', e);
+      }
+
+      return { healthy: true, osName, uptime };
+    } catch {
+      return { healthy: false };
+    }
+  });
 
   ipcMain.handle('system:installWSL', async () => {
     return new Promise((resolve) => {

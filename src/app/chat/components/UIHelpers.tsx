@@ -1,13 +1,56 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { WaveformIcon } from './UIIcons';
+
+import { CLOUD_MODEL_MAP } from '../../../../main/lib/providers';
+
+const getModelSearchQuery = (fullModelId: string): string => {
+    const mapped = CLOUD_MODEL_MAP[fullModelId] || fullModelId;
+    if (mapped.includes('/')) return mapped; // Use full openrouter id (e.g. openai/gpt-5.5)
+    
+    const parts = mapped.split('/');
+    const modelPart = parts[parts.length - 1];
+    return modelPart.replace(/-\d+b$/i, '');
+};
+
+interface ModelApiPricing {
+    prompt: string;
+    completion: string;
+    image: string;
+    request: string;
+}
+
+interface ModelApiMatch {
+    id: string;
+    name: string;
+    description?: string;
+    context_length: number;
+    max_completion_tokens: number;
+    pricing: ModelApiPricing;
+}
+
+const formatContextLimit = (limit: number): string => {
+    if (limit >= 1000000) {
+        const val = limit / 1000000;
+        return val % 1 === 0 ? `${val}Million` : `${val.toFixed(1)}Million`;
+    }
+    if (limit >= 1000) {
+        const val = limit / 1000;
+        return val % 1 === 0 ? `${val}k` : `${val.toFixed(1)}k`;
+    }
+    return limit.toLocaleString('en-US');
+};
 
 const ContextTokenRing = ({
     used,
     max,
     modelInfo,
     estimatedCost,
-    isLocalModel
+    isLocalModel,
+    systemTokens = 0,
+    chatTokens = 0,
+    modelName
 }: {
     used: number;
     max: number;
@@ -18,63 +61,171 @@ const ContextTokenRing = ({
     } | null;
     estimatedCost?: number | null;
     isLocalModel?: boolean;
+    systemTokens?: number;
+    chatTokens?: number;
+    modelName?: string;
 }) => {
-    // Use modelInfo context length if available, otherwise fall back to passed max
-    const actualMax = modelInfo?.contextLength || max;
-    const pct = Math.min((used / actualMax) * 100, 100);
+    const [apiModelInfo, setApiModelInfo] = useState<ModelApiMatch | null>(null);
+    const [isHovered, setIsHovered] = useState(false);
+    const [isPinned, setIsPinned] = useState(false);
+
+    useEffect(() => {
+        if (!modelName || isLocalModel) {
+            setApiModelInfo(null);
+            return;
+        }
+
+        let isMounted = true;
+        const fetchInfo = async () => {
+            try {
+                const searchQuery = getModelSearchQuery(modelName);
+                const response = await fetch(`https://api.everfern.app/public/info/model?q=${encodeURIComponent(searchQuery)}`);
+                if (response.ok && isMounted) {
+                    const data = await response.json();
+                    if (data.matches && data.matches.length > 0) {
+                        setApiModelInfo(data.matches[0]);
+                    } else {
+                        setApiModelInfo(null);
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching model info in UIHelpers:", err);
+            }
+        };
+
+        fetchInfo();
+        return () => {
+            isMounted = false;
+        };
+    }, [modelName, isLocalModel]);
+
+    // Click outside listener to close the pinned tooltip
+    useEffect(() => {
+        if (!isPinned) return;
+
+        const handleOutsideClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('.token-ring-container')) {
+                setIsPinned(false);
+            }
+        };
+
+        document.addEventListener('click', handleOutsideClick);
+        return () => {
+            document.removeEventListener('click', handleOutsideClick);
+        };
+    }, [isPinned]);
+
+    // Use fetched API info or passed modelInfo
+    const actualMax = apiModelInfo?.context_length || modelInfo?.contextLength || max;
+    const promptPrice = apiModelInfo?.pricing?.prompt ? parseFloat(apiModelInfo.pricing.prompt) : (modelInfo?.promptPricing || 0);
+    const completionPrice = apiModelInfo?.pricing?.completion ? parseFloat(apiModelInfo.pricing.completion) : (modelInfo?.completionPricing || 0);
+
+    // Resolve system and chat tokens estimates to avoid displaying 0
+    const displaySystemTokens = systemTokens > 0 ? systemTokens : (!isLocalModel ? 8500 : 0);
+    const displayChatTokens = chatTokens > 0 ? chatTokens : 0;
+    const isEstimated = used === 0;
+    const displayUsed = used > 0 ? used : (displaySystemTokens + displayChatTokens);
+
+    const pct = Math.min((displayUsed / actualMax) * 100, 100);
     const ringColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
     const bgColor = 'rgba(0,0,0,0.06)';
+    const formattedMax = formatContextLimit(actualMax);
+    const isVisible = isHovered || isPinned;
 
     return (
-        <div style={{ position: 'relative', width: 32, height: 32, cursor: 'default' }}>
+        <div 
+            className="token-ring-container"
+            style={{ position: 'relative', width: 32, height: 32, cursor: 'pointer' }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            onClick={(e) => {
+                e.stopPropagation();
+                setIsPinned(!isPinned);
+            }}
+        >
             <div style={{
-                position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
-                backgroundColor: '#1a1a1a', borderRadius: 8, padding: '6px 12px',
-                display: 'flex', flexDirection: 'column', gap: 4, opacity: 0, pointerEvents: 'none',
-                transition: 'opacity 0.15s ease', whiteSpace: 'nowrap', zIndex: 9999, marginBottom: 8,
+                position: 'absolute', bottom: '100%', left: '50%',
+                backgroundColor: '#1a1a1a', borderRadius: 8, padding: '12px',
+                display: 'flex', flexDirection: 'column', gap: 8, 
+                opacity: isVisible ? 1 : 0, 
+                pointerEvents: isVisible ? 'auto' : 'none',
+                transition: 'opacity 0.15s ease, transform 0.15s ease',
+                transform: `translateX(-50%) translateY(${isVisible ? 0 : 8}px)`,
+                zIndex: 9999, marginBottom: 8,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-            }} className="token-ring-tooltip">
-                {/* Token count */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-bg-surface)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                        {used.toLocaleString('en-US')}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>/</span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>
-                        {actualMax.toLocaleString('en-US')}
-                    </span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-tertiary)', fontFamily: "'Figtree', system-ui, sans-serif" }}>tokens</span>
+                minWidth: 240,
+                maxWidth: 280,
+                maxHeight: 240,
+                overflowY: 'auto',
+                scrollbarWidth: 'thin',
+            }} className="token-ring-tooltip" onClick={(e) => e.stopPropagation()}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 6, marginBottom: 2, whiteSpace: 'normal', overflowWrap: 'break-word' }}>
+                    {apiModelInfo?.name || modelName || 'Model'}
                 </div>
 
-                {/* Pricing (only show for non-local models with cost) */}
-                {/* Est. cost = current input tokens cost + estimated completion tokens cost (avg 1000 tokens) */}
-                {!isLocalModel && estimatedCost !== null && estimatedCost !== undefined && estimatedCost > 0 && (
+                {apiModelInfo?.description && (
                     <div style={{
-                        fontSize: 11,
+                        fontSize: 10,
                         color: 'var(--color-text-tertiary)',
-                        fontFamily: "'Figtree', system-ui, sans-serif",
-                        borderTop: '1px solid rgba(255,255,255,0.1)',
-                        paddingTop: 4
+                        fontStyle: 'italic',
+                        whiteSpace: 'normal',
+                        maxWidth: '100%',
+                        lineHeight: '1.4',
+                        borderBottom: '1px solid rgba(255,255,255,0.1)',
+                        paddingBottom: 6,
+                        marginBottom: 2
                     }}>
-                        Est. ${estimatedCost.toFixed(4)}
+                        {apiModelInfo.description}
                     </div>
                 )}
 
-                {/* Warning if near limit */}
-                {pct > 80 && (
-                    <div style={{
-                        fontSize: 11,
-                        color: '#ef4444',
-                        fontWeight: 600,
-                        fontFamily: "'Figtree', system-ui, sans-serif",
-                        borderTop: '1px solid rgba(255,255,255,0.1)',
-                        paddingTop: 4
-                    }}>
-                        ⚠ Near limit
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>System</span>
+                    <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                        {isEstimated && displaySystemTokens > 0 ? '~' : ''}{displaySystemTokens.toLocaleString('en-US')}
+                    </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Chat & Input</span>
+                    <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                        {isEstimated && displayChatTokens > 0 ? '~' : ''}{displayChatTokens.toLocaleString('en-US')}
+                    </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 600 }}>Context Window</span>
+                    <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif", fontWeight: 600 }}>
+                        {isEstimated ? '~' : ''}{displayUsed.toLocaleString('en-US')} / {formattedMax}
+                    </span>
+                </div>
+
+                {/* Pricing Rates (Prompt / Completion price per 1M tokens) */}
+                {!isLocalModel && (promptPrice > 0 || completionPrice > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Prompt Rate</span>
+                            <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                ${(promptPrice * 1000000).toFixed(2)}/1M
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Reply Rate</span>
+                            <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                ${(completionPrice * 1000000).toFixed(2)}/1M
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Pricing (only show for non-local models with cost) */}
+                {!isLocalModel && estimatedCost !== null && estimatedCost !== undefined && estimatedCost > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Est. Cost</span>
+                        <span style={{ fontSize: 12, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif", fontWeight: 600 }}>${estimatedCost.toFixed(4)}</span>
                     </div>
                 )}
             </div>
-            <svg width="32" height="32" viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)' }}>
+            <svg width="32" height="32" viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)', pointerEvents: 'none' }}>
                 <circle cx="16" cy="16" r="12" fill="none" stroke={bgColor} strokeWidth="3" />
                 <circle
                     cx="16" cy="16" r="12"
@@ -86,11 +237,14 @@ const ContextTokenRing = ({
                     style={{ transition: 'stroke-dasharray 0.3s ease' }}
                 />
             </svg>
-            <div style={{
-                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 8, fontWeight: 700, color: ringColor,
-                fontFamily: "'Figtree', system-ui, sans-serif"
-            }}>
+            <div 
+                className="text-gray-700 dark:text-white"
+                style={{
+                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 8, fontWeight: 700,
+                    fontFamily: "'Figtree', system-ui, sans-serif",
+                    pointerEvents: 'none'
+                }}>
                 {pct.toFixed(0)}%
             </div>
         </div>

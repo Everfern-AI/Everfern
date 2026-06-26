@@ -13,6 +13,7 @@ import type {
   ChatCompletionResponse,
   StreamChunk,
 } from '../types';
+import { CLOUD_MODEL_MAP } from '../../lib/providers';
 
 export class EverFernCloudProvider implements ACPProvider {
   private baseUrl = 'https://api.everfern.app';
@@ -33,11 +34,13 @@ export class EverFernCloudProvider implements ACPProvider {
   }
 
   async chat(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+    const rawModel = request.model || this.model;
+    const model = CLOUD_MODEL_MAP[rawModel] || rawModel;
     const response = await fetch(`${this.baseUrl}/v1/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: request.model || this.model,
+        model,
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 4096,
@@ -67,11 +70,13 @@ export class EverFernCloudProvider implements ACPProvider {
   }
 
   async *streamChat(request: ChatCompletionRequest): AsyncGenerator<StreamChunk, void, unknown> {
+    const rawModel = request.model || this.model;
+    const model = CLOUD_MODEL_MAP[rawModel] || rawModel;
     const response = await fetch(`${this.baseUrl}/v1/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: request.model || this.model,
+        model,
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 4096,
