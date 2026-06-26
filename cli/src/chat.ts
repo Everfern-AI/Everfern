@@ -8,12 +8,30 @@ import { acpManager } from '../../main/acp/manager';
 import { PROVIDER_REGISTRY } from '../../main/lib/providers';
 import { Command } from '@langchain/langgraph';
 
-const PROVIDER_MODELS: Rec
-ord<string, string[]> = {
-  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini', 'o3-mini'],
-  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-5', 'claude-haiku-4-5-20251001', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+const PROVIDER_MODELS: Record<string, string[]> = {
+  openai: [
+    'gpt-5.5-pro',
+    'gpt-5.5',
+    'gpt-5.4-pro',
+    'gpt-5.4',
+    'gpt-5.4-mini',
+    'gpt-5.4-nano',
+  ],
+  anthropic: [
+    'claude-fable-5',
+    'claude-opus-4-8',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5-20251001',
+  ],
   deepseek: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-  gemini: ['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+  gemini: [
+    'gemini-3.5-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-3-pro-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-pro',
+  ],
   nvidia: ['google/gemma-4-31b-it', 'meta/llama-3.2-90b-vision-instruct', 'qwen/qwen3.5-122b-a10b', 'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct', 'mistralai/mistral-small-4-119b-2603', 'nvidia/nemotron-3-super-120b-a12b'],
   ollama: [],
   'ollama-cloud': ['qwen3-vl:235b-instruct-cloud', 'kimi-k2.6:cloud', 'glm-5.1:cloud', 'gemma4:31b-cloud', 'kimi-k2.5:cloud', 'minimax-m2.7:cloud', 'MiniMax-M3', 'glm-5:cloud'],

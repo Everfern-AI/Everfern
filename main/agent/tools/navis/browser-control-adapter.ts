@@ -54,6 +54,10 @@ function firstActionValue<T = Record<string, unknown>>(value: unknown): T {
 export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   readonly mode = 'extension' as const;
   private activeTabId?: number;
+  /** Tab list cache — re-fetched on tab-changing actions or after TTL */
+  private cachedTabs: any[] = [];
+  private tabCacheExpiresAt = 0;
+  private static readonly TAB_CACHE_TTL_MS = 5000;
 
   constructor(private logger: NavisLogger) {}
 
@@ -80,10 +84,19 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   }
 
   async capture(): Promise<BrowserPageState> {
+    const now = Date.now();
+    const needsTabs = now >= this.tabCacheExpiresAt;
     const [capture, tabsResult] = await Promise.all([
       bridgeServer.sendRequest('capture', { tabId: this.activeTabId }, 12000),
-      bridgeServer.sendRequest('get_tabs', {}, 8000).catch(() => ({ tabs: [] })),
+      needsTabs
+        ? bridgeServer.sendRequest('get_tabs', {}, 8000).catch(() => ({ tabs: [] }))
+        : Promise.resolve({ tabs: this.cachedTabs }),
     ]);
+
+    if (needsTabs && Array.isArray(tabsResult?.tabs)) {
+      this.cachedTabs = tabsResult.tabs;
+      this.tabCacheExpiresAt = now + ExtensionBrowserAdapter.TAB_CACHE_TTL_MS;
+    }
 
     const snapshot = capture?.snapshot || capture?.data?.snapshot || capture;
     const tab = capture?.tab || capture?.data?.tab || {};
@@ -96,7 +109,7 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       title: String(snapshot?.title || capture?.title || tab?.title || 'Untitled'),
       text: String(snapshot?.text || capture?.text || ''),
       refs: Array.isArray(snapshot?.refs) ? snapshot.refs : Array.isArray(capture?.refs) ? capture.refs : [],
-      tabs: Array.isArray(tabsResult?.tabs) ? tabsResult.tabs : [],
+      tabs: this.cachedTabs,
       snapshot,
       mode: 'extension',
     };
@@ -107,12 +120,8 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
     if (!result || !result.success || !result.dataUrl) {
       throw new Error(result?.message || 'Failed to capture screenshot via extension');
     }
-    let b64 = result.dataUrl;
-    if (b64.startsWith('data:')) {
-      const parts = b64.split(',');
-      b64 = parts[parts.length - 1];
-    }
-    return b64;
+    // Return full data URL — callers should not need to re-add the prefix
+    return result.dataUrl;
   }
 
   async executeAction(
@@ -173,7 +182,8 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'browser_hover': {
         const result = await bridgeServer.sendRequest('browser_hover', { tabId: this.activeTabId, ...args }, 10000);
         this.logger.thinking(step, maxSteps, `Hovered coordinates (${args.x}, ${args.y})`, { actionName, mode: 'extension-first' });
-        return normalizeResult(result, `Hovered coordinates (${args.x}, ${args.y})`, true);
+        // Hover doesn't change page state — no re-capture needed
+        return normalizeResult(result, `Hovered coordinates (${args.x}, ${args.y})`, false);
       }
       case 'input_text': {
         const result = await bridgeServer.sendRequest('input', { tabId: this.activeTabId, ...args }, 12000);
@@ -189,14 +199,18 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'press_key': {
         const result = await bridgeServer.sendRequest('press_key', { tabId: this.activeTabId, ...args }, 12000);
         this.logger.elementInput(step, maxSteps, String(args.ref || 'page'), String(args.key || 'key'));
-        return normalizeResult(result, `Pressed ${args.key || 'key'}`, true);
+        // Only mark state changed for Enter / Tab (which typically submit or navigate)
+        const key = String(args.key || '').toLowerCase();
+        const changesState = key === 'enter' || key === 'return' || key === 'tab';
+        return normalizeResult(result, `Pressed ${args.key || 'key'}`, changesState);
       }
       case 'scroll_down':
       case 'scroll_up': {
         const direction = actionName === 'scroll_up' ? 'up' : 'down';
         const result = await bridgeServer.sendRequest('scroll', { tabId: this.activeTabId, direction, ...args }, 10000);
         this.logger.scroll(step, maxSteps, direction);
-        return normalizeResult(result, `Scrolled ${direction}`, true);
+        // Scroll rarely changes refs — skip forced re-capture
+        return normalizeResult(result, `Scrolled ${direction}`, false);
       }
       case 'wait':
       case 'wait_for_navigation': {
@@ -214,6 +228,8 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'open_tab': {
         const result = await bridgeServer.sendRequest('open_tab', { url: args.url, active: true }, 15000);
         this.activeTabId = Number(result?.tabId || result?.tab?.id || 0) || this.activeTabId;
+        // Invalidate tab cache after tab changes
+        this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, `Opened ${args.url || 'tab'}`);
         return normalizeResult(result, `Opened ${args.url || 'tab'}`, true);
       }
@@ -225,12 +241,16 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
           index: args.index,
         }, 10000);
         this.activeTabId = Number(result?.tabId || result?.tab?.id || this.activeTabId || 0) || undefined;
+        // Invalidate tab cache on switch
+        this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, `Activated tab ${args.index ?? args.target ?? ''}`);
         return normalizeResult(result, 'Activated tab', true);
       }
       case 'close_tab': {
         const result = await bridgeServer.sendRequest('close_tab', { tabId: this.activeTabId }, 10000);
         this.activeTabId = undefined;
+        // Invalidate tab cache after tab changes
+        this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, 'Closed tab');
         return normalizeResult(result, 'Closed tab', true);
       }
