@@ -68,7 +68,8 @@ export class ACPManager {
         if (provider === 'minimax') return 'MiniMax-M3';
         if (provider === 'ollama' || provider === 'ollama-cloud') return 'qwen3-vl:235b-cloud';
         if (provider === 'openai') return 'gpt-5.5';
-        if (provider === 'anthropic') return 'claude-opus-4.6';
+        if (provider === 'anthropic') return 'claude-sonnet-4-6';
+        if (provider === 'gemini') return 'gemini-3.5-flash';
         if (provider === 'everfern') return 'fern-1';
         return 'qwen3-vl:235b-cloud';
       };

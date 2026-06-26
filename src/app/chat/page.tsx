@@ -896,15 +896,7 @@ export default function ChatPage() {
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        const style = document.createElement('style');
-        style.textContent = `
-            .token-ring-tooltip { opacity: 0 !important; transition: opacity 0.15s ease !important; }
-            div:hover > .token-ring-tooltip { opacity: 1 !important; }
-        `;
-        document.head.appendChild(style);
-        return () => { document.head.removeChild(style); };
-    }, []);
+
 
     // ── EverFern Dispatch: receive commands from the web UI ───────────────────
     // When a command arrives from the web via Dispatch, we inject it into the
@@ -1182,7 +1174,7 @@ export default function ChatPage() {
     const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
     const [lastEventJson, setLastEventJson] = useState<string>("");
     const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number }>({ used: 0, max: 128000 });
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
@@ -1802,7 +1794,7 @@ export default function ChatPage() {
     // Update context tokens based on messages (fallback when no real usage data)
     useEffect(() => {
         if (messages.length === 0) {
-            setContextTokens({ used: 0, max: 128000 });
+            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
             return;
         }
 
@@ -1839,7 +1831,7 @@ export default function ChatPage() {
         // Add overhead for message format (~10% overhead)
         const totalTokens = Math.ceil(totalChars * 1.1);
 
-        setContextTokens({ used: totalTokens, max: 128000 });
+        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens });
     }, [messages, inputValue]);
 
 
@@ -2806,7 +2798,7 @@ export default function ChatPage() {
                     setStreamingThought(streamingThoughtRef.current);
                 }
             });
-            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 // Calculate pricing using model info if available
                 if (modelInfo) {
@@ -2819,7 +2811,14 @@ export default function ChatPage() {
                 }
 
                 hasReceivedUsageData.current = true;
-                setContextTokens({ used: totalTokens, max: 128000 });
+                const sysTokens = systemPromptTokens ?? 0;
+                const chatHistTokens = Math.max(0, (promptTokens || 0) - sysTokens);
+                setContextTokens({
+                    used: totalTokens,
+                    max: 128000,
+                    systemTokens: sysTokens,
+                    chatTokens: chatHistTokens + completionTokens
+                });
             });
             acpApi.onSurfaceAction((data: any) => {
                 if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
@@ -3450,7 +3449,7 @@ export default function ChatPage() {
                         }
                     }
                 });
-                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
 
@@ -3465,7 +3464,14 @@ export default function ChatPage() {
                     }
 
                     hasReceivedUsageData.current = true;
-                    setContextTokens({ used: totalTokens, max: 128000 });
+                    const sysTokens = systemPromptTokens ?? 0;
+                    const chatHistTokens = Math.max(0, (promptTokens || 0) - sysTokens);
+                    setContextTokens({
+                        used: totalTokens,
+                        max: 128000,
+                        systemTokens: sysTokens,
+                        chatTokens: chatHistTokens + completionTokens
+                    });
                 });
                 api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
@@ -4194,9 +4200,9 @@ export default function ChatPage() {
             <AnimatePresence>
                 {showModelSelector && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
-                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 240, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
+                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
                         <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
-                        <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                        <div style={{ maxHeight: 320, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}>
                             {availableModels.map(model => {
                                 const isDisabled = model.id.endsWith('-error') || model.id.endsWith('-empty');
                                 return (
@@ -4218,7 +4224,7 @@ export default function ChatPage() {
                                         onMouseLeave={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "transparent"; }}
                                     >
                                         {model.logo ? <model.logo size={14} /> : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
-                                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{model.name}</span>
+                                        <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{model.name}</span>
                                         {selectedModel === model.id && <CheckSolidIcon width={14} height={14} className="text-indigo-400" />}
                                     </button>
                                 );
@@ -4442,11 +4448,14 @@ export default function ChatPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {/* Context Token Ring */}
             <ContextTokenRing
-                used={contextTokens.used}
+                used={contextTokens.used + currentTokens}
                 max={contextTokens.max}
                 modelInfo={modelInfo}
                 estimatedCost={estimatedCost}
                 isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
+                systemTokens={contextTokens.systemTokens}
+                chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
+                modelName={selectedModel || currentModel.id || currentModel.name}
             />
 
             {renderModelSelector(true)}

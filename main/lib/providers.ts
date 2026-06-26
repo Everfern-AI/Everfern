@@ -6,6 +6,14 @@
  *
  * Usage:
  *   import { PROVIDER_REGISTRY, getModelsForProvider, getAllModelsFlat } from '../lib/providers';
+/**
+ * EverFern Desktop — Unified Provider Registry
+ *
+ * Single source of truth for all provider metadata and model lists.
+ * Zero runtime dependencies — importable from both main process and renderer.
+ *
+ * Usage:
+ *   import { PROVIDER_REGISTRY, getModelsForProvider, getAllModelsFlat } from '../lib/providers';
  */
 
 import type { ProviderType } from '../acp/types';
@@ -14,19 +22,18 @@ import type { ProviderType } from '../acp/types';
 
 export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   openai: [
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-4-turbo',
-    'o1-preview',
-    'o1-mini',
-    'o3-mini',
+    'gpt-5.5-pro',
+    'gpt-5.5',
+    'gpt-5.4-pro',
+    'gpt-5.4',
+    'gpt-5.4-mini',
+    'gpt-5.4-nano',
   ],
   anthropic: [
-    'claude-sonnet-4-20250514',
-    'claude-opus-4-5',
+    'claude-fable-5',
+    'claude-opus-4-8',
+    'claude-sonnet-4-6',
     'claude-haiku-4-5-20251001',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-haiku-20241022',
   ],
   deepseek: [
     'deepseek-v4-flash',
@@ -41,10 +48,9 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
     'gemini-3.5-flash',
     'gemini-3.1-pro-preview',
     'gemini-3.1-flash-lite',
+    'gemini-3-pro-preview',
     'gemini-3-flash-preview',
     'gemini-2.5-pro',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
   ],
   nvidia: [
     'google/gemma-4-31b-it',
@@ -86,6 +92,46 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   ],
 };
 
+export const CLOUD_MODEL_MAP: Record<string, string> = {
+  // Anthropic
+  'claude-fable-5': 'anthropic/claude-fable-5',
+  'claude_fable_5': 'anthropic/claude-fable-5',
+  'claude-opus-4-8': 'anthropic/claude-opus-4.8',
+  'claude_opus_4_8': 'anthropic/claude-opus-4.8',
+  'claude-sonnet-4-6': 'anthropic/claude-sonnet-4.6',
+  'claude_sonnet_4_6': 'anthropic/claude-sonnet-4.6',
+  'claude-haiku-4-5-20251001': 'anthropic/claude-haiku-4.5',
+  'claude_haiku_4_5': 'anthropic/claude-haiku-4.5',
+  
+  // OpenAI
+  'gpt-5.5-pro': 'openai/gpt-5.5-pro',
+  'gpt_5_5_pro': 'openai/gpt-5.5-pro',
+  'gpt-5.5': 'openai/gpt-5.5',
+  'gpt_5_5': 'openai/gpt-5.5',
+  'gpt-5.4-pro': 'openai/gpt-5.4-pro',
+  'gpt_5_4_pro': 'openai/gpt-5.4-pro',
+  'gpt-5.4': 'openai/gpt-5.4',
+  'gpt_5_4': 'openai/gpt-5.4',
+  'gpt-5.4-mini': 'openai/gpt-5.4-mini',
+  'gpt_5_4_mini': 'openai/gpt-5.4-mini',
+  'gpt-5.4-nano': 'openai/gpt-5.4-nano',
+  'gpt_5_4_nano': 'openai/gpt-5.4-nano',
+
+  // Google Gemini
+  'gemini-3.5-flash': 'google/gemini-3.5-flash',
+  'gemini_3_5_flash': 'google/gemini-3.5-flash',
+  'gemini-3.1-pro-preview': 'google/gemini-3.1-pro-preview',
+  'gemini_3_1_pro_preview': 'google/gemini-3.1-pro-preview',
+  'gemini-3.1-flash-lite': 'google/gemini-3.1-flash-lite',
+  'gemini_3_1_flash_lite': 'google/gemini-3.1-flash-lite',
+  'gemini-3-pro-preview': 'google/gemini-3-pro-preview',
+  'gemini_3_pro_preview': 'google/gemini-3-pro-preview',
+  'gemini-3-flash-preview': 'google/gemini-3-flash-preview',
+  'gemini_3_flash_preview': 'google/gemini-3-flash-preview',
+  'gemini-2.5-pro': 'google/gemini-2.5-pro',
+  'gemini_2_5_pro': 'google/gemini-2.5-pro',
+};
+
 // ── Provider Metadata ────────────────────────────────────────────────
 
 export interface ProviderMeta {
@@ -105,22 +151,22 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
   openai: {
     type: 'openai',
     name: 'OpenAI',
-    description: 'GPT-4o, o1, o3 and more via OpenAI API',
+    description: 'OpenAI GPT models',
     image: '/images/ai-providers/openai.svg',
     requiresApiKey: true,
     isLocal: false,
-    defaultModel: 'gpt-4o',
+    defaultModel: 'gpt-5.5',
     engine: 'online',
     baseUrl: 'https://api.openai.com/v1',
   },
   anthropic: {
     type: 'anthropic',
     name: 'Anthropic',
-    description: 'Claude 4 Sonnet, Opus, Haiku via Anthropic API',
+    description: 'Anthropic Claude models',
     image: '/images/ai-providers/claude.svg',
     requiresApiKey: true,
     isLocal: false,
-    defaultModel: 'claude-sonnet-4-20250514',
+    defaultModel: 'claude-sonnet-4-6',
     engine: 'online',
     baseUrl: 'https://api.anthropic.com',
   },
@@ -149,11 +195,11 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
   gemini: {
     type: 'gemini',
     name: 'Google Gemini',
-    description: 'Gemini 3.1 and 2.5 via Google API',
+    description: 'Google Gemini models',
     image: '/images/ai-providers/gemini.svg',
     requiresApiKey: true,
     isLocal: false,
-    defaultModel: 'gemini-3.1-pro-preview',
+    defaultModel: 'gemini-3.5-flash',
     engine: 'online',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
   },

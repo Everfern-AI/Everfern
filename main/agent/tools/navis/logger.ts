@@ -24,17 +24,31 @@ export interface NavisEvent {
   position?: { x: number; y: number };
   url?: string;
   detail?: string;
-  base64?: string;
+  /** Step key into the screenshot ring-buffer — use NavisLogger.getScreenshot(key) to retrieve */
+  screenshotKey?: number;
   metadata?: Record<string, unknown>;
   timestamp: number;
 }
 
+const MAX_SCREENSHOT_BUFFER = 40;
+
 export class NavisLogger {
   private listeners: Set<(event: NavisEvent) => void> = new Set();
+  /** Ring-buffer: key = step number → base64 string. Capped at MAX_SCREENSHOT_BUFFER entries. */
+  private screenshotBuffer: Map<number, string> = new Map();
+  private screenshotKeys: number[] = [];
 
   on(listener: (event: NavisEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Retrieve a screenshot by its step key.
+   * Returns undefined if the key has been evicted from the ring-buffer.
+   */
+  getScreenshot(key: number): string | undefined {
+    return this.screenshotBuffer.get(key);
   }
 
   private emit(event: Omit<NavisEvent, 'timestamp'>): void {
@@ -110,7 +124,24 @@ export class NavisLogger {
   wait(step?: number, maxSteps?: number, detail?: string): void { this.emit({ type: 'wait', step, maxSteps, detail }); }
   aiDecision(step?: number, maxSteps?: number, goal?: string): void { this.emit({ type: 'ai_decision', step, maxSteps, action: goal }); }
   stepComplete(step?: number, maxSteps?: number, result?: string): void { this.emit({ type: 'step_complete', step, maxSteps, detail: result }); }
-  screenshot(step?: number, maxSteps?: number, base64?: string): void { this.emit({ type: 'screenshot', step, maxSteps, base64 }); }
   taskComplete(success: boolean, steps?: number, detail?: string): void { this.emit({ type: 'task_complete', detail: `${success ? 'success' : 'failed'} in ${steps ?? '?'} steps — ${detail || ''}` }); }
   error(detail: string): void { this.emit({ type: 'error', detail }); }
+
+  /**
+   * Store screenshot in ring-buffer and emit an event with only the key.
+   * Avoids embedding large base64 strings in every listener's event copy.
+   */
+  screenshot(step?: number, maxSteps?: number, base64?: string): void {
+    const key = step ?? Date.now();
+    if (base64) {
+      this.screenshotBuffer.set(key, base64);
+      this.screenshotKeys.push(key);
+      // Evict oldest when over capacity
+      while (this.screenshotKeys.length > MAX_SCREENSHOT_BUFFER) {
+        const evicted = this.screenshotKeys.shift()!;
+        this.screenshotBuffer.delete(evicted);
+      }
+    }
+    this.emit({ type: 'screenshot', step, maxSteps, screenshotKey: key });
+  }
 }

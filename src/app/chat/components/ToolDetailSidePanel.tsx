@@ -2019,103 +2019,9 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisThinkingRail({ events = [] }: { events?: any[] }) {
-  const safe = Array.isArray(events) ? events : [];
-  if (safe.length === 0) return null;
-
-  const titleFor = (event: any) => {
-    if (event.type === 'reasoning') return 'Thinking';
-    if (event.type === 'action') return event.action?.description || 'Action';
-    if (event.type === 'screenshot') return 'Captured frame';
-    if (event.type === 'complete') return 'Complete';
-    if (event.type === 'abort' || event.type === 'error') return 'Stopped';
-    return 'Step';
-  };
-
-  const contentFor = (event: any) => {
-    if (event.type === 'action') return event.action?.description || '';
-    return event.content || event.metadata?.title || event.metadata?.url || '';
-  };
-
-  return (
-    <aside style={{
-      width: 290,
-      minWidth: 250,
-      borderLeft: `1px solid ${T.border}`,
-      background: 'var(--color-bg-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
-      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}`, background: 'var(--color-bg-surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <span style={{
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle at 32% 28%, #ffffff 0%, #8ee7ff 18%, #3b82f6 48%, #7c3aed 100%)',
-            boxShadow: '0 0 14px rgba(59,130,246,0.45), inset 0 0 4px rgba(255,255,255,0.65)',
-            flexShrink: 0,
-          }} />
-          <div>
-            <p style={{ margin: 0, color: T.text, fontSize: 13, fontWeight: 500, fontFamily: T.sans }}>Navis thinking</p>
-            <p style={{ margin: '2px 0 0', color: T.textMuted, fontSize: 11.5, fontFamily: T.sans }}>{safe.length} live event{safe.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 18px' }}>
-        {safe.map((event, index) => (
-          <div key={`${event.timestamp}-${index}`} style={{ display: 'flex', gap: 10, paddingBottom: index === safe.length - 1 ? 0 : 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 3 }}>
-              <span style={{
-                width: 9,
-                height: 9,
-                borderRadius: '50%',
-                background: event.type === 'complete'
-                  ? T.green
-                  : event.type === 'abort' || event.type === 'error'
-                    ? T.red
-                    : 'radial-gradient(circle at 35% 30%, #ffffff 0%, #8ee7ff 20%, #3b82f6 55%, #7c3aed 100%)',
-                boxShadow: event.type === 'reasoning' ? '0 0 12px rgba(59,130,246,0.38)' : 'none',
-              }} />
-              {index !== safe.length - 1 && <span style={{ width: 1, flex: 1, minHeight: 26, background: 'var(--color-border-subtle)', marginTop: 5 }} />}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <p style={{ margin: 0, color: T.text, fontSize: 12.3, fontWeight: 500, fontFamily: T.sans }}>
-                  {titleFor(event)}
-                </p>
-                {event.stepNumber && (
-                  <span style={{ color: T.textMuted, fontSize: 10.5, fontFamily: T.mono }}>
-                    {event.stepNumber}{event.totalSteps ? `/${event.totalSteps}` : ''}
-                  </span>
-                )}
-              </div>
-              {contentFor(event) && (
-                <p style={{ margin: '4px 0 0', color: T.textSecondary, fontSize: 11.7, lineHeight: 1.45, fontFamily: T.sans }}>
-                  {truncateText(String(contentFor(event)), 220)}
-                </p>
-              )}
-              {event.metadata?.url && (
-                <p style={{ margin: '5px 0 0', color: T.textMuted, fontSize: 10.5, lineHeight: 1.4, fontFamily: T.mono, wordBreak: 'break-all' }}>
-                  {truncateText(String(event.metadata.url), 120)}
-                </p>
-              )}
-              <p style={{ margin: '5px 0 0', color: T.textPlaceholder, fontSize: 10.5, fontFamily: T.mono }}>
-                {formatTimestamp(event.timestamp).split(',')[1]?.trim() || ''}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
 function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screenshots: any[]; toolName: string; thinkingEvents?: any[] }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
-  const thoughts = Array.isArray(thinkingEvents) ? thinkingEvents : [];
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
@@ -2127,7 +2033,6 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
       interval = setInterval(() => {
         setCurrentIndex((prev) => {
           if (prev >= safe.length - 1) {
-            // Stay at the end and wait for next frame
             return prev;
           }
           return prev + 1;
@@ -2160,22 +2065,17 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
           <SectionLabel>{isComputer ? 'Desktop session' : 'Browser session'}</SectionLabel>
           <EmptyState
             icon={CameraOff}
-            title={isNavis && thoughts.length > 0 ? 'DOM-first run' : thoughts.length > 0 ? 'Session Active' : 'No captures yet'}
-            description={isNavis && thoughts.length > 0
-              ? `${toolName} is using extension DOM control, so screenshots appear only when visual fallback is needed.`
-              : thoughts.length > 0
-                ? `${toolName} is running in the background. Screenshots will appear as actions are executed.`
-                : `${toolName} ran but didn't produce screenshots during this session.`}
-            note={isNavis && thoughts.length > 0
-              ? 'Watch the live thinking rail for current page state and actions.'
-              : thoughts.length > 0
-                ? 'Watch the live thinking rail for current desktop actions.'
-                : isComputer 
-                  ? 'Screenshots appear here in real-time as the desktop is controlled.'
-                  : 'Frames appear here in real-time as the browser navigates.'}
+            title={isNavis ? 'DOM-first run' : 'No captures yet'}
+            description={isNavis
+              ? `${toolName} is using extension DOM control — screenshots appear when visual grounding is triggered.`
+              : `${toolName} ran but didn't produce screenshots during this session.`}
+            note={isNavis
+              ? 'Navis reads the DOM and uses vision together for smarter clicks.'
+              : isComputer
+                ? 'Screenshots appear here in real-time as the desktop is controlled.'
+                : 'Frames appear here in real-time as the browser navigates.'}
           />
         </div>
-        <NavisThinkingRail events={thoughts} />
       </div>
     );
   }
@@ -2186,15 +2086,15 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
       <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column' }}>
         <div style={{
           background: T.surface,
           borderRadius: T.r12,
           border: `1px solid ${T.border}`,
-          padding: '16px',
+          padding: '20px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 16
+          gap: 20
         }}>
           {/* Main Image */}
           <div
@@ -2208,16 +2108,36 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minHeight: 300
+              minHeight: 320,
             }}
           >
-            <div style={{ position: 'relative', display: 'inline-block' }}>
-              <img
-                src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
-                alt="Navis frame"
-                style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
-                onClick={() => setZoomed(currentScreenshot)}
-              />
+            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+              {currentScreenshot.base64 ? (
+                <img
+                  src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
+                  alt="Navis frame"
+                  style={{ width: '100%', height: 'auto', maxHeight: '65vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
+                  onClick={() => setZoomed(currentScreenshot)}
+                  onError={(e) => {
+                    // Fallback: try as png if jpeg fails
+                    const img = e.currentTarget;
+                    if (!img.src.includes('image/png')) {
+                      img.src = `data:image/png;base64,${currentScreenshot.base64}`;
+                    }
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%', minHeight: 200,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: T.textMuted, fontSize: 12, fontFamily: T.sans, flexDirection: 'column', gap: 8
+                }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.border, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CameraOff size={16} />
+                  </div>
+                  Loading frame...
+                </div>
+              )}
               {currentScreenshot.action?.params?.coordinate && (
                 <CursorOverlayOnImage
                   coordinate={currentScreenshot.action.params.coordinate}
@@ -2322,7 +2242,6 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
         {zoomed && <ZoomModal screenshot={zoomed} onClose={() => setZoomed(null)} />}
       </AnimatePresence>
       </div>
-      <NavisThinkingRail events={thoughts} />
     </div>
   );
 }
