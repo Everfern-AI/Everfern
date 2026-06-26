@@ -188,7 +188,7 @@ npm run dev
 
 **Windows installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
 
-**macOS installer** coming soon. For now, build from source with the commands above.
+**macOS installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
 
 ### Production Build
 
