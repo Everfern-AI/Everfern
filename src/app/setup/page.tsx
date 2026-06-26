@@ -69,6 +69,53 @@ const EverFernBglessLogo = ({ size = 20 }: { size?: number }) => (
 
 
 
+const RedditIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#FF4500" style={{ width: size, height: size }}>
+        <g>
+            <path d="M17.16,9.15a2,2,0,0,0-3.32-1.5,10.6,10.6,0,0,0-3.69-.65l.78-2.45,2.15.46a1.18,1.18,0,1,0,1.16-.94,1.19,1.19,0,0,0-1.12.83l-2.4-.51a.39.39,0,0,0-.45.27l-.87,2.74a10.87,10.87,0,0,0-3.81.64A2,2,0,0,0,2.26,9.15a2,2,0,0,0,1,1.75,8,8,0,0,0-.1,1.25,8,8,0,0,0,14.62,4,8,8,0,0,0-.1-1.25A2,2,0,0,0,17.16,9.15ZM6.21,11a1,1,0,1,1,1,1A1,1,0,0,1,6.21,11Zm7.33,3.78a5.27,5.27,0,0,1-7.08,0,.35.35,0,0,1,.49-.49,4.56,4.56,0,0,0,6.1,0,.35.35,0,0,1,.49.49Zm-.12-2.78a1,1,0,1,1,1-1A1,1,0,0,1,13.42,12Z"/>
+        </g>
+    </svg>
+);
+
+const IndieHackersIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" style={{ width: size, height: size, color: "var(--color-text-primary)" }}>
+        <path d="M0 0h24v24H0V0Zm5.4 17.2h2.4V6.8H5.4v10.4Zm4.8 0h2.4v-4h3.6v4h2.4V6.8h-2.4v4h-3.6v-4h-2.4v10.4Z"></path>
+    </svg>
+);
+
+const TwitterIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style={{ width: size, height: size }}>
+        <g clipPath="url(#clip0_84_15697)">
+            <rect width="512" height="512" fill="#000" rx="60"></rect>
+            <path fill="#fff" d="M355.904 100H408.832L293.2 232.16L429.232 412H322.72L239.296 302.928L143.84 412H90.8805L214.56 270.64L84.0645 100H193.28L268.688 199.696L355.904 100ZM337.328 380.32H366.656L177.344 130.016H145.872L337.328 380.32Z"></path>
+        </g>
+        <defs>
+            <clipPath id="clip0_84_15697">
+                <rect width="512" height="512" fill="#fff"></rect>
+            </clipPath>
+        </defs>
+    </svg>
+);
+
+const HackerNewsIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style={{ width: size, height: size }}>
+        <path fill="#F36003" d="M24 2.571A2.572 2.572 0 0 0 21.429 0H2.571A2.572 2.572 0 0 0 0 2.571v18.857A2.572 2.572 0 0 0 2.571 24h18.857A2.572 2.572 0 0 0 24 21.429V2.571zm-11.186 10.88v5.406h-1.682v-5.502L6.856 5.143h1.998c2.812 5.266 2.635 5.422 3.177 6.728.659-1.447.311-1.307 3.247-6.728h1.864l-4.329 8.309h.001z"></path>
+    </svg>
+);
+
+const GitHubIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style={{ width: size, height: size }}>
+        <path fill="#00020c" fillRule="evenodd" d="m60,12c0-4.42-3.58-8-8-8H12c-4.42,0-8,3.58-8,8v40c0,4.42,3.58,8,8,8h40c4.42,0,8-3.58,8-8V12h0Z"></path>
+        <path fill="#fff" fillRule="evenodd" d="m26.73,47.67c0,1.1-.01,2.3-.01,3.4,0,.26-.13.51-.34.67-.21.16-.49.2-.74.13-8.4-2.7-14.49-10.58-14.49-19.87,0-11.51,9.34-20.85,20.85-20.85s20.85,9.34,20.85,20.85c0,9.28-6.08,17.15-14.46,19.85-.25.08-.53.03-.74-.13-.21-.16-.34-.4-.34-.67-.02-2.45-.03-5.34-.03-6.65s-1.28-2.39-1.28-2.39c0,0,9.45-1.16,9.45-9.34,0-5.19-2.06-6.94-2.06-6.94.44-1.86.38-3.63-.1-5.31-.07-.24-.31-.4-.56-.38-2.01.18-3.85.91-5.52,2.24,0,0-2.95-.81-5.2-.81h0c-2.25,0-5.2.81-5.2.81-1.67-1.32-3.52-2.06-5.52-2.24-.25-.02-.49.14-.56.38-.48,1.68-.54,3.45-.11,5.31,0,0-2.05,1.75-2.05,6.94,0,8.18,9.45,9.34,9.45,9.34,0,0-1.28,1.08-1.28,2.39v.3c-.72.26-1.7.5-2.8.43-2.99-.2-3.39-3.42-4.62-3.94-.9-.38-1.78-.43-2.45-.37-.2.02-.36.16-.41.35-.05.19.02.39.18.51.81.55,1.89,1.33,2.19,1.9.81,1.52,2.06,3.93,3.67,4.19,1.96.32,3.36.13,4.25-.12h0Z"></path>
+    </svg>
+);
+
+const OtherIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" style={{ width: size, height: size }}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+    </svg>
+);
+
 // ── Types ────────────────
 type LogKind = "info" | "cmd" | "success" | "warn" | "err" | "done" | "fail" | "pip" | "dl" | "muted";
 
@@ -327,6 +374,37 @@ export default function SetupPage() {
     const { theme, setTheme } = useTheme();
     const [step, setStep] = useState(1);
     const [selectedTheme, setSelectedTheme] = useState<'light' | 'dark'>('light');
+    const [referralSource, setReferralSource] = useState("");
+    const [referralOtherText, setReferralOtherText] = useState("");
+    const [submittingReferral, setSubmittingReferral] = useState(false);
+
+    const handleNextFromReferral = async () => {
+        if (!referralSource) return;
+        if (referralSource === 'other' && !referralOtherText.trim()) return;
+
+        setSubmittingReferral(true);
+        try {
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+            const keyToUse = apiKey.trim() || undefined;
+
+            await fetch(`${API_URL}/api/analytics/referral`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(keyToUse ? { 'Authorization': `Bearer ${keyToUse}` } : {})
+                },
+                body: JSON.stringify({
+                    referral_source: referralSource,
+                    other_details: referralSource === 'other' ? referralOtherText.trim() : null
+                })
+            });
+        } catch (e) {
+            console.error("Failed to submit referral info", e);
+        } finally {
+            setSubmittingReferral(false);
+            setStep(9);
+        }
+    };
 
     // Force light theme by default during onboarding
     useEffect(() => {
@@ -670,7 +748,7 @@ export default function SetupPage() {
                 </div>
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(s => (
                     <div
                         key={s}
                         style={{
@@ -2151,8 +2229,7 @@ export default function SetupPage() {
                         </motion.div>
                     )}
 
-                    {/* ── Step 8: Privacy & Security ── */}
-
+                    {/* ── Step 8: Referral Survey ── */}
                     {step === 8 && (
                         <motion.div
                             key="step8"
@@ -2161,10 +2238,107 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
-                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                            style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(7)} />
+                            </div>
+
+                            <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <Sparkles size={28} color="var(--color-text-primary)" />
+                            </div>
+
+                            <h1 style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-0.03em", color: "var(--color-text-primary)", marginBottom: 12, lineHeight: 1.1 }}>
+                                Where did you find us?
+                            </h1>
+                            <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", lineHeight: 1.6, maxWidth: 360, margin: "0 auto 32px" }}>
+                                Help us understand how you discovered EverFern.
+                            </p>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24, width: "100%" }}>
+                                {[
+                                    { id: 'reddit', label: 'Reddit', icon: RedditIcon },
+                                    { id: 'indiehacker', label: 'Indie Hackers', icon: IndieHackersIcon },
+                                    { id: 'twitter', label: 'Twitter (X)', icon: TwitterIcon },
+                                    { id: 'hacker news', label: 'Hacker News', icon: HackerNewsIcon },
+                                    { id: 'github', label: 'GitHub', icon: GitHubIcon },
+                                    { id: 'other', label: 'Other', icon: OtherIcon },
+                                ].map((opt) => {
+                                    const isSelected = referralSource === opt.id;
+                                    const IconComp = opt.icon;
+                                    return (
+                                        <button key={opt.id} onClick={() => {
+                                            setReferralSource(opt.id);
+                                            if (opt.id !== 'other') setReferralOtherText('');
+                                        }}
+                                        style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: 8,
+                                            padding: "16px 8px",
+                                            borderRadius: 16,
+                                            background: isSelected ? "rgba(32,30,36,0.05)" : "transparent",
+                                            border: isSelected ? "2px solid var(--color-text-primary)" : "1px solid rgba(32,30,36,0.1)",
+                                            cursor: "pointer",
+                                            transition: "all 0.2s",
+                                            color: "var(--color-text-primary)",
+                                            fontWeight: isSelected ? 600 : 500,
+                                            outline: "none"
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
+                                        }}
+                                        >
+                                            <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                <IconComp size={opt.id === 'twitter' || opt.id === 'github' ? 28 : 24} />
+                                            </div>
+                                            <span style={{ fontSize: 13, color: isSelected ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{opt.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {referralSource === 'other' && (
+                                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} style={{ marginBottom: 24, width: "100%" }}>
+                                    <input type="text" placeholder="Please specify where you found us..." value={referralOtherText} onChange={(e) => setReferralOtherText(e.target.value)}
+                                        style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.1)", borderRadius: 14, color: "var(--color-text-primary)", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                                        onFocus={e => e.target.style.borderColor = "rgba(32,30,36,0.2)"}
+                                        onBlur={e => e.target.style.borderColor = "rgba(32,30,36,0.1)"}
+                                    />
+                                </motion.div>
+                            )}
+
+                            <div style={{ display: "flex", gap: 12, width: "100%", alignItems: "center", justifyContent: "center" }}>
+                                <button onClick={handleNextFromReferral} disabled={submittingReferral || !referralSource || (referralSource === 'other' && !referralOtherText.trim())}
+                                    style={{ flex: 1, padding: "16px", backgroundColor: "var(--color-text-primary)", color: 'var(--color-bg-surface)', borderRadius: 16, fontWeight: 600, fontSize: 15, border: "none", cursor: (submittingReferral || !referralSource || (referralSource === 'other' && !referralOtherText.trim())) ? "not-allowed" : "pointer", opacity: (submittingReferral || !referralSource || (referralSource === 'other' && !referralOtherText.trim())) ? 0.4 : 1, transition: "all 0.2s" }}
+                                >
+                                    {submittingReferral ? "Saving..." : "Continue"}
+                                </button>
+                                <button onClick={() => setStep(9)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                    Skip
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 9: Privacy & Security ── */}
+                    {step === 9 && (
+                        <motion.div
+                            key="step9"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(8)} />
                             </div>
 
                             {/* Static Padlock SVG */}

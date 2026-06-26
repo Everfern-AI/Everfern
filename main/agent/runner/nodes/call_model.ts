@@ -326,7 +326,11 @@ You do not need to use complex execution plans or tools for this interaction.`;
 
     if (response.usage) {
       const usage = response.usage;
-      runner.telemetry.info(`Model resonance confirmed | Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}`);
+      
+      const systemMsg = normalizedMessages.find(m => m.role === 'system');
+      const systemPromptTokens = systemMsg && typeof systemMsg.content === 'string' ? Math.ceil(systemMsg.content.length / 4) : 0;
+      
+      runner.telemetry.info(`Model resonance confirmed | Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}, System=${systemPromptTokens}`);
       runner.telemetry.metrics(iterations, usage.totalTokens);
       eventQueue?.push({
         type: 'usage',
@@ -338,6 +342,7 @@ You do not need to use complex execution plans or tools for this interaction.`;
         imageInputCost: usage.imageInputCost,
         imageOutputCost: usage.imageOutputCost,
         totalCost: usage.totalCost,
+        systemPromptTokens,
       });
 
       // Record into analytics DB (fire-and-forget — never block the agent)

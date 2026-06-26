@@ -22,7 +22,6 @@ import {
   compressHistory,
   callAIWithStreaming,
   checkPerformanceTarget,
-  checkScreenshotPerformance,
   DEFAULT_SCREENSHOT_CONFIG,
 } from './ai-optimization';
 import {

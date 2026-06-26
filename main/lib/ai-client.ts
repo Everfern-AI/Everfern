@@ -13,6 +13,7 @@
 
 import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
+import { CLOUD_MODEL_MAP } from './providers';
 
 // ── Safe JSON Parsing ───────────────────────────────────────────────
 
@@ -253,12 +254,12 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
 };
 
 const DEFAULT_MODELS: Record<ProviderType, string> = {
-  openai: 'gpt-4o',
-  anthropic: 'claude-3-5-sonnet-20241022',
+  openai: 'gpt-5.5',
+  anthropic: 'claude-sonnet-4-6',
   deepseek: 'deepseek-v4-pro',
   minimax: 'MiniMax-M3',
   everfern: 'qwen/qwen3-vl-235b-a22b-instruct',
-  gemini: 'gemini-3.1-pro-preview',
+  gemini: 'gemini-3.5-flash',
   ollama: 'llama3',
   'ollama-cloud': 'qwen3-vl:235b-cloud',
   lmstudio: 'local-model',
@@ -664,7 +665,7 @@ export class AIClient {
                 },
                 body: JSON.stringify({
                   messages: request.messages,
-                  model: this.config.model,
+                  model: CLOUD_MODEL_MAP[request.model ?? this.config.model] || (request.model ?? this.config.model),
                   temperature: request.temperature ?? this.config.temperature,
                   max_tokens: request.maxTokens ?? this.config.maxTokens
                 })
@@ -1177,8 +1178,13 @@ export class AIClient {
     const messages = this._mapMessagesForOpenAI(req.messages);
 
     // Build request options
+    let model = req.model ?? this.config.model;
+    if (this.config.provider === 'everfern') {
+      model = CLOUD_MODEL_MAP[model] || model;
+    }
+
     const options: any = {
-      model: req.model ?? this.config.model,
+      model,
       messages,
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
@@ -1414,8 +1420,13 @@ export class AIClient {
 
     const messages = this._mapMessagesForOpenAI(req.messages);
 
+    let model = req.model ?? this.config.model;
+    if (this.config.provider === 'everfern') {
+      model = CLOUD_MODEL_MAP[model] || model;
+    }
+
     const options: any = {
-      model: req.model ?? this.config.model,
+      model,
       messages,
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
