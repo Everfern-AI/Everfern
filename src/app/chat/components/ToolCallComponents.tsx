@@ -340,17 +340,34 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     lineHeight: 1.7, color: '#e2e8f0', overflowX: 'auto',
                                     whiteSpace: 'pre-wrap', maxHeight: 300, overflowY: 'auto'
                                 }}>
-                                    {tc.output.split('\n').map((line, idx) => {
-                                        const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
-                                        const promptMatch = line.match(/^([\$›#]) /);
-                                        return (
-                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : 'var(--color-border)' }}>
-                                                {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
-                                                {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
-                                                {line}
-                                            </div>
-                                        );
-                                    })}
+                                    {(() => {
+                                        const lines = tc.output.split('\n');
+                                        const MAX_INLINE_LINES = 100;
+                                        const truncated = lines.length > MAX_INLINE_LINES;
+                                        const renderLines = truncated ? lines.slice(0, MAX_INLINE_LINES) : lines;
+                                        
+                                        const elements = renderLines.map((line, idx) => {
+                                            const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
+                                            const promptMatch = line.match(/^([\$›#]) /);
+                                            return (
+                                                <div key={idx} style={{ color: isCmd ? '#a5b4fc' : 'var(--color-border)' }}>
+                                                    {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
+                                                    {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
+                                                    {line}
+                                                </div>
+                                            );
+                                        });
+
+                                        if (truncated) {
+                                            elements.push(
+                                                <div key="trunc" style={{ color: '#64748b', fontStyle: 'italic', marginTop: 4 }}>
+                                                    ... [Remaining {lines.length - MAX_INLINE_LINES} lines hidden inline]
+                                                </div>
+                                            );
+                                        }
+
+                                        return elements;
+                                    })()}
                                 </pre>
                             </div>
                         </motion.div>
@@ -390,7 +407,13 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                     </div>
                                 ) : (
                                     <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
-                                        {tc.output}
+                                        {(() => {
+                                            const MAX_INLINE_CHARS = 10000;
+                                            if (tc.output.length > MAX_INLINE_CHARS) {
+                                                return tc.output.substring(0, MAX_INLINE_CHARS) + `\n\n... [Output truncated for inline performance. Total length: ${tc.output.length} characters. Click to open full details.]`;
+                                            }
+                                            return tc.output;
+                                        })()}
                                     </pre>
                                 )}
                             </div>

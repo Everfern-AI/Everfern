@@ -58,8 +58,8 @@ export async function getEverFernCloudInstructionAndActions(
 
   const apiBaseUrl = params.apiBaseUrl || 'http://localhost:5000';
   
-  // Call /api/navis/vision which supports DOM context
-  const response = await fetch(`${apiBaseUrl}/api/navis/vision`, {
+  // Call /api/chat/completions which supports DOM context
+  const response = await fetch(`${apiBaseUrl}/api/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

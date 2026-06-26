@@ -2839,8 +2839,8 @@ export class AIClient {
     }
 
     try {
-      // Route to /api/navis/vision which supports DOM context
-      const response = await fetch(`${apiBaseUrl}/api/navis/vision`, {
+      // Route to /api/chat/completions which supports DOM context
+      const response = await fetch(`${apiBaseUrl}/api/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

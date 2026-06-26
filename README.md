@@ -147,6 +147,14 @@ For complex tasks, multiple specialized agents debate the best solution before a
 <tr>
 <td width="50%" valign="top">
 
+### 🧠 Persistent Self-Learning Memory
+EverFern remembers — across every session, forever. As you work with it, it builds a private, structured knowledge base about you: your preferences, your project patterns, your workflows, how you like things done. Every correction you make, every task it completes, every piece of feedback you give gets consolidated into long-term memory.
+
+When you start a new task, EverFern doesn't start from zero. It recalls relevant context — *"last time you ran this script you wanted the output in a markdown table"*, *"you prefer TypeScript strict mode"*, *"your deploy target is always the staging env first"* — and applies that knowledge automatically. The more you use it, the sharper it gets. Your memory is local, auditable, and never shared.
+
+</td>
+<td width="50%" valign="top">
+
 ### 🛠️ 20+ Built-in Tools
 Everything EverFern needs is built in:
 - **Desktop**: Computer Use, Screenshot, Mouse, Keyboard, App Launcher

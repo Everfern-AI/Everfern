@@ -137,33 +137,18 @@ export function registerSystemHandlers() {
 
   ipcMain.handle('system:check-for-updates', async () => {
     try {
-      const currentVersion = app.getVersion();
-      const response = await net.fetch('https://api.github.com/repos/CodenRust/Everfern/releases/latest');
-      if (!response.ok) return { hasUpdate: false };
+      const { autoUpdater } = require('electron-updater');
+      const result = await autoUpdater.checkForUpdates();
 
-      const data = await response.json();
-      const latestVersion = data.tag_name.replace(/^v/, '');
-
-      // Simple version comparison (semver-lite)
-      const currentParts = currentVersion.split('.').map(Number);
-      const latestParts = latestVersion.split('.').map(Number);
-
-      let hasUpdate = false;
-      for (let i = 0; i < 3; i++) {
-        if ((latestParts[i] || 0) > (currentParts[i] || 0)) {
-          hasUpdate = true;
-          break;
-        } else if ((latestParts[i] || 0) < (currentParts[i] || 0)) {
-          break;
-        }
+      if (result && result.updateInfo && result.updateInfo.version !== app.getVersion()) {
+        return {
+          hasUpdate: true,
+          latestVersion: result.updateInfo.version,
+          url: `https://github.com/Everfern-AI/Everfern/releases/tag/v${result.updateInfo.version}`,
+          notes: typeof result.updateInfo.releaseNotes === 'string' ? result.updateInfo.releaseNotes : ''
+        };
       }
-
-      return {
-        hasUpdate,
-        latestVersion,
-        url: data.html_url,
-        notes: data.body
-      };
+      return { hasUpdate: false };
     } catch (err) {
       console.error('[UpdateCheck] Failed to check for updates:', err);
       return { hasUpdate: false, error: String(err) };

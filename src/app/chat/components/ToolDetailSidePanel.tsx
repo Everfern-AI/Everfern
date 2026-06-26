@@ -313,7 +313,7 @@ function normalizePanelUrl(value: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
-const DEFAULT_TOOL_DETAIL_ROOT = typeof navigator !== 'undefined' && navigator.userAgent.includes('Win') ? 'C:\\' : '/';
+const DEFAULT_TOOL_DETAIL_ROOT = '';
 
 function isMacPlatform() {
   if (typeof navigator === 'undefined') return false;
@@ -1100,9 +1100,23 @@ function FileContentBody({
           />
         </div>
         <div style={{ overflow: 'auto', paddingBottom: 18 }}>
-          {safeContent.split('\n').map((line, idx) => (
-            <CodeLine key={idx} type={mode === 'add' ? 'add' : 'normal'} content={line} lineNumber={idx + 1} ext="svg" />
-          ))}
+          {(() => {
+            const MAX_LINES = 1000;
+            const lines = safeContent.split('\n');
+            const truncated = lines.length > MAX_LINES;
+            const toRender = truncated ? lines.slice(0, MAX_LINES) : lines;
+            const elements = toRender.map((line, idx) => (
+              <CodeLine key={idx} type={mode === 'add' ? 'add' : 'normal'} content={line} lineNumber={idx + 1} ext="svg" />
+            ));
+            if (truncated) {
+              elements.push(
+                <div key="trunc-msg" style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
+                  ... [Remaining {lines.length - MAX_LINES} lines truncated for performance]
+                </div>
+              );
+            }
+            return elements;
+          })()}
         </div>
       </div>
     );
@@ -1119,15 +1133,29 @@ function FileContentBody({
 
   return (
     <div style={{ flex: 1, overflow: 'auto', background: EDITOR_COLORS.bg, paddingTop: 6, paddingBottom: 18 }}>
-      {safeContent.split('\n').map((line, idx) => (
-        <CodeLine
-          key={idx}
-          type={mode === 'add' ? 'add' : 'normal'}
-          content={line}
-          lineNumber={idx + 1}
-          ext={visual.ext}
-        />
-      ))}
+      {(() => {
+        const MAX_LINES = 1000;
+        const lines = safeContent.split('\n');
+        const truncated = lines.length > MAX_LINES;
+        const toRender = truncated ? lines.slice(0, MAX_LINES) : lines;
+        const elements = toRender.map((line, idx) => (
+          <CodeLine
+            key={idx}
+            type={mode === 'add' ? 'add' : 'normal'}
+            content={line}
+            lineNumber={idx + 1}
+            ext={visual.ext}
+          />
+        ));
+        if (truncated) {
+          elements.push(
+            <div key="trunc-msg" style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11, fontFamily: T.mono }}>
+              ... [Remaining {lines.length - MAX_LINES} lines truncated for performance]
+            </div>
+          );
+        }
+        return elements;
+      })()}
     </div>
   );
 }
@@ -2019,13 +2047,32 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screenshots: any[]; toolName: string; thinkingEvents?: any[] }) {
+function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisReport, status }: { screenshots: any[]; toolName: string; thinkingEvents?: any[]; navisReport?: string; status?: string }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
+  // Default to 'report' tab when there's a report available, else 'screenshots'
+  const [viewTab, setViewTab] = useState<'screenshots' | 'report'>(navisReport ? 'report' : 'screenshots');
+  // Track when navisReport first appears to switch to it automatically
+  const hadReportRef = useRef(!!navisReport);
+  useEffect(() => {
+    if (navisReport && !hadReportRef.current) {
+      hadReportRef.current = true;
+      setViewTab('report');
+    }
+  }, [navisReport]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
+  const isRunning = status === 'running' || !status;
+  const reportBottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll report to bottom when content updates
+  useEffect(() => {
+    if (viewTab === 'report' && navisReport && isRunning) {
+      setTimeout(() => reportBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+    }
+  }, [navisReport, viewTab, isRunning]);
 
   useEffect(() => {
     let interval: any;
@@ -2056,7 +2103,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
     }
   }, [safe.length, currentIndex]);
 
-  if (safe.length === 0) {
+  if (safe.length === 0 && !navisReport) {
     const isNavis = toolName.toLowerCase().includes('navis') || toolName.toLowerCase().includes('fern');
     const isComputer = toolName.toLowerCase().includes('computer');
     return (
@@ -2080,13 +2127,170 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
     );
   }
 
+  // ── Tab bar ──────────────────────────────────────────────────────────────
+  const tabBar = (
+    <div style={{
+      display: 'flex',
+      gap: 0,
+      borderBottom: `1px solid ${T.border}`,
+      background: T.surface,
+      padding: '0 20px',
+      flexShrink: 0,
+    }}>
+      {navisReport && (
+        <button
+          onClick={() => setViewTab('report')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: viewTab === 'report' ? T.text : T.textMuted,
+            background: 'transparent',
+            border: 'none',
+            borderBottom: viewTab === 'report' ? `2px solid ${T.blue}` : '2px solid transparent',
+            cursor: 'pointer',
+            fontFamily: T.sans,
+            transition: 'all 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Report
+          {isRunning && navisReport && (
+            <span style={{
+              display: 'inline-block', width: 6, height: 6,
+              borderRadius: '50%', background: '#58a6ff',
+              animation: 'pulse 2s infinite',
+              boxShadow: '0 0 0 0 rgba(88,166,255,0.4)',
+            }} />
+          )}
+        </button>
+      )}
+      {safe.length > 0 && (
+        <button
+          onClick={() => setViewTab('screenshots')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: viewTab === 'screenshots' ? T.text : T.textMuted,
+            background: 'transparent',
+            border: 'none',
+            borderBottom: viewTab === 'screenshots' ? `2px solid ${T.blue}` : '2px solid transparent',
+            cursor: 'pointer',
+            fontFamily: T.sans,
+            transition: 'all 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Screenshots
+          <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>({safe.length})</span>
+        </button>
+      )}
+    </div>
+  );
+
+  // ── Report tab ────────────────────────────────────────────────────────────
+  if (viewTab === 'report' && navisReport) {
+    // Simple inline markdown renderer for the report
+    const renderNavisMarkdown = (text: string) => {
+      const MAX_LINES = 1000;
+      const allLines = text.split('\n');
+      const lines = allLines.slice(0, MAX_LINES);
+      const elements: React.ReactNode[] = [];
+      let inCode = false;
+      let codeLines: string[] = [];
+      let codeLang = '';
+      const flush = (key: number) => {
+        elements.push(
+          <div key={`code-${key}`} style={{
+            background: '#0d1117', border: '1px solid #30363d', borderRadius: 8,
+            padding: '12px 16px', marginBottom: 10,
+            fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.7, color: '#e6edf3',
+            overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>
+            {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+            {codeLines.join('\n')}
+          </div>
+        );
+        codeLines = []; codeLang = '';
+      };
+      lines.forEach((line, idx) => {
+        if (line.startsWith('```')) { inCode ? (flush(idx), inCode = false) : (inCode = true, codeLang = line.slice(3).trim()); return; }
+        if (inCode) { codeLines.push(line); return; }
+        if (line.startsWith('# ')) { elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', margin: '0 0 12px', fontFamily: T.sans, borderBottom: '1px solid #21262d', paddingBottom: 8 }}>{line.slice(2)}</h1>); return; }
+        if (line.startsWith('## ')) { elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: '#58a6ff', margin: '16px 0 8px', fontFamily: T.sans }}><span style={{ opacity: 0.4, marginRight: 5 }}>##</span>{line.slice(3)}</h2>); return; }
+        if (line.startsWith('### ')) { elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: '#79c0ff', margin: '12px 0 6px', fontFamily: T.sans }}><span style={{ color: '#30363d', marginRight: 5 }}>◆</span>{line.slice(4)}</h3>); return; }
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+          const parts = line.slice(2).split(/\*\*(.+?)\*\*/);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
+          elements.push(<div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}><span style={{ color: '#58a6ff', flexShrink: 0 }}>›</span><span>{rendered}</span></div>);
+          return;
+        }
+        if (line.includes('**')) {
+          const parts = line.split(/\*\*(.+?)\*\*/);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
+          elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: T.mono }}>{rendered}</div>);
+          return;
+        }
+        if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 6 }} />); return; }
+        elements.push(<div key={idx} style={{ fontSize: 12, color: '#8b949e', lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
+      });
+      if (inCode && codeLines.length > 0) flush(lines.length);
+      if (allLines.length > MAX_LINES) {
+        elements.push(<div key="trunc" style={{ fontSize: 11, color: '#484f58', fontStyle: 'italic', marginTop: 8 }}>... [{allLines.length - MAX_LINES} more lines]</div>);
+      }
+      return elements;
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#010409' }}>
+        <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(88,166,255,0.6); } 70% { box-shadow: 0 0 0 6px rgba(88,166,255,0); } 100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
+        {tabBar}
+        {/* Status row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 20px', background: '#0d1117', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span style={{ fontSize: 11, color: '#8b949e', fontFamily: T.sans, flex: 1 }}>Navis Execution Report</span>
+          {isRunning ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(56,139,253,0.1)', border: '1px solid rgba(56,139,253,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#58a6ff', animation: 'pulse 2s infinite' }} />
+              <span style={{ fontSize: 10, color: '#58a6ff', fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(46,160,67,0.1)', border: '1px solid rgba(46,160,67,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style={{ fontSize: 10, color: '#3fb950', fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+            </div>
+          )}
+        </div>
+        {/* Report content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', scrollBehavior: 'smooth' }}>
+          {renderNavisMarkdown(navisReport)}
+          {isRunning && (
+            <span style={{ display: 'inline-block', width: 8, height: 14, background: '#58a6ff', borderRadius: 1, verticalAlign: 'middle', animation: 'blink-cursor 1s step-end infinite', marginLeft: 2 }} />
+          )}
+          <div ref={reportBottomRef} />
+        </div>
+      </div>
+    );
+  }
+
   const currentScreenshot = safe[currentIndex] || safe[0];
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Tab bar — only show if we also have a report */}
+      {navisReport && tabBar}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
       <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column' }}>
+
         <div style={{
           background: T.surface,
           borderRadius: T.r12,
@@ -2238,10 +2442,11 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
           </div>
         </div>
       </div>
+      </div>
+      </div>
       <AnimatePresence>
         {zoomed && <ZoomModal screenshot={zoomed} onClose={() => setZoomed(null)} />}
       </AnimatePresence>
-      </div>
     </div>
   );
 }
@@ -2435,7 +2640,12 @@ export function TerminalView({
   status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
-  const cleanOutput = normalizeTerminalOutput(output, command);
+  const MAX_OUTPUT_LENGTH = 50000;
+  const isOutputTruncated = output && output.length > MAX_OUTPUT_LENGTH;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_OUTPUT_LENGTH) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
+  const cleanOutput = normalizeTerminalOutput(displayOutput, command);
   const hasOutput = hasVisibleTerminalOutput(cleanOutput);
   const looksLikePS = shellType === 'windows';
 
@@ -3270,6 +3480,12 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
 
 function GenericView({ args, output, result }: { toolName: string; args?: any; output?: string; result?: any }) {
   const argEntries = Object.entries(args || {});
+  
+  const MAX_GENERIC_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_GENERIC_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_GENERIC_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -3335,7 +3551,7 @@ function GenericView({ args, output, result }: { toolName: string; args?: any; o
                 </div>
               )}
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingRight: 60 }}>
-                <code>{output}</code>
+                <code>{displayOutput}</code>
               </pre>
             </div>
           </CollapsibleSection>
@@ -4011,7 +4227,22 @@ export function extractFernData(tc: any, progressEvents: any[] = []) {
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
     const slicedScreenshots = screenshots.slice(-12);
-    return { screenshots: slicedScreenshots, screenshotPaths, thinkingEvents: thinkingEvents.slice(-80), url: tc.args?.url, action: tc.args?.action };
+
+    // Extract latest navisReport from progress events
+    let navisReport: string | undefined;
+    if (Array.isArray(progressEvents)) {
+      for (let i = progressEvents.length - 1; i >= 0; i--) {
+        const ev = progressEvents[i] as any;
+        const r = ev?.navisReport || ev?.data?.navisReport;
+        if (r) { navisReport = r; break; }
+      }
+    }
+    // Also check tc.data for persisted report
+    if (!navisReport) {
+      navisReport = (tc.data || tc.result?.data)?.navisReport || undefined;
+    }
+
+    return { screenshots: slicedScreenshots, screenshotPaths, thinkingEvents: thinkingEvents.slice(-80), url: tc.args?.url, action: tc.args?.action, navisReport };
   } catch { return null; }
 }
 
@@ -4349,6 +4580,12 @@ function FileSystemList({ rows }: { rows: FileSystemListRow[] }) {
 
 function FileSystemView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
   const argEntries = Object.entries(args || {});
+
+  const MAX_FS_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_FS_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_FS_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
   const n = String(toolName || '').toLowerCase();
   const isListOperation = n === 'ls' || n.includes('list_dir') || n.includes('system_files');
   const operation =
@@ -4365,7 +4602,7 @@ function FileSystemView({ toolName, path, args, output, data }: { toolName: stri
         : [];
   const rootPath = path || data?.path || args?.path || args?.cwd || DEFAULT_TOOL_DETAIL_ROOT;
   const listRows = normalizeFileSystemRows(structuredRows, output, rootPath, isListOperation);
-  const renderedOutput = output || (structuredRows.length > 0 ? structuredRows.map((row: any) => {
+  const renderedOutput = displayOutput || (structuredRows.length > 0 ? structuredRows.map((row: any) => {
     if (typeof row === 'string') return row;
     return row.path || row.file || row.name || JSON.stringify(row);
   }).join('\n') : '');

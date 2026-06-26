@@ -737,9 +737,10 @@ export default function ChatPage() {
 
     const mapToolCallForDetail = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
-        const progressEvents = subAgentProgressRef.current.get(tc.id) || tc.subAgentProgress || [];
+        const baseEvents = subAgentProgressRef.current.get(tc.id) || tc.subAgentProgress || [];
+        const progressEvents = Array.isArray(baseEvents) ? baseEvents : [];
         const progressScreenshots = progressEvents
-            .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
+            .filter(e => e && e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
             .map(e => (e.screenshot?.base64 || e.content) as string);
 
         // Combine static screenshot and live streamed screenshots
@@ -764,6 +765,17 @@ export default function ChatPage() {
 
         const finalScreenshots = screenshotData.slice(-12);
 
+        // Extract live navisReport from most recent progress event that has it
+        const latestNavisReportEvent = progressEvents
+            .slice()
+            .reverse()
+            .find((e: any) => e && (e.navisReport || e.data?.navisReport));
+        const navisReport: string | undefined =
+            (latestNavisReportEvent as any)?.navisReport ||
+            (latestNavisReportEvent as any)?.data?.navisReport ||
+            tc.data?.navisReport ||
+            undefined;
+
         // Construct toolCall structure expected by ToolDetailSidePanel
         return {
             id: tc.id,
@@ -772,6 +784,7 @@ export default function ChatPage() {
             output: tc.output || '',
             duration: tc.durationMs,
             status: tc.status,
+            navisReport,
             data: {
                 ...tc.data,
                 screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,

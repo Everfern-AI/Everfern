@@ -165,11 +165,7 @@ export class NavisExtensionOrchestrator {
       return { success: false, output: '[EXTENSION_FALLBACK_REQUIRED] Navis companion extension is not connected.', steps: 0 };
     }
 
-    // When running vision-grounded with EverFern Cloud, force 1 action per step.
-    // This ensures we always re-capture DOM + screenshot after each action before deciding the next one.
-    const effectiveMaxActionsPerStep = this.aiClient.provider === 'everfern' ? 1 : maxActionsPerStep;
-
-    const systemPrompt = loadExtensionPrompt().replace(/\{\{max_actions\}\}/g, String(effectiveMaxActionsPerStep));
+    const systemPrompt = loadExtensionPrompt().replace(/\{\{max_actions\}\}/g, String(maxActionsPerStep));
     const history: string[] = [];
     let lastResult = '';
     let steps = 0;
@@ -231,27 +227,14 @@ export class NavisExtensionOrchestrator {
       }
 
       const visionInstructions = screenshotB64 ? `
-VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels drawn on every interactive element.
+VISION GROUNDING ACTIVE — You are seeing a screenshot plus DOM context for the browser page.
 
-🔑 HOW TO READ THE SCREENSHOT:
-- Each interactive element has a red border box drawn around it
-- In the top-left corner of each box is a label like [e1], [e2], [e5] — this is the ref
-- These labels are DRAWN DIRECTLY on the screenshot, NOT from memory or JSON guessing
-- The ref in the screenshot label EXACTLY MATCHES the ref in the DOM JSON array
-
-🎯 HOW TO CHOOSE WHAT TO CLICK:
-1. Look at the screenshot — visually find the element you want to interact with
-2. Read the [eN] label drawn on or above that element
-3. Use that exact ref: click_element(ref='eN')
-4. If you can't see a label for your target → use smart_click with the element's visible text
-
-⛔ NEVER:
-- Guess a ref from the JSON list without confirming it visually in the screenshot
-- Reuse refs from previous steps (they change every capture)
-- Use raw x/y coordinates for clicks unless absolutely no DOM ref is available
-
-🛑 DISMISS FIRST: If you see cookie banners, modals, or consent dialogs overlaying content — dismiss them FIRST before any other action.` : '';
-
+VISUAL ANALYSIS INSTRUCTIONS:
+1. DOM FIRST: Use refs, labels, hrefs, input types, and form metadata from the DOM context as the action source.
+   Use the screenshot to disambiguate visual layout, overlays, missing refs, and canvas/custom UI.
+2. MATCH VISUALS TO REFS: Identify elements in the screenshot and match them to ref IDs for precise actions. DO NOT click blindly on elements without verifying their location.
+3. POPUPS & OVERLAYS: If you see cookie banners, modals, login popups, or consent dialogs overlaying the content — dismiss them FIRST.
+4. LOADING STATES: If the page appears to be loading (spinners), use the wait action.` : '';
 
       const userPrompt = [
         `Task: ${task}`,
@@ -268,17 +251,16 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         finalTurn,
       ].filter(Boolean).join('\n');
 
-      let decision: any = await this.askAI(systemPrompt, userPrompt, screenshotB64, dom, state.refs, state.snapshot?.viewport, history);
+      let decision: any = await this.askAI(systemPrompt, userPrompt, screenshotB64, dom, state.refs, state.snapshot?.viewport);
 
         steps += 1;
         const nextGoal = clamp(decision?.current_state?.next_goal || 'Choose the next browser action', 240);
         this.logger.aiDecision(steps, maxSteps, nextGoal);
 
-        const actions = Array.isArray(decision?.action) ? decision.action.slice(0, effectiveMaxActionsPerStep) : [];
+        const actions = Array.isArray(decision?.action) ? decision.action.slice(0, maxActionsPerStep) : [];
         if (actions.length === 0) {
           lastResult = 'AI returned no actions; retrying with the current DOM.';
-          const memoryStr = decision?.current_state?.memory ? `[Memory: ${decision.current_state.memory}] ` : '';
-          history.push(`Step ${steps}: ${memoryStr}${lastResult}`);
+          history.push(`Step ${steps}: ${lastResult}`);
           continue;
         }
 
@@ -295,8 +277,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           );
           const result = await this.adapter.executeAction(actionName, actionArgs, steps, maxSteps);
           lastResult = result.message;
-          const memoryStr = decision?.current_state?.memory ? `[Memory: ${decision.current_state.memory}] ` : '';
-          history.push(`Step ${steps}: ${memoryStr}${actionName} -> ${lastResult}`);
+          history.push(`Step ${steps}: ${actionName} -> ${lastResult}`);
           this.logger.stepComplete(
             steps,
             maxSteps,
@@ -320,12 +301,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
             navigationOccurred = true;
           }
 
-          if (result.stateChanged) {
-            // Page state changed — wait briefly for DOM/JS to settle before next AI step
-            const settleMs = (actionName === 'go_to_url' || actionName === 'go_back' || navigationOccurred) ? 1200 : 400;
-            await new Promise(r => setTimeout(r, settleMs));
-            break;
-          }
+          if (result.stateChanged) break;
         }
 
         // Wait for page stabilization after navigation before next DOM capture
@@ -355,13 +331,12 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
     domContext: string,
     refs: any[] = [],
     viewport?: { width: number; height: number } | null,
-    history: string[] = [],
   ): Promise<any> {
     const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (this.aiClient.provider === 'everfern') {
-          return await this.callEverFernCloudVision(userPrompt, screenshotB64, history, domContext, refs, viewport, systemPrompt);
+          return await this.callEverFernCloudVision(userPrompt, screenshotB64, [], domContext, refs, viewport);
         }
 
         let response;
@@ -428,7 +403,6 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
     domContext: string = '',
     refs: any[] = [],
     viewport?: { width: number; height: number } | null,
-    systemPrompt?: string,
   ): Promise<any | null> {
     try {
       const taskMatch = inputContext.match(/Task: (.+?)(?:\n|$)/);
@@ -453,8 +427,6 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           objective: objective,
           history: history.slice(-8),
           only_vision: false,
-          // Send the full NAVIS system prompt so EverFern Cloud uses it instead of its internal default
-          system_prompt: systemPrompt || undefined,
           refs: refs.map(r => ({
             ref: r.ref,
             rect: r.rect,
@@ -484,20 +456,6 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
       console.log('[Navis Extension] EverFern Cloud response received');
       console.log('[Navis Extension] Instruction:', content.substring(0, 150));
       console.log('[Navis Extension] Actions:', actions);
-
-      // If we sent a custom system prompt, the cloud bypasses python parsing and returns the raw JSON string
-      // from the model inside data.instruction. Let's try to extract and return it directly.
-      if (systemPrompt) {
-        try {
-          const decision = extractJson(content);
-          if (decision && decision.action) {
-            console.log('[Navis Extension] Successfully extracted JSON decision directly from cloud instruction.');
-            return decision;
-          }
-        } catch (e) {
-          console.warn('[Navis Extension] Failed to extract JSON decision from cloud instruction:', e);
-        }
-      }
 
       if (content.toLowerCase().includes('done')) {
         return {
@@ -666,33 +624,9 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
       return { browser_click: { x: 0, y: 0 } };
     }
 
-    // type(ref='e12', text='Rotterdam') — modern named-arg format from EverFern Cloud
-    const typeRefTextMatch = actionStr.match(/type\s*\(\s*ref\s*=\s*['"]?(e\d+)['"]?\s*,\s*text\s*=\s*['"]?([\s\S]*?)['"]?\s*\)/i);
-    if (typeRefTextMatch) {
-      const ref = typeRefTextMatch[1];
-      const text = typeRefTextMatch[2];
-      console.log(`[Navis TARS Mapping] Mapped type action to ref "${ref}", text "${text.substring(0, 60)}"`);
-      return { input_text: { ref, text } };
-    }
-
-    // type(text='Rotterdam') — named-arg without ref
-    const typeTextOnlyMatch = actionStr.match(/type\s*\(\s*text\s*=\s*['"]?([\s\S]*?)['"]?\s*\)/i);
-    if (typeTextOnlyMatch) {
-      const text = typeTextOnlyMatch[1];
-      console.log(`[Navis TARS Mapping] Mapped type-text-only action, text "${text.substring(0, 60)}"`);
-      return { browser_type: { text } };
-    }
-
-    // type(content='Rotterdam') — legacy content= format
-    const typeContentMatch = actionStr.match(/type\s*\(\s*content\s*=\s*['"]?([\s\S]*?)['"]?\s*\)/i);
-    if (typeContentMatch) {
-      return { browser_type: { text: typeContentMatch[1] } };
-    }
-
-    // type('Rotterdam') — bare positional string
-    const typePositionalMatch = actionStr.match(/type\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
-    if (typePositionalMatch) {
-      return { browser_type: { text: typePositionalMatch[1] } };
+    const typeMatch = actionStr.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
+    if (typeMatch) {
+      return { browser_type: { text: typeMatch[1] } };
     }
 
     if (actionStr.match(/ctrl_c/i)) return { press_key: { key: 'Control+C' } };
