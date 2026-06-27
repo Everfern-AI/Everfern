@@ -645,7 +645,14 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         '[role="heading"]',
         'main',
         'article',
-        '[role="main"]'
+        '[role="main"]',
+        'div',
+        'span',
+        'li',
+        'p',
+        'img',
+        'svg',
+        'a'
       ].join(',');
       const elements = document.querySelectorAll(selector);
 
@@ -682,8 +689,7 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
           }
         }
       }
-
-      // Optimization: Pre-compute interactive tag set for faster lookup
+      // Optimization: Pre-compute interactive tag set for faster lookup
       const interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY']);
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option']);
 
@@ -696,6 +702,27 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         // Check if element is visible (opacity, display, visibility)
         const style = window.getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || rect.width < 1 || rect.height < 1) {
+          continue;
+        }
+
+        // Parent/Ancestor Opacity Check
+        let parentEl: Element | null = el.parentElement;
+        let effectiveOpacity = parseFloat(style.opacity);
+        if (isNaN(effectiveOpacity)) effectiveOpacity = 1.0;
+        while (parentEl && effectiveOpacity >= 0.01) {
+          const parentStyle = window.getComputedStyle(parentEl);
+          const parentOp = parseFloat(parentStyle.opacity);
+          if (!isNaN(parentOp)) {
+            effectiveOpacity *= parentOp;
+          }
+          parentEl = parentEl.parentElement;
+        }
+        if (effectiveOpacity < 0.01) {
+          continue;
+        }
+
+        // Skip elements inside aria-hidden subtrees
+        if (el.closest('[aria-hidden="true"]')) {
           continue;
         }
 
@@ -714,8 +741,56 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         const tagName = el.tagName;
         const role = el.getAttribute('role') || tagName.toLowerCase();
         const isContentEditable = (el as HTMLElement).isContentEditable;
-        const hasClickHandler = Boolean((el as HTMLElement).onclick) || el.hasAttribute('onclick');
+        
+        let hasPointerCursor = style.cursor === 'pointer';
+        if (hasPointerCursor) {
+          const parent = el.parentElement;
+          if (parent && window.getComputedStyle(parent).cursor === 'pointer') {
+            hasPointerCursor = false;
+          }
+        }
+        
+        const hasClickHandler = Boolean((el as HTMLElement).onclick) || el.hasAttribute('onclick') || hasPointerCursor;
         const isInteractive = interactiveTags.has(tagName) || interactiveRoles.has(role) || hasClickHandler || isContentEditable || (el as HTMLElement).tabIndex >= 0;
+
+        // Skip non-interactive generic elements (div, span, li, p, img, svg) to avoid bloating the prompt
+        if (!isInteractive && ['DIV', 'SPAN', 'LI', 'P', 'IMG', 'SVG'].includes(tagName)) {
+          continue;
+        }
+
+        const inViewport = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vHeight && rect.left <= vWidth;
+
+        // Skip obscured interactive elements in viewport
+        if (isInteractive && inViewport) {
+          const cx = Math.floor(rect.left + rect.width / 2);
+          const cy = Math.floor(rect.top + rect.height / 2);
+          if (cx >= 0 && cy >= 0 && cx <= vWidth && cy <= vHeight) {
+            const topEl = document.elementFromPoint(cx, cy);
+            if (topEl) {
+              let isObscured = !el.contains(topEl) && !topEl.contains(el);
+              // If top element is a label for this element, it's not obscured
+              if (isObscured && topEl.tagName === 'LABEL' && topEl.getAttribute('for') === el.id) {
+                isObscured = false;
+              }
+              // If top element has pointer-events: none, clicks pass through to us
+              if (isObscured) {
+                const topStyle = window.getComputedStyle(topEl);
+                if (topStyle.pointerEvents === 'none') {
+                  isObscured = false;
+                }
+              }
+              // Skip sibling overlays (small icons/spans/paths/images inside same component parent)
+              if (isObscured && ['SVG', 'SPAN', 'PATH', 'I', 'IMG'].includes(topEl.tagName)) {
+                if (el.parentElement && el.parentElement.contains(topEl)) {
+                  isObscured = false;
+                }
+              }
+              if (isObscured) {
+                continue;
+              }
+            }
+          }
+        }
 
         const tag = tagName.toLowerCase();
         const inputLike = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
@@ -774,7 +849,6 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         const selected = el.getAttribute('aria-selected');
         const describedBy = el.getAttribute('aria-describedby');
 
-        const inViewport = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vHeight && rect.left <= vWidth;
         const fullyInViewport = rect.top >= 0 && rect.left >= 0 && rect.bottom <= vHeight && rect.right <= vWidth;
         const viewport =
           fullyInViewport ? 'full' :
@@ -836,6 +910,19 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
           if (expanded != null) item.expanded = expanded === 'true';
           if (selected != null) item.selected = selected === 'true';
           if (describedBy) item.describedBy = describedBy;
+
+          const hasPopup = el.getAttribute('aria-haspopup');
+          if (hasPopup) item.hasPopup = hasPopup;
+
+          const container = el.closest('[role="listbox"],[role="menu"],[role="dialog"],[role="navigation"],nav,[role="tablist"]');
+          if (container) {
+            item.containerRole = container.getAttribute('role') || container.tagName.toLowerCase();
+            const containerName = container.getAttribute('aria-label') || resolveTextRefs(container, 'aria-labelledby') || container.getAttribute('name');
+            if (containerName) {
+              item.containerName = containerName.replace(/\s+/g, ' ').trim().slice(0, 80);
+            }
+          }
+
           return item;
         };
 

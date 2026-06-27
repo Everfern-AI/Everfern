@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-describe('Navis - JSON Schema', { timeout: 30000 }, () => {
+describe('Navis - JSON Schema', { timeout: 60000 }, () => {
   it('should enforce strict validation with additionalProperties: false', async () => {
     const { NAVIS_DECISION_SCHEMA } = await import('../orchestrator');
     

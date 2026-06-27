@@ -1330,7 +1330,13 @@ async function executePressKey(
       }
 
       const watcher = startBrowserChangeWatch(page);
-      await locator.press(args.key, { timeout: 1200 });
+      try {
+        await locator.focus().catch(() => {});
+        await page.keyboard.press(args.key);
+      } catch (err) {
+        console.warn('[Navis] page.keyboard.press failed, falling back to locator.press:', err);
+        await locator.press(args.key, { timeout: 1500 });
+      }
       if (/^(Enter|NumpadEnter)$/i.test(args.key)) {
         await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
       } else {
