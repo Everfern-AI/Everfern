@@ -455,15 +455,17 @@ export function registerAgentHandlers() {
       const userInput = validMessages[validMessages.length - 1].content;
 
       // ── In-progress draft persistence ────────────────────────────────────
-      // Save a draft of the streaming message every ~3 seconds so that if
-      // the app force-closes, the partial response is not lost.
+      // Save a draft of the streaming message every ~800ms so that if
+      // the app force-closes or there is a sudden power cut, the partial
+      // response is not lost. This means at most ~1 second of content is
+      // ever un-checkpointed during live streaming.
       const convId = request.conversationId;
       const msgId = request.assistantMessageId || `draft-${Date.now()}`;
       let draftContent = '';
       let draftToolCalls: any[] = [];
       const draftSubAgentProgress = new Map<string, any[]>();
       let lastDraftSave = 0;
-      const DRAFT_INTERVAL_MS = 3000;
+      const DRAFT_INTERVAL_MS = 800; // Save nearly every second during streaming
 
       const sanitizeDraftProgressEvent = (raw: any, fallbackToolCallId?: string) => {
         if (!raw || typeof raw !== 'object') return null;

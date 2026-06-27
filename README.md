@@ -148,10 +148,7 @@ For complex tasks, multiple specialized agents debate the best solution before a
 <td width="50%" valign="top">
 
 ### 🧠 Persistent Self-Learning Memory
-EverFern remembers — across every session, forever. As you work with it, it builds a private, structured knowledge base about you: your preferences, your project patterns, your workflows, how you like things done. Every correction you make, every task it completes, every piece of feedback you give gets consolidated into long-term memory.
-
-When you start a new task, EverFern doesn't start from zero. It recalls relevant context — *"last time you ran this script you wanted the output in a markdown table"*, *"you prefer TypeScript strict mode"*, *"your deploy target is always the staging env first"* — and applies that knowledge automatically. The more you use it, the sharper it gets. Your memory is local, auditable, and never shared.
-
+EverFern remembers everything you teach it across every session, building a private, local tree knowledge base of your preferences, workflows, and project patterns. Instead of starting from scratch, it automatically recalls relevant context and applies what it has learned, becoming more personalized and useful the more you use it.
 </td>
 <td width="50%" valign="top">
 
