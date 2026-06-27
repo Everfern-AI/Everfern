@@ -305,6 +305,7 @@ VISUAL ANALYSIS INSTRUCTIONS:
           continue;
         }
 
+        let navigationOccurred = false;
         for (const actionObj of actions) {
           const actionName = Object.keys(actionObj || {})[0] as ActionName | undefined;
           if (!actionName) continue;
