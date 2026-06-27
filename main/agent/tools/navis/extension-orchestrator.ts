@@ -323,6 +323,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           continue;
         }
 
+        let navigationOccurred = false;
         for (const actionObj of actions) {
           const actionName = Object.keys(actionObj || {})[0] as ActionName | undefined;
           if (!actionName) continue;
