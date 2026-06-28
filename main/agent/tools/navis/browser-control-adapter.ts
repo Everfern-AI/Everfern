@@ -179,11 +179,22 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.logger.elementClick(step, maxSteps, position ? `(${args.x},${args.y})` : (result?.target || 'coordinates'), 'browser_right_click', position);
         return normalizeResult(result, `Right-clicked at coordinates (${args.x}, ${args.y})`, true);
       }
+      case 'hover':
       case 'browser_hover': {
         const result = await bridgeServer.sendRequest('browser_hover', { tabId: this.activeTabId, ...args }, 10000);
-        this.logger.thinking(step, maxSteps, `Hovered coordinates (${args.x}, ${args.y})`, { actionName, mode: 'extension-first' });
-        // Hover doesn't change page state — no re-capture needed
-        return normalizeResult(result, `Hovered coordinates (${args.x}, ${args.y})`, false);
+        const position = args.x !== undefined && args.y !== undefined ? { x: Number(args.x), y: Number(args.y) } : undefined;
+        this.logger.thinking(step, maxSteps, position ? `Hovered coordinates (${args.x}, ${args.y})` : `Hovered ${args.ref || 'element'}`, { actionName, mode: 'extension-first' });
+        return normalizeResult(result, position ? `Hovered coordinates (${args.x}, ${args.y})` : `Hovered ${args.ref || 'element'}`, false);
+      }
+      case 'right_click': {
+        const result = await bridgeServer.sendRequest('browser_right_click', { tabId: this.activeTabId, ...args }, 12000);
+        this.logger.elementClick(step, maxSteps, String(args.ref || 'element'), 'right_click');
+        return normalizeResult(result, `Right-clicked ${args.ref || 'element'}`, true);
+      }
+      case 'select_option': {
+        const result = await bridgeServer.sendRequest('select_option', { tabId: this.activeTabId, ...args }, 12000);
+        this.logger.elementInput(step, maxSteps, String(args.ref || 'element'), String(args.value || args.option || ''));
+        return normalizeResult(result, `Selected option ${args.value || args.option || ''}`, true);
       }
       case 'input_text': {
         const result = await bridgeServer.sendRequest('input', { tabId: this.activeTabId, ...args }, 12000);

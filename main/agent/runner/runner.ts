@@ -749,9 +749,12 @@ export class AgentRunner {
         return;
       }
 
+      let initialMessageCount = 0;
       try {
         const existingConv = await chatHistoryStore.load(convId);
-        if (!existingConv) {
+        if (existingConv) {
+          initialMessageCount = existingConv.messages.length;
+        } else {
           await chatHistoryStore.save({
             id: convId,
             title: textInput.slice(0, 60),
@@ -769,6 +772,7 @@ export class AgentRunner {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           } as any);
+          initialMessageCount = 1;
         }
       } catch (err) {
         console.warn('[AgentRunner] Failed to initialize real-time persistence:', err);
@@ -1049,6 +1053,7 @@ export class AgentRunner {
                   thought: currentThought,
                   toolCalls: currentToolCalls.map(attachProgressToToolCall),
                   missionTimeline: missionTracker.getTimeline(),
+                  orderIndex: initialMessageCount,
                 }
               ] as any,
               isFullSave: false, // Flag to prevent deleting previous messages during partial saves

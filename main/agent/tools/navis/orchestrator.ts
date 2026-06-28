@@ -403,6 +403,9 @@ export class NavisOrchestrator {
     let pendingSnapshot: Promise<AriaSnapshotResult | null> | null = null;
     let pendingSnapshotUrl = '';
 
+    let previousUrl = '';
+    let lastClickedRefKey = '';
+
     try {
       let aiRetries = 0;
       const maxAiRetries = 3;
@@ -468,6 +471,23 @@ export class NavisOrchestrator {
           } else {
             snapshot = await captureInteractiveElements(page);
           }
+          
+          // Retroactively evaluate if the previous click changed the page state
+          if (lastClickedRefKey) {
+            const urlChanged = previousUrl && previousUrl !== url;
+            const currentElements = onlyVision ? '' : (snapshot?.raw || '');
+            const domChanged = this.previousSnapshotRaw && currentElements && this.previousSnapshotRaw !== currentElements;
+            const actualStateChanged = !!(urlChanged || domChanged);
+            
+            const lastClick = clickedElements.get(lastClickedRefKey);
+            if (lastClick) {
+              lastClick.stateChanged = actualStateChanged;
+              console.log(`[Navis] Retroactive click evaluation on ${lastClickedRefKey}: stateChanged=${actualStateChanged} (urlChanged=${urlChanged}, domChanged=${domChanged})`);
+            }
+            lastClickedRefKey = '';
+          }
+          previousUrl = url;
+
           elementsFormatted = formatElementsForPrompt(snapshot.raw);
           
           // Compute DOM Diff if a previous snapshot exists
@@ -674,6 +694,7 @@ If you failed to find the info, report that clearly.`;
               step: steps,
               stateChanged: result.stateChanged
             });
+            lastClickedRefKey = refKey;
           }
 
           lastResult = result.message;

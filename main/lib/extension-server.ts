@@ -77,7 +77,98 @@ class ExtensionBridgeServer extends EventEmitter {
 
       if (url.pathname === '/wake') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<html><head><title>Navis Wakeup</title></head><body style="font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #f9f9fa; color: #333;"><h3>Navis Wakeup Active</h3><p>Waking up companion extension...</p><p style="color: #888; font-size: 13px;">This tab will auto-close. You can manually close it if needed.</p><script>setTimeout(() => { try { window.close(); } catch(e) {} }, 800);</script></body></html>');
+        res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <title>EverFern Navis — Active</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: radial-gradient(circle at top left, #1c1a17, #0e0d0c);
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #eae7e0;
+      text-align: center;
+    }
+    .card {
+      box-sizing: border-box;
+      max-width: 420px;
+      width: 90%;
+      padding: 40px 30px;
+      border-radius: 28px;
+      background: rgba(30, 28, 25, 0.7);
+      border: 1px solid rgba(222, 215, 202, 0.1);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      animation: fadeIn 0.8s ease-out;
+    }
+    .orb {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 24px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 24%, #ffffff 0%, #38bdf8 30%, #3b82f6 60%, #8b5cf6 100%);
+      box-shadow: 0 0 35px rgba(59, 130, 246, 0.4);
+      animation: pulse 3s ease-in-out infinite;
+    }
+    h2 {
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0 0 10px 0;
+      background: linear-gradient(135deg, #fff 0%, #d4cfc5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+    p {
+      color: #a19a91;
+      font-size: 14.5px;
+      line-height: 1.6;
+      margin: 0 0 24px 0;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 999px;
+      color: #34d399;
+      font-size: 12.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.96); filter: brightness(1); }
+      50% { transform: scale(1.04); filter: brightness(1.1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="orb"></div>
+    <h2>Navis Companion Active</h2>
+    <p>The companion extension has successfully connected to the desktop app. You can safely keep this tab open or close it at any time.</p>
+    <div class="status">
+      <span style="width: 6px; height: 6px; background: #10b981; border-radius: 999px; display: inline-block;"></span>
+      Connected
+    </div>
+  </div>
+</body>
+</html>`);
         return;
       }
 

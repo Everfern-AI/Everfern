@@ -68,26 +68,7 @@ function formatRefs(state: BrowserPageState): string {
 }
 
 function semanticDom(state: BrowserPageState): string {
-  // Strip rect, selector, disabled to save massive amounts of JSON tokens
-  const refs = (Array.isArray(state.refs) ? state.refs : []).map(r => ({
-    ref: r.ref,
-    tag: r.tag,
-    role: r.role,
-    name: clamp(r.name, 90),
-    type: r.type,
-    href: clamp(r.href, 120),
-    placeholder: clamp(r.placeholder, 70),
-  }));
-  return JSON.stringify({
-    mode: 'extension-first',
-    page: {
-      url: state.url,
-      title: state.title,
-      refsAvailable: refs.length,
-    },
-    // We omit visibleInteractive array here to avoid duplicating formatRefs
-    pageText: clamp(state.text || '', 5000),
-  }, null, 2);
+  return state.text || 'No DOM context captured.';
 }
 
 function stripThinking(raw: string): string {
@@ -190,6 +171,8 @@ export class NavisExtensionOrchestrator {
     let lastResult = '';
     let steps = 0;
     const clickedElements = new Map<string, { step: number; stateChanged: boolean }>();
+    let previousUrl = '';
+    let lastClickedRefKey = '';
 
     await this.adapter.launch({ startUrl });
     this.logger.thinking(0, maxSteps, 'Extension-first mode is connected. Reading the active page DOM before using vision.', { mode: 'extension-first' });
@@ -204,6 +187,23 @@ export class NavisExtensionOrchestrator {
         }
 
         const state = await this.adapter.capture();
+        
+        // Retroactively evaluate if the previous click changed the page state (URL or DOM elements)
+        if (lastClickedRefKey) {
+          const urlChanged = previousUrl && previousUrl !== state.url;
+          const elements = onlyVision ? '' : formatRefs(state);
+          const domChanged = this.previousSnapshotRaw && elements && this.previousSnapshotRaw !== elements;
+          const actualStateChanged = !!(urlChanged || domChanged);
+          
+          const lastClick = clickedElements.get(lastClickedRefKey);
+          if (lastClick) {
+            lastClick.stateChanged = actualStateChanged;
+            console.log(`[Navis Extension] Retroactive click evaluation on ${lastClickedRefKey}: stateChanged=${actualStateChanged} (urlChanged=${urlChanged}, domChanged=${domChanged})`);
+          }
+          lastClickedRefKey = '';
+        }
+        
+        previousUrl = state.url;
         bridgeServer.setSession('extension-first-session', state.url, state.title || task);
       const elements = onlyVision ? '[Only Vision Mode Active: DOM elements list is disabled]' : formatRefs(state);
       
@@ -299,9 +299,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         `History:\n${historyStr || 'None yet'}`,
         `Current Tab: ${state.url} (${state.title})`,
         `Open Tabs:\n${tabsText(state.tabs)}`,
-        'Interactive elements:',
-        wrapUntrusted(elements),
-        'DOM Grounding Context:',
+        'Page DOM (Indented Accessibility Tree):',
         wrapUntrusted(dom),
         wrapUntrusted((globalThis as any).__lastDomDiffStr || ''),
         visionInstructions || 'Vision: disabled. Rely exclusively on DOM refs and extract_content.',
@@ -364,6 +362,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
               step: steps,
               stateChanged: result.stateChanged
             });
+            lastClickedRefKey = refKey;
           }
           lastResult = result.message;
           const memoryStr = decision?.current_state?.memory ? `[Memory: ${decision.current_state.memory}] ` : '';

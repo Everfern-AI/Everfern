@@ -11,11 +11,17 @@
  * - Parallel iframe processing
  * - Performance targets: <50ms for <100 elements, <100ms for 100-500, <200ms for >500
  * - Full-screen capture mode for consistent resolution
+ *
+ * Architecture ports from BrowserOS browser-core:
+ * - URL-stability loop (observer.ts): retry snapshot if URL changes mid-capture
+ * - Screenshot serialization queue (screenshot-queue.ts): mutex for parallel screenshots
+ * - Extended ref metadata TTL to keep refs valid across SPA re-renders
  */
 
 import { Page } from 'playwright';
 import parseHtmlDom, { type DOMNode, type Element as HtmlDomElement } from 'html-dom-parser';
 import { FullScreenCaptureModule } from './full-screen-capture';
+import { runExclusiveScreenshotCapture } from './screenshot-queue';
 
 export interface AriaSnapshotResult {
   raw: string;
@@ -150,6 +156,8 @@ export function getRefMetadata(page: Page, ref: string): RefMetadata | null {
   const key = getCacheKey(page);
   const cached = refMetadataCache.get(key);
   if (!cached) return null;
+  // BrowserOS: extend ref metadata TTL to 5 s (10× the snapshot TTL) so refs
+  // remain resolvable across SPA re-renders that don't change the URL.
   if (cached.url !== page.url() || Date.now() - cached.timestamp > CACHE_TTL_MS * 10) {
     refMetadataCache.delete(key);
     return null;
@@ -689,7 +697,7 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
           }
         }
       }
-      // Optimization: Pre-compute interactive tag set for faster lookup
+      // Optimization: Pre-compute interactive tag set for faster lookup
       const interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY']);
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option']);
 
@@ -967,53 +975,82 @@ export async function captureInteractiveElements(page: Page): Promise<AriaSnapsh
     return cached;
   }
 
-  // Try fast method first (in-browser DOM query, very fast)
-  const fastResult = await captureFastSnapshot(page);
+  // BrowserOS pattern (Observer.capture): URL-stability loop.
+  // If the URL changes during the DOM capture (SPA navigation mid-flight),
+  // the snapshot and refs are mismatched. Retry up to 3 times.
+  const MAX_STABLE_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_STABLE_ATTEMPTS; attempt++) {
+    const urlBefore = page.url();
 
-  // The enriched DOM JSON is the primary agent state. It is faster and carries
-  // selectors, action hints, form context, viewport status, and nearby labels.
-  if (fastResult && fastResult.elementCount > 0) {
-    setCachedSnapshot(page, fastResult);
-    return fastResult;
-  }
+    // Try fast method first (in-browser DOM query, very fast)
+    const fastResult = await captureFastSnapshot(page);
 
-  // If fast DOM capture found nothing, fall back to Playwright's accessibility snapshot.
-  try {
-    const ariaStart = Date.now();
-    const raw = await page.ariaSnapshot({
-      mode: 'ai',
-      timeout: 5000,
-    } as any);
-
-    // Merge or pick the best. Usually, ariaSnapshot is much better for semantic roles.
-    if (raw && raw.length > (fastResult?.raw.length || 0)) {
-      const refs = parseRefsOptimized(raw);
-      const result: AriaSnapshotResult = {
-        raw,
-        refs,
-        elementCount: refs.size,
-        captureTimeMs: Date.now() - ariaStart,
-      };
-      setCachedSnapshot(page, result);
-      return result;
+    // Check if URL changed during capture — if so, the refs are stale, retry.
+    const urlAfter = page.url();
+    if (urlBefore !== urlAfter && urlBefore !== 'about:blank' && urlAfter !== 'about:blank') {
+      console.log(`[Navis] URL changed during snapshot capture (${urlBefore} → ${urlAfter}), retrying (${attempt + 1}/${MAX_STABLE_ATTEMPTS})`);
+      continue;
     }
-  } catch (err) {
-    console.warn('[Navis] ariaSnapshot failed, using fast result or empty:', err);
+
+    // The enriched DOM JSON is the primary agent state. It is faster and carries
+    // selectors, action hints, form context, viewport status, and nearby labels.
+    if (fastResult && fastResult.elementCount > 0) {
+      setCachedSnapshot(page, fastResult);
+      return fastResult;
+    }
+
+    // If fast DOM capture found nothing, fall back to Playwright's accessibility snapshot.
+    try {
+      const ariaStart = Date.now();
+      const raw = await page.ariaSnapshot({
+        mode: 'ai',
+        timeout: 5000,
+      } as any);
+
+      // Check again after ariaSnapshot (it can be slow, navigation may have fired).
+      const urlAfterAria = page.url();
+      if (urlBefore !== urlAfterAria && urlBefore !== 'about:blank' && urlAfterAria !== 'about:blank') {
+        console.log(`[Navis] URL changed during aria snapshot (${urlBefore} → ${urlAfterAria}), retrying`);
+        continue;
+      }
+
+      // Merge or pick the best. Usually, ariaSnapshot is much better for semantic roles.
+      if (raw && raw.length > (fastResult?.raw.length || 0)) {
+        const refs = parseRefsOptimized(raw);
+        const result: AriaSnapshotResult = {
+          raw,
+          refs,
+          elementCount: refs.size,
+          captureTimeMs: Date.now() - ariaStart,
+        };
+        setCachedSnapshot(page, result);
+        return result;
+      }
+    } catch (err) {
+      console.warn('[Navis] ariaSnapshot failed, using fast result or empty:', err);
+    }
+
+    if (fastResult) {
+      setCachedSnapshot(page, fastResult);
+      return fastResult;
+    }
+
+    const fallback: AriaSnapshotResult = {
+      raw: `- ${await page.title().catch(() => 'page')} "no interactive elements found" [ref=e1]`,
+      refs: new Map([['e1', { role: 'heading', name: 'no interactive elements found' }]]),
+      elementCount: 0,
+      captureTimeMs: Date.now() - Date.now(),
+    };
+    setCachedSnapshot(page, fallback);
+    return fallback;
   }
 
-  if (fastResult) {
-    setCachedSnapshot(page, fastResult);
-    return fastResult;
-  }
-
-  const fallback: AriaSnapshotResult = {
-    raw: `- ${await page.title().catch(() => 'page')} "no interactive elements found" [ref=e1]`,
-    refs: new Map([['e1', { role: 'heading', name: 'no interactive elements found' }]]),
+  return {
+    raw: '',
+    refs: new Map(),
     elementCount: 0,
-    captureTimeMs: Date.now() - Date.now(),
+    captureTimeMs: 0
   };
-  setCachedSnapshot(page, fallback);
-  return fallback;
 }
 
 export function parseRefs(snapshot: string): Map<string, RefMetadata> {
@@ -1179,38 +1216,44 @@ export function getCacheStats(): { size: number; entries: Array<{ key: string; a
 }
 
 /**
- * Capture screenshot for vision model (full-screen mode)
+ * Capture screenshot for vision model (full-screen mode).
+ *
+ * BrowserOS pattern: runs inside runExclusiveScreenshotCapture so concurrent
+ * calls (live UI stream + AI decision loop) are serialized per-page, preventing
+ * annotation overlay DOM from being modified while a screenshot is in flight.
  */
 export async function captureForVision(page: Page): Promise<Buffer> {
-  const fullScreenCapture = new FullScreenCaptureModule();
+  return runExclusiveScreenshotCapture(page, async () => {
+    const fullScreenCapture = new FullScreenCaptureModule();
 
-  // Hide overlay before screenshot so AI doesn't see it
-  await page.evaluate(() => {
-    const w = window as any;
-    if (w.__navis_controls && w.__navis_controls.hideForScreenshot) {
-      w.__navis_controls.hideForScreenshot();
-    }
-  }).catch(() => {});
-
-  try {
-    const result = await fullScreenCapture.captureFullScreen(page, {
-      format: 'jpeg',
-      quality: 85,
-      fullScreen: true,
-    });
-
-    console.log(
-      `[NAVIS] Captured at ${result.resolution.width}x${result.resolution.height} (window: ${result.windowSize.width}x${result.windowSize.height})`
-    );
-
-    return result.screenshot;
-  } finally {
-    // Show overlay again after screenshot
+    // Hide overlay before screenshot so AI doesn't see it
     await page.evaluate(() => {
       const w = window as any;
-      if (w.__navis_controls && w.__navis_controls.showAfterScreenshot) {
-        w.__navis_controls.showAfterScreenshot();
+      if (w.__navis_controls && w.__navis_controls.hideForScreenshot) {
+        w.__navis_controls.hideForScreenshot();
       }
     }).catch(() => {});
-  }
+
+    try {
+      const result = await fullScreenCapture.captureFullScreen(page, {
+        format: 'jpeg',
+        quality: 85,
+        fullScreen: true,
+      });
+
+      console.log(
+        `[NAVIS] Captured at ${result.resolution.width}x${result.resolution.height} (window: ${result.windowSize.width}x${result.windowSize.height})`
+      );
+
+      return result.screenshot;
+    } finally {
+      // Show overlay again after screenshot
+      await page.evaluate(() => {
+        const w = window as any;
+        if (w.__navis_controls && w.__navis_controls.showAfterScreenshot) {
+          w.__navis_controls.showAfterScreenshot();
+        }
+      }).catch(() => {});
+    }
+  });
 }

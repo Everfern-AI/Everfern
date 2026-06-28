@@ -249,10 +249,10 @@ export class ChatHistoryStore {
         `INSERT INTO conversations (id, title, provider, model, project_id, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM conversations WHERE id = ?), ?), ?)
          ON CONFLICT(id) DO UPDATE SET
-           title = excluded.title,
-           provider = excluded.provider,
-           model = excluded.model,
-           project_id = excluded.project_id,
+           title = COALESCE(excluded.title, conversations.title),
+           provider = COALESCE(excluded.provider, conversations.provider),
+           model = COALESCE(excluded.model, conversations.model),
+           project_id = COALESCE(excluded.project_id, conversations.project_id),
            updated_at = excluded.updated_at`,
         [
           conversation.id,
