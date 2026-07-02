@@ -123,4 +123,4 @@ node src/tui/index.js
 
 ## License
 
-MIT - See the main [Project LICENSE.](.../LICENSE)
+MIT - See the main [Project LICENSE.](../LICENSE)
