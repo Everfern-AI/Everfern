@@ -156,7 +156,7 @@ export default function AuthPage() {
             if (stored) {
                 try {
                     const session = JSON.parse(stored);
-                    const token = session.accessToken;
+                    const token = session?.accessToken;
                     if (token && (window as any).electronAPI?.saveConfig) {
                         const config = {
                             provider: 'everfern',

@@ -601,9 +601,42 @@ const isNavisQuestion = (questions: any[]) => {
 };
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
+function EverFernCloudLimitNotice() {
+    return (
+        <div style={{
+            marginTop: 4,
+            padding: 18,
+            borderRadius: 16,
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-bg-subtle)',
+            display: 'flex',
+            gap: 14,
+            alignItems: 'flex-start',
+            maxWidth: 560,
+        }}>
+            <div style={{
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18,
+            }}>🌿</div>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+                    You've reached your EverFern Cloud daily limit
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.6 }}>
+                    EverFern Cloud gives you managed access to our AI models with a daily usage allowance.
+                    You've used today's allowance — it resets automatically at midnight. In the meantime you can
+                    switch to your own API key in Settings to keep going, or check your usage details there.
+                </p>
+            </div>
+        </div>
+    );
+}
+
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
+    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const lastAssistantIdx = useMemo(() => {
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i].role === 'assistant') {
@@ -636,8 +669,51 @@ export default function ChatPage() {
     const [showTasksPanel, setShowTasksPanel] = useState(false);
     const [panelTasks, setPanelTasks] = useState<{ description: string; status: 'pending' | 'in_progress' | 'completed' }[]>([]);
     const [tasksFilePath, setTasksFilePath] = useState<string | undefined>(undefined);
+    
+    // Poll for task.md to update TasksPanel
+    useEffect(() => {
+        if (!activeConversationId) {
+            setPanelTasks([]);
+            return;
+        }
+        const fetchTasks = async () => {
+            try {
+                const content = await (window as any).electronAPI?.artifacts?.read(activeConversationId, 'task.md');
+                if (content) {
+                    const lines = content.split('\n');
+                    const newTasks: { description: string; status: 'pending' | 'in_progress' | 'completed' }[] = [];
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        let match = trimmed.match(/^- `?\[ \]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'pending' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[\/\]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'in_progress' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[[xX]\]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'completed' });
+                            continue;
+                        }
+                    }
+                    if (newTasks.length > 0) {
+                        setPanelTasks(newTasks);
+                    }
+                }
+            } catch (e) {
+                // Ignored (file might not exist)
+            }
+        };
+        fetchTasks();
+        const interval = setInterval(fetchTasks, 4000);
+        return () => clearInterval(interval);
+    }, [activeConversationId]);
+
     const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
-    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const availableModelsRef = useRef<ModelOption[]>([]);
@@ -3828,6 +3904,7 @@ export default function ChatPage() {
                 isMessageCommittedRef.current = true;
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 api?.removeStreamListeners?.();
+                const isLimitReached = /daily limit|daily_limit_reached|rate_limit_exceeded|used your daily/i.test(errorMessage);
                 const finalToolCalls = persistableToolCalls(
                     liveToolCallsRef.current,
                     t => t.status === 'running' ? 'error' : undefined
@@ -3835,12 +3912,15 @@ export default function ChatPage() {
                 const assistantMsg: Message = {
                     id: crypto.randomUUID(),
                     role: "assistant",
-                    content: streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`,
+                    content: isLimitReached
+                        ? (streamingContentRef.current || "")
+                        : (streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`),
                     thought: streamingThoughtRef.current,
                     reasoning_content: streamingThoughtRef.current,
                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                     timestamp: new Date(),
                     missionTimeline: missionTimelineRef.current,
+                    limitReached: isLimitReached || undefined,
                 };
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
@@ -4271,7 +4351,7 @@ export default function ChatPage() {
               const sessionStr = localStorage.getItem('everfern_cloud_session');
               if (sessionStr) {
                 const session = JSON.parse(sessionStr);
-                finalCloudKey = session.accessToken;
+                finalCloudKey = session?.accessToken;
               }
             } catch (e) {}
           }
@@ -5397,6 +5477,7 @@ export default function ChatPage() {
 
                                                                             </div>
                                                                         ) : null}
+                                                                        {msg.limitReached && <EverFernCloudLimitNotice />}
                                                                         {artifacts.map((art, i) => {
                                                                             const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                             const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);

@@ -1,0 +1,106 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+ [31m❯[39m main/agent/tools/unified-executor.test.ts [2m([22m[2m15 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[33m 46797[2mms[22m[39m
+[31m       [31m×[31m should execute a simple command successfully[39m[33m 5022[2mms[22m[39m
+       [33m[2m✓[22m[39m should handle command with no output [33m 2043[2mms[22m[39m
+       [33m[2m✓[22m[39m should capture error output and non-zero exit codes [33m 2704[2mms[22m[39m
+       [33m[2m✓[22m[39m should detect shell based on platform [33m 3101[2mms[22m[39m
+       [33m[2m✓[22m[39m should allow shell override [33m 2542[2mms[22m[39m
+[31m       [31m×[31m should call onUpdate callback with output[39m[33m 2614[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.1 - Should create timeout promise that rejects after specified duration [33m 636[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.2 - Should use Promise.race() between execution and timeout [33m 2611[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.3 - Should kill spawned process on timeout [33m 2979[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.4 - Should return partial output when timeout occurs [33m 1129[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.5 - Should set timedOut flag in result [33m 4269[2mms[22m[39m
+[31m       [31m×[31m 3.6 - Should ensure no zombie processes remain after timeout[39m[33m 5953[2mms[22m[39m
+       [33m[2m✓[22m[39m should timeout long-running commands [33m 1146[2mms[22m[39m
+[31m       [31m×[31m should strip ANSI codes from output[39m[33m 5016[2mms[22m[39m
+[31m       [31m×[31m should respect custom working directory[39m[33m 5021[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m main/agent/tools/unified-executor.test.ts[2m > [22mUnifiedExecutor[2m > [22mBasic Smoke Tests[2m > [22mshould execute a simple command successfully
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m19:5[22m[39m
+    [90m 17|[39m [34mdescribe[39m([32m'UnifiedExecutor'[39m[33m,[39m () [33m=>[39m {
+    [90m 18|[39m   [34mdescribe[39m([32m'Basic Smoke Tests'[39m[33m,[39m () [33m=>[39m {
+    [90m 19|[39m     [34mit[39m([32m'should execute a simple command successfully'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m     [31m^[39m
+    [90m 20|[39m       [35mconst[39m result [33m=[39m [35mawait[39m [33mUnifiedExecutor[39m[33m.[39m[34mexecute[39m({
+    [90m 21|[39m         command: process.platform === 'win32' ? 'echo Hello' : 'echo H…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/tools/unified-executor.test.ts[2m > [22mUnifiedExecutor[2m > [22mOutput Streaming[2m > [22mshould call onUpdate callback with output
+[31m[1mAssertionError[22m: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m117:30[22m[39m
+    [90m115|[39m       })[33m;[39m
+    [90m116|[39m
+    [90m117|[39m       [34mexpect[39m(result[33m.[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m   |[39m                              [31m^[39m
+    [90m118|[39m       [34mexpect[39m(updates[33m.[39mlength)[33m.[39m[34mtoBeGreaterThan[39m([34m0[39m)[33m;[39m
+    [90m119|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/tools/unified-executor.test.ts[2m > [22mUnifiedExecutor[2m > [22mTimeout Protection (Task 3)[2m > [22m3.6 - Should ensure no zombie processes remain after timeout
+[31m[1mAssertionError[22m: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m308:32[22m[39m
+    [90m306|[39m       [90m// All should succeed with no resource issues[39m
+    [90m307|[39m       results[33m.[39m[34mforEach[39m((result[33m,[39m index) [33m=>[39m {
+    [90m308|[39m         [34mexpect[39m(result[33m.[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m   |[39m                                [31m^[39m
+    [90m309|[39m         [34mexpect[39m(result[33m.[39moutput)[33m.[39m[34mtoContain[39m([32m`Command [39m[36m${[39mindex[36m}[39m[32m`[39m)[33m;[39m
+    [90m310|[39m       })[33m;[39m
+[90m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m307:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/tools/unified-executor.test.ts[2m > [22mUnifiedExecutor[2m > [22mANSI Stripping[2m > [22mshould strip ANSI codes from output
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m334:5[22m[39m
+    [90m332|[39m
+    [90m333|[39m   [34mdescribe[39m([32m'ANSI Stripping'[39m[33m,[39m () [33m=>[39m {
+    [90m334|[39m     [34mit[39m([32m'should strip ANSI codes from output'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m     [31m^[39m
+    [90m335|[39m       [90m// Command that produces ANSI color codes[39m
+    [90m336|[39m       [35mconst[39m command [33m=[39m process[33m.[39mplatform [33m===[39m [32m'win32'[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/tools/unified-executor.test.ts[2m > [22mUnifiedExecutor[2m > [22mWorking Directory[2m > [22mshould respect custom working directory
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/tools/unified-executor.test.ts:[2m354:5[22m[39m
+    [90m352|[39m
+    [90m353|[39m   [34mdescribe[39m([32m'Working Directory'[39m[33m,[39m () [33m=>[39m {
+    [90m354|[39m     [34mit[39m([32m'should respect custom working directory'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m     [31m^[39m
+    [90m355|[39m       [35mconst[39m command [33m=[39m process[33m.[39mplatform [33m===[39m [32m'win32'[39m
+    [90m356|[39m         [33m?[39m [32m'powershell -Command "Get-Location"'[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m10 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 17:14:32
+[2m   Duration [22m 48.60s[2m (transform 137ms, setup 695ms, import 158ms, tests 46.80s, environment 37ms)[22m
+

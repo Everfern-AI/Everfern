@@ -168,6 +168,33 @@ Examples:
 { "tool": "terminal_execute", "args": { "command": "npm install", "target": "vm" } }
 ```
 
+### 3.2.1 Async Terminal Workflow (Long-Running Commands)
+
+For commands that take a long time (builds, servers, watchers, installs, large scripts), use this pattern:
+
+1. **Start** with `terminal_execute` and set a short `timeoutMs` (3000-10000ms)
+2. The tool returns partial output and the command continues in the background
+3. **Do other work** while it runs (read files, edit code, check other things)
+4. **Poll** with `terminal_status(id)` to check progress and get updated output
+5. When output says the command is done, proceed with the next step
+
+```
+terminal_execute(command="npm run build", timeoutMs=5000, id="build-1")
+  → returns partial output, status=running, id="build-1"
+
+... do other work ...
+
+terminal_status(id="build-1")
+  → returns updated output, may still be running
+
+... do more work ...
+
+terminal_status(id="build-1")
+  → returns final output, status=completed
+```
+
+This is especially useful for: `npm install`, `pip install`, `npm run build`, `npm run dev`, local server startups, docker builds, large script execution, and any command where you don't want to block the whole agent.
+
 ### 3.3 Parallelization Policy
 
 **One unified rule — apply consistently across all sections:**

@@ -383,7 +383,13 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
         const fetchSessionsAndRestore = async () => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) return;
-            const session = JSON.parse(sessionStr);
+            let session;
+            try {
+                session = JSON.parse(sessionStr);
+            } catch {
+                return;
+            }
+            if (!session?.accessToken) return;
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
             
             // 1. Fetch existing sessions
@@ -438,6 +444,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) throw new Error("No cloud session found");
             const session = JSON.parse(sessionStr);
+            if (!session?.accessToken) throw new Error("No access token found");
             
             const res = await (window as any).electronAPI?.system?.startDispatch?.({ 
                 sessionId: newSessionId, 
@@ -480,6 +487,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) return;
             const session = JSON.parse(sessionStr);
+            if (!session?.accessToken) return;
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
 
             await fetch(`${apiUrl.replace(/\/$/, '')}/api/dispatch/session/${id}`, {
@@ -810,6 +818,14 @@ export default function SettingsPage({
     const [preferences, setPreferences] = useState('');
     const [isCloudUser, setIsCloudUser] = useState(false);
     const [cloudEmail, setCloudEmail] = useState('');
+    const [cloudUsage, setCloudUsage] = useState<{
+        dailyUsed: number;
+        dailyLimit: number;
+        inputTokensUsed: number;
+        inputTokenLimit: number;
+        outputTokensUsed: number;
+        outputTokenLimit: number;
+    } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; url?: string } | null>(null);
@@ -843,8 +859,10 @@ export default function SettingsPage({
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (sessionStr) {
                 const session = JSON.parse(sessionStr);
-                setIsCloudUser(true);
-                setCloudEmail(session.user?.email || '');
+                if (session?.user) {
+                    setIsCloudUser(true);
+                    setCloudEmail(session.user?.email || '');
+                }
             }
         } catch (e) {}
     }, []);
@@ -854,6 +872,34 @@ export default function SettingsPage({
         localStorage.removeItem('everfern_auth_token');
         router.push('/auth');
     };
+
+    useEffect(() => {
+        if (!isCloudUser) return;
+        const fetchUsage = async () => {
+            try {
+                const sessionStr = localStorage.getItem('everfern_cloud_session');
+                if (!sessionStr) return;
+                const session = JSON.parse(sessionStr);
+                const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app').replace(/\/$/, '');
+                const res = await fetch(`${apiUrl}/api/user/me`, {
+                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                setCloudUsage({
+                    dailyUsed: data.dailyUsed ?? 0,
+                    dailyLimit: data.dailyLimit ?? 0,
+                    inputTokensUsed: data.inputTokensUsed ?? 0,
+                    inputTokenLimit: data.inputTokenLimit ?? 0,
+                    outputTokensUsed: data.outputTokensUsed ?? 0,
+                    outputTokenLimit: data.outputTokenLimit ?? 0,
+                });
+            } catch (e) {
+                console.error('Failed to fetch cloud usage', e);
+            }
+        };
+        fetchUsage();
+    }, [isCloudUser]);
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -1121,6 +1167,38 @@ export default function SettingsPage({
                                 Sign Out
                             </button>
                         </div>
+                        {cloudUsage && (
+                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Daily usage</span>
+                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{cloudUsage.dailyUsed} / {cloudUsage.dailyLimit} credits</span>
+                                </div>
+                                <div style={{ width: '100%', height: 6, backgroundColor: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        width: `${cloudUsage.dailyLimit ? Math.min(100, (cloudUsage.dailyUsed / cloudUsage.dailyLimit) * 100) : 0}%`,
+                                        height: '100%',
+                                        backgroundColor: (cloudUsage.dailyLimit && cloudUsage.dailyUsed / cloudUsage.dailyLimit >= 1) ? '#ef4444' : '#10b981',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: 24, marginTop: 16 }}>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Input tokens</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            {cloudUsage.inputTokensUsed.toLocaleString()} / {cloudUsage.inputTokenLimit.toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Output tokens</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            {cloudUsage.outputTokensUsed.toLocaleString()} / {cloudUsage.outputTokenLimit.toLocaleString()}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '14px 0 0' }}>Usage resets daily at midnight.</p>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div style={{ marginTop: 24, padding: 20, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 16 }}>

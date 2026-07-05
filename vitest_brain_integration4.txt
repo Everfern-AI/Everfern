@@ -1,0 +1,285 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Determining routing decision...
+
+[90mstderr[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Invalid routing decision: [90mundefined[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Routing decision response received in 7ms
+[Brain] Raw routing response (first 500 chars): {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON string: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed routing JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): Hello
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[22m[39m[Brain] Completion signal response received in 0ms
+[Brain] Response length: 57 chars, first 100 chars: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+[Brain] Completion signal built successfully in 0ms: task_complete
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Determining routing decision...
+
+[90mstderr[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Invalid routing decision: [90mundefined[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Routing decision response received in 0ms
+[Brain] Raw routing response (first 500 chars): {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON string: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed routing JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): Hello
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mlogs telemetry on successful checkpoint creation (Requirement 2.5)
+[22m[39m[Brain] Completion signal response received in 1ms
+[Brain] Response length: 57 chars, first 100 chars: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+[Brain] Completion signal built successfully in 1ms: task_complete
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Determining routing decision...
+
+[90mstderr[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Invalid routing decision: [90mundefined[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Routing decision response received in 0ms
+[Brain] Raw routing response (first 500 chars): {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON string: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed routing JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): Hello
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[22m[39m[Brain] Completion signal response received in 0ms
+[Brain] Response length: 57 chars, first 100 chars: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+[Brain] Completion signal built successfully in 0ms: task_complete
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=my-special-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Determining routing decision...
+
+[90mstderr[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Invalid routing decision: [90mundefined[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Routing decision response received in 0ms
+[Brain] Raw routing response (first 500 chars): {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON string: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed routing JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): Hello
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoint with correct task ID (Requirement 1.1)
+[22m[39m[Brain] Completion signal response received in 2ms
+[Brain] Response length: 57 chars, first 100 chars: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+[Brain] Completion signal built successfully in 2ms: task_complete
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoints at multiple execution points
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoints at multiple execution points
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mcreates checkpoints at multiple execution points
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain with pending tools: test_tool)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Current intent: unknown
+[Brain] Is sub-agent: false
+[Brain] Available tools: 
+[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/
+[Brain] 🧠 Injected persistent memories into system prompt
+[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Checkpoint created: id=test-checkpoint-id task=test-mission step=1 (Brain step 1)
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Determining routing decision...
+
+[90mstderr[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Invalid routing decision: [90mundefined[39m
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Routing decision response received in 0ms
+[Brain] Raw routing response (first 500 chars): {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON string: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed routing JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): Hello
+
+[90mstdout[2m | main/agent/runner/nodes/brain.integration.test.ts[2m > [22m[2mBrain Checkpoint Integration[2m > [22m[2mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[22m[39m[Brain] Completion signal response received in 0ms
+[Brain] Response length: 57 chars, first 100 chars: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"Test completed"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'Test completed'[39m }
+[Brain] Completion signal built successfully in 0ms: task_complete
+
+ [31m❯[39m main/agent/runner/nodes/brain.integration.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[32m 225[2mms[22m[39m
+[31m     [31m×[31m creates checkpoint after successful agent step execution (Requirement 2.1)[39m[32m 121[2mms[22m[39m
+     [32m✓[39m logs telemetry on successful checkpoint creation (Requirement 2.5)[32m 7[2mms[22m[39m
+[31m     [31m×[31m handles checkpoint failure gracefully without breaking execution (Requirement 2.5)[39m[32m 22[2mms[22m[39m
+[31m     [31m×[31m creates checkpoint with correct task ID (Requirement 1.1)[39m[32m 23[2mms[22m[39m
+[31m     [31m×[31m creates checkpoints at multiple execution points[39m[32m 13[2mms[22m[39m
+[31m     [31m×[31m handles failed checkpoint creation without throwing (Requirement 2.5)[39m[32m 32[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/brain.integration.test.ts[2m > [22mBrain Checkpoint Integration[2m > [22mcreates checkpoint after successful agent step execution (Requirement 2.1)
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…}, 'test-mission' ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m main/agent/runner/nodes/brain.integration.test.ts:[2m130:51[22m[39m
+    [90m128|[39m
+    [90m129|[39m     [90m// Verify checkpoint creation was called[39m
+    [90m130|[39m     [34mexpect[39m(mockCheckpointEngine[33m.[39mcreateCheckpoint)[33m.[39m[34mtoHaveBeenCalledWith[39m(
+    [90m   |[39m                                                   [31m^[39m
+    [90m131|[39m       expect[33m.[39m[34mobjectContaining[39m({
+    [90m132|[39m         messages[33m:[39m expect[33m.[39m[34many[39m([33mArray[39m)[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/brain.integration.test.ts[2m > [22mBrain Checkpoint Integration[2m > [22mhandles checkpoint failure gracefully without breaking execution (Requirement 2.5)
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ StringContaining{…} ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m main/agent/runner/nodes/brain.integration.test.ts:[2m166:39[22m[39m
+    [90m164|[39m
+    [90m165|[39m     [90m// Verify error was logged but execution didn't stop[39m
+    [90m166|[39m     [34mexpect[39m(mockRunner[33m.[39mtelemetry[33m.[39mwarn)[33m.[39m[34mtoHaveBeenCalledWith[39m(
+    [90m   |[39m                                       [31m^[39m
+    [90m167|[39m       expect[33m.[39m[34mstringContaining[39m([32m'Unexpected checkpoint error'[39m)
+    [90m168|[39m     )[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/brain.integration.test.ts[2m > [22mBrain Checkpoint Integration[2m > [22mcreates checkpoint with correct task ID (Requirement 1.1)
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ Any<Object>, 'my-special-mission' ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m main/agent/runner/nodes/brain.integration.test.ts:[2m178:51[22m[39m
+    [90m176|[39m
+    [90m177|[39m     [90m// Verify task ID matches mission ID[39m
+    [90m178|[39m     [34mexpect[39m(mockCheckpointEngine[33m.[39mcreateCheckpoint)[33m.[39m[34mtoHaveBeenCalledWith[39m(
+    [90m   |[39m                                                   [31m^[39m
+    [90m179|[39m       expect[33m.[39m[34many[39m([33mObject[39m)[33m,[39m
+    [90m180|[39m       [32m'my-special-mission'[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/brain.integration.test.ts[2m > [22mBrain Checkpoint Integration[2m > [22mcreates checkpoints at multiple execution points
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called at least once[39m
+[36m [2m❯[22m main/agent/runner/nodes/brain.integration.test.ts:[2m199:51[22m[39m
+    [90m197|[39m
+    [90m198|[39m     [90m// Should create checkpoint for pending tools scenario[39m
+    [90m199|[39m     [34mexpect[39m(mockCheckpointEngine[33m.[39mcreateCheckpoint)[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+    [90m   |[39m                                                   [31m^[39m
+    [90m200|[39m   })[33m;[39m
+    [90m201|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/brain.integration.test.ts[2m > [22mBrain Checkpoint Integration[2m > [22mhandles failed checkpoint creation without throwing (Requirement 2.5)
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ StringContaining{…} ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m main/agent/runner/nodes/brain.integration.test.ts:[2m225:39[22m[39m
+    [90m223|[39m
+    [90m224|[39m     [90m// Should log the failure[39m
+    [90m225|[39m     [34mexpect[39m(mockRunner[33m.[39mtelemetry[33m.[39mwarn)[33m.[39m[34mtoHaveBeenCalledWith[39m(
+    [90m   |[39m                                       [31m^[39m
+    [90m226|[39m       expect[33m.[39m[34mstringContaining[39m([32m'Checkpoint creation failed'[39m)
+    [90m227|[39m     )[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 17:28:14
+[2m   Duration [22m 69.74s[2m (transform 9.74s, setup 984ms, import 33.45s, tests 225ms, environment 33.71s)[22m
+

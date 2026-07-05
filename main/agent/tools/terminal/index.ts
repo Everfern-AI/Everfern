@@ -12,7 +12,9 @@ const AGENT_DEFAULT_CWD = path.join(os.homedir(), '.everfern');
  */
 export const terminalTool: AgentTool = {
   name: 'terminal_execute',
-  description: `[STRICT-EXECUTION-ONLY] Execute a terminal command. IMPORTANT: NEVER use this tool for file operations like cat, ls, grep, find, or sed. You MUST use the dedicated native tools (read, write, edit, ls, grep) instead. Use this tool ONLY for scripts, builds, testing, or package management. target 'main' runs in the host machine's shell (PowerShell on Windows). target 'vm' runs inside the Linux VM. Write commands compatible with that target's shell syntax.`,
+  description: `[STRICT-EXECUTION-ONLY] Execute a terminal command. IMPORTANT: NEVER use this tool for file operations like cat, ls, grep, find, or sed. You MUST use the dedicated native tools (read, write, edit, ls, grep) instead. Use this tool ONLY for scripts, builds, testing, or package management. target 'main' runs in the host machine's shell (PowerShell on Windows). target 'vm' runs inside the Linux VM. Write commands compatible with that target's shell syntax.
+
+ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a short timeoutMs (e.g. 5000-10000) to get partial output and control back quickly. The command continues running in the background. Use terminal_status(id) later to poll for updated output. This lets you do other work while the command completes.`,
   parameters: {
     type: 'object',
     properties: {
@@ -106,7 +108,7 @@ export const terminalTool: AgentTool = {
  */
 export const terminalStatusTool: AgentTool = {
   name: 'terminal_status',
-  description: 'Check the status and output of a previously started terminal command.',
+  description: 'Check the status and output of a previously started terminal command. Use this to poll a long-running command started with terminal_execute (with a short timeout or while it runs in the background). Returns the current accumulated output and status (running/completed/failed).',
   parameters: {
     type: 'object',
     properties: {

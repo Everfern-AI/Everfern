@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { WaveformIcon } from './UIIcons';
+import { useTheme } from '@/components/ThemeProvider';
 
 import { CLOUD_MODEL_MAP } from '../../../../main/lib/providers';
 
@@ -291,44 +292,88 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
 };
 
 const RateLimitContinueButton = ({ content, onContinue }: { content: string; onContinue: () => void }) => {
-    if (!content.includes('Rate Limit Reached') && !content.includes('429')) return null;
+    const { theme } = useTheme();
+    if (!content.includes('Rate Limit Reached') && !content.includes('429') && !content.toLowerCase().includes('rate limit')) return null;
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{ marginTop: 16, padding: '16px', backgroundColor: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.2)', borderRadius: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
+            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+                marginTop: 24,
+                borderRadius: 'var(--radius-lg)',
+                background: 'linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-subtle) 100%)',
+                border: '1px solid var(--color-border)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                fontFamily: 'var(--font-sans)',
+            }}
         >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(251, 191, 36, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <SparklesIcon width={18} height={18} color="#fbbf24" />
+            <div style={{ height: 3, width: '100%', background: 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)' }} />
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(99, 102, 241, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                    }}>
+                        <img
+                            src="/images/logos/black-logo-withoutbg.png"
+                            alt="EverFern"
+                            style={{ width: 26, height: 26, objectFit: 'contain', filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+                            EverFern Cloud Throttled
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                            A provider rate limit (429) was encountered. EverFern Cloud is ready to resume the current execution when you are.
+                        </span>
+                    </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#201e24' }}>Ready to resume?</div>
+
+                <button
+                    onClick={onContinue}
+                    style={{
+                        width: '100%',
+                        height: 40,
+                        borderRadius: 'var(--radius-md)',
+                        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                        border: 'none',
+                        color: '#ffffff',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                        transition: 'all 0.2s ease-in-out'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(99, 102, 241, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'none';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.3)';
+                    }}
+                >
+                    <PaperAirplaneIcon width={15} height={15} style={{ transform: 'rotate(-45deg)', marginTop: -1, strokeWidth: 2 }} />
+                    Resume Mission
+                </button>
             </div>
-            <button
-                onClick={onContinue}
-                style={{
-                    width: '100%',
-                    padding: '10px 16px',
-                    borderRadius: 12,
-                    backgroundColor: '#fbbf24',
-                    border: 'none',
-                    color: '#1a1a1a',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    transition: 'all 0.2s'
-                }}
-                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f59e0b'; }}
-                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#fbbf24'; }}
-            >
-                <PaperAirplaneIcon width={16} height={16} style={{ transform: 'rotate(-45deg)', marginTop: -2 }} />
-                Continue Mission
-            </button>
         </motion.div>
     );
 };

@@ -6344,7 +6344,7 @@ export default function ToolDetailSidePanel({
                         top: 0,
                         bottom: 0,
                         width: 28,
-                        background: 'linear-gradient(90deg, #f5f4f0 0%, rgba(245,244,240,0.76) 46%, rgba(245,244,240,0) 100%)',
+                        background: 'linear-gradient(90deg, var(--color-bg-base) 0%, color-mix(in srgb, var(--color-bg-base) 76%, transparent) 46%, var(--color-bg-base-transparent) 100%)',
                         pointerEvents: 'none',
                         zIndex: 2,
                       }} />
@@ -6356,7 +6356,7 @@ export default function ToolDetailSidePanel({
                         top: 0,
                         bottom: 0,
                         width: 34,
-                        background: 'linear-gradient(270deg, #f5f4f0 0%, rgba(245,244,240,0.76) 46%, rgba(245,244,240,0) 100%)',
+                        background: 'linear-gradient(270deg, var(--color-bg-base) 0%, color-mix(in srgb, var(--color-bg-base) 76%, transparent) 46%, var(--color-bg-base-transparent) 100%)',
                         pointerEvents: 'none',
                         zIndex: 2,
                       }} />

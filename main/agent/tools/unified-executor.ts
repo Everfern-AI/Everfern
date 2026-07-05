@@ -81,12 +81,12 @@ export class UnifiedExecutor {
    * ```
    */
   static async execute(options: ExecutionOptions): Promise<ExecutionResult> {
+    // Step 1: Detect shell
+    const shell = options.shell || await this.detectShell(options.local);
+    options.onUpdate?.(`[Executor] Using shell: ${shell}\n`);
+
     const startTime = Date.now();
     const timeout = options.timeout || 300000; // 5 minutes default
-
-    // Step 1: Detect shell
-    const shell = options.shell || this.detectShell(options.local);
-    options.onUpdate?.(`[Executor] Using shell: ${shell}\n`);
 
     // Step 2: Prepare command based on shell
     const { executable, args } = this.prepareCommand(options.command, shell, options.cwd);
@@ -139,14 +139,14 @@ export class UnifiedExecutor {
    *
    * @private
    */
-  private static detectShell(local?: boolean): string {
+  private static async detectShell(local?: boolean): Promise<string> {
     if (process.platform !== 'win32') {
       return 'bash'; // macOS/Linux always use bash
     }
 
     // Windows: check WSL availability if not local
     if (!local) {
-      const wslAvailable = this.isWSLAvailable();
+      const wslAvailable = await this.isWSLAvailable();
       if (wslAvailable) return 'wsl';
     }
 
@@ -155,30 +155,41 @@ export class UnifiedExecutor {
   }
 
   /**
-   * Check if WSL is available (cached result with 30s TTL)
+   * Check if WSL is available (cached result)
    *
    * @returns true if wsl.exe works, false otherwise
    * @private
    */
   private static wslCacheResult: boolean | null = null;
-  private static wslCacheTime: number = 0;
-  private static readonly WSL_CACHE_TTL = 30000; // 30 seconds
 
-  private static isWSLAvailable(): boolean {
-    const now = Date.now();
-    if (this.wslCacheResult !== null && (now - this.wslCacheTime) < this.WSL_CACHE_TTL) {
+  private static async isWSLAvailable(): Promise<boolean> {
+    if (this.wslCacheResult !== null) {
       return this.wslCacheResult;
     }
 
     try {
-      const { execSync } = require('child_process');
-      execSync('wsl.exe -e echo ok', { stdio: 'ignore', timeout: 5000 });
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Fast check: check standard wsl.exe locations
+      const windir = process.env.WINDIR || process.env.windir || process.env.SystemRoot || 'C:\\Windows';
+      const wslPath1 = path.join(windir, 'System32', 'wsl.exe');
+      const wslPath2 = path.join(windir, 'Sysnative', 'wsl.exe');
+      
+      if (fs.existsSync(wslPath1) || fs.existsSync(wslPath2)) {
+        this.wslCacheResult = true;
+        return true;
+      }
+      
+      // Fallback: check PATH
+      const { exec } = require('child_process');
+      const promisify = require('util').promisify;
+      const execAsync = promisify(exec);
+      await execAsync('where wsl.exe', { timeout: 1000 });
       this.wslCacheResult = true;
-      this.wslCacheTime = now;
       return true;
     } catch {
       this.wslCacheResult = false;
-      this.wslCacheTime = now;
       return false;
     }
   }
@@ -264,6 +275,16 @@ export class UnifiedExecutor {
    *
    * @private
    */
+  private static decodeBuffer(buf: Buffer): string {
+    if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
+      return buf.toString('utf16le');
+    }
+    if (buf.length >= 4 && buf[1] === 0x00 && buf[3] === 0x00) {
+      return buf.toString('utf16le');
+    }
+    return buf.toString('utf8').replace(/\0/g, '');
+  }
+
   private static async spawnWithStreaming(
     executable: string,
     args: string[],
@@ -272,9 +293,16 @@ export class UnifiedExecutor {
     let procReference: ChildProcess | null = null;
 
     const execution = new Promise<ToolResult & { exitCode: number }>((resolve, reject) => {
+      // Force WSL to output UTF-8 if running wsl.exe
+      const env = { ...process.env };
+      if (executable === 'wsl.exe') {
+        env.WSL_UTF8 = '1';
+        env.WSLENV = '';
+      }
+
       const proc: ChildProcess = spawn(executable, args, {
         cwd: options.cwd || process.cwd(),
-        env: { ...process.env },
+        env,
         shell: false
       });
 
@@ -287,7 +315,7 @@ export class UnifiedExecutor {
 
       // Real-time stdout streaming
       proc.stdout?.on('data', (data: Buffer) => {
-        const chunk = this.stripAnsi(data.toString('utf8'));
+        const chunk = this.stripAnsi(this.decodeBuffer(data));
         stdout += chunk;
 
         // Throttled updates to UI
@@ -300,7 +328,7 @@ export class UnifiedExecutor {
 
       // Real-time stderr streaming
       proc.stderr?.on('data', (data: Buffer) => {
-        const chunk = this.stripAnsi(data.toString('utf8'));
+        const chunk = this.stripAnsi(this.decodeBuffer(data));
         stderr += chunk;
 
         const now = Date.now();

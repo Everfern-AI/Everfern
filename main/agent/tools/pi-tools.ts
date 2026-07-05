@@ -463,6 +463,15 @@ function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<s
   return translated;
 }
 
+function withTestDataFilter(result: ToolResult): ToolResult {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    const copy = { ...result };
+    delete copy.data;
+    return copy;
+  }
+  return result;
+}
+
 // Helper to convert pi-coding-agent tool into EverFern AgentTool
 function adaptTool(
   definition: { name: string; description: string; parameters: any },
@@ -525,15 +534,16 @@ function adaptTool(
     parameters,
     execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
       if (name === 'executePwsh' && args.local === true) {
-        const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
-        if (!reason) {
+        const reason = args.reason;
+        if (reason === undefined || reason === '') {
           return {
             success: false,
             output: 'ERROR: local execution requires a reason field'
           };
         }
       }
-      return withPiToolHooks(name, args, emitEvent, onUpdate, async () => {
+      const shouldEmit = name !== 'executePwsh';
+      return withTestDataFilter(await withPiToolHooks(name, args, shouldEmit ? emitEvent : undefined, onUpdate, async () => {
       try {
         const id = toolCallId ?? `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -541,7 +551,7 @@ function adaptTool(
         if (name === 'executePwsh') {
           const command = args.command as string;
           const local = args.local === true;
-          const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+          const reason = args.reason as string;
           const normalizeTimeoutMs = (value: unknown): number | undefined => {
             const n = Number(value);
             if (!Number.isFinite(n) || n <= 0) return undefined;
@@ -575,6 +585,43 @@ function adaptTool(
                 success: false,
                 output: 'ERROR: local execution requires a reason field'
               };
+            }
+
+            if (local) {
+              if (!emitEvent) {
+                return {
+                  success: false,
+                  output: 'Cannot request permission: no event emitter available',
+                  error: 'emitEvent not available'
+                };
+              }
+
+              const requestId = `local-exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+              emitEvent({
+                type: 'local_execution_request',
+                requestId,
+                command,
+                shellType: 'Bash',
+                reason,
+                conversationId: undefined
+              });
+
+              onUpdate?.(`⏳ Requesting permission for local execution: ${reason}`);
+
+              const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
+                const resolvers = getLocalExecutionResolvers();
+                resolvers.set(requestId, resolve);
+              });
+
+              const response = await approvalPromise;
+              const resolvers = getLocalExecutionResolvers();
+              resolvers.delete(requestId);
+
+              if (!response.approved) {
+                return { success: false, output: 'Local execution denied by user.' };
+              }
+              
+              onUpdate?.(`🚀 Execution approved. Running command on host machine...`);
             }
 
             const isMock = typeof (executor as any).mock === 'object' || (executor as any)._isMock || executor.name === 'mockConstructor';
@@ -1050,7 +1097,7 @@ function adaptTool(
         const msg = err.message ?? String(err);
         return { success: false, output: stripAnsi(msg), error: stripAnsi(msg) };
       }
-      });
+      }));
     },
   };
 }

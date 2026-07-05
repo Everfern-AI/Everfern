@@ -117,12 +117,16 @@ async function createAgentCheckpoint(
  * from the brain itself.
  *
  * IMPROVEMENTS (Sub-task 3.1):
- * - Increased timeout from 20s to 30s for slower LLM responses
+ * - Reduced timeout to 5s (5000ms) for completion signals
  * - Added fallback completion signal when LLM fails
  * - Improved JSON extraction and error handling
  * - Added detailed logging at each step
+ *
+ * @param runner - Agent runner
+ * @param responseContent - Content of the response
+ * @param originalRequest - Original request text
  */
-async function buildCompletionSignal(
+export async function buildCompletionSignal(
   runner: AgentRunner,
   responseContent: string,
   originalRequest: string,
@@ -159,21 +163,29 @@ Respond with JSON only:
     console.log('[Brain] Original request (first 100 chars):', originalRequest.slice(0, 100));
     const startTime = Date.now();
 
-    // Increased timeout from 20s to 30s (Sub-task 3.1)
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('completion signal timed out after 30s')), 30000)
-    );
+    // Reduced timeout from 30s to 5s for fast responses
+    let timerId: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => reject(new Error('completion signal timed out after 5s')), 5000);
+    });
 
-    const response = await Promise.race([
-      runner.client.chat({
-        messages: [{ role: 'user', content: prompt }],
-        responseFormat: 'json',
-        temperature: 0.3,
-        maxTokens: 1500,
-        abortSignal: globalAbortManager.abortController.signal,
-      }),
-      timeoutPromise,
-    ]) as any;
+    let response: any;
+    try {
+      response = await Promise.race([
+        runner.client.chat({
+          messages: [{ role: 'user', content: prompt }],
+          responseFormat: 'json',
+          temperature: 0.3,
+          maxTokens: 1500,
+          abortSignal: globalAbortManager.abortController.signal,
+        }),
+        timeoutPromise,
+      ]) as any;
+    } finally {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    }
 
     const duration = Date.now() - startTime;
     console.log(`[Brain] Completion signal response received in ${duration}ms`);
@@ -815,49 +827,66 @@ export const createBrainNode = (
       console.log('[Brain] Skipping routing decision because web explorer complete and returning from it');
     }
 
-    // If routing to a specialized agent, set the routing decision
-    if (routingDecision && routingDecision.decision.startsWith('route_')) {
+    // Check if the target specialist (or task) has already completed
+    if (routingDecision) {
       const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete;
       const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete;
       const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete;
+      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete;
+      const isComputerUseDone = ((routingDecision.decision as any) === 'route_computer_use' || 
+                                 (routingDecision.decision === 'continue_brain' && state.currentIntent === 'automate')) && 
+                                state.computerUseComplete;
 
-      if (isCodingDone || isWebExplorerDone || isDataAnalystDone) {
-        runner.telemetry.info(`[Brain] Refusing to route to ${routingDecision.decision} because it has already completed`);
-        routingDecision = null;
-      } else {
-        // Auto-enable Coding Mode UI when routing to coding specialist
-        if (routingDecision.decision === 'route_coding') {
-          eventQueue?.push({
-            type: 'surface_action',
-            action: 'coding_mode',
-            active: true,
-            surfaceId: 'coding-mode'
-          });
-        }
-
-        const routedState = {
-          ...result,
-          routingDecision: routingDecision,
-          completionSignal: null,
-          // Set task phase to route to specialized agents
-          taskPhase: 'specialized_agent' as const,
-          brainToolsInFlight: false,
-          returningFromSpecialist: null
+      if (isCodingDone || isWebExplorerDone || isDataAnalystDone || isDeepResearchDone || isComputerUseDone) {
+        runner.telemetry.info(`[Brain] Override routing decision to complete_task because target specialist/task (${routingDecision.decision}) has already completed`);
+        routingDecision = {
+          decision: 'complete_task',
+          explanation: 'Specialist task has already completed.'
         };
-
-        // Create checkpoint before routing to specialist
-        await createAgentCheckpoint(
-          { ...state, ...routedState },
-          runner,
-          `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
-        );
-
-        return routedState;
       }
     }
 
+    // If routing to a specialized agent, set the routing decision
+    if (routingDecision && routingDecision.decision.startsWith('route_')) {
+      // Auto-enable Coding Mode UI when routing to coding specialist
+      if (routingDecision.decision === 'route_coding') {
+        eventQueue?.push({
+          type: 'surface_action',
+          action: 'coding_mode',
+          active: true,
+          surfaceId: 'coding-mode'
+        });
+      }
+
+      const routedState = {
+        ...result,
+        routingDecision: routingDecision,
+        completionSignal: null,
+        // Set task phase to route to specialized agents
+        taskPhase: 'specialized_agent' as const,
+        brainToolsInFlight: false,
+        returningFromSpecialist: null
+      };
+
+      // Create checkpoint before routing to specialist
+      await createAgentCheckpoint(
+        { ...state, ...routedState },
+        runner,
+        `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
+      );
+
+      return routedState;
+    }
+
     // If continuing with brain or completing task, build completion signal
-    const signal = await buildCompletionSignal(runner, responseContent, originalRequest);
+    let signal = await buildCompletionSignal(runner, responseContent, originalRequest);
+
+    if (routingDecision && routingDecision.decision === 'complete_task') {
+      signal = {
+        reason: 'task_complete' as const,
+        explanation: routingDecision.explanation || 'Specialist task has already completed.'
+      };
+    }
 
     if (signal) {
       runner.telemetry.info(`Brain completion signal: ${signal.reason} — ${signal.explanation}`);

@@ -302,7 +302,11 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           }
 
           if (getNavisCompanionStatus().connected) {
-            const extensionOrchestrator = new NavisExtensionOrchestrator(orchestrator.getAIClient(), logger);
+            const extensionOrchestrator = new NavisExtensionOrchestrator(
+              orchestrator.getAIClient(),
+              logger,
+              orchestrator.getVisionClient() || undefined
+            );
             console.log('[Navis Tool] 🔌 Calling extension-first orchestrator.run()...');
             const extensionResult = await extensionOrchestrator.run({
               task,

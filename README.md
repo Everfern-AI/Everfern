@@ -164,14 +164,12 @@ Everything EverFern needs is built in:
 Plus custom tools via MCP — connect anything.
 
 </td>
-<td width="50%" valign="top">
-
-### 🔌 Multi-Provider Support
-Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
-
-</td>
 </tr>
 </table>
+
+## 🔌 Multi-Provider Support
+
+Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
 
 ---
 

@@ -1,0 +1,24 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+ [32m✓[39m main/agent/tools/unified-executor.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 56028[2mms[22m[39m
+       [33m[2m✓[22m[39m should execute a simple command successfully [33m 8775[2mms[22m[39m
+       [33m[2m✓[22m[39m should handle command with no output [33m 1608[2mms[22m[39m
+       [33m[2m✓[22m[39m should capture error output and non-zero exit codes [33m 3611[2mms[22m[39m
+       [33m[2m✓[22m[39m should allow shell override [33m 5257[2mms[22m[39m
+       [33m[2m✓[22m[39m should call onUpdate callback with output [33m 1792[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.1 - Should create timeout promise that rejects after specified duration [33m 640[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.2 - Should use Promise.race() between execution and timeout [33m 1281[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.3 - Should kill spawned process on timeout [33m 3091[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.4 - Should return partial output when timeout occurs [33m 2566[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.5 - Should set timedOut flag in result [33m 2445[2mms[22m[39m
+       [33m[2m✓[22m[39m 3.6 - Should ensure no zombie processes remain after timeout [33m 2650[2mms[22m[39m
+       [33m[2m✓[22m[39m should timeout long-running commands [33m 2536[2mms[22m[39m
+       [33m[2m✓[22m[39m should strip ANSI codes from output [33m 10121[2mms[22m[39m
+       [33m[2m✓[22m[39m should respect custom working directory [33m 9349[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 17:24:24
+[2m   Duration [22m 58.51s[2m (transform 125ms, setup 652ms, import 154ms, tests 56.03s, environment 0ms)[22m
+

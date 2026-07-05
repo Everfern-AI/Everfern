@@ -1,0 +1,52 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+[90mstderr[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22m[2mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22m[2mshould preserve fallback behavior for unreachable providers
+[22m[39m[Triage] AI classification failed: ECONNREFUSED. Falling back to heuristics.
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22m[2mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22m[2mshould preserve brain completion signal accuracy
+[22m[39m[PromptSync] 📍 Found prompt source: C:\Users\srini\Downloads\EverFern\everfern-desktop\apps\desktop\main\agent\prompts
+
+ [31m❯[39m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts [2m([22m[2m7 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 15189[2mms[22m[39m
+     [33m[2m✓[22m[39m should preserve AI classification accuracy for fast responses [33m 506[2mms[22m[39m
+     [32m✓[39m should preserve context inheritance for short affirmatives[32m 8[2mms[22m[39m
+     [32m✓[39m should preserve cache hit behavior[32m 4[2mms[22m[39m
+     [32m✓[39m should preserve fallback behavior for unreachable providers[32m 5[2mms[22m[39m
+[31m     [31m×[31m should preserve brain completion signal accuracy[39m[33m 8388[2mms[22m[39m
+[31m     [31m×[31m should preserve all completion signal reasons[39m[33m 6273[2mms[22m[39m
+     [32m✓[39m should document preservation requirements[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve brain completion signal accuracy
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m215:3[22m[39m
+    [90m213|[39m    * Validates: Requirements 3.5
+    [90m214|[39m    */[39m
+    [90m215|[39m   [34mit[39m([32m'should preserve brain completion signal accuracy'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m   [31m^[39m
+    [90m216|[39m     [35mconst[39m { buildCompletionSignal } [33m=[39m [35mawait[39m [35mimport[39m([32m'../brain'[39m)[33m;[39m
+    [90m217|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve all completion signal reasons
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m261:3[22m[39m
+    [90m259|[39m    * Validates: Requirements 3.5, 3.6
+    [90m260|[39m    */[39m
+    [90m261|[39m   [34mit[39m([32m'should preserve all completion signal reasons'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m   [31m^[39m
+    [90m262|[39m     [35mconst[39m { buildCompletionSignal } [33m=[39m [35mawait[39m [35mimport[39m([32m'../brain'[39m)[33m;[39m
+    [90m263|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m5 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 17:21:35
+[2m   Duration [22m 23.16s[2m (transform 3.21s, setup 682ms, import 144ms, tests 15.19s, environment 5.91s)[22m
+

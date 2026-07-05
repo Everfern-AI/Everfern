@@ -545,7 +545,7 @@ export class AIClient {
     if (this.config.provider === 'everfern') return true;
     if (this.config.provider === 'minimax') return true;
     const modelName = this.config.model?.toLowerCase() || '';
-    const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl'];
+    const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl', 'minimax'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
     if (this.config.provider === 'anthropic') return true;
     if (this.config.provider === 'gemini') return true;
@@ -884,7 +884,7 @@ export class AIClient {
     let processedMessages = messages.flatMap(m => {
       let content = m.content;
 
-      // Strip images if model doesn't support vision
+       // Strip images if model doesn't support vision
       // Skip for NVIDIA tool messages — they're deferred via _images tag
       if (!supportsVision && Array.isArray(content)) {
         const isNvidiaTool = this.config.provider === 'nvidia' && m.role === 'tool';
@@ -892,6 +892,22 @@ export class AIClient {
           content = content.filter(c => c.type !== 'image_url');
           if (content.length === 0) content = '[An image was included in this message, but the current model cannot process images. To enable image analysis, switch to a vision-capable model or configure a VLM in Settings.]';
         }
+      } else if (supportsVision && Array.isArray(content)) {
+        content = content.map(c => {
+          if (c.type === 'image_url' && c.image_url) {
+            const isStandardProvider = this.config.provider === 'openai' || this.config.provider === 'anthropic' || this.config.provider === 'gemini';
+            if (!isStandardProvider) {
+              // Strip detail from image_url to avoid compatibility errors in custom API endpoints
+              return {
+                type: 'image_url',
+                image_url: {
+                  url: c.image_url.url
+                }
+              };
+            }
+          }
+          return c;
+        });
       }
 
       // Flatten assistant/system messages to prevent format errors on strict APIs (Nvidia, Ollama Cloud, etc.)
@@ -1233,7 +1249,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         options.chat_template_kwargs = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        options.reasoning_effort = 'high';
+        options.reasoning_effort = 'medium';
         options.max_tokens = req.maxTokens ?? 16384;
         options.temperature = req.temperature ?? 0.10;
         options.top_p = 1.0;
@@ -1321,8 +1337,12 @@ export class AIClient {
                 }
                 const entry = toolCallsMap[tc.index];
                 if (tc.id) entry.id = tc.id;
-                if (tc.function?.name) entry.name += tc.function.name;
-                if (tc.function?.arguments) entry.arguments += tc.function.arguments;
+                
+                const name = tc.function?.name || tc.name || '';
+                const args = tc.function?.arguments || tc.arguments || '';
+                
+                entry.name += name;
+                entry.arguments += args;
               }
             }
           }
@@ -1675,7 +1695,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         body['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        body['reasoning_effort'] = 'high';
+        body['reasoning_effort'] = 'medium';
         body['max_tokens'] = req.maxTokens ?? 16384;
         body['temperature'] = req.temperature ?? 0.10;
         body['top_p'] = 1.0;
@@ -1687,7 +1707,7 @@ export class AIClient {
       } else if (modelName?.includes('qwen') && modelName?.includes('thinking')) {
         body['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('llama') && modelName?.includes('reasoning')) {
-        body['reasoning_effort'] = 'high';
+        body['reasoning_effort'] = 'medium';
       }
     }
     if (req.tools?.length) {
@@ -1766,6 +1786,11 @@ export class AIClient {
       // If Nvidia rejects an image payload (e.g. text-only model receives screenshot)
       if (this.config.provider === 'nvidia' && (res.status === 400 || res.status === 422 || isFormatError)) {
         throw new Error(`[${this.config.provider}] HTTP ${res.status}: ${errorMsg}. No vision capability for this model. Please select a valid vision endpoint.`);
+      }
+
+      // Daily usage limit reached (EverFern Cloud) — surface a clean message.
+      if (res.status === 429) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
       }
 
       throw new Error(`[${this.config.provider}] HTTP ${res.status}: ${errorMsg}`);
@@ -1938,7 +1963,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         streamBody['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        streamBody['reasoning_effort'] = 'high';
+        streamBody['reasoning_effort'] = 'medium';
         streamBody['max_tokens'] = req.maxTokens ?? 16384;
         streamBody['temperature'] = req.temperature ?? 0.10;
         streamBody['top_p'] = 1.0;
@@ -1950,7 +1975,7 @@ export class AIClient {
       } else if (modelName?.includes('qwen') && modelName?.includes('thinking')) {
         streamBody['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('llama') && modelName?.includes('reasoning')) {
-        streamBody['reasoning_effort'] = 'high';
+        streamBody['reasoning_effort'] = 'medium';
       }
     }
     // Include tools in the streaming request so models can trigger tool calls
@@ -2019,6 +2044,10 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      // Daily usage limit reached (EverFern Cloud) — surface a clean message.
+      if (res.status === 429) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
+      }
       throw new Error(`[${this.config.provider}] Stream HTTP ${res.status}: ${errorMsg}`);
     }
 

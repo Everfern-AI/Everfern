@@ -12,6 +12,7 @@ import {
   getSessionPersistenceManager,
   initializeSessionPersistenceManager,
 } from '../../persistence/session-manager';
+import { loadSoul } from '../../personality-manager';
 
 // ── State restoration types ───────────────────────────────────────────
 
@@ -429,7 +430,6 @@ export async function runAgentStep(
 
     // Global OpenClaw SOUL.md personality injection
     try {
-      const { loadSoul } = require('../../personality-manager');
       const soulContent = loadSoul(runner.workspaceDir);
       
       let systemMsg = normalizedMessages.find(m => m.role === 'system');

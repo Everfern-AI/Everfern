@@ -90,6 +90,7 @@ export type ActionName =
   | 'switch_tab'
   | 'close_tab'
   | 'wait_for_navigation'
+  | 'wait_for_dom_change'
   | 'solve_captcha'
   | 'done'
   // Phase 2: Advanced Form Interactions

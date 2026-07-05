@@ -12,22 +12,26 @@ import { createBrainNode } from './brain';
 import { AgentRunner } from '../runner';
 import { getCheckpointEngine } from '../../persistence/checkpoint-engine';
 import type { GraphStateType } from '../state';
+import { runAgentStep } from '../services/agent-runtime';
 
 // Mock dependencies
+const mockCheckpointEngineInstance = {
+  createCheckpoint: vi.fn().mockResolvedValue({
+    id: 'test-checkpoint-id',
+    taskId: 'test-task',
+    stepNumber: 1,
+    timestamp: Date.now(),
+    stateJson: '{}',
+    stateHash: 'hash',
+    deltaOnly: false,
+    previousCheckpointId: null,
+    compressed: false
+  }),
+  getLatestCheckpoint: vi.fn()
+};
+
 vi.mock('../../persistence/checkpoint-engine', () => ({
-  getCheckpointEngine: vi.fn(() => ({
-    createCheckpoint: vi.fn().mockResolvedValue({
-      id: 'test-checkpoint-id',
-      taskId: 'test-task',
-      stepNumber: 1,
-      timestamp: Date.now(),
-      stateJson: '{}',
-      stateHash: 'hash',
-      deltaOnly: false,
-      previousCheckpointId: null,
-      compressed: false
-    })
-  }))
+  getCheckpointEngine: vi.fn(() => mockCheckpointEngineInstance)
 }));
 
 vi.mock('../../../lib/prompt-sync', () => ({
@@ -101,9 +105,11 @@ function createMockRunner() {
     telemetry: {
       info: vi.fn(),
       warn: vi.fn(),
-      error: vi.fn()
+      error: vi.fn(),
+      transition: vi.fn()
     },
-    currentAgentSessionKey: null
+    currentAgentSessionKey: null,
+    _buildToolDefinitions: vi.fn().mockReturnValue([])
   } as unknown as AgentRunner;
 }
 
@@ -113,7 +119,9 @@ describe('Brain Checkpoint Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCheckpointEngine = (getCheckpointEngine as any)();
+    mockCheckpointEngineInstance.createCheckpoint.mockClear();
+    mockCheckpointEngineInstance.getLatestCheckpoint.mockClear();
+    mockCheckpointEngine = mockCheckpointEngineInstance;
     mockRunner = createMockRunner();
   });
 
@@ -183,7 +191,7 @@ describe('Brain Checkpoint Integration', () => {
     const brainNode = createBrainNode(mockRunner);
 
     // Mock agent step to return with pending tools first, then without
-    vi.mocked(require('../services/agent-runtime').runAgentStep)
+    vi.mocked(runAgentStep)
       .mockResolvedValueOnce({
         messages: [{ role: 'assistant', content: 'Using tools...' }],
         iterations: 1,

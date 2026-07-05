@@ -17,6 +17,7 @@ import {
   type HtmlDomParserContext,
 } from './element-capture';
 import { executeAction, type ActionName } from './actions';
+import { NAVIS_TOOLS } from './tools-schema';
 import { diffSnapshots } from './diff';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { NavisLogger } from './logger';
@@ -69,6 +70,7 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { hold_element: { type: 'object', properties: { ref: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, holdTimeMs: { type: 'number' } }, additionalProperties: false } }, required: ['hold_element'], additionalProperties: false },
           { properties: { drag_element: { type: 'object', properties: { sourceRef: { type: 'string' }, targetRef: { type: 'string' }, targetX: { type: 'number' }, targetY: { type: 'number' } }, required: ['sourceRef'], additionalProperties: false } }, required: ['drag_element'], additionalProperties: false },
           { properties: { press_key: { type: 'object', properties: { ref: { type: 'string' }, key: { type: 'string' } }, required: ['key'], additionalProperties: false } }, required: ['press_key'], additionalProperties: false },
+          { properties: { select_option: { type: 'object', properties: { ref: { type: 'string', description: 'The ref of the select/combobox element.' }, value: { type: 'string', description: 'The option value or visible label text to select.' } }, required: ['ref', 'value'], additionalProperties: false } }, required: ['select_option'], additionalProperties: false },
           { properties: { scroll_down: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
           { properties: { scroll_up: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
           { properties: { wait: { type: 'object', properties: { ms: { type: 'number' } }, additionalProperties: false } }, required: ['wait'], additionalProperties: false },
@@ -78,6 +80,7 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { switch_tab: { type: 'object', properties: { index: { type: 'number' }, target: { type: 'string' } }, additionalProperties: false } }, required: ['switch_tab'], additionalProperties: false },
           { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
           { properties: { wait_for_navigation: { type: 'object', properties: { timeoutMs: { type: 'number' }, urlContains: { type: 'string' } }, additionalProperties: false } }, required: ['wait_for_navigation'], additionalProperties: false },
+          { properties: { wait_for_dom_change: { type: 'object', properties: { text: { type: 'string', description: 'Wait until this text appears on the page.' }, selector: { type: 'string', description: 'Wait until this CSS selector matches.' }, timeoutMs: { type: 'number' } }, additionalProperties: false } }, required: ['wait_for_dom_change'], additionalProperties: false },
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
           { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
@@ -350,6 +353,7 @@ export class NavisOrchestrator {
 
   getEventLogger(): NavisLogger { return this.logger; }
   getAIClient(): AIClient { return this.aiClient; }
+  getVisionClient(): AIClient | null { return this.visionClient; }
 
   async run(options: NavisOptions): Promise<NavisResult> {
     this.previousSnapshotRaw = null;
@@ -1036,7 +1040,9 @@ Estimate the coordinates accurately relative to the image size.`;
       const visionLabel = client === this.visionClient ? 'vision-fallback' : 'main';
       console.log(`[Navis] 🖼️ Vision AI call (${visionLabel}, model: ${modelToUse}, img: ${imgSizeKB}KB, detail: ${detail})`);
 
-      const response = await client.chat({
+      const isMiniMax = client.provider === 'minimax' || client.model.toLowerCase().includes('minimax');
+
+      const chatOptions: any = {
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -1057,17 +1063,39 @@ Estimate the coordinates accurately relative to the image size.`;
           },
         ],
         model: modelToUse,
-        responseFormat: 'json',
-        jsonSchema: NAVIS_DECISION_SCHEMA,
         temperature: 0.1,
         abortSignal: globalAbortManager.abortController.signal,
-      });
+      };
+
+      if (isMiniMax) {
+        chatOptions.tools = NAVIS_TOOLS;
+        chatOptions.toolChoice = 'auto';
+      } else {
+        chatOptions.responseFormat = 'json';
+        chatOptions.jsonSchema = NAVIS_DECISION_SCHEMA;
+      }
+
+      const response = await client.chat(chatOptions);
 
       const elapsed = Date.now() - aiStart;
 
       // Check performance target (Req 2.2: vision <4000ms)
       const perfCheck = checkPerformanceTarget(elapsed, 'vision');
       console.log(`[Navis] 🖼️ ${perfCheck.message} (${visionLabel})`);
+
+      if (isMiniMax) {
+        const toolCalls = response.toolCalls || [];
+        const actions = toolCalls.map((tc: any) => ({
+          [tc.name]: tc.arguments
+        }));
+        return {
+          action: actions,
+          current_state: {
+            memory: 'MiniMax vision step executed',
+            next_goal: 'Continue task'
+          }
+        };
+      }
 
       const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
       return this.extractJson(raw);

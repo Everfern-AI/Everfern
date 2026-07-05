@@ -160,6 +160,21 @@ function extractPreviousIntent(history: any[]): IntentType | null {
     }
     return 'analyze';
   }
+
+  // If no file attachment, use heuristic classification on the text of the previous user message
+  const content = typeof previousUserMsg.content === 'string'
+    ? previousUserMsg.content
+    : Array.isArray(previousUserMsg.content)
+      ? previousUserMsg.content.filter((item: any) => item.type === 'text' || typeof item === 'string').map((item: any) => typeof item === 'string' ? item : item.text || '').join(' ')
+      : '';
+  
+  if (content) {
+    const heuristic = classifyIntentHeuristic(content, history.slice(0, -2));
+    if (heuristic.intent !== 'task' && heuristic.intent !== 'unknown') {
+      return heuristic.intent;
+    }
+  }
+
   return null;
 }
 
@@ -390,9 +405,9 @@ export function classifyIntentFallback(userInput: string, history: any[] = []): 
 
 // ── Main AI Classification ────────────────────────────────────────────
 
-export async function classifyIntent(
+export async function classifyIntentAI(
+  client: AIClient,
   userInput: string,
-  client?: AIClient,
   history: any[] = [],
   workspaceRoot?: string,
   operatorMode?: boolean
@@ -409,13 +424,8 @@ export async function classifyIntent(
     });
     if (nonFormMsg) {
       const contentStr = typeof nonFormMsg.content === 'string' ? nonFormMsg.content : JSON.stringify(nonFormMsg.content);
-      console.log(`[Triage] Form response detected. Classifying intent using prior user message: "${contentStr}"`);
       targetUserInput = contentStr;
     }
-  }
-
-  if (!client) {
-    return classifyIntentFallback(targetUserInput, history);
   }
 
   const historySnippet = normalized.slice(-5).map(m => {
@@ -437,15 +447,31 @@ export async function classifyIntent(
     const agentsContent = loadAgents(workspaceRoot);
     const triageSystemPrompt = `${TRIAGE_SYSTEM_PROMPT}\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}`;
 
-    const response = await client.chat({
-      messages: [
-        { role: 'system', content: triageSystemPrompt },
-        { role: 'user', content: TRIAGE_USER_TEMPLATE(targetUserInput, historySnippet, !!operatorMode) },
-      ],
-      responseFormat: 'json',
-      temperature: 0.2,
-      maxTokens: 500,
-    }) as any;
+    // Intent classification timeout: 1500ms
+    let timerId: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => reject(new Error('Intent classification timed out')), 1500);
+    });
+
+    let response: any;
+    try {
+      response = await Promise.race([
+        client.chat({
+          messages: [
+            { role: 'system', content: triageSystemPrompt },
+            { role: 'user', content: TRIAGE_USER_TEMPLATE(targetUserInput, historySnippet, !!operatorMode) },
+          ],
+          responseFormat: 'json',
+          temperature: 0.2,
+          maxTokens: 500,
+        }),
+        timeoutPromise,
+      ]) as any;
+    } finally {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    }
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
@@ -462,6 +488,70 @@ export async function classifyIntent(
     console.warn(`[Triage] AI classification failed: ${msg}. Falling back to heuristics.`);
     return classifyIntentFallback(targetUserInput, history);
   }
+}
+
+const intentCache = new Map<string, IntentClassification>();
+
+export function clearIntentCache(): void {
+  intentCache.clear();
+}
+
+export async function classifyIntent(
+  userInput: string,
+  client?: AIClient,
+  history: any[] = [],
+  workspaceRoot?: string,
+  operatorMode?: boolean
+): Promise<IntentClassification> {
+  const normalized = normalizeMessages(history);
+
+  // Form response handling: extract prior message to preserve intent context
+  let targetUserInput = userInput;
+  if (userInput && userInput.startsWith('[Form Response]')) {
+    const userMsgs = normalized.filter(m => m.role === 'user');
+    const nonFormMsg = [...userMsgs].reverse().find(m => {
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return !content.startsWith('[Form Response]');
+    });
+    if (nonFormMsg) {
+      const contentStr = typeof nonFormMsg.content === 'string' ? nonFormMsg.content : JSON.stringify(nonFormMsg.content);
+      targetUserInput = contentStr;
+    }
+  }
+
+  // Generate cache key: combine userInput, history content, and operatorMode to avoid context collision
+  const historyKey = history.map(m => {
+    const role = m.role || '';
+    const content = typeof m.content === 'string'
+      ? m.content
+      : Array.isArray(m.content)
+        ? m.content.map((c: any) => typeof c === 'string' ? c : JSON.stringify(c)).join('')
+        : JSON.stringify(m.content || '');
+    return `${role}:${content}`;
+  }).join('|');
+  const cacheKey = `${targetUserInput.trim()}:${historyKey}:${!!operatorMode}`;
+  if (intentCache.has(cacheKey)) {
+    return intentCache.get(cacheKey)!;
+  }
+
+  // Helper function to cache and return the result
+  const cacheAndReturn = (result: IntentClassification) => {
+    intentCache.set(cacheKey, result);
+    return result;
+  };
+
+  // Check fast classification first (Requirement: short affirmatives, greetings, conversational messages)
+  const fast = classifyIntentFast(targetUserInput, history);
+  if (fast && (fast.intent === 'conversation' || isShortAffirmative(targetUserInput) || /^(hi|hello|hey|good morning|good afternoon|thanks|thank you|bye)\b/i.test(targetUserInput))) {
+    return cacheAndReturn(fast);
+  }
+
+  if (!client) {
+    return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
+  }
+
+  const result = await classifyIntentAI(client, targetUserInput, history, workspaceRoot, operatorMode);
+  return cacheAndReturn(result);
 }
 
 /**

@@ -1,0 +1,38 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify brain completion signal timeout is now 5000ms (after fix)
+[22m[39m[PromptSync] 📍 Found prompt source: C:\Users\srini\Downloads\EverFern\everfern-desktop\apps\desktop\main\agent\prompts
+
+[90mstderr[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify fallback classification is used appropriately (after fix)
+[22m[39m[Triage] AI classification failed: timeout. Falling back to heuristics.
+
+ [31m❯[39m main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 8506[2mms[22m[39m
+     [32m✓[39m should verify intent classification timeout is now 1500ms (after fix)[32m 201[2mms[22m[39m
+[31m     [31m×[31m should verify brain completion signal timeout is now 5000ms (after fix)[39m[33m 8286[2mms[22m[39m
+     [32m✓[39m should verify retry backoff respects timeout budget (after fix)[32m 5[2mms[22m[39m
+     [32m✓[39m should verify client pooling tracks connection reuse (after fix)[32m 5[2mms[22m[39m
+     [32m✓[39m should verify fallback classification is used appropriately (after fix)[32m 5[2mms[22m[39m
+     [32m✓[39m should document timeout performance degradation fixes[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22mshould verify brain completion signal timeout is now 5000ms (after fix)
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts:[2m120:3[22m[39m
+    [90m118|[39m    * Fix Applied: Reduced from 15000ms to 5000ms
+    [90m119|[39m    */[39m
+    [90m120|[39m   it('should verify brain completion signal timeout is now 5000ms (aft…
+    [90m   |[39m   [31m^[39m
+    [90m121|[39m     [35mconst[39m { buildCompletionSignal } [33m=[39m [35mawait[39m [35mimport[39m([32m'../brain'[39m)[33m;[39m
+    [90m122|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m5 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 17:23:06
+[2m   Duration [22m 17.00s[2m (transform 2.11s, setup 560ms, import 266ms, tests 8.51s, environment 6.71s)[22m
+

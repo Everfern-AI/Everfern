@@ -1,0 +1,30 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify brain completion signal timeout is now 5000ms (after fix)
+[22m[39m[PromptSync] 📍 Found prompt source: C:\Users\srini\Downloads\EverFern\everfern-desktop\apps\desktop\main\agent\prompts
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify brain completion signal timeout is now 5000ms (after fix)
+[22m[39m[Brain] Building completion signal...
+[Brain] Original request (first 100 chars): write a function
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify brain completion signal timeout is now 5000ms (after fix)
+[22m[39m[Brain] Completion signal response received in 0ms
+[Brain] Response length: 47 chars, first 100 chars: {"reason":"task_complete","explanation":"test"}
+[Brain] After markdown cleanup: {"reason":"task_complete","explanation":"test"}
+[Brain] Extracted JSON substring: {"reason":"task_complete","explanation":"test"}
+[Brain] Attempting to parse JSON: {"reason":"task_complete","explanation":"test"}
+[Brain] Successfully parsed JSON: { reason: [32m'task_complete'[39m, explanation: [32m'test'[39m }
+[Brain] Completion signal built successfully in 0ms: task_complete
+
+[90mstderr[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts[2m > [22m[2mBug Condition Exploration — Agent Timeout Performance Degradation (FIXED)[2m > [22m[2mshould verify fallback classification is used appropriately (after fix)
+[22m[39m[Triage] AI classification failed: timeout. Falling back to heuristics.
+
+ [32m✓[39m main/agent/runner/nodes/__tests__/agent-timeout-performance.bug.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1041[2mms[22m[39m
+     [33m[2m✓[22m[39m should verify brain completion signal timeout is now 5000ms (after fix) [33m 805[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 17:24:41
+[2m   Duration [22m 8.43s[2m (transform 728ms, setup 675ms, import 115ms, tests 1.04s, environment 5.78s)[22m
+

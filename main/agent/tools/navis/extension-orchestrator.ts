@@ -1,4 +1,4 @@
-import type { AIClient } from '../../../lib/ai-client';
+import type { AIClient, ChatMessage, ToolDefinition } from '../../../lib/ai-client';
 import sharp from 'sharp';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { globalAbortManager } from '../../runner/abort-manager';
@@ -12,6 +12,7 @@ import { diffSnapshots } from './diff';
 
 import * as crypto from 'crypto';
 
+import { NAVIS_TOOLS } from './tools-schema';
 const FALLBACK_EXTENSION_SYSTEM_PROMPT = `You are Navis, a fast AI browser agent running through the EverFern browser extension.
 
 OPERATING MODE: DOM-FIRST. You receive live DOM snapshots with interactive element refs ([ref=eN]) every step.
@@ -126,15 +127,17 @@ function tabsText(tabs: any[]): string {
 }
 
 export class NavisExtensionOrchestrator {
+  private visionClient: AIClient | null = null;
   private model: string;
   private logger: NavisLogger;
   private adapter: ExtensionBrowserAdapter;
   private previousSnapshotRaw: string | null = null;
 
-  constructor(private aiClient: AIClient, logger?: NavisLogger) {
+  constructor(private aiClient: AIClient, logger?: NavisLogger, visionClient?: AIClient) {
     this.model = aiClient.model;
     this.logger = logger || new NavisLogger();
     this.adapter = new ExtensionBrowserAdapter(this.logger);
+    this.visionClient = visionClient || null;
   }
 
   getEventLogger(): NavisLogger {
@@ -428,54 +431,103 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
     history: string[] = [],
   ): Promise<any> {
     const maxRetries = 2;
+    const client = this.visionClient || this.aiClient;
+    const modelToUse = client.model;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        if (this.aiClient.provider === 'everfern') {
+        if (client.provider === 'everfern') {
           return await this.callEverFernCloudVision(userPrompt, screenshotB64, history, domContext, refs, viewport, systemPrompt);
         }
 
-        let response;
-        if (screenshotB64) {
-          const imgSizeKB = Math.round((screenshotB64.length * 3) / 4 / 1024);
+        const messages: any[] = [{ role: 'system', content: systemPrompt }];
+        let userContent: any = userPrompt;
+
+        const supportsVision = client.supportsVision();
+        const isVisionCall = Boolean(screenshotB64 && supportsVision);
+        if (isVisionCall) {
+          const imgSizeKB = Math.round((screenshotB64!.length * 3) / 4 / 1024);
           const detail = imgSizeKB > 200 ? 'high' : 'low';
-          response = await this.aiClient.chat({
-            model: this.model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: screenshotB64.startsWith('data:') ? screenshotB64 : `data:image/jpeg;base64,${screenshotB64}`,
-                      detail: detail as 'low' | 'high',
-                    },
-                  },
-                  { type: 'text', text: userPrompt },
-                ],
+          userContent = [
+            {
+              type: 'image_url',
+              image_url: {
+                url: screenshotB64!.startsWith('data:') ? screenshotB64! : `data:image/jpeg;base64,${screenshotB64!}`,
+                detail: detail as 'low' | 'high',
               },
-            ],
-            temperature: 0.1,
-            responseFormat: 'json',
-            jsonSchema: NAVIS_DECISION_SCHEMA,
-            abortSignal: globalAbortManager.abortController.signal,
-          });
-        } else {
-          response = await this.aiClient.chat({
-            model: this.model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.1,
-            responseFormat: 'json',
-            jsonSchema: NAVIS_DECISION_SCHEMA,
-            abortSignal: globalAbortManager.abortController.signal,
-          });
+            },
+            { type: 'text', text: userPrompt },
+          ];
         }
-        const raw = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-        return extractJson(raw);
+
+        messages.push({ role: 'user', content: userContent });
+
+        const chatOptions: any = {
+          model: modelToUse,
+          messages: messages,
+          temperature: 0.1,
+          abortSignal: globalAbortManager.abortController.signal,
+        };
+
+        const isMiniMax = client.provider === 'minimax' || client.model.toLowerCase().includes('minimax');
+
+        if (isVisionCall && !isMiniMax) {
+          chatOptions.responseFormat = 'json';
+          chatOptions.jsonSchema = NAVIS_DECISION_SCHEMA;
+        } else {
+          chatOptions.tools = NAVIS_TOOLS;
+          chatOptions.toolChoice = 'auto';
+        }
+
+        const response = await client.chat(chatOptions);
+
+        let toolCalls: any[] = [];
+        const contentStr = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
+
+        if (isVisionCall && !isMiniMax) {
+          try {
+            const parsed = extractJson(contentStr);
+            if (parsed && parsed.action) {
+              toolCalls = parsed.action.map((act: any, idx: number) => {
+                const name = Object.keys(act)[0];
+                const args = act[name];
+                return {
+                  id: `call_${Date.now()}_${idx}`,
+                  name,
+                  arguments: args
+                };
+              });
+            }
+          } catch (e) {
+            console.warn('[Navis Extension] Failed to parse JSON actions from vision model response:', e);
+          }
+        } else {
+          toolCalls = response.toolCalls || [];
+        }
+
+        // Fallback for parsing array from content if tool calls are empty
+        if (toolCalls.length === 0 && contentStr.includes('[')) {
+          try {
+            const raw = contentStr.substring(contentStr.indexOf('['));
+            const parsed = extractJson(raw);
+            if (Array.isArray(parsed)) {
+              toolCalls = parsed.map((act: any, idx: number) => {
+                const name = Object.keys(act)[0];
+                return {
+                  id: `call_${Date.now()}_${idx}`,
+                  name: typeof act === 'string' ? act.split('(')[0] : name,
+                  arguments: typeof act === 'string' ? {} : act[name]
+                };
+              });
+            }
+          } catch (e) {}
+        }
+
+        return {
+          toolCalls: toolCalls,
+          content: contentStr,
+          reasoning_content: (response as any).reasoning_content
+        };
       } catch (err: any) {
         if (globalAbortManager.streamAborted) throw err;
         
@@ -506,7 +558,6 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
 
       const baseUrl = this.aiClient.getFullConfig().baseUrl || 'https://api.everfern.app/api';
       
-      const hasCoordinateActionsInitially = true; // assume yes to get dimensions early for payload
       const dimensions = await getImageDimensions(screenshotB64);
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -523,7 +574,6 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           objective: objective,
           history: history.slice(-8),
           only_vision: false,
-          // Send the full NAVIS system prompt so EverFern Cloud uses it instead of its internal default
           system_prompt: systemPrompt || undefined,
           refs: refs.map(r => ({
             ref: r.ref,
@@ -580,11 +630,104 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         };
       }
 
+      // If no TARS actions were returned, try parsing XML-style action tags from instruction text
+      if (actions.length === 0 && content) {
+        const xmlActions = this._parseXmlActions(content);
+        if (xmlActions.length > 0) {
+          console.log(`[Navis Extension] Parsed ${xmlActions.length} XML action(s) from instruction text.`);
+          return {
+            current_state: {
+              evaluation_previous_goal: 'Unknown',
+              memory: content.substring(0, 200),
+              next_goal: objective.substring(0, 200)
+            },
+            action: xmlActions
+          };
+        }
+
+        // Also try extracting TARS-style action lines from the instruction text
+        const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const tarsActions: any[] = [];
+        for (const line of lines) {
+          const parsed = this._parseTarsAction(line, dimensions, refs, viewport);
+          if (parsed) tarsActions.push(parsed);
+        }
+        if (tarsActions.length > 0) {
+          console.log(`[Navis Extension] Parsed ${tarsActions.length} TARS action(s) from instruction lines.`);
+          return {
+            current_state: {
+              evaluation_previous_goal: 'Unknown',
+              memory: content.substring(0, 200),
+              next_goal: objective.substring(0, 200)
+            },
+            action: tarsActions
+          };
+        }
+      }
+
       return this._convertTarsActionsToNavisDecision(actions, objective, content, dimensions, refs, viewport);
     } catch (err: any) {
       console.error('[Navis Extension] EverFern Cloud vision grounding failed:', err);
       throw err;
     }
+  }
+
+  private _parseXmlActions(text: string): any[] {
+    const actions: any[] = [];
+    const tagRegex = /<(\w+)((?:\s+\w+\s*=\s*"[^"]*")*)\s*\/?>/g;
+    let match;
+
+    while ((match = tagRegex.exec(text)) !== null) {
+      const tagName = match[1].toLowerCase();
+      const attrsStr = match[2] || '';
+
+      const attrs: Record<string, string> = {};
+      const attrRegex = /(\w+)\s*=\s*"([^"]*)"/g;
+      let attrMatch;
+      while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
+        attrs[attrMatch[1]] = attrMatch[2];
+      }
+
+      switch (tagName) {
+        case 'go_to_url':
+          if (attrs.url) actions.push({ go_to_url: { url: attrs.url } });
+          break;
+        case 'click_element':
+          if (attrs.ref) actions.push({ click_element: { ref: attrs.ref } });
+          break;
+        case 'input_text':
+          if (attrs.ref) actions.push({ input_text: { ref: attrs.ref, text: attrs.text || '' } });
+          break;
+        case 'scroll_down':
+          actions.push({ scroll_down: {} });
+          break;
+        case 'scroll_up':
+          actions.push({ scroll_up: {} });
+          break;
+        case 'go_back':
+          actions.push({ go_back: {} });
+          break;
+        case 'done':
+          actions.push({ done: { success: attrs.success !== 'false', text: attrs.text || 'done' } });
+          break;
+        case 'press_key':
+          if (attrs.key) actions.push({ press_key: { key: attrs.key } });
+          break;
+        case 'wait':
+          actions.push({ wait: { seconds: parseInt(attrs.seconds) || 1 } });
+          break;
+        case 'extract_content':
+          actions.push({ extract_content: {} });
+          break;
+        case 'hover':
+          if (attrs.ref) actions.push({ hover: { ref: attrs.ref } });
+          break;
+        case 'smart_click':
+          if (attrs.ref) actions.push({ smart_click: { ref: attrs.ref } });
+          break;
+      }
+    }
+    return actions;
   }
 
   private _convertTarsActionsToNavisDecision(
@@ -785,6 +928,13 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
     if (actionStr.match(/win/i)) return { press_key: { key: 'Meta' } };
     if (actionStr.match(/scroll\s*\(\s*up\s*\)/i)) return { scroll_up: {} };
     if (actionStr.match(/scroll\s*\(\s*down\s*\)/i)) return { scroll_down: {} };
+
+    // go_to_url(url='https://...') or go_to_url('https://...')
+    const goToUrlMatch = actionStr.match(/go_to_url\s*\(\s*(?:url\s*=\s*)?['"]([^'"]+)['"]\s*\)/i);
+    if (goToUrlMatch) return { go_to_url: { url: goToUrlMatch[1] } };
+
+    // go_back()
+    if (actionStr.match(/go_back\s*\(\s*\)/i)) return { go_back: {} };
 
     return null;
   }

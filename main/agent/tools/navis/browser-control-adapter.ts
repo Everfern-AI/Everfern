@@ -196,6 +196,11 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.logger.elementInput(step, maxSteps, String(args.ref || 'element'), String(args.value || args.option || ''));
         return normalizeResult(result, `Selected option ${args.value || args.option || ''}`, true);
       }
+      case 'upload_file': {
+        const result = await bridgeServer.sendRequest('upload_file', { tabId: this.activeTabId, ...args }, 20000);
+        this.logger.elementInput(step, maxSteps, String(args.ref || 'input'), String(args.files || args.file || ''));
+        return normalizeResult(result, `Uploaded files`, true);
+      }
       case 'input_text': {
         const result = await bridgeServer.sendRequest('input', { tabId: this.activeTabId, ...args }, 12000);
         this.logger.elementInput(step, maxSteps, String(args.ref || result?.target || 'input'), String(args.text || ''));
@@ -224,10 +229,11 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         return normalizeResult(result, `Scrolled ${direction}`, false);
       }
       case 'wait':
-      case 'wait_for_navigation': {
-        const timeoutMs = Number(args.ms || args.timeoutMs || 1200);
-        const result = await bridgeServer.sendRequest('wait_for_dom_change', { tabId: this.activeTabId, timeoutMs, urlContains: args.urlContains }, Math.max(timeoutMs + 3000, 6000));
-        this.logger.wait(step, maxSteps, `${timeoutMs}ms`);
+      case 'wait_for_navigation':
+      case 'wait_for_dom_change': {
+        const timeoutMs = Number(args.ms || args.timeoutMs || 3000);
+        const result = await bridgeServer.sendRequest('wait_for_dom_change', { tabId: this.activeTabId, timeoutMs, urlContains: args.urlContains, text: args.text, selector: args.selector }, Math.max(timeoutMs + 3000, 6000));
+        this.logger.wait(step, maxSteps, `${timeoutMs}ms${args.text || args.selector ? ` for ${args.text || args.selector}` : ''}`);
         return normalizeResult(result, 'Waited for page change', Boolean(result?.stateChanged));
       }
       case 'extract':

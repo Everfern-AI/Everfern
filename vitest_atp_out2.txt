@@ -1,0 +1,76 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90mC:/Users/srini/Downloads/EverFern/everfern-desktop/apps/desktop[39m
+
+[90mstderr[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22m[2mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22m[2mshould preserve fallback behavior for unreachable providers
+[22m[39m[Triage] AI classification failed: ECONNREFUSED. Falling back to heuristics.
+
+[90mstdout[2m | main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22m[2mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22m[2mshould preserve brain completion signal accuracy
+[22m[39m[PromptSync] 📍 Found prompt source: C:\Users\srini\Downloads\EverFern\everfern-desktop\apps\desktop\main\agent\prompts
+
+ [31m❯[39m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts [2m([22m[2m7 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 35975[2mms[22m[39m
+     [33m[2m✓[22m[39m should preserve AI classification accuracy for fast responses [33m 378[2mms[22m[39m
+[31m     [31m×[31m should preserve context inheritance for short affirmatives[39m[32m 11[2mms[22m[39m
+[31m     [31m×[31m should preserve cache hit behavior[39m[32m 5[2mms[22m[39m
+     [32m✓[39m should preserve fallback behavior for unreachable providers[32m 6[2mms[22m[39m
+[31m     [31m×[31m should preserve brain completion signal accuracy[39m[33m 23084[2mms[22m[39m
+[31m     [31m×[31m should preserve all completion signal reasons[39m[33m 12486[2mms[22m[39m
+     [32m✓[39m should document preservation requirements[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 4 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve context inheritance for short affirmatives
+[31m[1mAssertionError[22m: expected 0.8 to be greater than 0.8[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m109:31[22m[39m
+    [90m107|[39m     // Verify context inheritance: should inherit 'coding' intent with…
+    [90m108|[39m     [34mexpect[39m(result[33m.[39mintent)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m109|[39m     [34mexpect[39m(result[33m.[39mconfidence)[33m.[39m[34mtoBeGreaterThan[39m([34m0.8[39m)[33m;[39m
+    [90m   |[39m                               [31m^[39m
+    [90m110|[39m     [90m// Client should NOT be called for short affirmatives[39m
+    [90m111|[39m     [34mexpect[39m(client[33m.[39mchat)[33m.[39mnot[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve cache hit behavior
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called 1 times, but got 0 times[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m144:25[22m[39m
+    [90m142|[39m     const result1 = await classifyIntent('write a function', client, […
+    [90m143|[39m     [34mexpect[39m(result1[33m.[39mintent)[33m.[39m[34mtoBe[39m([32m'coding'[39m)[33m;[39m
+    [90m144|[39m     [34mexpect[39m(client[33m.[39mchat)[33m.[39m[34mtoHaveBeenCalledTimes[39m([34m1[39m)[33m;[39m
+    [90m   |[39m                         [31m^[39m
+    [90m145|[39m
+    [90m146|[39m     [90m// Second call with same input - should hit cache[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve brain completion signal accuracy
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m191:3[22m[39m
+    [90m189|[39m    * Validates: Requirements 3.5
+    [90m190|[39m    */[39m
+    [90m191|[39m   [34mit[39m([32m'should preserve brain completion signal accuracy'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m   [31m^[39m
+    [90m192|[39m     [35mconst[39m { buildCompletionSignal } [33m=[39m [35mawait[39m [35mimport[39m([32m'../brain'[39m)[33m;[39m
+    [90m193|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts[2m > [22mPreservation Property Tests — Agent Timeout Performance Preservation[2m > [22mshould preserve all completion signal reasons
+[31m[1mError[22m: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[36m [2m❯[22m main/agent/runner/nodes/__tests__/agent-timeout-performance.preservation.test.ts:[2m237:3[22m[39m
+    [90m235|[39m    * Validates: Requirements 3.5, 3.6
+    [90m236|[39m    */[39m
+    [90m237|[39m   [34mit[39m([32m'should preserve all completion signal reasons'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m   |[39m   [31m^[39m
+    [90m238|[39m     [35mconst[39m { buildCompletionSignal } [33m=[39m [35mawait[39m [35mimport[39m([32m'../brain'[39m)[33m;[39m
+    [90m239|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m3 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 17:15:00
+[2m   Duration [22m 63.95s[2m (transform 3.01s, setup 850ms, import 577ms, tests 35.98s, environment 25.47s)[22m
+

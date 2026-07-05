@@ -573,7 +573,8 @@ export default function SetupPage() {
                 try {
                     const stored = localStorage.getItem("everfern_cloud_session");
                     if (stored) {
-                        finalCloudKey = JSON.parse(stored).accessToken;
+                        const parsed = JSON.parse(stored);
+                        finalCloudKey = parsed?.accessToken;
                     }
                 } catch {}
             }
@@ -617,7 +618,7 @@ export default function SetupPage() {
                 const stored = localStorage.getItem("everfern_cloud_session");
                 if (stored) {
                     const session = JSON.parse(stored);
-                    config.apiKey = session.accessToken;
+                    config.apiKey = session?.accessToken;
                 }
             } catch {}
         }
@@ -631,15 +632,17 @@ export default function SetupPage() {
             const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
             const stored = localStorage.getItem("everfern_cloud_session");
             if (stored) {
-                const { accessToken } = JSON.parse(stored);
-                await fetch(`${LANDING_URL}/api/user/onboarding-done`, {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${accessToken}` },
-                });
-                // Update local session cache too
-                const session = JSON.parse(stored);
-                session.user.onboardingDone = true;
-                localStorage.setItem("everfern_cloud_session", JSON.stringify(session));
+                const parsed = JSON.parse(stored);
+                const accessToken = parsed?.accessToken;
+                if (accessToken) {
+                    await fetch(`${LANDING_URL}/api/user/onboarding-done`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${accessToken}` },
+                    });
+                    // Update local session cache too
+                    parsed.user.onboardingDone = true;
+                    localStorage.setItem("everfern_cloud_session", JSON.stringify(parsed));
+                }
             }
         } catch {
             // Not signed in as cloud user — skip silently

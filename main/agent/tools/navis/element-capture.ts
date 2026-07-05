@@ -660,9 +660,26 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         'p',
         'img',
         'svg',
-        'a'
       ].join(',');
-      const elements = document.querySelectorAll(selector);
+
+      const queryShadowAll = (root: Document | ShadowRoot, selectorString: string, results: Element[] = []): Element[] => {
+        try {
+          const matched = root.querySelectorAll(selectorString);
+          for (let i = 0; i < matched.length; i++) {
+            results.push(matched[i]);
+          }
+          const all = root.querySelectorAll('*');
+          for (let i = 0; i < all.length; i++) {
+            const el = all[i];
+            if (el.shadowRoot) {
+              queryShadowAll(el.shadowRoot, selectorString, results);
+            }
+          }
+        } catch (e) {}
+        return results;
+      };
+
+      const elements = queryShadowAll(document, selector);
 
       let ref = 0;
       const lines: string[] = [];
