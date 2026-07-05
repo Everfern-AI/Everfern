@@ -584,7 +584,8 @@ export const createBrainNode = (
         completionSignal: null,
         taskPhase: 'specialized_agent' as const,
         brainToolsInFlight: false,
-        returningFromSpecialist: 'coding_specialist'
+        returningFromSpecialist: 'coding_specialist',
+        harnessRecoveryActions: [],
       };
     }
     // ────────────────────────────────────────────────────────────────────────
@@ -639,6 +640,12 @@ export const createBrainNode = (
       }
     } catch (openclawErr) {
       console.warn('[Brain] Failed to inject OpenClaw configurations:', openclawErr);
+    }
+
+    // Inject harness workflow phase prompt if available
+    if (systemPrompt && state.harnessPhasePrompt) {
+      systemPrompt += `\n\n=== WORKFLOW PHASE ===\n${state.harnessPhasePrompt}\n`;
+      console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
     }
 
     // Get original user request for context
@@ -862,10 +869,10 @@ export const createBrainNode = (
         ...result,
         routingDecision: routingDecision,
         completionSignal: null,
-        // Set task phase to route to specialized agents
         taskPhase: 'specialized_agent' as const,
         brainToolsInFlight: false,
-        returningFromSpecialist: null
+        returningFromSpecialist: null,
+        harnessRecoveryActions: [],
       };
 
       // Create checkpoint before routing to specialist

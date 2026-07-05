@@ -2282,6 +2282,21 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
 
   const currentScreenshot = safe[currentIndex] || safe[0];
 
+  if (!currentScreenshot) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {navisReport && tabBar}
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: T.textMuted, fontSize: 13, fontFamily: T.sans, flexDirection: 'column', gap: 8
+        }}>
+          <CameraOff size={20} />
+          No frames yet
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Tab bar — only show if we also have a report */}

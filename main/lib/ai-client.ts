@@ -1405,7 +1405,7 @@ export class AIClient {
             imageOutputCost: response.usage.image_output_cost,
             totalCost: response.usage.total_cost,
           } : undefined,
-          finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
+          finishReason: choice?.finish_reason === 'tool_calls' || toolCalls?.length > 0 ? 'tool_calls' :
             (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop'
         };
       }
@@ -1819,7 +1819,7 @@ export class AIClient {
           imageOutputCost: data.usage.image_output_cost,
           totalCost: data.usage.total_cost,
         } : undefined,
-        finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
+        finishReason: choice?.finish_reason === 'tool_calls' || toolCalls?.length > 0 ? 'tool_calls' :
           (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop',
       };
     }
@@ -2767,15 +2767,34 @@ export class AIClient {
   }
 
   private async *_ollamaStream(req: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
+    const body: Record<string, unknown> = {
+      model: req.model ?? this.config.model,
+      messages: this._mapOllamaMessages(req.messages),
+      stream: true,
+      options: { temperature: req.temperature ?? this.config.temperature },
+    };
+
+    // Pass tools to Ollama if provided (mirrors non-streaming path)
+    if (req.tools && req.tools.length > 0) {
+      body['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
+        }
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        };
+      });
+    }
+
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { ...this._ollamaHeaders, 'Accept': 'text/event-stream' },
-      body: JSON.stringify({
-        model: req.model ?? this.config.model,
-        messages: this._mapOllamaMessages(req.messages),
-        stream: true,
-        options: { temperature: req.temperature ?? this.config.temperature },
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const txt = await res.text();

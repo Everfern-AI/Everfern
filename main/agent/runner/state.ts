@@ -194,6 +194,10 @@ export const GraphState = Annotation.Root({
 
   // Debate system: stores the result of the three-agent debate chamber
   debateResult: Annotation<any>(),
+
+  // Harness Engineering: workflow state machine tracking
+  harnessPhasePrompt: Annotation<string>(),
+  harnessRecoveryActions: Annotation<any[]>(),
 });
 
 export type GraphStateType = typeof GraphState.State;

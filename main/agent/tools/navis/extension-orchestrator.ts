@@ -83,6 +83,7 @@ function extractJson(raw: string): any {
   const cleaned = stripThinking(raw)
     .replace(/^```(?:json)?/i, '')
     .replace(/```$/i, '')
+    .replace(/<\/?tool_call>/gi, '')
     .trim();
 
   try {
@@ -469,9 +470,13 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           abortSignal: globalAbortManager.abortController.signal,
         };
 
-        const isMiniMax = client.provider === 'minimax' || client.model.toLowerCase().includes('minimax');
+        const isNativeToolModel = ['openai', 'anthropic', 'gemini', 'deepseek', 'openrouter'].includes(client.provider) ||
+                                  client.model.toLowerCase().includes('gpt-') ||
+                                  client.model.toLowerCase().includes('claude-') ||
+                                  client.model.toLowerCase().includes('gemini-') ||
+                                  client.model.toLowerCase().includes('deepseek-');
 
-        if (isVisionCall && !isMiniMax) {
+        if (isVisionCall && !isNativeToolModel) {
           chatOptions.responseFormat = 'json';
           chatOptions.jsonSchema = NAVIS_DECISION_SCHEMA;
         } else {
@@ -484,7 +489,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         let toolCalls: any[] = [];
         const contentStr = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
 
-        if (isVisionCall && !isMiniMax) {
+        if (isVisionCall && !isNativeToolModel) {
           try {
             const parsed = extractJson(contentStr);
             if (parsed && parsed.action) {
@@ -615,7 +620,7 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
             return decision;
           }
         } catch (e) {
-          console.warn('[Navis Extension] Failed to extract JSON decision from cloud instruction:', e);
+          console.debug('[Navis Extension] No JSON decision in cloud instruction, trying XML/TARS fallback:', (e as Error).message);
         }
       }
 

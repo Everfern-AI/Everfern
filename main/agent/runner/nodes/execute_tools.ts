@@ -16,6 +16,14 @@ import { createMissionIntegrator } from '../mission-integrator';
 import type { AIClient } from '../../../lib/ai-client';
 import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
 import { redirectComputerUseCallsToNavis } from '../tool-routing';
+import {
+  createHarnessConfig,
+  preExecutionCheck,
+  postExecutionCheck,
+  recordExecution,
+  getPhasePrompt,
+  workflowEngine,
+} from '../harness';
 
 /**
  * Determine if an error should trigger automatic retry with correction
@@ -141,9 +149,38 @@ export const createExecuteToolsNode = (
       console.warn('[ExecuteTools] Failed to set rollback context:', ctxError);
     }
 
-    for (let g = 0; g < parallelGroups.length; g++) {
-      const group = parallelGroups[g];
-      runner.telemetry.info(`🚀 Deploying Parallel Agents: Group ${g + 1}/${parallelGroups.length} (${group.length} agents sync)`);
+    // ── Harness Integration ──────────────────────────────────────────
+    const harnessConfig = createHarnessConfig(rollbackTaskId, 'coding_harness');
+    const phasePrompt = getPhasePrompt(harnessConfig);
+    let harnessRecoveryActions: any[] = [];
+
+    // Pre-execution validation: check recovery enforcer before each tool
+    const validatedGroups: any[][] = [];
+    for (const group of parallelGroups) {
+      const validatedGroup: any[] = [];
+      for (const tool of group) {
+        const stepId = `${rollbackTaskId}:${tool.name}:${tool.id}`;
+        const preCheck = preExecutionCheck(stepId, tool.name, tool.args);
+        if (!preCheck.shouldProceed && preCheck.recoveryAction) {
+          harnessRecoveryActions.push({
+            toolName: tool.name,
+            stepId,
+            recoveryAction: preCheck.recoveryAction,
+            blocked: true
+          });
+          console.log(`[Harness] ⛔ Blocked ${tool.name}: ${preCheck.recoveryAction.reason}`);
+          continue;
+        }
+        validatedGroup.push(tool);
+      }
+      if (validatedGroup.length > 0) {
+        validatedGroups.push(validatedGroup);
+      }
+    }
+
+    for (let g = 0; g < validatedGroups.length; g++) {
+      const group = validatedGroups[g];
+      runner.telemetry.info(`🚀 Deploying Parallel Agents: Group ${g + 1}/${validatedGroups.length} (${group.length} agents sync)`);
 
       const groupTools = group.map((a: any) => ({
         name: a.name,
@@ -169,6 +206,29 @@ export const createExecuteToolsNode = (
           runner.telemetry.info(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
         }
 
+        // ── Harness Post-Execution ────────────────────────────────────
+        const stepId = `${rollbackTaskId}:${rec.toolName}:${rec.id || Date.now()}`;
+        const errorStr = rec.result?.error || (rec.result?.success === false ? rec.result?.output : undefined);
+        recordExecution(stepId, rec.toolName, rec.args || {}, rec.result, errorStr);
+
+        const postCheck = postExecutionCheck(stepId, rec.toolName, rec.result);
+        if (!postCheck.valid) {
+          const recoveryAction = postCheck.recoveryAction;
+          const harnessMsg = recoveryAction
+            ? `[Harness] ⚠️ ${rec.toolName}: ${recoveryAction.message}`
+            : `[Harness] ⚠️ ${rec.toolName}: validation warnings: ${postCheck.validationErrors.join(', ')}`;
+          console.warn(harnessMsg);
+
+          if (recoveryAction) {
+            harnessRecoveryActions.push({
+              toolName: rec.toolName,
+              stepId,
+              recoveryAction,
+              blocked: false
+            });
+          }
+        }
+
         newMessages.push({
           role: 'tool',
           tool_call_id: (groupTools.find((t: any) => t.name === rec.toolName) as any)?.id,
@@ -178,6 +238,51 @@ export const createExecuteToolsNode = (
             ? [{ type: 'text', text: rec.result.output }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${rec.result.base64Image}` } }]
             : rec.result.output,
         });
+      }
+
+      // ── Execute rollback for rollback-type recovery actions ──
+      const rollbackActions = harnessRecoveryActions.filter(
+        (a: any) => a.recoveryAction?.type === 'rollback_step' || a.recoveryAction?.type === 'rollback_phase'
+      );
+      for (const ra of rollbackActions) {
+        try {
+          const { rollbackOrchestrator } = await import('../harness');
+          const sessionId = ra.stepId?.split(':')[0] || rollbackTaskId;
+          const targetPhase = ra.recoveryAction.rollbackTarget as string | undefined;
+          if (targetPhase) {
+            const currentPhase = workflowEngine.getContext(sessionId).currentPhase;
+            const rollbackResult = await rollbackOrchestrator.rollbackToPhase(
+              sessionId, targetPhase as any, currentPhase as any
+            );
+            if (rollbackResult) {
+              const content = `[Harness Rollback] Rolled back to phase "${targetPhase}": ${rollbackResult.stepsRolledBack} steps undone, ${rollbackResult.filesRestored} files restored.`;
+              console.log(content);
+              newMessages.push({
+                role: 'tool',
+                tool_call_id: 'harness_rollback',
+                tool_name: 'harness_rollback',
+                name: 'harness_rollback',
+                content
+              });
+            }
+          } else {
+            const plan = await rollbackOrchestrator.planRollback(sessionId, 0);
+            if (plan) {
+              const rollbackResult = await rollbackOrchestrator.executeRollback(plan);
+              const content = `[Harness Rollback] Rolled back ${rollbackResult.stepsRolledBack} steps: ${rollbackResult.filesRestored} files restored.`;
+              console.log(content);
+              newMessages.push({
+                role: 'tool',
+                tool_call_id: 'harness_rollback',
+                tool_name: 'harness_rollback',
+                name: 'harness_rollback',
+                content
+              });
+            }
+          }
+        } catch (rollbackErr) {
+          console.warn('[ExecuteTools] Rollback execution failed:', rollbackErr);
+        }
       }
     }
 
@@ -213,13 +318,30 @@ export const createExecuteToolsNode = (
 
     const hasAskUserQuestion = newRecords.some(r => r.toolName === 'ask_user_question');
 
+    // Inject harness recovery actions into messages so brain can see them
+    if (harnessRecoveryActions.length > 0) {
+      const recoverySummary = harnessRecoveryActions.map(a => {
+        const prefix = a.blocked ? '⛔ BLOCKED' : '⚠️ RECOVERY';
+        return `[Harness] ${prefix}: ${a.toolName} — ${a.recoveryAction.message}`;
+      }).join('\n');
+      newMessages.push({
+        role: 'tool',
+        tool_call_id: 'harness_recovery',
+        tool_name: 'harness_recovery',
+        name: 'harness_recovery',
+        content: recoverySummary
+      });
+    }
+
     const result = {
       messages: newMessages,
       toolCallRecords: [...(state.toolCallRecords ?? []), ...newRecords],
       pendingToolCalls: nextPendingTools,
       pauseGeneration: pauseGenFlag,
       userConfirmation: undefined,
-      toolCallHistory: [...(state.toolCallHistory ?? [])]
+      toolCallHistory: [...(state.toolCallHistory ?? [])],
+      harnessPhasePrompt: phasePrompt || undefined,
+      harnessRecoveryActions: harnessRecoveryActions.length > 0 ? harnessRecoveryActions : [],
     };
 
     // Log return to brain
