@@ -1290,8 +1290,7 @@ class ComputerUseAgent {
 
     const isGemini = this.client.provider === "gemini" || this.model.toLowerCase().includes("gemini");
     const isGpt5 = this.model.toLowerCase().includes("gpt-5") || this.model.toLowerCase().includes("openai/gpt-5");
-    const isQwen = this.model.toLowerCase().includes("qwen") || this.model.toLowerCase().includes("everfern-tars") || this.client.provider === "everfern";
-    const useToolCallRunner = isGemini || isGpt5 || isQwen;
+    const useToolCallRunner = isGemini || isGpt5;
 
     if (useToolCallRunner) {
       if (isGemini) {
@@ -1305,9 +1304,9 @@ class ComputerUseAgent {
         }
       }
 
-      const agentName = isGpt5 ? "GPT-5" : (isQwen ? "Qwen" : "Gemini");
+      const agentName = isGpt5 ? "GPT-5" : "Gemini";
       const systemPrompt = isGpt5 ? GPT5_SYSTEM_PROMPT : GEMINI_SYSTEM_PROMPT;
-      // Token budget: GPT-5.4 is expensive — cap to 512 per turn; Gemini/Qwen use default
+      // Token budget: GPT-5.4 is expensive — cap to 512 per turn; Gemini uses default
       const maxTokensPerTurn = isGpt5 ? 512 : undefined;
 
       let step = 0;

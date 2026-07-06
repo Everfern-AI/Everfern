@@ -579,8 +579,7 @@ export class AIClient {
     const lower = modelName.toLowerCase();
     const isGeminiModel = lower.includes('gemini');
     const isGpt5Model = lower.includes('gpt-5') || lower.includes('openai/gpt-5');
-    const isQwenModel = lower.includes('qwen') || lower.includes('everfern') || lower.includes('tars');
-    const needsTools = (isGeminiModel || isGpt5Model || isQwenModel) && !req.tools?.length &&
+    const needsTools = (isGeminiModel || isGpt5Model) && !req.tools?.length &&
       (this.config.provider === 'everfern' || this.config.provider === 'openrouter');
     if (needsTools) {
       options.tools = GEMINI_COMPUTER_USE_TOOLS.map(t => ({
