@@ -19,36 +19,19 @@ export default function TasksPanel({ tasks, path }: TasksPanelProps) {
     if (!tasks || tasks.length === 0) return null;
 
     return (
-        <div style={{ 
-            backgroundColor: "#ffffff", 
-            border: "1px solid #e8e6d9", 
-            borderRadius: 12, 
-            overflow: "hidden", 
-            padding: '16px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.02)'
-        }}>
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl overflow-hidden p-4 shadow-sm transition-colors duration-200">
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                style={{ 
-                    width: '100%', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    background: 'none', 
-                    border: 'none', 
-                    cursor: 'pointer', 
-                    padding: 0,
-                    marginBottom: isExpanded ? 16 : 0
-                }}
+                className="w-full flex items-center justify-between bg-transparent border-none cursor-pointer p-0"
+                style={{ marginBottom: isExpanded ? 16 : 0 }}
             >
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Progress</span>
+                <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 tracking-wide uppercase">Progress</span>
                 <ChevronDownIcon 
                     width={16} 
                     height={16} 
+                    className="text-stone-400 dark:text-stone-500 transition-transform duration-200"
                     style={{ 
                         transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', 
-                        transition: '0.25s ease', 
-                        color: '#a1a1aa' 
                     }} 
                 />
             </button>
@@ -60,43 +43,33 @@ export default function TasksPanel({ tasks, path }: TasksPanelProps) {
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-                        style={{ overflow: 'hidden' }}
+                        className="overflow-hidden"
                     >
-                        <div style={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: 12,
-                            maxHeight: 320,
-                            overflowY: 'auto',
-                            paddingRight: 8,
-                            paddingBottom: 4
-                        }}>
+                        <div className="flex flex-col gap-3 max-h-[320px] overflow-y-auto pr-2 pb-1">
                             {tasks.map((task, idx) => (
-                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ flexShrink: 0 }}>
+                                <div key={idx} className="flex items-center gap-2.5">
+                                    <div className="flex-shrink-0">
                                         {task.status === 'completed' ? (
-                                            <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <CheckIcon width={12} height={12} color="white" strokeWidth={3.5} />
+                                            <div className="w-[22px] h-[22px] rounded-full bg-blue-500 flex items-center justify-center">
+                                                <CheckIcon width={12} height={12} className="text-white" strokeWidth={3.5} />
                                             </div>
                                         ) : task.status === 'in_progress' ? (
-                                            <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' }}>
-                                                <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{idx + 1}</span>
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-blue-500 bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center">
+                                                <span className="text-[11px] font-bold text-blue-500 dark:text-blue-400">{idx + 1}</span>
                                             </div>
                                         ) : (
-                                            <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af' }}>{idx + 1}</span>
+                                            <div className="w-[22px] h-[22px] rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 flex items-center justify-center">
+                                                <span className="text-[11px] font-bold text-stone-400 dark:text-stone-500">{idx + 1}</span>
                                             </div>
                                         )}
                                     </div>
-                                    <div style={{ 
-                                        fontSize: 13, 
-                                        color: task.status === 'completed' ? '#9ca3af' : task.status === 'in_progress' ? '#111111' : '#6b7280',
-                                        textDecoration: task.status === 'completed' ? 'line-through' : 'none',
-                                        fontWeight: task.status === 'in_progress' ? 600 : 400,
-                                        lineHeight: 1.4,
-                                        fontFamily: 'var(--font-sans)',
-                                        letterSpacing: '-0.01em'
-                                    }}>
+                                    <div className={`text-[13px] leading-relaxed tracking-tight ${
+                                        task.status === 'completed' 
+                                            ? 'text-stone-400 dark:text-stone-500 line-through' 
+                                            : task.status === 'in_progress' 
+                                                ? 'text-stone-900 dark:text-stone-100 font-semibold' 
+                                                : 'text-stone-600 dark:text-stone-400 font-normal'
+                                    }`}>
                                         {task.description}
                                     </div>
                                 </div>
@@ -108,4 +81,3 @@ export default function TasksPanel({ tasks, path }: TasksPanelProps) {
         </div>
     );
 }
-

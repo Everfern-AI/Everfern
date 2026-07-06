@@ -64,6 +64,7 @@ export const ToolType = {
   IMAGE_ANALYSIS: 'image_analysis',
   LIVE_PREVIEW: 'live_preview',
   MEMORY: 'memory',
+  GREP: 'grep',
   GENERIC: 'generic',
 };
 
@@ -117,7 +118,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'skill') return ToolType.SKILL;
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
-  if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return ToolType.FILE_SYSTEM;
+  if (n === 'grep' || n.includes('grep_search')) return ToolType.GREP;
+  if (n === 'ls' || n === 'find' || n.includes('list_dir') || n.includes('system_files')) return ToolType.FILE_SYSTEM;
   if (n.includes('web_search') || n.includes('remote_web_search')) return ToolType.WEB_SEARCH;
   if (n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
@@ -285,7 +287,8 @@ function ToolTabIcon({ toolName }: { toolName?: string }) {
   const n = (toolName || '').toLowerCase();
   if (n.includes('terminal') || n.includes('execute') || n.includes('bash')) return <Terminal size={13} />;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return <Braces size={13} />;
-  if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return <FolderOpenIcon style={{ width: 13, height: 13 }} />;
+  if (n === 'grep' || n.includes('grep_search')) return <Search size={13} />;
+  if (n === 'ls' || n === 'find' || n.includes('list_dir') || n.includes('system_files')) return <FolderOpenIcon style={{ width: 13, height: 13 }} />;
   if (n.includes('web_search') || n.includes('remote_web_search')) return <Search size={13} />;
   if (n === 'pptx_generator') return <FileIcon size={13} />;
   if (n === 'visual_classification_sheet') return <Image size={13} />;
@@ -2470,29 +2473,29 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
    ============================================================ */
 
 const TERM = {
-  bg:       '#0c0c0c',
-  border:   'rgba(255,255,255,0.08)',
-  divider:  'rgba(255,255,255,0.05)',
+  bg:       'var(--color-bg-base)',
+  border:   'var(--color-border)',
+  divider:  'var(--color-border-subtle)',
 
-  textCmd:  'rgba(255,255,255,0.88)',
-  textOut:  'rgba(238,242,247,0.86)',
-  textErr:  '#ff5f57',
-  textDim:  'rgba(255,255,255,0.2)',
-  textMeta: 'rgba(255,255,255,0.3)',
+  textCmd:  'var(--color-text-primary)',
+  textOut:  'var(--color-text-secondary)',
+  textErr:  '#ef4444',
+  textDim:  'var(--color-text-tertiary)',
+  textMeta: 'var(--color-text-tertiary)',
 
-  psUser:   '#5af78e',
-  psAt:     'rgba(255,255,255,0.25)',
-  psHost:   '#57c7ff',
-  psSep:    'rgba(255,255,255,0.2)',
-  psPath:   '#f3f99d',
-  psDollar: 'rgba(255,255,255,0.4)',
+  psUser:   '#22c55e',
+  psAt:     'var(--color-text-tertiary)',
+  psHost:   '#3b82f6',
+  psSep:    'var(--color-text-tertiary)',
+  psPath:   '#eab308',
+  psDollar: 'var(--color-text-tertiary)',
 
-  okBg:     'rgba(40,201,64,0.1)',
-  okBorder: 'rgba(40,201,64,0.18)',
-  okText:   '#28c940',
-  errBg:    'rgba(255,95,87,0.1)',
-  errBorder:'rgba(255,95,87,0.18)',
-  errText:  '#ff5f57',
+  okBg:     'rgba(34,197,94,0.08)',
+  okBorder: 'rgba(34,197,94,0.15)',
+  okText:   '#22c55e',
+  errBg:    'rgba(239,68,68,0.08)',
+  errBorder:'rgba(239,68,68,0.15)',
+  errText:  '#ef4444',
 };
 
 const monoStack = '"Geist Mono","Berkeley Mono",ui-monospace,"SF Mono",Menlo,monospace';
@@ -2542,7 +2545,7 @@ function TerminalChrome({
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      background: '#151515',
+      background: 'var(--color-bg-base)',
       overflow: 'hidden',
       fontFamily: monoStack,
     }}>
@@ -2585,6 +2588,7 @@ function TerminalAnsiOutput({
         wordBreak: 'break-word',
         margin: '0 0 8px',
         fontFamily: monoStack,
+        fontWeight: 400,
         tabSize: 2,
       }}
     >
@@ -2628,7 +2632,7 @@ function BlinkCursor() {
     <motion.span
       style={{
         display: 'inline-block', width: 7, height: 14,
-        background: 'rgba(255,255,255,0.6)', borderRadius: 1,
+        background: 'var(--color-text-primary)', borderRadius: 1,
         verticalAlign: 'text-bottom', marginLeft: 1,
       }}
       animate={{ opacity: [1, 1, 0, 0] }}
@@ -2670,24 +2674,24 @@ export function TerminalView({
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
     const WIN = {
-      bg:       '#151515',
-      border:   '#2b2b2b',
-      divider:  '#242424',
-      textCmd:  '#f8f8f2',
-      textOut:  '#f1f1f1',
-      textErr:  '#ff7b72',
-      textDim:  '#777777',
+      bg:       'var(--color-bg-base)',
+      border:   'var(--color-border)',
+      divider:  'var(--color-border-subtle)',
+      textCmd:  'var(--color-text-primary)',
+      textOut:  'var(--color-text-secondary)',
+      textErr:  '#ef4444',
+      textDim:  'var(--color-text-tertiary)',
       textMeta: 'var(--color-text-tertiary)',
-      psPrefix: '#f8f8f2',
-      psPath:   'var(--color-bg-surface)',
-      psChevron:'#f8f8f2',
+      psPrefix: 'var(--color-text-primary)',
+      psPath:   'var(--color-text-secondary)',
+      psChevron:'var(--color-text-primary)',
     };
     const promptCwd = cwd || DEFAULT_TOOL_DETAIL_ROOT;
 
     return (
       <TerminalChrome title="Windows PowerShell" tint="#58a6ff">
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 20px', display: 'flex', flexDirection: 'column', background: WIN.bg }}>
-          <div style={{ fontSize: 13, color: WIN.textOut, fontFamily: monoStack, marginBottom: 18 }}>
+          <div style={{ fontSize: 13, color: WIN.textDim, fontFamily: monoStack, marginBottom: 18, fontWeight: 400 }}>
             PowerShell 7.5.5
           </div>
 
@@ -2699,7 +2703,7 @@ export function TerminalView({
               <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
             </span>
             {command ? (
-              <code style={{ fontSize: 12.5, color: WIN.textCmd, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+              <code style={{ fontSize: 12.5, color: WIN.textCmd, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: monoStack, fontWeight: 400 }}>
                 {command}
               </code>
             ) : (
@@ -2748,7 +2752,7 @@ export function TerminalView({
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 20px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
           <PS1 user={user} host={host} path={path} />
-          <code style={{ fontSize: 12.5, color: TERM.textCmd, lineHeight: 1.52, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+          <code style={{ fontSize: 12.5, color: TERM.textCmd, lineHeight: 1.52, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack, fontWeight: 400 }}>
             {command}
           </code>
         </div>
@@ -4331,6 +4335,32 @@ function extractFileSystemData(tc: any) {
   };
 }
 
+function extractGrepData(tc: any) {
+  const args = parseToolCallArgs(tc);
+  const data = tc.data || tc.result?.data || {};
+  const output = extractOutputText(tc);
+  const pattern = String(args.pattern || args.query || args.search || data.pattern || '');
+  const searchPath = String(args.path || args.SearchPath || data.path || '');
+  const matches: Array<{ path: string; relativePath: string; line: number; text: string }> = Array.isArray(data.matches) ? data.matches : [];
+  const filesSearched = data.filesSearched || 0;
+  const dirsScanned = data.dirsScanned || 0;
+  const timedOut = data.timedOut || false;
+  const limitReached = data.limitReached || false;
+
+  // If no structured matches, try to parse from output text
+  if (matches.length === 0 && output) {
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^(.+?):(\d+):\s(.*)$/);
+      if (m) {
+        matches.push({ path: m[1], relativePath: m[1], line: parseInt(m[2], 10), text: m[3] });
+      }
+    }
+  }
+
+  return { pattern, searchPath, matches, filesSearched, dirsScanned, timedOut, limitReached, output, args };
+}
+
 function extractMemoryData(tc: any) {
   const args = parseToolCallArgs(tc);
   const output = extractOutputText(tc);
@@ -4593,6 +4623,187 @@ function FileSystemList({ rows }: { rows: FileSystemListRow[] }) {
   );
 }
 
+/* ============================================================
+   GREP VIEW — IDE-style search results
+   ============================================================ */
+function GrepView({
+  pattern, searchPath, matches, filesSearched, dirsScanned, timedOut, limitReached, output, args,
+}: {
+  pattern: string;
+  searchPath: string;
+  matches: Array<{ path: string; relativePath: string; line: number; text: string }>;
+  filesSearched: number;
+  dirsScanned: number;
+  timedOut: boolean;
+  limitReached: boolean;
+  output: string;
+  args: any;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const MAX_VISIBLE = 200;
+  const visibleMatches = showAll ? matches : matches.slice(0, MAX_VISIBLE);
+  const hasMore = matches.length > MAX_VISIBLE && !showAll;
+
+  // Group matches by file
+  const grouped = useMemo(() => {
+    const map = new Map<string, Array<{ line: number; text: string }>>();
+    for (const m of visibleMatches) {
+      const key = m.relativePath || m.path;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push({ line: m.line, text: m.text });
+    }
+    return Array.from(map.entries());
+  }, [visibleMatches]);
+
+  const displayPath = searchPath
+    ? searchPath.replace(/\\/g, '/').split('/').slice(-3).join('/')
+    : '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: VS.bg }}>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ padding: '18px 24px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Search size={14} color={VS.blue} />
+            <span style={{ fontSize: 11, color: VS.blue, background: CLAY.card, border: `1px solid ${VS.border}`, padding: '2px 10px', borderRadius: 20, fontFamily: T.sans, fontWeight: 500 }}>
+              Search
+            </span>
+          </div>
+
+          {/* Pattern display */}
+          <div style={{
+            background: CLAY.cardMuted,
+            border: `1px solid ${VS.border}`,
+            borderRadius: T.r8,
+            padding: '10px 14px',
+            marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 10, color: VS.dim, fontFamily: T.sans, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Pattern</div>
+            <code style={{ fontSize: 13, color: VS.text, fontFamily: T.mono, fontWeight: 500, wordBreak: 'break-all' }}>
+              {pattern || '(empty)'}
+            </code>
+          </div>
+
+          {/* Path */}
+          {displayPath && (
+            <p style={{ fontSize: 11, color: VS.muted, fontFamily: T.mono, wordBreak: 'break-all', margin: '0 0 10px' }}>
+              <Folder size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              {displayPath}
+            </p>
+          )}
+
+          {/* Stats row */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: VS.dim, fontFamily: T.sans }}>
+            <span style={{ color: matches.length > 0 ? VS.green : VS.dim }}>
+              {matches.length} match{matches.length !== 1 ? 'es' : ''}
+            </span>
+            {filesSearched > 0 && <span>{filesSearched} files searched</span>}
+            {dirsScanned > 0 && <span>{dirsScanned} dirs scanned</span>}
+            {timedOut && <span style={{ color: VS.yellow }}>⏱ Timed out</span>}
+            {limitReached && <span style={{ color: VS.yellow }}>Limit reached</span>}
+          </div>
+        </div>
+
+        {/* Match results */}
+        {grouped.length > 0 ? (
+          <div style={{ padding: '0 24px 24px' }}>
+            {grouped.map(([filePath, fileMatches], fileIdx) => (
+              <div key={fileIdx} style={{ marginBottom: 16 }}>
+                {/* File header */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 0', marginBottom: 2,
+                  fontSize: 12, color: VS.muted, fontFamily: T.mono,
+                  borderBottom: `1px solid ${VS.border}`,
+                }}>
+                  <FileIcon size={12} color={VS.blue} />
+                  <span style={{ fontWeight: 500, color: VS.text }}>{filePath.split(/[/\\]/).pop()}</span>
+                  <span style={{ color: VS.dim, fontSize: 10 }}>
+                    {filePath.split(/[/\\]/).slice(0, -1).join('/')}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: VS.dim, background: CLAY.card, padding: '1px 6px', borderRadius: 10 }}>
+                    {fileMatches.length}
+                  </span>
+                </div>
+
+                {/* Lines */}
+                {fileMatches.map((match, lineIdx) => (
+                  <div
+                    key={lineIdx}
+                    style={{
+                      display: 'flex', gap: 0, fontSize: 12, fontFamily: T.mono,
+                      lineHeight: 1.65,
+                      borderLeft: `2px solid transparent`,
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderLeftColor = VS.blue; e.currentTarget.style.background = CLAY.hover; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderLeftColor = 'transparent'; e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {/* Line number */}
+                    <span style={{
+                      minWidth: 42, textAlign: 'right', paddingRight: 10, paddingLeft: 6,
+                      color: VS.dim, fontSize: 11, userSelect: 'none', flexShrink: 0,
+                    }}>
+                      {match.line}
+                    </span>
+                    {/* Match text */}
+                    <span style={{
+                      color: VS.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: 400,
+                      padding: '0 8px',
+                    }}>
+                      {highlightPattern(match.text, pattern)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {hasMore && (
+              <button
+                onClick={() => setShowAll(true)}
+                style={{
+                  width: '100%', padding: '8px 0', border: `1px solid ${VS.border}`,
+                  borderRadius: T.r8, background: CLAY.card, color: VS.muted,
+                  fontSize: 12, fontFamily: T.sans, cursor: 'pointer', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = CLAY.hover; }}
+                onMouseLeave={e => { e.currentTarget.style.background = CLAY.card; }}
+              >
+                Show all {matches.length} matches ({matches.length - MAX_VISIBLE} more)
+              </button>
+            )}
+          </div>
+        ) : pattern && (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: VS.dim, fontFamily: T.sans }}>
+            <Search size={28} style={{ opacity: 0.2, marginBottom: 8 }} />
+            <div style={{ fontSize: 13 }}>No matches found</div>
+            <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>Pattern "{pattern}" returned 0 results</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Highlight occurrences of `pattern` in `text` with a subtle background. */
+function highlightPattern(text: string, pattern: string): React.ReactNode {
+  if (!pattern || !text) return text;
+  try {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(re);
+    if (parts.length <= 1) return text;
+    return parts.map((part, i) =>
+      re.test(part)
+        ? React.createElement('mark', { key: i, style: { background: 'rgba(234,179,8,0.25)', color: 'inherit', borderRadius: 2, padding: '0 1px' } }, part)
+        : part
+    );
+  } catch {
+    return text;
+  }
+}
+
 function FileSystemView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
   const argEntries = Object.entries(args || {});
 
@@ -4848,21 +5059,82 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
   );
 };
 
-function pickString(source: any, keys: string[]) {
+function pickString(source: any, keys: string[]): string {
   if (!source) return '';
+  
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return '';
+    }
+  }
+
+  const extractText = (val: any): string => {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    if (Array.isArray(val)) {
+      return val.map(item => extractText(item)).filter(Boolean).join('\n');
+    }
+    if (typeof val === 'object' && val !== null) {
+      if (typeof val.text === 'string') return val.text;
+      if (typeof val.content === 'string') return val.content;
+      // Avoid infinite loop by not recursing on itself or cyclic structures
+      try {
+        return Object.values(val).map(item => {
+          if (item === val) return '';
+          return extractText(item);
+        }).filter(Boolean).join('\n');
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  };
+
   for (const key of keys) {
     const value = source?.[key];
-    if (typeof value === 'string') return value;
+    if (value !== undefined && value !== null) {
+      const extracted = extractText(value);
+      if (extracted) return extracted;
+    }
   }
+
+  const nestedSources = [source?.params, source?.parameters, source?.arguments, source?.args, source?.result, source?.data];
+  for (const nested of nestedSources) {
+    if (nested && typeof nested === 'object') {
+      const res = pickString(nested, keys);
+      if (res) return res;
+    }
+  }
+
   return '';
 }
 
-function pickArray(source: any, keys: string[]) {
+function pickArray(source: any, keys: string[]): any[] {
   if (!source) return [];
+  
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return [];
+    }
+  }
+
   for (const key of keys) {
     const value = source?.[key];
     if (Array.isArray(value)) return value;
   }
+
+  const nestedSources = [source?.params, source?.parameters, source?.arguments, source?.args, source?.result, source?.data];
+  for (const nested of nestedSources) {
+    if (nested && typeof nested === 'object') {
+      const res = pickArray(nested, keys);
+      if (res.length > 0) return res;
+    }
+  }
+
   return [];
 }
 
@@ -5972,6 +6244,8 @@ export default function ToolDetailSidePanel({
         extracted = extractPresentationData(toolCall);
       } else if (type === ToolType.TODO_WRITE) {
         extracted = extractTodoWriteData(toolCall);
+      } else if (type === ToolType.GREP) {
+        extracted = extractGrepData(toolCall);
       } else if (type === ToolType.FILE_SYSTEM || type === ToolType.FILE_EDITOR) {
         extracted = extractFileSystemData(toolCall);
       } else if (type === ToolType.LOCAL_PERMISSION) {
@@ -6236,6 +6510,7 @@ export default function ToolDetailSidePanel({
     if (toolType === ToolType.PLAN) return <PlanView {...toolData} />;
     if (toolType === ToolType.PRESENTATION) return <PresentationView {...toolData} />;
     if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;
+    if (toolType === ToolType.GREP) return <GrepView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
     if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     if (toolType === ToolType.LOCAL_PERMISSION) return <LocalPermissionView {...toolData} />;

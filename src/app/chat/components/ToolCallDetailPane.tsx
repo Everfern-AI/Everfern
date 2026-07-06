@@ -117,7 +117,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
         borderRadius: T.r8,
         fontFamily: T.mono,
         fontSize: 11,
-        color: '#2d2d2a',
+        color: T.text,
         overflow: 'hidden',
       }}
     >

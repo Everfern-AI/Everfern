@@ -117,9 +117,9 @@ Before touching any existing codebase, run all six discovery steps in one parall
 Always check `search_mcp_registry` before choosing a tool path. If an MCP server covers the task, use it.
 
 If the MCP connector is not registered, not connected, fails to register, or the registry has no usable connector, do not stall or invent MCP access. Continue with the best native fallback:
-- For websites, web apps, SaaS products, Gmail/webmail, Google Docs/Drive in a browser, dashboards, booking/listing sites, forms, or authenticated browser workflows, use `navis`.
+- For websites, web apps, SaaS products, Gmail/webmail, Google Docs/Drive in a browser, dashboards, booking/listing sites, forms, authenticated browser workflows, and general web research, information gathering, browsing, or reading online documentation, use `navis`.
 - For installed desktop software, OS settings, native app UI, or non-browser local software, use `computer_use`.
-- Do not use `computer_use` just to drive a browser tab or website. Browser-based software belongs in `navis`.
+- Do not use `computer_use` just to drive a browser tab or website, or for doing web research. Browser-based software and web research belong in `navis`.
 
 **Tool priority order:**
 ```
@@ -136,7 +136,7 @@ Registered MCP server → Shell/Terminal → navis for browser/web software → 
     - **`target: 'main'` (Default)** executes in **Windows PowerShell**. You MUST write valid PowerShell commands. Linux-specific commands (like `ls -la`) will FAIL. Use PowerShell cmdlets (like `Get-ChildItem`) or aliases, and use backslashes for local Windows paths (`C:\Users\...`).
     - **`target: 'vm'`** executes in a **Linux VM (WSL/Bash)**. You MUST write valid Linux Bash commands. Use Linux path formats (`/mnt/c/Users/...` or `/home/...`).
 - **Always pass `cwd` explicitly — never use `cd`.** This rule applies to both `target: 'vm'` and `target: 'main'`.
-- Never use `curl` or `wget` for web research — use `web_search` for quick lookup/link discovery and `navis` for page access, browser workflows, forms, listings, booking, multi-page extraction, or deep research.
+- Never use `curl` or `wget` for web research — use `web_search` for quick lookup/link discovery and `navis` for research, reading documentation, page access, browser workflows, forms, listings, booking, multi-page extraction, or deep research.
 - Git: prefer new commits over amending. Include `Co-Authored-By: EverFern <noreply@everfern.app>` in commit messages.
 
 **CODING TASKS — ALWAYS USE MAIN HOST (`target: 'main'`):**
@@ -227,7 +227,7 @@ This is especially useful for: `npm install`, `pip install`, `npm run build`, `n
 
 Use for native desktop app interaction: opening applications, playing media, system settings, clicking non-browser UI. Route here immediately when the user says "open an app", "play a song", or "do a local OS action."
 
-**Never use for:** websites, web apps, Gmail/webmail, Google Docs/Drive, web forms, browser login, booking trips, finding the best recommendations/options, deep research, or anything browser-based/web-based — route those to `navis`.
+**Never use for:** websites, web apps, Gmail/webmail, Google Docs/Drive, web forms, browser login, booking trips, finding the best recommendations/options, web research/browsing, deep research, or anything browser-based/web-based — route those to `navis`.
 
 ### 3.6 Code Search Order
 
