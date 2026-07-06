@@ -293,13 +293,16 @@ export function classifyIntentFast(userInput: string, history: any[]): IntentCla
     return { intent: 'conversation', confidence: 0.8, reasoning: 'Fast: very short input' };
   }
 
+  const hasDataFile = /\.(csv|xlsx|json|parquet|tsv|xls)\b/i.test(normalized);
+  const hasCodeFile = /\.(ts|js|tsx|jsx|py|java|cpp|c|php|rb|go|rs)\b/i.test(normalized);
+
   // GUI automation - application launch pattern (higher confidence)
-  if (/\b(open|launch|start)\s+(spotify|discord|chrome|firefox|notepad|calculator|word|excel|powerpoint|slack|teams|zoom|vscode|terminal|cmd|powershell)\b/i.test(normalized)) {
+  if (!hasDataFile && !hasCodeFile && /\b(open|launch|start)\s+(spotify|discord|chrome|firefox|notepad|calculator|word|excel|powerpoint|slack|teams|zoom|vscode|terminal|cmd|powershell)\b/i.test(normalized)) {
     return { intent: 'automate', confidence: 0.9, reasoning: 'Fast: Application launch pattern' };
   }
 
   // GUI automation - general keywords
-  if (/\b(open|click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(normalized)) {
+  if (!hasDataFile && !hasCodeFile && /\b(open|click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(normalized)) {
     // Guard against 'open-source' triggering the 'open' GUI keyword
     if (/\bopen-source\b/i.test(normalized)) {
       const hasOtherGUIKeyword = /\b(click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(normalized) ||
@@ -366,6 +369,25 @@ export function classifyIntentFallback(userInput: string, history: any[] = []): 
 
   const normalized = userInput.toLowerCase().trim();
   const inputLength = normalized.length;
+
+  const hasDataFile = /\.(csv|xlsx|json|parquet|tsv|xls)\b/i.test(normalized);
+  const hasCodeFile = /\.(ts|js|tsx|jsx|py|java|cpp|c|php|rb|go|rs)\b/i.test(normalized);
+
+  if (hasCodeFile) {
+    return {
+      intent: 'coding',
+      confidence: 0.75,
+      reasoning: 'Fallback: Code file extension detected'
+    };
+  }
+
+  if (hasDataFile) {
+    return {
+      intent: 'analyze',
+      confidence: 0.75,
+      reasoning: 'Fallback: Data file extension detected'
+    };
+  }
 
   if (inputLength < 10) {
     const greetingPatterns = ['hi', 'hello', 'hey', 'thanks', 'thank you', 'ok', 'okay'];
@@ -540,9 +562,9 @@ export async function classifyIntent(
     return result;
   };
 
-  // Check fast classification first (Requirement: short affirmatives, greetings, conversational messages)
+  // Check fast classification first (Requirement: short affirmatives, greetings, conversational messages, GUI automation)
   const fast = classifyIntentFast(targetUserInput, history);
-  if (fast && (fast.intent === 'conversation' || isShortAffirmative(targetUserInput) || /^(hi|hello|hey|good morning|good afternoon|thanks|thank you|bye)\b/i.test(targetUserInput))) {
+  if (fast && (fast.intent === 'conversation' || fast.intent === 'automate' || isShortAffirmative(targetUserInput) || /^(hi|hello|hey|good morning|good afternoon|thanks|thank you|bye)\b/i.test(targetUserInput))) {
     return cacheAndReturn(fast);
   }
 

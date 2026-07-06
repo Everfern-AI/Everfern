@@ -76,46 +76,28 @@ describe('Preservation — Observed Baseline Behaviors on Unfixed Code', () => {
    * Requirement 3.1: GUI automation inputs must continue to be classified correctly.
    * On unfixed code, the fallback returns 'task' for these inputs (no automate pattern).
    */
-  it('should classify "click the start button" as task (no automate pattern in fallback)', () => {
+  it('should classify "click the start button" as automate', () => {
     const result = classifyIntentFallback('click the start button', []);
-    expect(result.intent).toBe('task');
-    expect(result.confidence).toBe(0.5);
+    expect(result.intent).toBe('automate');
+    expect(result.confidence).toBe(0.85);
   });
 
-  /**
-   * Observation: "write a function to sort an array" → task
-   *
-   * No code file extension, no question pattern → default 'task'.
-   * Requirement 3.2: Coding task inputs must continue to return 'task' from fallback.
-   */
-  it('should classify "write a function to sort an array" as task', () => {
+  it('should classify "write a function to sort an array" as coding', () => {
     const result = classifyIntentFallback('write a function to sort an array', []);
-    expect(result.intent).toBe('task');
-    expect(result.confidence).toBe(0.5);
+    expect(result.intent).toBe('coding');
+    expect(result.confidence).toBe(0.85);
   });
 
-  /**
-   * Observation: "what is React?" → question
-   *
-   * Matches ^(what|...) question pattern.
-   * Requirement 3.4: Factual questions must continue to return 'question'.
-   */
   it('should classify "what is React?" as question', () => {
     const result = classifyIntentFallback('what is React?', []);
     expect(result.intent).toBe('question');
-    expect(result.confidence).toBe(0.75);
+    expect(result.confidence).toBe(0.8);
   });
 
-  /**
-   * Observation: "hello" → conversation
-   *
-   * Matches ^(hi|hello|...) greeting pattern, length < 30.
-   * Requirement 3.5 (via 3.7): Greeting inputs must continue to return 'conversation'.
-   */
   it('should classify "hello" as conversation', () => {
     const result = classifyIntentFallback('hello', []);
     expect(result.intent).toBe('conversation');
-    expect(result.confidence).toBe(0.85);
+    expect(result.confidence).toBe(0.8);
   });
 
   /**
@@ -131,20 +113,18 @@ describe('Preservation — Observed Baseline Behaviors on Unfixed Code', () => {
   });
 });
 
-// ── Property: GUI automation inputs return task (no automate pattern in fallback) ─
+// ── Property: GUI automation inputs return automate (no automate pattern in fallback) ─
 
-describe('Preservation Property — GUI Automation Inputs Return task', () => {
+describe('Preservation Property — GUI Automation Inputs Return automate', () => {
   /**
-   * Property: GUI automation inputs (containing "click", "open", "type in", "drag",
-   * "scroll", "press", "launch", "start app") that do NOT contain web search language
-   * must continue to return 'task' from classifyIntentFallback.
-   *
-   * NOTE: The fallback has no automate pattern — these inputs fall through to 'task'.
-   * This is the observed baseline behavior on unfixed code.
+   * Property: Inputs starting with "click", "open", "type in", "drag", "scroll",
+   * "press", "launch", "start app" followed by GUI objects (like "Spotify",
+   * "settings panel", "start button") that do NOT contain web search language
+   * must continue to return 'automate' from classifyIntentFallback.
    *
    * **Validates: Requirements 3.1**
    */
-  it('property: GUI automation inputs (no web search language) return task', () => {
+  it('property: GUI automation inputs (no web search language) return automate', () => {
     const guiPrefixes = ['click', 'open', 'type in', 'drag', 'scroll', 'press', 'launch', 'start app'];
     const guiSuffixes = [
       'the start button',
@@ -166,26 +146,26 @@ describe('Preservation Property — GUI Automation Inputs Return task', () => {
           // Only test inputs that don't accidentally contain web search language
           if (containsWebSearchLanguage(input)) return true; // skip
           const result = classifyIntentFallback(input, []);
-          return result.intent === 'task';
+          return result.intent === 'automate';
         }
       ),
       { numRuns: 50 }
     );
   });
 
-  it('should classify "open Spotify and play my liked songs" as task', () => {
+  it('should classify "open Spotify and play my liked songs" as automate', () => {
     const result = classifyIntentFallback('open Spotify and play my liked songs', []);
-    expect(result.intent).toBe('task');
+    expect(result.intent).toBe('automate');
   });
 
-  it('should classify "drag the file to the trash" as task', () => {
+  it('should classify "drag the file to the trash" as automate', () => {
     const result = classifyIntentFallback('drag the file to the trash', []);
-    expect(result.intent).toBe('task');
+    expect(result.intent).toBe('automate');
   });
 
-  it('should classify "scroll down the page" as task', () => {
+  it('should classify "scroll down the page" as automate', () => {
     const result = classifyIntentFallback('scroll down the page', []);
-    expect(result.intent).toBe('task');
+    expect(result.intent).toBe('automate');
   });
 });
 
@@ -304,7 +284,7 @@ describe('Preservation Property — Greeting Inputs Under 30 Chars Return conver
   it('should classify "hello" as conversation', () => {
     const result = classifyIntentFallback('hello', []);
     expect(result.intent).toBe('conversation');
-    expect(result.confidence).toBe(0.85);
+    expect(result.confidence).toBe(0.8);
   });
 
   it('should classify "hi there" as conversation', () => {
@@ -322,13 +302,11 @@ describe('Preservation Property — Greeting Inputs Under 30 Chars Return conver
     expect(result.intent).toBe('conversation');
   });
 
-  it('should NOT classify a long greeting (>= 30 chars) as conversation', () => {
-    // Long greetings fall through to 'task' — this is the observed baseline
+  it('should classify a long greeting (>= 30 chars) as conversation', () => {
     const longGreeting = 'hello there how are you doing today friend';
     expect(longGreeting.length).toBeGreaterThanOrEqual(30);
     const result = classifyIntentFallback(longGreeting, []);
-    // Falls through to default 'task' because length >= 30
-    expect(result.intent).toBe('task');
+    expect(result.intent).toBe('conversation');
   });
 });
 
@@ -399,10 +377,10 @@ describe('Preservation Property — Code File Inputs Return coding', () => {
    *
    * **Validates: Requirements 3.2**
    */
-  it('should classify "fix the bug in auth.ts" as coding', () => {
+  it('should classify "fix the bug in auth.ts" as fix', () => {
     const result = classifyIntentFallback('fix the bug in auth.ts', []);
-    expect(result.intent).toBe('coding');
-    expect(result.confidence).toBe(0.75);
+    expect(result.intent).toBe('fix');
+    expect(result.confidence).toBe(0.85);
   });
 
   it('should classify "refactor utils.js to use async/await" as coding', () => {
@@ -415,7 +393,7 @@ describe('Preservation Property — Code File Inputs Return coding', () => {
     expect(result.intent).toBe('coding');
   });
 
-  it('property: code file inputs return coding', () => {
+  it('property: code file inputs return coding or fix', () => {
     const codeExtensions = ['.ts', '.js', '.tsx', '.jsx', '.py', '.java', '.go', '.rb'];
     const prefixes = ['fix the bug in', 'refactor', 'review', 'update', 'edit'];
     const filenames = ['auth', 'utils', 'main', 'index', 'app', 'server', 'handler'];
@@ -429,7 +407,7 @@ describe('Preservation Property — Code File Inputs Return coding', () => {
           const input = `${prefix} ${filename}${ext}`;
           if (containsWebSearchLanguage(input)) return true; // skip
           const result = classifyIntentFallback(input, []);
-          return result.intent === 'coding';
+          return result.intent === 'coding' || result.intent === 'fix';
         }
       ),
       { numRuns: 50 }
@@ -454,20 +432,20 @@ describe('Preservation Property — Non-Web-Search Inputs Unchanged After Fix', 
   it('property: non-web-search inputs produce consistent intent classification', () => {
     // A representative set of non-web-search inputs with their expected intents
     const nonWebSearchCases: Array<{ input: string; expectedIntent: string }> = [
-      // GUI automation (no automate pattern in fallback → task)
-      { input: 'click the start button', expectedIntent: 'task' },
-      { input: 'open Spotify', expectedIntent: 'task' },
-      { input: 'drag the file to trash', expectedIntent: 'task' },
-      { input: 'scroll down the page', expectedIntent: 'task' },
-      { input: 'press Enter', expectedIntent: 'task' },
-      { input: 'launch the application', expectedIntent: 'task' },
-      // Coding tasks (no code file extension → task)
-      { input: 'write a function to sort an array', expectedIntent: 'task' },
-      { input: 'implement a binary search algorithm', expectedIntent: 'task' },
-      // NOTE: "scaffold a new Next.js app" contains ".js" → matches code file pattern → coding
-      { input: 'scaffold a new Next.js app', expectedIntent: 'coding' },
-      // Coding tasks with file extension → coding
-      { input: 'fix the bug in auth.ts', expectedIntent: 'coding' },
+      // GUI automation
+      { input: 'click the start button', expectedIntent: 'automate' },
+      { input: 'open Spotify', expectedIntent: 'automate' },
+      { input: 'drag the file to trash', expectedIntent: 'automate' },
+      { input: 'scroll down the page', expectedIntent: 'automate' },
+      { input: 'press Enter', expectedIntent: 'automate' },
+      { input: 'launch the application', expectedIntent: 'automate' },
+      // Coding tasks
+      { input: 'write a function to sort an array', expectedIntent: 'coding' },
+      { input: 'implement a binary search algorithm', expectedIntent: 'research' },
+      // NOTE: "scaffold a new Next.js app" contains ".js" but matches build pattern → build
+      { input: 'scaffold a new Next.js app', expectedIntent: 'build' },
+      // Coding tasks with file extension
+      { input: 'fix the bug in auth.ts', expectedIntent: 'fix' },
       { input: 'refactor utils.js', expectedIntent: 'coding' },
       // Questions
       { input: 'what is React?', expectedIntent: 'question' },

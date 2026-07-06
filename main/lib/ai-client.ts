@@ -579,7 +579,8 @@ export class AIClient {
     const lower = modelName.toLowerCase();
     const isGeminiModel = lower.includes('gemini');
     const isGpt5Model = lower.includes('gpt-5') || lower.includes('openai/gpt-5');
-    const needsTools = (isGeminiModel || isGpt5Model) && !req.tools?.length &&
+    const isQwenModel = lower.includes('qwen') || lower.includes('everfern') || lower.includes('tars');
+    const needsTools = (isGeminiModel || isGpt5Model || isQwenModel) && !req.tools?.length &&
       (this.config.provider === 'everfern' || this.config.provider === 'openrouter');
     if (needsTools) {
       options.tools = GEMINI_COMPUTER_USE_TOOLS.map(t => ({
@@ -695,6 +696,25 @@ export class AIClient {
                 imageOutputCost: rawUsage.image_output_cost,
                 totalCost: rawUsage.total_cost,
               } : undefined;
+
+              const message = data.choices[0].message;
+              if (message.tool_calls && message.tool_calls.length > 0) {
+                console.log('[EverFern Vision] Received native tool calls from EverFern Cloud:', message.tool_calls);
+                return {
+                  id: data.id || `everfern-${Date.now()}`,
+                  content: message.content || '',
+                  model: data.model || this.config.model,
+                  toolCalls: message.tool_calls.map((tc: any) => ({
+                    id: tc.id || `call_${Date.now()}`,
+                    name: tc.function.name,
+                    arguments: typeof tc.function.arguments === 'string'
+                      ? JSON.parse(tc.function.arguments)
+                      : tc.function.arguments
+                  })),
+                  usage: usageForAnalytics,
+                  finishReason: 'tool_calls'
+                };
+              }
 
               // Parse actions from the response
               const actions = this._parseActionsFromContent(content);

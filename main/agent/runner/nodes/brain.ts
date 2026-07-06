@@ -483,6 +483,18 @@ export const createBrainNode = (
     const allTools = toolDefs || (runner as any)._buildToolDefinitions();
     const isSubAgent = !!runner.currentAgentSessionKey;
 
+    // Get original user request for context
+    const allMessages = state.messages || [];
+    const firstUserMsg = allMessages.find((m: any) => {
+      const role = m.role || m._getType?.();
+      return role === 'user' || role === 'human';
+    });
+    const originalRequest = firstUserMsg
+      ? (typeof (firstUserMsg as any).content === 'string'
+          ? (firstUserMsg as any).content
+          : JSON.stringify((firstUserMsg as any).content))
+      : '';
+
     // Debug logging
     console.log(`[Brain] Current intent: ${state.currentIntent}`);
     console.log(`[Brain] Is sub-agent: ${isSubAgent}`);
@@ -590,6 +602,26 @@ export const createBrainNode = (
     }
     // ────────────────────────────────────────────────────────────────────────
 
+    const hasExecutedComputerUse = allMessages.some((m: any) => {
+      const type = m._getType?.() || m.type;
+      return type === 'tool' && (m.name === 'computer_use' || m.tool_name === 'computer_use');
+    });
+
+    if (state.currentIntent === 'automate' && !hasExecutedComputerUse) {
+      console.log('[Brain] Automate intent detected → generating computer_use tool call directly');
+      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      return {
+        pendingToolCalls: [{
+          id: toolCallId,
+          name: 'computer_use',
+          arguments: {
+            task: originalRequest
+          }
+        }],
+        taskPhase: 'executing' as const,
+      };
+    }
+
     // Load the main system prompt from synchronized location
     let systemPrompt = systemPromptOverride;
     if (!systemPrompt) {
@@ -648,17 +680,7 @@ export const createBrainNode = (
       console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
     }
 
-    // Get original user request for context
-    const allMessages = state.messages || [];
-    const firstUserMsg = allMessages.find((m: any) => {
-      const role = m.role || m._getType?.();
-      return role === 'user' || role === 'human';
-    });
-    const originalRequest = firstUserMsg
-      ? (typeof (firstUserMsg as any).content === 'string'
-          ? (firstUserMsg as any).content
-          : JSON.stringify((firstUserMsg as any).content))
-      : '';
+
 
     let skipRouting = false;
     // ── EARLY CHECK FOR WEB_EXPLORER COMPLETION (Sub-task 3.2) ──────────────

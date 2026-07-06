@@ -235,6 +235,38 @@ Respond with ONLY the JSON object.`;
     }
 }
 
+function createFastAutomatePlan(userInput: string): DecomposedTask | null {
+    const text = userInput.toLowerCase().trim();
+    // Check if the task is a GUI automation task
+    const isAutomate = /\b(open|click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(text);
+    if (!isAutomate) return null;
+
+    const steps: TaskStep[] = [
+        {
+            id: 'step_1',
+            title: 'Execute GUI automation',
+            description: userInput,
+            tool: 'computer_use',
+            dependsOn: [],
+            canParallelize: false,
+            agentPrompt: userInput,
+            estimatedComplexity: 'moderate',
+            priority: 'normal'
+        }
+    ];
+
+    return {
+        id: `task_${Date.now()}`,
+        title: userInput.substring(0, 80) + (userInput.length > 80 ? '...' : ''),
+        steps,
+        canParallelize: false,
+        estimatedParallelGroups: 0,
+        totalSteps: steps.length,
+        executionMode: 'sequential',
+        estimatedDurationMs: 15000,
+    };
+}
+
 /**
  * AI-powered decomposition with unified single-call optimization.
  */
@@ -249,6 +281,11 @@ export async function decomposeTaskWithAI(
         if (fastPlan) {
             console.log('[TaskDecomposer] Fast local coding project decomposition selected');
             return fastPlan;
+        }
+        const fastAutomatePlan = createFastAutomatePlan(userInput);
+        if (fastAutomatePlan) {
+            console.log('[TaskDecomposer] Fast local automate decomposition selected');
+            return fastAutomatePlan;
         }
     }
 

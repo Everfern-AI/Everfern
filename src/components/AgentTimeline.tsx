@@ -2243,7 +2243,7 @@ export const AgentTimeline = React.memo(({
                         width={40} height={40}
                         style={{ 
                             objectFit: "contain",
-                            filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none'
+                            filter: "none"
                         }}
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
