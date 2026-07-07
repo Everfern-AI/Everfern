@@ -76,6 +76,51 @@ function isCommandComplete(output: string): boolean {
          output.includes('Status: DONE') || output.includes('Exit code:');
 }
 
+async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string) {
+  try {
+    const findingsPath = path.join(workspaceDir, 'findings.md');
+    let findingsContent = '';
+    
+    if (fs.existsSync(findingsPath)) {
+      findingsContent = fs.readFileSync(findingsPath, 'utf-8');
+    } else {
+      findingsContent = `# Project Research Findings\n\n`;
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    let sectionHeader = ``;
+    let sectionBody = ``;
+
+    if (toolName === 'web_search') {
+      const query = args.query || args.pattern || args.search || '';
+      sectionHeader = `## [${dateStr}] Web Search: "${query}"`;
+      sectionBody = `* **Search Query**: \`${query}\`\n* **Results Snippet**:\n\`\`\`\n${(result.output || '').slice(0, 500)}...\n\`\`\``;
+    } else if (toolName === 'navis') {
+      const task = args.task || args.url || '';
+      const urlMatch = task.match(/https?:\/\/[^\s"'`]+/);
+      const url = urlMatch ? urlMatch[0] : 'Browser Action';
+      sectionHeader = `## [${dateStr}] Browser Web View`;
+      sectionBody = `* **Target URL**: \`${url}\`\n* **Task**: ${task}\n* **Scraped Data Summary**:\n${(result.output || '').slice(0, 500)}...`;
+    } else if (toolName === 'web_fetch') {
+      const url = args.url || '';
+      sectionHeader = `## [${dateStr}] Web Fetch`;
+      sectionBody = `* **Target URL**: \`${url}\`\n* **Scraped Data Summary**:\n${(result.output || '').slice(0, 500)}...`;
+    } else if (['read', 'write', 'edit'].includes(toolName)) {
+      const filePath = args.path || args.filePath || '';
+      sectionHeader = `## [${dateStr}] File Operation: ${toolName.toUpperCase()} \`${path.basename(filePath)}\``;
+      sectionBody = `* **File Path**: \`${filePath}\`\n* **Details**: Completed ${toolName} operation.`;
+    }
+
+    if (sectionHeader) {
+      findingsContent += `\n${sectionHeader}\n${sectionBody}\n`;
+      fs.writeFileSync(findingsPath, findingsContent, 'utf-8');
+      console.log(`[Findings] Updated findings.md with entry for ${toolName}`);
+    }
+  } catch (err) {
+    console.warn(`[Findings] Failed to write findings.md:`, err);
+  }
+}
+
 export const createExecuteToolsNode = (
   runner: any,
   tools: AgentTool[],
@@ -204,6 +249,12 @@ export const createExecuteToolsNode = (
         if (rec.toolName === 'navis') {
           console.log(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
           runner.telemetry.info(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
+        }
+
+        // Record findings immediately for research/browser/file tools
+        const workspaceDir = runner.workspaceDir || process.cwd();
+        if (rec.result?.success && ['navis', 'web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
+          await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir);
         }
 
         // ── Harness Post-Execution ────────────────────────────────────

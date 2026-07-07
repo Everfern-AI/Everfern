@@ -10,6 +10,7 @@ import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 import { getRollbackManager } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import { UnifiedExecutor } from './unified-executor';
 
 async function existsAsync(p: string): Promise<boolean> {
   try {
@@ -648,51 +649,56 @@ function adaptTool(
             // Always use native exec (main host VM) in production
             return await withCommandTracking(command, async () => {
               try {
-                const { exec } = require('child_process');
-                const { promisify } = require('util');
-                const execAsync = promisify(exec);
-
-                const resolvePowerShellExecutable = (): string => {
-                  try {
-                    const { execSync } = require('child_process');
-                    execSync('where pwsh.exe', { stdio: 'ignore', timeout: 3000 });
-                    return 'pwsh.exe';
-                  } catch {
-                    return 'powershell.exe';
-                  }
-                };
-
-                const shell = process.platform === 'win32' ? resolvePowerShellExecutable() : '/bin/bash';
                 const cwd = (args.cwd as string) || (args.Cwd as string) || process.cwd();
+                
+                const execResult = await UnifiedExecutor.execute({
+                  command,
+                  cwd,
+                  timeout,
+                  local: true,
+                  onUpdate: (chunk) => {
+                    onUpdate?.(chunk);
+                  }
+                });
 
-                const { stdout, stderr } = await execAsync(command, { shell, timeout, cwd });
-
-                const combined = [stdout, stderr].filter(Boolean).join('\n');
-                const output = combined.trim() || '(Command succeeded with no output)';
-
-                return {
-                  success: true,
-                  output: stripAnsi(`Success: command completed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${output}`),
-                  data: {
-                    cwd,
-                    homeDir: os.homedir(),
-                    downloadsDir: path.join(os.homedir(), 'Downloads'),
-                    shell,
-                    timeoutMs: timeout,
-                    target: 'main',
-                    exitCode: 0,
-                  },
-                };
+                if (execResult.success) {
+                  return {
+                    success: true,
+                    output: stripAnsi(`Success: command completed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${execResult.output}`),
+                    data: {
+                      cwd,
+                      homeDir: os.homedir(),
+                      downloadsDir: path.join(os.homedir(), 'Downloads'),
+                      shell: (execResult.data as any)?.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+                      timeoutMs: timeout,
+                      target: 'main',
+                      exitCode: 0,
+                    },
+                  };
+                } else {
+                  const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${execResult.output}`);
+                  const hintedOutput = appendPythonHintIfImportError(cleanOutput, 'main');
+                  return {
+                    success: false,
+                    output: hintedOutput,
+                    error: stripAnsi(execResult.output),
+                    data: {
+                      cwd,
+                      homeDir: os.homedir(),
+                      downloadsDir: path.join(os.homedir(), 'Downloads'),
+                      shell: (execResult.data as any)?.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+                      timeoutMs: timeout,
+                      target: 'main',
+                      exitCode: execResult.exitCode,
+                    }
+                  };
+                }
               } catch (execError: any) {
-                const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
-                const output = combined.trim() || '(Command failed with no output)';
-                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${output}`);
-                const hintedOutput = appendPythonHintIfImportError(cleanOutput, 'main');
-
+                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${execError.message || String(execError)}`);
                 return {
                   success: false,
-                  output: hintedOutput,
-                  error: stripAnsi(output),
+                  output: cleanOutput,
+                  error: stripAnsi(execError.message || String(execError)),
                   data: {
                     cwd: process.cwd(),
                     homeDir: os.homedir(),

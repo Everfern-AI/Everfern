@@ -89,78 +89,6 @@ function extractJSONArray(text: string): string | null {
 
 // ── AI-powered Unified Decomposition ─────────────────────────────────────
 
-function createFastCodingProjectPlan(userInput: string): DecomposedTask | null {
-    const text = userInput.toLowerCase();
-    const isCodingProject = /\b(project|app|website|site|dashboard|clone|scaffold|next\.?js|react app|full[- ]stack|frontend|backend|build (?:a|an|the)|make (?:a|an|the)|create (?:a|an|the))\b/.test(text);
-    const isCodingIntent = /\b(code|coding|implement|build|make|create|scaffold|fix|next\.?js|react|typescript|javascript|app|website|site)\b/.test(text);
-
-    if (!isCodingProject || !isCodingIntent) {
-        return null;
-    }
-
-    const isFrontend = /\b(frontend|ui|website|site|dashboard|next\.?js|react|tailwind|html|css|app)\b/.test(text);
-    const steps: TaskStep[] = [
-        {
-            id: 'step_1',
-            title: 'Resolve target and inspect',
-            description: 'Resolve the exact Windows host target folder and inspect only the files needed before writing.',
-            tool: 'ls',
-            dependsOn: [],
-            canParallelize: false,
-            agentPrompt: 'Resolve the exact Windows host target root from the user request. If the project folder does not exist, create it. Inspect only the minimum needed files before scaffolding.',
-            estimatedComplexity: 'simple',
-            priority: 'normal'
-        },
-        {
-            id: 'step_2',
-            title: 'Scaffold project',
-            description: 'Create or scaffold the requested project in the target folder on the main Windows host.',
-            tool: 'executePwsh',
-            dependsOn: ['step_1'],
-            canParallelize: false,
-            agentPrompt: 'Scaffold the requested project in the resolved host target root. Prefer create-next-app for Next.js. If scaffolding fails twice or becomes interactive/slow, manually create a minimal working project.',
-            estimatedComplexity: 'moderate',
-            priority: 'normal'
-        },
-        {
-            id: 'step_3',
-            title: isFrontend ? 'Implement polished frontend' : 'Implement core code',
-            description: isFrontend
-                ? 'Build the actual usable frontend experience with responsive layout, real content, and polished states.'
-                : 'Implement the requested code/features using the project conventions.',
-            tool: 'write',
-            dependsOn: ['step_2'],
-            canParallelize: false,
-            agentPrompt: isFrontend
-                ? 'Implement the actual polished frontend experience. Use real content, responsive layout, complete controls/states, and avoid placeholder-only screens.'
-                : 'Implement the requested functionality using the scaffolded project conventions. Keep edits focused and coherent.',
-            estimatedComplexity: 'complex',
-            priority: 'normal'
-        },
-        {
-            id: 'step_4',
-            title: 'Validate and repair',
-            description: 'Run the relevant build/lint/test command from the target root, then fix any errors before finalizing.',
-            tool: 'executePwsh',
-            dependsOn: ['step_3'],
-            canParallelize: false,
-            agentPrompt: 'Run validation from the target root. Fix any build, lint, type, or runtime errors before reporting success.',
-            estimatedComplexity: 'moderate',
-            priority: 'critical'
-        }
-    ];
-
-    return {
-        id: `task_${Date.now()}`,
-        title: userInput.substring(0, 80) + (userInput.length > 80 ? '...' : ''),
-        steps,
-        canParallelize: false,
-        estimatedParallelGroups: 0,
-        totalSteps: steps.length,
-        executionMode: 'sequential',
-        estimatedDurationMs: 20000,
-    };
-}
 
 async function decomposeWithAIUnified(userInput: string, availableTools: string[], client: AIClient, strategyContext?: string): Promise<{ analysis: TaskAnalysis; steps: TaskStep[] }> {
     const toolList = availableTools.length > 0 ? availableTools.join(', ') : 'web_search, file_read, terminal_execute, computer_use';
@@ -181,7 +109,10 @@ async function decomposeWithAIUnified(userInput: string, availableTools: string[
 Task: "${userInput.slice(0, 500)}"
 Tools: ${toolList}${strategyContext ? strategyContext : ''}
 
-IMPORTANT: If the task requires "computer_use" (like clicking on the OS, opening a physical app, moving mouse, typing globally), DO NOT break it down into multiple steps. Output a SINGLE step using the "computer_use" tool with the full original instructions.
+COMPUTER USE & MULTI-STEP ROUTING RULES:
+- If a task is a simple desktop action (e.g., "open Spotify", "play music", "open a specific app"), output a SINGLE step using the "computer_use" tool.
+- If a task involves multiple distinct objectives, sequential workflows, or mixed activities (e.g., "open VS Code, build a tic-tac-toe app, and test it", or "open browser, download a file, and edit it in editor"), DO NOT collapse it into a single computer_use step. Instead, break it down into multiple logical steps.
+- Use "computer_use" specifically for GUI-level actions (e.g., opening a specific application, clicking around, or UI inspection), and appropriate developer tools (like file edit/write, terminal execute, etc.) for coding, building, testing, or running commands.
 
 WEB / BOOKING ROUTING RULES:
 - Browser-based tasks are research, not desktop automation. This includes opening booking platforms, pulling live prices, comparing flights/hotels/tickets/listings, Gmail/webmail, Google Docs/Drive, SaaS dashboards, website forms, checkout, reservations, and any URL/browser tab workflow.
@@ -235,37 +166,6 @@ Respond with ONLY the JSON object.`;
     }
 }
 
-function createFastAutomatePlan(userInput: string): DecomposedTask | null {
-    const text = userInput.toLowerCase().trim();
-    // Check if the task is a GUI automation task
-    const isAutomate = /\b(open|click|type|launch|start|press|scroll|drag|move cursor|mouse|keyboard|gui|window|desktop|screen)\b/i.test(text);
-    if (!isAutomate) return null;
-
-    const steps: TaskStep[] = [
-        {
-            id: 'step_1',
-            title: 'Execute GUI automation',
-            description: userInput,
-            tool: 'computer_use',
-            dependsOn: [],
-            canParallelize: false,
-            agentPrompt: userInput,
-            estimatedComplexity: 'moderate',
-            priority: 'normal'
-        }
-    ];
-
-    return {
-        id: `task_${Date.now()}`,
-        title: userInput.substring(0, 80) + (userInput.length > 80 ? '...' : ''),
-        steps,
-        canParallelize: false,
-        estimatedParallelGroups: 0,
-        totalSteps: steps.length,
-        executionMode: 'sequential',
-        estimatedDurationMs: 15000,
-    };
-}
 
 /**
  * AI-powered decomposition with unified single-call optimization.
@@ -276,18 +176,7 @@ export async function decomposeTaskWithAI(
     client?: AIClient,
     strategyContext?: string
 ): Promise<DecomposedTask> {
-    if (!strategyContext) {
-        const fastPlan = createFastCodingProjectPlan(userInput);
-        if (fastPlan) {
-            console.log('[TaskDecomposer] Fast local coding project decomposition selected');
-            return fastPlan;
-        }
-        const fastAutomatePlan = createFastAutomatePlan(userInput);
-        if (fastAutomatePlan) {
-            console.log('[TaskDecomposer] Fast local automate decomposition selected');
-            return fastAutomatePlan;
-        }
-    }
+
 
     if (!client) {
         throw new Error('TaskDecomposer requires an AI client for task decomposition.');

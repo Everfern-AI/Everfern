@@ -1234,6 +1234,104 @@ class ComputerUseAgent {
   private REASONER_MODEL = "qwen/qwen3-vl-235b-a22b-instruct";
   private ACTION_MODEL = "bytedance/ui-tars-1.5-7b";
 
+  private planSteps: { description: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }[] = [];
+  private lastActionDescription = "";
+
+  private async generateExecutionPlan(screenshot: string): Promise<void> {
+    try {
+      console.log("[ComputerUse] Generating GUI execution plan...");
+      const planPrompt = `Given the user's high-level task: "${this.task}"
+And the current desktop screenshot.
+Create a step-by-step checklist of GUI actions (3 to 6 steps) required to complete this task.
+Examples of steps:
+- Open Start Menu and search for "Spotify"
+- Click Spotify search bar and type "Beast"
+- Click play button
+
+Return ONLY a numbered list of steps (e.g., "1. Action description"), one per line. Do not include introductory text, markdown code blocks, or comments.`;
+
+      const response = await this.ask(this.model, [
+        {
+          role: "system",
+          content: "You are a professional Windows desktop automation planner."
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: planPrompt },
+            { type: "image_url", image_url: { url: screenshot } }
+          ]
+        }
+      ], 512);
+
+      const lines = response.split('\n').map(l => l.trim()).filter(l => /^\d+\./.test(l));
+      if (lines.length > 0) {
+        this.planSteps = lines.map(line => {
+          const description = line.replace(/^\d+\.\s*/, '');
+          return { description, status: 'pending' };
+        });
+        console.log("[ComputerUse] Plan generated:", this.planSteps);
+      } else {
+        this.planSteps = [
+          { description: `Start execution for: ${this.task}`, status: 'in_progress' },
+          { description: "Interact with GUI elements", status: 'pending' },
+          { description: "Verify completion and finish", status: 'pending' }
+        ];
+      }
+    } catch (err) {
+      console.warn("[ComputerUse] Failed to generate plan:", err);
+      this.planSteps = [
+        { description: `Interact with desktop to: ${this.task}`, status: 'in_progress' }
+      ];
+    }
+  }
+
+  private getPlanMarkdown(): string {
+    const lines: string[] = [];
+    lines.push(`# GUI Task Execution Plan`);
+    lines.push(`**Goal:** ${this.task}`);
+    lines.push("");
+    lines.push("## Plan Steps");
+    
+    this.planSteps.forEach((step) => {
+      const bullet = step.status === 'completed' ? '- [x]' : step.status === 'in_progress' ? '- [/]' : '- [ ]';
+      const statusSuffix = step.status === 'in_progress' ? ' *(in progress...)*' : '';
+      lines.push(`${bullet} ${step.description}${statusSuffix}`);
+    });
+
+    if (this.lastActionDescription) {
+      lines.push("");
+      lines.push("## Latest Action");
+      lines.push(`* ${this.lastActionDescription}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  private updatePlanStatus(currentAction: string): void {
+    if (this.planSteps.length === 0) return;
+    
+    const currentIdx = this.planSteps.findIndex(s => s.status === 'in_progress');
+    if (currentIdx !== -1) {
+      const nextPendingIdx = this.planSteps.findIndex(s => s.status === 'pending');
+      if (nextPendingIdx !== -1) {
+        const nextStepText = this.planSteps[nextPendingIdx].description.toLowerCase();
+        const actionLower = currentAction.toLowerCase();
+        
+        const keywords = nextStepText.split(/\s+/).filter(w => w.length > 3);
+        const match = keywords.some(k => actionLower.includes(k));
+        
+        if (match) {
+          this.planSteps[currentIdx].status = 'completed';
+          this.planSteps[nextPendingIdx].status = 'in_progress';
+          return;
+        }
+      }
+    } else {
+      this.planSteps[0].status = 'in_progress';
+    }
+  }
+
   constructor(
     private client: AIClient,
     private tool: ComputerUseTool,
@@ -1318,6 +1416,20 @@ class ComputerUseAgent {
       }
 
       const firstImg = await this.getScreenshotBase64();
+      await this.generateExecutionPlan(firstImg);
+      onProgress?.({
+        type: "screenshot",
+        toolCallId: this.toolCallId,
+        timestamp: new Date().toISOString(),
+        stepNumber: 0,
+        screenshot: {
+          base64: firstImg?.split(",")?.[1] || "",
+          width: 1920,
+          height: 1080
+        },
+        navisReport: this.getPlanMarkdown()
+      } as any);
+
       this.messages.push({
         role: "user",
         content: [
@@ -1362,13 +1474,16 @@ class ComputerUseAgent {
         console.log(`[Gemini Agent] Tool Calls:`, JSON.stringify(toolCalls));
 
         if (content) {
+          this.lastActionDescription = content;
+          this.updatePlanStatus(content);
           onProgress?.({
             type: "reasoning",
             toolCallId: this.toolCallId,
             timestamp: new Date().toISOString(),
             stepNumber: step,
-            content: content
-          });
+            content: content,
+            navisReport: this.getPlanMarkdown()
+          } as any);
         }
 
         this.messages.push({
@@ -1433,7 +1548,8 @@ class ComputerUseAgent {
             timestamp: new Date().toISOString(),
             stepNumber: step,
             action: { type: tc.name, params: tc.arguments, description: tc.name },
-          });
+            navisReport: this.getPlanMarkdown()
+          } as any);
 
           let actionResult: Record<string, any> = { status: "success", error: undefined as string | undefined };
           if (!userConfirmed) {
@@ -1562,8 +1678,9 @@ class ComputerUseAgent {
             base64: newImg?.split(",")?.[1] || "",
             width: 1920,
             height: 1080
-          }
-        });
+          },
+          navisReport: this.getPlanMarkdown()
+        } as any);
 
         const toolParts = results.map((r, i) => {
           const tcId = toolCalls[i]?.id || ('tc-' + step + '-' + i);

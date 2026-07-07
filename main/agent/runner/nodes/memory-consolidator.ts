@@ -62,16 +62,24 @@ If no new memory should be saved, respond with:
 
       const userPrompt = `Here is the conversation history of the current interaction:\n\n${formattedHistory}`;
 
-      const response = await runner.client.chat({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        responseFormat: 'json',
-        temperature: 0.2,
-        maxTokens: 1000,
-        abortSignal: globalAbortManager.abortController.signal,
-      }) as any;
+      const timeoutMs = 5000;
+      const createTimeoutPromise = () => new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Memory operation timed out')), timeoutMs);
+      });
+
+      const response = await Promise.race([
+        runner.client.chat({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          responseFormat: 'json',
+          temperature: 0.2,
+          maxTokens: 1000,
+          abortSignal: globalAbortManager.abortController.signal,
+        }),
+        createTimeoutPromise()
+      ]) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
       
@@ -138,16 +146,19 @@ If you agree that there is absolutely nothing to store, respond with:
   "newMemories": []
 }`;
 
-        const auditorResponse = await runner.client.chat({
-          messages: [
-            { role: 'system', content: auditorSystemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          responseFormat: 'json',
-          temperature: 0.2,
-          maxTokens: 1000,
-          abortSignal: globalAbortManager.abortController.signal,
-        }) as any;
+        const auditorResponse = await Promise.race([
+          runner.client.chat({
+            messages: [
+              { role: 'system', content: auditorSystemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            responseFormat: 'json',
+            temperature: 0.2,
+            maxTokens: 1000,
+            abortSignal: globalAbortManager.abortController.signal,
+          }),
+          createTimeoutPromise()
+        ]) as any;
 
         let auditorContent = typeof auditorResponse.content === 'string' ? auditorResponse.content : JSON.stringify(auditorResponse.content);
         auditorContent = auditorContent.replace(/<think>[\s\S]*?<\/think>/g, '');

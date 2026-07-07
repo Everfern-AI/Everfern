@@ -314,7 +314,7 @@ YOUR CURRENT RESPONSE: "${responseContent.slice(0, 300)}"
 CONVERSATION CONTEXT: ${JSON.stringify(conversationHistory).slice(0, 200)}
 
 Available routing options:
-- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction)
+- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction, or desktop automation/computer_use)
 - "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
 - "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
 - "route_web_explorer" — Route to Web Explorer for complex multi-step web research (multiple page visits, form filling, login workflows). For simple web lookups or single-page research, use your available web_search/navis tools directly.
@@ -331,6 +331,7 @@ CRITICAL ROUTING RULES:
 8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
 9. IMAGE/FILE ORGANIZATION: For tasks like "organize my images/pictures/photos", "sort files by content", "classify images", "move anime pictures into anime folder" → ALWAYS use "continue_brain". Use system_files to list image files. For 20+ images, use visual_classification_sheet to create numbered contact sheets and a manifest, analyze the sheet(s) with vision, then map IDs back to original file paths. For smaller folders, use analyze_image to classify by actual visual content in batches of 10-20. Use system_files to move files after approval. Never classify anime/photos from filenames or metadata. For large folders, continue_brain may spawn generic sub-agents to classify independent sheet batches and aggregate their JSON results. Read the image-viewer skill (SKILL.md) and follow its workflows.
 10. BOOKING/TRANSACTIONAL TASKS: For tasks like "book a flight", "reserve a hotel", "buy tickets", "purchase", "order food", "make a reservation", or any task requiring interactive web form-filling and transactions → ALWAYS use "route_web_explorer". These are multi-step interactive workflows requiring form filling, option selection, and confirmation flows. NEVER use "continue_brain" for booking tasks.
+11. DESKTOP AUTOMATION: For automate/computer-use tasks (such as "open Spotify", "open VS Code", "play music", "click on UI", or native desktop GUI automation), ALWAYS use "continue_brain" to execute the computer_use tool directly. The brain has the computer_use tool available.
 
 Respond with JSON only:
 {
@@ -610,12 +611,13 @@ export const createBrainNode = (
     if (state.currentIntent === 'automate' && !hasExecutedComputerUse) {
       console.log('[Brain] Automate intent detected → generating computer_use tool call directly');
       const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const taskPrompt = state.decomposedTask?.steps?.[0]?.agentPrompt || originalRequest;
       return {
         pendingToolCalls: [{
           id: toolCallId,
           name: 'computer_use',
           arguments: {
-            task: originalRequest
+            task: taskPrompt
           }
         }],
         taskPhase: 'executing' as const,
