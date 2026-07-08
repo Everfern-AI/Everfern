@@ -1287,10 +1287,12 @@ async function withRollbackTracking(
 
 /**
  * Wrapper for command execution that tracks commands for rollback.
+ * Includes pre-execution file capture for destructive commands (rm, mv, cp).
  */
 async function withCommandTracking(
   command: string,
-  executor: () => Promise<ToolResult>
+  executor: () => Promise<ToolResult>,
+  cwd?: string
 ): Promise<ToolResult> {
   const rollbackManager = getRollbackManager();
 
@@ -1302,6 +1304,25 @@ async function withCommandTracking(
   }
 
   const { taskId, stepNumber } = currentAgentContext;
+  const workDir = cwd || process.cwd();
+
+  // ── Pre-execution: Capture file state for destructive commands ──
+  let capturedSnapshotIds: string[] = [];
+  if (taskId && stepNumber !== undefined) {
+    try {
+      const captureResult = await rollbackManager.captureFilesBeforeDestructiveCommand(
+        command, workDir, taskId, stepNumber
+      );
+      if (captureResult.snapshotIds.length > 0) {
+        capturedSnapshotIds = captureResult.snapshotIds;
+        console.log(
+          `[pi-tools] Pre-captured ${capturedSnapshotIds.length} file(s) for rollback before: "${command.substring(0, 60)}"`
+        );
+      }
+    } catch (captureError) {
+      console.warn('[pi-tools] Pre-capture skipped:', captureError);
+    }
+  }
 
   // Execute the command
   const result = await executor();
@@ -1312,13 +1333,20 @@ async function withCommandTracking(
       const exitCode = result.success ? 0 : 1;
       const output = result.output || '';
 
-      await rollbackManager.trackCommandExecution(
+      const cmdRecord = await rollbackManager.trackCommandExecution(
         command,
         output,
         exitCode,
         taskId,
         stepNumber
       );
+
+      // Link pre-captured snapshots to this command
+      if (cmdRecord && capturedSnapshotIds.length > 0) {
+        await rollbackManager.linkSnapshotsToCommand(cmdRecord.id, capturedSnapshotIds).catch(e =>
+          console.warn('[pi-tools] Failed to link snapshots to command:', e)
+        );
+      }
     } catch (trackError) {
       console.warn(`[pi-tools] Failed to track command execution: ${command}`, trackError);
     }
@@ -1397,7 +1425,16 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
     adaptTool(m.findToolDefinition, m.findTool.execute),
     adaptTool(m.grepToolDefinition, m.grepTool.execute),
     adaptTool(m.lsToolDefinition, m.lsTool.execute),
-    adaptTool(m.bashToolDefinition, m.bashTool.execute, 'executePwsh'),
+    adaptTool(
+      m.bashToolDefinition,
+      (toolCallId: string, params: any) =>
+        withCommandTracking(
+          params.command || params.script || '',
+          () => m.bashTool.execute(toolCallId, params),
+          params.cwd || params.workdir
+        ),
+      'executePwsh'
+    ),
   ];
 
   return loadedCodingTools;

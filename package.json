@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "EverFern — Your autonomous AI workplace agent.",
   "author": "Everfern Community",
   "license": "MIT",
@@ -140,6 +140,7 @@
     "electron-log": "^5.4.4",
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9",
+    "fast-glob": "^3.3.3",
     "framer-motion": "^12.38.0",
     "html-dom-parser": "^8.0.0",
     "ibm-cloud-sdk-core": "^5.4.11",

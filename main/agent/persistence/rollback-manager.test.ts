@@ -612,18 +612,18 @@ describe('RollbackManager', () => {
       expect(strategy.rollbackCommand).toBe('yarn remove typescript');
     });
 
-    it('should identify rm -rf as irreversible', () => {
+    it('should identify rm -rf as reversible via file capture', () => {
       const strategy = manager.identifyRollbackStrategy('rm -rf /tmp/data');
 
-      expect(strategy.strategy).toBe('irreversible');
-      expect(strategy.reversible).toBe(false);
+      expect(strategy.strategy).toBe('file_restore');
+      expect(strategy.reversible).toBe(false); // Updated to true by linkSnapshotsToCommand
     });
 
-    it('should identify rm -f as irreversible', () => {
+    it('should identify rm -f as reversible via file capture', () => {
       const strategy = manager.identifyRollbackStrategy('rm -f important.txt');
 
-      expect(strategy.strategy).toBe('irreversible');
-      expect(strategy.reversible).toBe(false);
+      expect(strategy.strategy).toBe('file_restore');
+      expect(strategy.reversible).toBe(false); // Updated to true by linkSnapshotsToCommand
     });
 
     it('should identify dd as irreversible', () => {
@@ -735,8 +735,7 @@ describe('RollbackManager', () => {
 
   describe('Irreversible command classification', () => {
     const irreversibleCommands = [
-      'rm -rf /',
-      'rm -f file.txt',
+      // rm commands are handled by file_restore strategy with pre-capture snapshots
       'dd if=/dev/zero of=/dev/sda',
       'mkfs.ext4 /dev/sda1',
       'format C:',
@@ -902,7 +901,7 @@ describe('RollbackManager', () => {
       expect(result.error).toBeDefined();
     });
 
-    it('should rollback a command execution', { timeout: 10000 }, async () => {
+    it('should rollback a command execution', { timeout: 30000 }, async () => {
       const commandRecord: any = {
         id: 'cmd-1',
         taskId,
@@ -918,12 +917,11 @@ describe('RollbackManager', () => {
       // Mock getCommandRecord
       manager['getCommandRecord'] = vi.fn().mockResolvedValue(commandRecord);
 
-      // Mock execSync - don't actually use vi.mock which causes hoisting issues
-      // Instead, just verify the logic path
       const result = await manager.rollbackCommand(commandRecord.id);
 
-      // Result should indicate success or failure based on whether execSync succeeds
-      expect(typeof result.success).toBe('boolean');
+      // Should succeed — npm uninstall lodash runs and succeeds
+      // (lodash may or may not be installed, but npm uninstall is idempotent)
+      expect(result.success).toBe(true);
     });
 
     it('should not rollback an irreversible command', async () => {

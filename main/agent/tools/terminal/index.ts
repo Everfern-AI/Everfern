@@ -61,6 +61,25 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
       };
     }
 
+    // ── Pre-execution: Capture file state for destructive commands ──
+    let capturedSnapshotIds: string[] = [];
+    try {
+      const { getRollbackManager } = require('../../persistence/rollback-manager');
+      const rollbackManager = getRollbackManager();
+      await rollbackManager.initialize();
+      const captureResult = await rollbackManager.captureFilesBeforeDestructiveCommand(
+        command, cwd, '', 0
+      );
+      if (captureResult.snapshotIds.length > 0) {
+        capturedSnapshotIds = captureResult.snapshotIds;
+        console.log(
+          `[terminalTool] Pre-captured ${capturedSnapshotIds.length} file(s) for rollback before: "${command.substring(0, 60)}"`
+        );
+      }
+    } catch (captureError) {
+      console.warn(`[terminalTool] Pre-capture skipped: ${captureError}`);
+    }
+
     onUpdate?.(`Terminal [${id}] (${target}): Executing "${command}"...`);
 
     const info = await registry.execute(id, command, cwd, timeoutMs, target, onUpdate);
@@ -73,13 +92,24 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
         const rollbackManager = getRollbackManager();
         await rollbackManager.initialize();
         const exitCode = info.exitCode ?? (info.status === 'completed' ? 0 : 1);
-        await rollbackManager.trackCommandExecution(
+        const cmdRecord = await rollbackManager.trackCommandExecution(
           command,
           info.output || '',
           exitCode,
           taskId,
           stepNumber
         );
+
+        // Link pre-captured snapshots to this command if we captured any
+        if (cmdRecord && capturedSnapshotIds.length > 0) {
+          await rollbackManager.linkSnapshotsToCommand(cmdRecord.id, capturedSnapshotIds).catch(e =>
+            console.warn('[terminalTool] Failed to link snapshots to command:', e)
+          );
+        }
+      } else if (capturedSnapshotIds.length > 0) {
+        // No agent context — we still need to clean up orphaned snapshots
+        // These will be cleaned up by the normal snapshot pruning
+        console.log(`[terminalTool] ${capturedSnapshotIds.length} snapshot(s) stored without agent context`);
       }
     } catch (trackError) {
       console.warn(`[terminalTool] Failed to track command execution: ${command}`, trackError);
