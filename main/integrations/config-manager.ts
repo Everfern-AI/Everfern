@@ -845,6 +845,7 @@ export class ConfigManager extends EventEmitter {
 
       // Save to disk
       await this.saveConfiguration();
+      this.emit('config-saved', this.config);
 
       // Update configuration snapshot
       this.lastConfigSnapshot = JSON.stringify(this.config);

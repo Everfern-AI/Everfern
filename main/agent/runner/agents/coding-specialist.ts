@@ -6,6 +6,8 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { getPiCodingTools } from '../../tools/pi-tools';
+import { createHarnessConfig, getAllowedTools, getPhasePrompt, workflowEngine } from '../harness';
+import type { WorkflowPhase } from '../harness/workflow-engine';
 
 const buildCodingHandoff = (state: GraphStateType): string => {
   const plan = state.decomposedTask;
@@ -116,7 +118,26 @@ export const createCodingSpecialistNode = (
       const managerTools = [...piTools, ...extraTools];
       const basePrompt = loadPrompt('coding-specialist.md') || '';
       const codingHandoff = buildCodingHandoff(state);
-      const systemPrompt = `${basePrompt}
+
+      // ── Harness: phase-driven tool filtering ──
+      const harnessSessionId = state.missionId || `coding-${Date.now()}`;
+      const harnessConfig = createHarnessConfig(harnessSessionId, 'coding_harness');
+      const allowedToolNames = getAllowedTools(harnessConfig);
+      const alwaysAvailable = ['spawn_agent', 'ask_user_question', 'todo_write'];
+      const filteredTools = allowedToolNames.length > 0
+        ? managerTools.filter(t => alwaysAvailable.includes(t.name) || allowedToolNames.includes(t.name))
+        : managerTools;
+      console.log(`[CodingSpecialist] Phase ${workflowEngine.getContext(harnessSessionId).currentPhase}: tools [${allowedToolNames.join(', ')}], filtered to ${filteredTools.length} tools`);
+
+      // ── Phase prompt ──
+      const phasePrompt = getPhasePrompt(harnessConfig);
+      const harnessPhaseGuide = phasePrompt
+        ? `\n\n=== WORKFLOW PHASE ===\n${phasePrompt}\n\n`
+        : (state.harnessPhasePrompt
+            ? `\n\n=== WORKFLOW PHASE ===\n${state.harnessPhasePrompt}\n\n`
+            : '');
+
+      const systemPrompt = `${harnessPhaseGuide}${basePrompt}
 
 PI CODING ${isWorkerSubagent ? 'WORKER' : 'MANAGER'} MODE:
 - ${isWorkerSubagent ? 'You are a coding worker spawned for one specific lane. Complete only your assigned lane and do not spawn agents.' : 'You are the manager for this coding request.'}
@@ -153,7 +174,7 @@ ${userInput}`;
         'coding_specialist',
         () => runAgentStep(state, {
           runner,
-          toolDefs: managerTools as any,
+          toolDefs: filteredTools as any,
           eventQueue,
           nodeName: 'coding_specialist',
           systemPromptOverride: systemPrompt,
@@ -161,12 +182,44 @@ ${userInput}`;
         'Writing code'
       );
 
+      // ── Phase transition detection ──
+      const agentMessages = result.messages || [];
+      const lastAssistantMsg = [...agentMessages].reverse().find((m: any) => {
+        const role = m.role || m._getType?.();
+        return role === 'assistant' || role === 'ai';
+      });
+      let updatedPhasePrompt = phasePrompt || state.harnessPhasePrompt || '';
+      if (lastAssistantMsg) {
+        const content = typeof lastAssistantMsg.content === 'string' ? lastAssistantMsg.content : '';
+        const match = content.match(/\[PHASE_COMPLETE:\s*(\w+)\]/i);
+        if (match) {
+          const nextPhase = match[1].toLowerCase() as WorkflowPhase;
+          const validPhases: WorkflowPhase[] = ['exploration', 'planning', 'implementation', 'review', 'testing', 'complete'];
+          if (validPhases.includes(nextPhase)) {
+            const wfCtx = workflowEngine.getContext(harnessSessionId);
+            console.log(`[CodingSpecialist] Phase transition: ${wfCtx.currentPhase} → ${nextPhase}`);
+            const transResult = await workflowEngine.transitionTo(harnessSessionId, 'coding_harness', nextPhase);
+            if (transResult.success) {
+              updatedPhasePrompt = getPhasePrompt(harnessConfig);
+              console.log(`[CodingSpecialist] ✅ Transitioned to ${nextPhase}`);
+            } else {
+              console.warn(`[CodingSpecialist] ⚠️ Phase transition rejected: ${transResult.reason}`);
+            }
+          }
+        }
+      }
+
+      // Only mark complete when 'complete' phase is reached
+      const wfCtx = workflowEngine.getContext(harnessSessionId);
+      const isCompletePhase = wfCtx?.currentPhase === 'complete';
+
       return {
         ...result,
         subagentCoordination: undefined,
         returningFromSpecialist: null,
-        codingComplete: true,
+        codingComplete: isCompletePhase,
         codingSpecialistSelfLoopCount: loopCount,
+        harnessPhasePrompt: updatedPhasePrompt,
       };
     } catch (error) {
       console.error('[CodingSpecialist] Error in coding specialist:', error);

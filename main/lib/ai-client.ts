@@ -13,6 +13,7 @@
 
 import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
+import { CLOUD_MODEL_MAP } from './providers';
 
 // ── Safe JSON Parsing ───────────────────────────────────────────────
 
@@ -253,12 +254,12 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
 };
 
 const DEFAULT_MODELS: Record<ProviderType, string> = {
-  openai: 'gpt-4o',
-  anthropic: 'claude-3-5-sonnet-20241022',
+  openai: 'gpt-5.5',
+  anthropic: 'claude-sonnet-4-6',
   deepseek: 'deepseek-v4-pro',
   minimax: 'MiniMax-M3',
   everfern: 'qwen/qwen3-vl-235b-a22b-instruct',
-  gemini: 'gemini-3.1-pro-preview',
+  gemini: 'gemini-3.5-flash',
   ollama: 'llama3',
   'ollama-cloud': 'qwen3-vl:235b-cloud',
   lmstudio: 'local-model',
@@ -544,7 +545,7 @@ export class AIClient {
     if (this.config.provider === 'everfern') return true;
     if (this.config.provider === 'minimax') return true;
     const modelName = this.config.model?.toLowerCase() || '';
-    const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl'];
+    const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl', 'minimax'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
     if (this.config.provider === 'anthropic') return true;
     if (this.config.provider === 'gemini') return true;
@@ -664,7 +665,7 @@ export class AIClient {
                 },
                 body: JSON.stringify({
                   messages: request.messages,
-                  model: this.config.model,
+                  model: CLOUD_MODEL_MAP[request.model ?? this.config.model] || (request.model ?? this.config.model),
                   temperature: request.temperature ?? this.config.temperature,
                   max_tokens: request.maxTokens ?? this.config.maxTokens
                 })
@@ -694,6 +695,25 @@ export class AIClient {
                 imageOutputCost: rawUsage.image_output_cost,
                 totalCost: rawUsage.total_cost,
               } : undefined;
+
+              const message = data.choices[0].message;
+              if (message.tool_calls && message.tool_calls.length > 0) {
+                console.log('[EverFern Vision] Received native tool calls from EverFern Cloud:', message.tool_calls);
+                return {
+                  id: data.id || `everfern-${Date.now()}`,
+                  content: message.content || '',
+                  model: data.model || this.config.model,
+                  toolCalls: message.tool_calls.map((tc: any) => ({
+                    id: tc.id || `call_${Date.now()}`,
+                    name: tc.function.name,
+                    arguments: typeof tc.function.arguments === 'string'
+                      ? JSON.parse(tc.function.arguments)
+                      : tc.function.arguments
+                  })),
+                  usage: usageForAnalytics,
+                  finishReason: 'tool_calls'
+                };
+              }
 
               // Parse actions from the response
               const actions = this._parseActionsFromContent(content);
@@ -883,7 +903,7 @@ export class AIClient {
     let processedMessages = messages.flatMap(m => {
       let content = m.content;
 
-      // Strip images if model doesn't support vision
+       // Strip images if model doesn't support vision
       // Skip for NVIDIA tool messages — they're deferred via _images tag
       if (!supportsVision && Array.isArray(content)) {
         const isNvidiaTool = this.config.provider === 'nvidia' && m.role === 'tool';
@@ -891,6 +911,22 @@ export class AIClient {
           content = content.filter(c => c.type !== 'image_url');
           if (content.length === 0) content = '[An image was included in this message, but the current model cannot process images. To enable image analysis, switch to a vision-capable model or configure a VLM in Settings.]';
         }
+      } else if (supportsVision && Array.isArray(content)) {
+        content = content.map(c => {
+          if (c.type === 'image_url' && c.image_url) {
+            const isStandardProvider = this.config.provider === 'openai' || this.config.provider === 'anthropic' || this.config.provider === 'gemini';
+            if (!isStandardProvider) {
+              // Strip detail from image_url to avoid compatibility errors in custom API endpoints
+              return {
+                type: 'image_url',
+                image_url: {
+                  url: c.image_url.url
+                }
+              };
+            }
+          }
+          return c;
+        });
       }
 
       // Flatten assistant/system messages to prevent format errors on strict APIs (Nvidia, Ollama Cloud, etc.)
@@ -1177,8 +1213,13 @@ export class AIClient {
     const messages = this._mapMessagesForOpenAI(req.messages);
 
     // Build request options
+    let model = req.model ?? this.config.model;
+    if (this.config.provider === 'everfern') {
+      model = CLOUD_MODEL_MAP[model] || model;
+    }
+
     const options: any = {
-      model: req.model ?? this.config.model,
+      model,
       messages,
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
@@ -1227,7 +1268,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         options.chat_template_kwargs = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        options.reasoning_effort = 'high';
+        options.reasoning_effort = 'medium';
         options.max_tokens = req.maxTokens ?? 16384;
         options.temperature = req.temperature ?? 0.10;
         options.top_p = 1.0;
@@ -1315,8 +1356,12 @@ export class AIClient {
                 }
                 const entry = toolCallsMap[tc.index];
                 if (tc.id) entry.id = tc.id;
-                if (tc.function?.name) entry.name += tc.function.name;
-                if (tc.function?.arguments) entry.arguments += tc.function.arguments;
+                
+                const name = tc.function?.name || tc.name || '';
+                const args = tc.function?.arguments || tc.arguments || '';
+                
+                entry.name += name;
+                entry.arguments += args;
               }
             }
           }
@@ -1379,7 +1424,7 @@ export class AIClient {
             imageOutputCost: response.usage.image_output_cost,
             totalCost: response.usage.total_cost,
           } : undefined,
-          finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
+          finishReason: choice?.finish_reason === 'tool_calls' || toolCalls?.length > 0 ? 'tool_calls' :
             (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop'
         };
       }
@@ -1414,8 +1459,13 @@ export class AIClient {
 
     const messages = this._mapMessagesForOpenAI(req.messages);
 
+    let model = req.model ?? this.config.model;
+    if (this.config.provider === 'everfern') {
+      model = CLOUD_MODEL_MAP[model] || model;
+    }
+
     const options: any = {
-      model: req.model ?? this.config.model,
+      model,
       messages,
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
@@ -1664,7 +1714,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         body['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        body['reasoning_effort'] = 'high';
+        body['reasoning_effort'] = 'medium';
         body['max_tokens'] = req.maxTokens ?? 16384;
         body['temperature'] = req.temperature ?? 0.10;
         body['top_p'] = 1.0;
@@ -1676,7 +1726,7 @@ export class AIClient {
       } else if (modelName?.includes('qwen') && modelName?.includes('thinking')) {
         body['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('llama') && modelName?.includes('reasoning')) {
-        body['reasoning_effort'] = 'high';
+        body['reasoning_effort'] = 'medium';
       }
     }
     if (req.tools?.length) {
@@ -1757,6 +1807,11 @@ export class AIClient {
         throw new Error(`[${this.config.provider}] HTTP ${res.status}: ${errorMsg}. No vision capability for this model. Please select a valid vision endpoint.`);
       }
 
+      // Daily usage limit reached (EverFern Cloud) — surface a clean message.
+      if (res.status === 429) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
+      }
+
       throw new Error(`[${this.config.provider}] HTTP ${res.status}: ${errorMsg}`);
     }
 
@@ -1783,7 +1838,7 @@ export class AIClient {
           imageOutputCost: data.usage.image_output_cost,
           totalCost: data.usage.total_cost,
         } : undefined,
-        finishReason: choice?.finish_reason === 'tool_calls' ? 'tool_calls' :
+        finishReason: choice?.finish_reason === 'tool_calls' || toolCalls?.length > 0 ? 'tool_calls' :
           (choice?.finish_reason as ChatResponse['finishReason']) ?? 'stop',
       };
     }
@@ -1927,7 +1982,7 @@ export class AIClient {
       } else if (modelName?.includes('kimi')) {
         streamBody['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('mistral')) {
-        streamBody['reasoning_effort'] = 'high';
+        streamBody['reasoning_effort'] = 'medium';
         streamBody['max_tokens'] = req.maxTokens ?? 16384;
         streamBody['temperature'] = req.temperature ?? 0.10;
         streamBody['top_p'] = 1.0;
@@ -1939,7 +1994,7 @@ export class AIClient {
       } else if (modelName?.includes('qwen') && modelName?.includes('thinking')) {
         streamBody['chat_template_kwargs'] = { thinking: true };
       } else if (modelName?.includes('llama') && modelName?.includes('reasoning')) {
-        streamBody['reasoning_effort'] = 'high';
+        streamBody['reasoning_effort'] = 'medium';
       }
     }
     // Include tools in the streaming request so models can trigger tool calls
@@ -2008,6 +2063,10 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      // Daily usage limit reached (EverFern Cloud) — surface a clean message.
+      if (res.status === 429) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
+      }
       throw new Error(`[${this.config.provider}] Stream HTTP ${res.status}: ${errorMsg}`);
     }
 
@@ -2727,15 +2786,34 @@ export class AIClient {
   }
 
   private async *_ollamaStream(req: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
+    const body: Record<string, unknown> = {
+      model: req.model ?? this.config.model,
+      messages: this._mapOllamaMessages(req.messages),
+      stream: true,
+      options: { temperature: req.temperature ?? this.config.temperature },
+    };
+
+    // Pass tools to Ollama if provided (mirrors non-streaming path)
+    if (req.tools && req.tools.length > 0) {
+      body['tools'] = req.tools.map(t => {
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          return t;
+        }
+        return {
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        };
+      });
+    }
+
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { ...this._ollamaHeaders, 'Accept': 'text/event-stream' },
-      body: JSON.stringify({
-        model: req.model ?? this.config.model,
-        messages: this._mapOllamaMessages(req.messages),
-        stream: true,
-        options: { temperature: req.temperature ?? this.config.temperature },
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const txt = await res.text();
@@ -2828,8 +2906,8 @@ export class AIClient {
     }
 
     try {
-      // Route to /api/navis/vision which supports DOM context
-      const response = await fetch(`${apiBaseUrl}/api/navis/vision`, {
+      // Route to /api/chat/completions which supports DOM context
+      const response = await fetch(`${apiBaseUrl}/api/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

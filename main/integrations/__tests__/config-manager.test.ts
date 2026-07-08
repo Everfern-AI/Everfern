@@ -30,30 +30,33 @@ vi.mock('crypto', async (importOriginal) => {
 });
 
 // Mock file system operations
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    promises: {
-      mkdir: vi.fn(),
-      writeFile: vi.fn(),
-      readFile: vi.fn(),
-      readdir: vi.fn(),
-      access: vi.fn(),
-      unlink: vi.fn(),
-      chmod: vi.fn()
-    }
-  };
-});
+const mockedFs = vi.hoisted(() => ({
+  promises: {
+    mkdir: vi.fn(),
+    writeFile: vi.fn(),
+    readFile: vi.fn(),
+    readdir: vi.fn(),
+    access: vi.fn(),
+    unlink: vi.fn(),
+    chmod: vi.fn()
+  },
+  watch: vi.fn()
+}));
+
+vi.mock('fs', () => ({
+  ...mockedFs,
+  default: mockedFs
+}));
 
 // Mock os module
-vi.mock('os', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
+vi.mock('os', () => ({
+  homedir: vi.fn(() => '/mock/home'),
+  default: {
     homedir: vi.fn(() => '/mock/home')
-  };
-});
+  }
+}));
+
+const p = (str: string) => str.replace(/\//g, path.sep);
 
 describe('ConfigManager', () => {
   let configManager: ConfigManager;
@@ -62,6 +65,20 @@ describe('ConfigManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Set default filesystem mock behaviors
+    mockFs.mkdir.mockResolvedValue(undefined);
+    mockFs.writeFile.mockResolvedValue(undefined);
+    mockFs.chmod.mockResolvedValue(undefined);
+    mockFs.unlink.mockResolvedValue(undefined);
+    mockFs.readdir.mockResolvedValue([]);
+
+    // Simulate non-existent files by default
+    const enoent = new Error('ENOENT: no such file or directory');
+    (enoent as any).code = 'ENOENT';
+    mockFs.access.mockRejectedValue(enoent);
+    mockFs.readFile.mockRejectedValue(enoent);
+
     configManager = new ConfigManager();
   });
 
@@ -79,9 +96,9 @@ describe('ConfigManager', () => {
       await expect(configManager.initialize()).resolves.not.toThrow();
 
       // Should create directories
-      expect(mockFs.mkdir).toHaveBeenCalledWith(`${mockHomedir}/.everfern`, { recursive: true });
-      expect(mockFs.mkdir).toHaveBeenCalledWith(`${mockHomedir}/.everfern/integrations`, { recursive: true });
-      expect(mockFs.mkdir).toHaveBeenCalledWith(`${mockHomedir}/.everfern/integrations/backups`, { recursive: true });
+      expect(mockFs.mkdir).toHaveBeenCalledWith(p(`${mockHomedir}/.everfern`), { recursive: true });
+      expect(mockFs.mkdir).toHaveBeenCalledWith(p(`${mockHomedir}/.everfern/integrations`), { recursive: true });
+      expect(mockFs.mkdir).toHaveBeenCalledWith(p(`${mockHomedir}/.everfern/integrations/backups`), { recursive: true });
     });
 
     it('should handle initialization errors gracefully', async () => {
@@ -194,12 +211,12 @@ describe('ConfigManager', () => {
       await configManager.storeBotToken('telegram', token);
 
       expect(mockFs.writeFile).toHaveBeenCalledWith(
-        `${mockHomedir}/.everfern/integrations/telegram.key`,
+        p(`${mockHomedir}/.everfern/integrations/telegram.key`),
         expect.stringContaining('encrypted'),
         'utf-8'
       );
       expect(mockFs.chmod).toHaveBeenCalledWith(
-        `${mockHomedir}/.everfern/integrations/telegram.key`,
+        p(`${mockHomedir}/.everfern/integrations/telegram.key`),
         0o600
       );
       expect(eventSpy).toHaveBeenCalledWith('telegram');
@@ -242,7 +259,7 @@ describe('ConfigManager', () => {
       await configManager.deleteBotToken('telegram');
 
       expect(mockFs.unlink).toHaveBeenCalledWith(
-        `${mockHomedir}/.everfern/integrations/telegram.key`
+        p(`${mockHomedir}/.everfern/integrations/telegram.key`)
       );
     });
 
@@ -361,8 +378,8 @@ describe('ConfigManager', () => {
       expect(eventSpy).toHaveBeenCalled();
 
       // Should delete stored tokens
-      expect(mockFs.unlink).toHaveBeenCalledWith(`${mockHomedir}/.everfern/integrations/telegram.key`);
-      expect(mockFs.unlink).toHaveBeenCalledWith(`${mockHomedir}/.everfern/integrations/discord.key`);
+      expect(mockFs.unlink).toHaveBeenCalledWith(p(`${mockHomedir}/.everfern/integrations/telegram.key`));
+      expect(mockFs.unlink).toHaveBeenCalledWith(p(`${mockHomedir}/.everfern/integrations/discord.key`));
     });
   });
 
@@ -524,6 +541,7 @@ describe('ConfigManager', () => {
     });
 
     it('should handle decryption of corrupted data', async () => {
+      configManager.on('error', () => {});
       mockFs.access.mockResolvedValue(undefined);
       mockFs.readFile.mockResolvedValue('corrupted data');
 
@@ -550,12 +568,12 @@ describe('ConfigManager', () => {
 
       const backupPath = await configManager.createBackup(description);
 
-      expect(backupPath).toContain(`${mockHomedir}/.everfern/integrations/backups/backup-`);
-      expect(backupPath).toEndWith('.json');
+      expect(backupPath).toContain(p(`${mockHomedir}/.everfern/integrations/backups/backup-`));
+      expect(backupPath).toMatch(/\.json$/);
 
       // Verify backup file was written
       const backupWriteCall = mockFs.writeFile.mock.calls.find(call =>
-        call[0].includes('backups/backup-')
+        call[0].includes(p('backups/backup-'))
       );
       expect(backupWriteCall).toBeDefined();
 
@@ -587,7 +605,7 @@ describe('ConfigManager', () => {
 
       // Find the backup write call
       const backupWriteCalls = mockFs.writeFile.mock.calls.filter(call =>
-        call[0].includes('backups/backup-')
+        call[0].includes(p('backups/backup-'))
       );
       expect(backupWriteCalls.length).toBeGreaterThan(0);
 
@@ -607,14 +625,22 @@ describe('ConfigManager', () => {
       // Mock reading backup files
       mockFs.readFile.mockImplementation((filePath: string) => {
         const filename = path.basename(filePath as string);
-        const timestamp = filename.replace('backup-', '').replace('.json', '').replace(/-/g, ':').replace(/:/g, (match, offset) => {
-          // Replace first 2 hyphens with colons, keep the rest as hyphens for the date part
-          return offset < 13 ? ':' : match;
-        });
+                const dateStr = filename.replace('backup-', '').replace('.json', '');
+        const parts = dateStr.split('T');
+        let timestamp = dateStr;
+        if (parts.length === 2) {
+          const datePart = parts[0];
+          const timePart = parts[1].replace('Z', '').replace(/-/g, ':');
+          const lastColon = timePart.lastIndexOf(':');
+          const timeWithMillis = lastColon !== -1
+            ? timePart.slice(0, lastColon) + '.' + timePart.slice(lastColon + 1)
+            : timePart;
+          timestamp = `${datePart}T${timeWithMillis}Z`;
+        }
 
         return Promise.resolve(JSON.stringify({
           metadata: {
-            timestamp: timestamp.replace(/-/g, ':'),
+            timestamp,
             version: '1.0.0',
             description: `Backup ${filename}`,
             platforms: [],
@@ -734,7 +760,7 @@ describe('ConfigManager', () => {
 
       // Should have created a pre-restore backup
       const preRestoreBackupCall = mockFs.writeFile.mock.calls.find(call =>
-        call[0].includes('backups/backup-') &&
+        call[0].includes(p('backups/backup-')) &&
         JSON.parse(call[1]).metadata.description === 'Pre-restore backup'
       );
       expect(preRestoreBackupCall).toBeDefined();
@@ -856,7 +882,7 @@ describe('ConfigManager', () => {
         if (filePath.includes('config.json')) {
           return Promise.resolve('invalid json');
         }
-        if (filePath.includes('backups/backup-')) {
+        if (filePath.includes(p('backups/backup-'))) {
           return Promise.resolve(JSON.stringify({
             metadata: {
               timestamp: '2024-01-01T10:00:00.000Z',

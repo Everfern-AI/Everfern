@@ -456,8 +456,20 @@ export class TelegramPlatform extends MessagePlatform {
       this.handleIncomingMessage(message);
     });
 
-    this.bot.on('polling_error', (error) => {
+    this.bot.on('polling_error', (error: any) => {
       console.error('Telegram polling error:', error);
+      
+      const errMsg = String(error?.message || error || '').toLowerCase();
+      const isConflict = errMsg.includes('409') || errMsg.includes('conflict');
+      
+      if (isConflict) {
+        console.warn('[Telegram] 409 Conflict detected. Terminating polling to prevent duplicate loop spam...');
+        this.disconnect().catch(err => {
+          console.error('[Telegram] Failed to disconnect after 409 Conflict:', err);
+        });
+        return;
+      }
+      
       this.handleConnectionError(error);
     });
   }

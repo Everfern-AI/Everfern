@@ -14,8 +14,8 @@ describe('extractNavisData', () => {
     };
     const result = extractNavisData(tc);
     expect(result?.screenshots).toHaveLength(2);
-    expect(result?.screenshots[0].base64).toBe('base64_2'); // It's reversed
-    expect(result?.screenshots[1].base64).toBe('base64_1');
+    expect(result?.screenshots[0].base64).toBe('base64_1');
+    expect(result?.screenshots[1].base64).toBe('base64_2');
   });
 
   it('should extract screenshots from tc.data.screenshot (single string)', () => {
@@ -44,8 +44,8 @@ describe('extractNavisData', () => {
     };
     const result = extractNavisData(tc);
     expect(result?.screenshots).toHaveLength(2);
-    expect(result?.screenshots[0].base64).toBe('base64_obj_2');
-    expect(result?.screenshots[1].base64).toBe('base64_obj_1');
+    expect(result?.screenshots[0].base64).toBe('base64_obj_1');
+    expect(result?.screenshots[1].base64).toBe('base64_obj_2');
   });
 
   it('should combine screenshots and avoid duplicates', () => {

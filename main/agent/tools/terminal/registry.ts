@@ -49,6 +49,7 @@ export class CommandRegistry {
   private wslCmdName: string = 'wsl.exe';
   private lastWslCheck: number = 0;
   private readonly WSL_RECHECK_MS: number = 30000;
+  private pendingMarkers: Map<'main' | 'vm', { id: string; marker: string; output: string; target: 'main' | 'vm' } | null> = new Map();
 
   private constructor() {}
 
@@ -195,6 +196,16 @@ export class CommandRegistry {
 
     const MAX_OUTPUT_LENGTH = 50000;
 
+    const syncOutputToCommands = (decoded: string) => {
+      const active = newShell.activeExecution;
+      if (active) {
+        const cmdInfo = this.commands.get(active.id);
+        if (cmdInfo && cmdInfo.status === 'running') {
+          cmdInfo.output = active.output;
+        }
+      }
+    };
+
     proc.stdout?.on('data', (data) => {
       const decoded = decodeBuffer(data);
       const active = newShell.activeExecution;
@@ -202,6 +213,7 @@ export class CommandRegistry {
         console.log(`[Terminal ${target}] ${decoded.trimEnd()}`);
         active.output += decoded;
         active.onData?.(decoded);
+        syncOutputToCommands(decoded);
 
         if (active.output.length > MAX_OUTPUT_LENGTH) {
           active.output = '...[Output truncated]...\n' + active.output.slice(-MAX_OUTPUT_LENGTH);
@@ -259,6 +271,32 @@ export class CommandRegistry {
           }
         }
       }
+
+      // Check pending markers (timed-out commands still running in background)
+      const pending = this.pendingMarkers.get(target);
+      if (pending && !active) {
+        pending.output += decoded;
+        const markerIndex = pending.output.indexOf(pending.marker);
+        if (markerIndex !== -1) {
+          const afterMarker = pending.output.substring(markerIndex + pending.marker.length);
+          const lines = afterMarker.split(/\r?\n/);
+          if (lines.length >= 3) {
+            const exitCodeStr = lines[0].trim();
+            const exitCode = parseInt(exitCodeStr, 10);
+            let cleanOutput = pending.output.substring(0, markerIndex);
+
+            const existing = this.commands.get(pending.id);
+            if (existing) {
+              existing.status = exitCode === 0 ? 'completed' : 'failed';
+              existing.output = cleanOutput;
+              existing.exitCode = exitCode;
+              this.commands.set(pending.id, { ...existing });
+              console.log(`[CommandRegistry] Background command ${pending.id} completed with exit code ${exitCode}`);
+            }
+            this.pendingMarkers.delete(target);
+          }
+        }
+      }
     });
 
     proc.stderr?.on('data', (data) => {
@@ -268,10 +306,17 @@ export class CommandRegistry {
         console.error(`[Terminal Error ${target}] ${decoded.trimEnd()}`);
         active.output += decoded;
         active.onData?.(decoded);
+        syncOutputToCommands(decoded);
 
         if (active.output.length > MAX_OUTPUT_LENGTH) {
           active.output = '...[Output truncated]...\n' + active.output.slice(-MAX_OUTPUT_LENGTH);
         }
+      }
+
+      // Also capture stderr for pending markers
+      const pending = this.pendingMarkers.get(target);
+      if (pending && !active) {
+        pending.output += decoded;
       }
     });
 
@@ -350,29 +395,39 @@ export class CommandRegistry {
 
     const timeoutMs = req.timeoutMs || 60000;
     shell.activeExecution.timeoutId = setTimeout(() => {
-      console.log(`[CommandRegistry] Command ${req.id} timed out. Terminating shell.`);
+      console.log(`[CommandRegistry] Command ${req.id} timed out after ${timeoutMs/1000}s. Returning partial output — command continues in background.`);
       const active = shell.activeExecution;
       if (active) {
-        const timeoutMsg = `\n[Timeout: Command execution timed out after ${timeoutMs/1000} seconds and was terminated.]`;
+        const timeoutMsg = `\n[⏱ Timeout after ${timeoutMs/1000}s — command is still running. Check with terminal_status(id="${active.id}").]`;
         active.output += timeoutMsg;
         active.onData?.(timeoutMsg);
+
         const info: CommandInfo = {
           id: active.id,
           command: active.command,
           cwd: shell.currentCwd,
           pid: shell.proc.pid,
-          status: 'failed',
+          status: 'running',
           output: active.output,
-          exitCode: -1,
           startTime: active.startTime,
           target
         };
         this.commands.set(active.id, info);
         this.processes.delete(active.id);
         active.resolve(info);
+
+        // Set up pending marker tracking: when the command eventually finishes,
+        // the stdout handler will detect the marker and update the command info.
+        this.pendingMarkers.set(target, {
+          id: active.id,
+          marker: active.marker,
+          output: active.output,
+          target
+        });
+
+        shell.activeExecution = null;
+        this.processQueue(target);
       }
-      shell.activeExecution = null;
-      shell.proc.kill('SIGKILL');
     }, timeoutMs);
 
     const isWin = process.platform === 'win32';

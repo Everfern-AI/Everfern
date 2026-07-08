@@ -64,6 +64,7 @@ export const ToolType = {
   IMAGE_ANALYSIS: 'image_analysis',
   LIVE_PREVIEW: 'live_preview',
   MEMORY: 'memory',
+  GREP: 'grep',
   GENERIC: 'generic',
 };
 
@@ -117,7 +118,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'skill') return ToolType.SKILL;
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
-  if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return ToolType.FILE_SYSTEM;
+  if (n === 'grep' || n.includes('grep_search')) return ToolType.GREP;
+  if (n === 'ls' || n === 'find' || n.includes('list_dir') || n.includes('system_files')) return ToolType.FILE_SYSTEM;
   if (n.includes('web_search') || n.includes('remote_web_search')) return ToolType.WEB_SEARCH;
   if (n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
@@ -285,7 +287,8 @@ function ToolTabIcon({ toolName }: { toolName?: string }) {
   const n = (toolName || '').toLowerCase();
   if (n.includes('terminal') || n.includes('execute') || n.includes('bash')) return <Terminal size={13} />;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return <Braces size={13} />;
-  if (n === 'ls' || n === 'grep' || n === 'find' || n.includes('grep_search') || n.includes('list_dir') || n.includes('system_files')) return <FolderOpenIcon style={{ width: 13, height: 13 }} />;
+  if (n === 'grep' || n.includes('grep_search')) return <Search size={13} />;
+  if (n === 'ls' || n === 'find' || n.includes('list_dir') || n.includes('system_files')) return <FolderOpenIcon style={{ width: 13, height: 13 }} />;
   if (n.includes('web_search') || n.includes('remote_web_search')) return <Search size={13} />;
   if (n === 'pptx_generator') return <FileIcon size={13} />;
   if (n === 'visual_classification_sheet') return <Image size={13} />;
@@ -313,7 +316,7 @@ function normalizePanelUrl(value: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
-const DEFAULT_TOOL_DETAIL_ROOT = typeof navigator !== 'undefined' && navigator.userAgent.includes('Win') ? 'C:\\' : '/';
+const DEFAULT_TOOL_DETAIL_ROOT = '';
 
 function isMacPlatform() {
   if (typeof navigator === 'undefined') return false;
@@ -1100,9 +1103,23 @@ function FileContentBody({
           />
         </div>
         <div style={{ overflow: 'auto', paddingBottom: 18 }}>
-          {safeContent.split('\n').map((line, idx) => (
-            <CodeLine key={idx} type={mode === 'add' ? 'add' : 'normal'} content={line} lineNumber={idx + 1} ext="svg" />
-          ))}
+          {(() => {
+            const MAX_LINES = 1000;
+            const lines = safeContent.split('\n');
+            const truncated = lines.length > MAX_LINES;
+            const toRender = truncated ? lines.slice(0, MAX_LINES) : lines;
+            const elements = toRender.map((line, idx) => (
+              <CodeLine key={idx} type={mode === 'add' ? 'add' : 'normal'} content={line} lineNumber={idx + 1} ext="svg" />
+            ));
+            if (truncated) {
+              elements.push(
+                <div key="trunc-msg" style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
+                  ... [Remaining {lines.length - MAX_LINES} lines truncated for performance]
+                </div>
+              );
+            }
+            return elements;
+          })()}
         </div>
       </div>
     );
@@ -1119,15 +1136,29 @@ function FileContentBody({
 
   return (
     <div style={{ flex: 1, overflow: 'auto', background: EDITOR_COLORS.bg, paddingTop: 6, paddingBottom: 18 }}>
-      {safeContent.split('\n').map((line, idx) => (
-        <CodeLine
-          key={idx}
-          type={mode === 'add' ? 'add' : 'normal'}
-          content={line}
-          lineNumber={idx + 1}
-          ext={visual.ext}
-        />
-      ))}
+      {(() => {
+        const MAX_LINES = 1000;
+        const lines = safeContent.split('\n');
+        const truncated = lines.length > MAX_LINES;
+        const toRender = truncated ? lines.slice(0, MAX_LINES) : lines;
+        const elements = toRender.map((line, idx) => (
+          <CodeLine
+            key={idx}
+            type={mode === 'add' ? 'add' : 'normal'}
+            content={line}
+            lineNumber={idx + 1}
+            ext={visual.ext}
+          />
+        ));
+        if (truncated) {
+          elements.push(
+            <div key="trunc-msg" style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11, fontFamily: T.mono }}>
+              ... [Remaining {lines.length - MAX_LINES} lines truncated for performance]
+            </div>
+          );
+        }
+        return elements;
+      })()}
     </div>
   );
 }
@@ -2019,107 +2050,32 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisThinkingRail({ events = [] }: { events?: any[] }) {
-  const safe = Array.isArray(events) ? events : [];
-  if (safe.length === 0) return null;
-
-  const titleFor = (event: any) => {
-    if (event.type === 'reasoning') return 'Thinking';
-    if (event.type === 'action') return event.action?.description || 'Action';
-    if (event.type === 'screenshot') return 'Captured frame';
-    if (event.type === 'complete') return 'Complete';
-    if (event.type === 'abort' || event.type === 'error') return 'Stopped';
-    return 'Step';
-  };
-
-  const contentFor = (event: any) => {
-    if (event.type === 'action') return event.action?.description || '';
-    return event.content || event.metadata?.title || event.metadata?.url || '';
-  };
-
-  return (
-    <aside style={{
-      width: 290,
-      minWidth: 250,
-      borderLeft: `1px solid ${T.border}`,
-      background: 'var(--color-bg-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
-      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}`, background: 'var(--color-bg-surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <span style={{
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle at 32% 28%, #ffffff 0%, #8ee7ff 18%, #3b82f6 48%, #7c3aed 100%)',
-            boxShadow: '0 0 14px rgba(59,130,246,0.45), inset 0 0 4px rgba(255,255,255,0.65)',
-            flexShrink: 0,
-          }} />
-          <div>
-            <p style={{ margin: 0, color: T.text, fontSize: 13, fontWeight: 500, fontFamily: T.sans }}>Navis thinking</p>
-            <p style={{ margin: '2px 0 0', color: T.textMuted, fontSize: 11.5, fontFamily: T.sans }}>{safe.length} live event{safe.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 18px' }}>
-        {safe.map((event, index) => (
-          <div key={`${event.timestamp}-${index}`} style={{ display: 'flex', gap: 10, paddingBottom: index === safe.length - 1 ? 0 : 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 3 }}>
-              <span style={{
-                width: 9,
-                height: 9,
-                borderRadius: '50%',
-                background: event.type === 'complete'
-                  ? T.green
-                  : event.type === 'abort' || event.type === 'error'
-                    ? T.red
-                    : 'radial-gradient(circle at 35% 30%, #ffffff 0%, #8ee7ff 20%, #3b82f6 55%, #7c3aed 100%)',
-                boxShadow: event.type === 'reasoning' ? '0 0 12px rgba(59,130,246,0.38)' : 'none',
-              }} />
-              {index !== safe.length - 1 && <span style={{ width: 1, flex: 1, minHeight: 26, background: 'var(--color-border-subtle)', marginTop: 5 }} />}
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <p style={{ margin: 0, color: T.text, fontSize: 12.3, fontWeight: 500, fontFamily: T.sans }}>
-                  {titleFor(event)}
-                </p>
-                {event.stepNumber && (
-                  <span style={{ color: T.textMuted, fontSize: 10.5, fontFamily: T.mono }}>
-                    {event.stepNumber}{event.totalSteps ? `/${event.totalSteps}` : ''}
-                  </span>
-                )}
-              </div>
-              {contentFor(event) && (
-                <p style={{ margin: '4px 0 0', color: T.textSecondary, fontSize: 11.7, lineHeight: 1.45, fontFamily: T.sans }}>
-                  {truncateText(String(contentFor(event)), 220)}
-                </p>
-              )}
-              {event.metadata?.url && (
-                <p style={{ margin: '5px 0 0', color: T.textMuted, fontSize: 10.5, lineHeight: 1.4, fontFamily: T.mono, wordBreak: 'break-all' }}>
-                  {truncateText(String(event.metadata.url), 120)}
-                </p>
-              )}
-              <p style={{ margin: '5px 0 0', color: T.textPlaceholder, fontSize: 10.5, fontFamily: T.mono }}>
-                {formatTimestamp(event.timestamp).split(',')[1]?.trim() || ''}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screenshots: any[]; toolName: string; thinkingEvents?: any[] }) {
+function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisReport, status }: { screenshots: any[]; toolName: string; thinkingEvents?: any[]; navisReport?: string; status?: string }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
-  const thoughts = Array.isArray(thinkingEvents) ? thinkingEvents : [];
+  // Default to 'report' tab when there's a report available, else 'screenshots'
+  const [viewTab, setViewTab] = useState<'screenshots' | 'report'>(navisReport ? 'report' : 'screenshots');
+  // Track when navisReport first appears to switch to it automatically
+  const hadReportRef = useRef(!!navisReport);
+  useEffect(() => {
+    if (navisReport && !hadReportRef.current) {
+      hadReportRef.current = true;
+      setViewTab('report');
+    }
+  }, [navisReport]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
+  const isRunning = status === 'running' || !status;
+  const reportBottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll report to bottom when content updates
+  useEffect(() => {
+    if (viewTab === 'report' && navisReport && isRunning) {
+      setTimeout(() => reportBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+    }
+  }, [navisReport, viewTab, isRunning]);
 
   useEffect(() => {
     let interval: any;
@@ -2127,7 +2083,6 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
       interval = setInterval(() => {
         setCurrentIndex((prev) => {
           if (prev >= safe.length - 1) {
-            // Stay at the end and wait for next frame
             return prev;
           }
           return prev + 1;
@@ -2151,7 +2106,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
     }
   }, [safe.length, currentIndex]);
 
-  if (safe.length === 0) {
+  if (safe.length === 0 && !navisReport) {
     const isNavis = toolName.toLowerCase().includes('navis') || toolName.toLowerCase().includes('fern');
     const isComputer = toolName.toLowerCase().includes('computer');
     return (
@@ -2160,41 +2115,208 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
           <SectionLabel>{isComputer ? 'Desktop session' : 'Browser session'}</SectionLabel>
           <EmptyState
             icon={CameraOff}
-            title={isNavis && thoughts.length > 0 ? 'DOM-first run' : thoughts.length > 0 ? 'Session Active' : 'No captures yet'}
-            description={isNavis && thoughts.length > 0
-              ? `${toolName} is using extension DOM control, so screenshots appear only when visual fallback is needed.`
-              : thoughts.length > 0
-                ? `${toolName} is running in the background. Screenshots will appear as actions are executed.`
-                : `${toolName} ran but didn't produce screenshots during this session.`}
-            note={isNavis && thoughts.length > 0
-              ? 'Watch the live thinking rail for current page state and actions.'
-              : thoughts.length > 0
-                ? 'Watch the live thinking rail for current desktop actions.'
-                : isComputer 
-                  ? 'Screenshots appear here in real-time as the desktop is controlled.'
-                  : 'Frames appear here in real-time as the browser navigates.'}
+            title={isNavis ? 'DOM-first run' : 'No captures yet'}
+            description={isNavis
+              ? `${toolName} is using extension DOM control — screenshots appear when visual grounding is triggered.`
+              : `${toolName} ran but didn't produce screenshots during this session.`}
+            note={isNavis
+              ? 'Navis reads the DOM and uses vision together for smarter clicks.'
+              : isComputer
+                ? 'Screenshots appear here in real-time as the desktop is controlled.'
+                : 'Frames appear here in real-time as the browser navigates.'}
           />
         </div>
-        <NavisThinkingRail events={thoughts} />
+      </div>
+    );
+  }
+
+  // ── Tab bar ──────────────────────────────────────────────────────────────
+  const tabBar = (
+    <div style={{
+      display: 'flex',
+      gap: 0,
+      borderBottom: `1px solid ${T.border}`,
+      background: T.surface,
+      padding: '0 20px',
+      flexShrink: 0,
+    }}>
+      {navisReport && (
+        <button
+          onClick={() => setViewTab('report')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: viewTab === 'report' ? T.text : T.textMuted,
+            background: 'transparent',
+            border: 'none',
+            borderBottom: viewTab === 'report' ? `2px solid ${T.blue}` : '2px solid transparent',
+            cursor: 'pointer',
+            fontFamily: T.sans,
+            transition: 'all 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Report
+          {isRunning && navisReport && (
+            <span style={{
+              display: 'inline-block', width: 6, height: 6,
+              borderRadius: '50%', background: '#58a6ff',
+              animation: 'pulse 2s infinite',
+              boxShadow: '0 0 0 0 rgba(88,166,255,0.4)',
+            }} />
+          )}
+        </button>
+      )}
+      {safe.length > 0 && (
+        <button
+          onClick={() => setViewTab('screenshots')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: viewTab === 'screenshots' ? T.text : T.textMuted,
+            background: 'transparent',
+            border: 'none',
+            borderBottom: viewTab === 'screenshots' ? `2px solid ${T.blue}` : '2px solid transparent',
+            cursor: 'pointer',
+            fontFamily: T.sans,
+            transition: 'all 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Screenshots
+          <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>({safe.length})</span>
+        </button>
+      )}
+    </div>
+  );
+
+  // ── Report tab ────────────────────────────────────────────────────────────
+  if (viewTab === 'report' && navisReport) {
+    // Simple inline markdown renderer for the report
+    const renderNavisMarkdown = (text: string) => {
+      const MAX_LINES = 1000;
+      const allLines = text.split('\n');
+      const lines = allLines.slice(0, MAX_LINES);
+      const elements: React.ReactNode[] = [];
+      let inCode = false;
+      let codeLines: string[] = [];
+      let codeLang = '';
+      const flush = (key: number) => {
+        elements.push(
+          <div key={`code-${key}`} style={{
+            background: '#0d1117', border: '1px solid #30363d', borderRadius: 8,
+            padding: '12px 16px', marginBottom: 10,
+            fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.7, color: '#e6edf3',
+            overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>
+            {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+            {codeLines.join('\n')}
+          </div>
+        );
+        codeLines = []; codeLang = '';
+      };
+      lines.forEach((line, idx) => {
+        if (line.startsWith('```')) { inCode ? (flush(idx), inCode = false) : (inCode = true, codeLang = line.slice(3).trim()); return; }
+        if (inCode) { codeLines.push(line); return; }
+        if (line.startsWith('# ')) { elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', margin: '0 0 12px', fontFamily: T.sans, borderBottom: '1px solid #21262d', paddingBottom: 8 }}>{line.slice(2)}</h1>); return; }
+        if (line.startsWith('## ')) { elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: '#58a6ff', margin: '16px 0 8px', fontFamily: T.sans }}><span style={{ opacity: 0.4, marginRight: 5 }}>##</span>{line.slice(3)}</h2>); return; }
+        if (line.startsWith('### ')) { elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: '#79c0ff', margin: '12px 0 6px', fontFamily: T.sans }}><span style={{ color: '#30363d', marginRight: 5 }}>◆</span>{line.slice(4)}</h3>); return; }
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+          const parts = line.slice(2).split(/\*\*(.+?)\*\*/);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
+          elements.push(<div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}><span style={{ color: '#58a6ff', flexShrink: 0 }}>›</span><span>{rendered}</span></div>);
+          return;
+        }
+        if (line.includes('**')) {
+          const parts = line.split(/\*\*(.+?)\*\*/);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
+          elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: T.mono }}>{rendered}</div>);
+          return;
+        }
+        if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 6 }} />); return; }
+        elements.push(<div key={idx} style={{ fontSize: 12, color: '#8b949e', lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
+      });
+      if (inCode && codeLines.length > 0) flush(lines.length);
+      if (allLines.length > MAX_LINES) {
+        elements.push(<div key="trunc" style={{ fontSize: 11, color: '#484f58', fontStyle: 'italic', marginTop: 8 }}>... [{allLines.length - MAX_LINES} more lines]</div>);
+      }
+      return elements;
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#010409' }}>
+        <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(88,166,255,0.6); } 70% { box-shadow: 0 0 0 6px rgba(88,166,255,0); } 100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
+        {tabBar}
+        {/* Status row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 20px', background: '#0d1117', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span style={{ fontSize: 11, color: '#8b949e', fontFamily: T.sans, flex: 1 }}>Navis Execution Report</span>
+          {isRunning ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(56,139,253,0.1)', border: '1px solid rgba(56,139,253,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#58a6ff', animation: 'pulse 2s infinite' }} />
+              <span style={{ fontSize: 10, color: '#58a6ff', fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(46,160,67,0.1)', border: '1px solid rgba(46,160,67,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style={{ fontSize: 10, color: '#3fb950', fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+            </div>
+          )}
+        </div>
+        {/* Report content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', scrollBehavior: 'smooth' }}>
+          {renderNavisMarkdown(navisReport)}
+          {isRunning && (
+            <span style={{ display: 'inline-block', width: 8, height: 14, background: '#58a6ff', borderRadius: 1, verticalAlign: 'middle', animation: 'blink-cursor 1s step-end infinite', marginLeft: 2 }} />
+          )}
+          <div ref={reportBottomRef} />
+        </div>
       </div>
     );
   }
 
   const currentScreenshot = safe[currentIndex] || safe[0];
 
+  if (!currentScreenshot) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {navisReport && tabBar}
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: T.textMuted, fontSize: 13, fontFamily: T.sans, flexDirection: 'column', gap: 8
+        }}>
+          <CameraOff size={20} />
+          No frames yet
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Tab bar — only show if we also have a report */}
+      {navisReport && tabBar}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
       <SectionLabel right={`${currentIndex + 1} / ${safe.length} frame${safe.length !== 1 ? 's' : ''}`}>Execution history</SectionLabel>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column' }}>
+
         <div style={{
           background: T.surface,
           borderRadius: T.r12,
           border: `1px solid ${T.border}`,
-          padding: '16px',
+          padding: '20px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 16
+          gap: 20
         }}>
           {/* Main Image */}
           <div
@@ -2208,16 +2330,36 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minHeight: 300
+              minHeight: 320,
             }}
           >
-            <div style={{ position: 'relative', display: 'inline-block' }}>
-              <img
-                src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
-                alt="Navis frame"
-                style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
-                onClick={() => setZoomed(currentScreenshot)}
-              />
+            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+              {currentScreenshot.base64 ? (
+                <img
+                  src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
+                  alt="Navis frame"
+                  style={{ width: '100%', height: 'auto', maxHeight: '65vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
+                  onClick={() => setZoomed(currentScreenshot)}
+                  onError={(e) => {
+                    // Fallback: try as png if jpeg fails
+                    const img = e.currentTarget;
+                    if (!img.src.includes('image/png')) {
+                      img.src = `data:image/png;base64,${currentScreenshot.base64}`;
+                    }
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%', minHeight: 200,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: T.textMuted, fontSize: 12, fontFamily: T.sans, flexDirection: 'column', gap: 8
+                }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.border, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CameraOff size={16} />
+                  </div>
+                  Loading frame...
+                </div>
+              )}
               {currentScreenshot.action?.params?.coordinate && (
                 <CursorOverlayOnImage
                   coordinate={currentScreenshot.action.params.coordinate}
@@ -2318,11 +2460,11 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
           </div>
         </div>
       </div>
+      </div>
+      </div>
       <AnimatePresence>
         {zoomed && <ZoomModal screenshot={zoomed} onClose={() => setZoomed(null)} />}
       </AnimatePresence>
-      </div>
-      <NavisThinkingRail events={thoughts} />
     </div>
   );
 }
@@ -2331,29 +2473,29 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [] }: { screen
    ============================================================ */
 
 const TERM = {
-  bg:       '#0c0c0c',
-  border:   'rgba(255,255,255,0.08)',
-  divider:  'rgba(255,255,255,0.05)',
+  bg:       'var(--color-bg-base)',
+  border:   'var(--color-border)',
+  divider:  'var(--color-border-subtle)',
 
-  textCmd:  'rgba(255,255,255,0.88)',
-  textOut:  'rgba(238,242,247,0.86)',
-  textErr:  '#ff5f57',
-  textDim:  'rgba(255,255,255,0.2)',
-  textMeta: 'rgba(255,255,255,0.3)',
+  textCmd:  'var(--color-text-primary)',
+  textOut:  'var(--color-text-secondary)',
+  textErr:  '#ef4444',
+  textDim:  'var(--color-text-tertiary)',
+  textMeta: 'var(--color-text-tertiary)',
 
-  psUser:   '#5af78e',
-  psAt:     'rgba(255,255,255,0.25)',
-  psHost:   '#57c7ff',
-  psSep:    'rgba(255,255,255,0.2)',
-  psPath:   '#f3f99d',
-  psDollar: 'rgba(255,255,255,0.4)',
+  psUser:   '#22c55e',
+  psAt:     'var(--color-text-tertiary)',
+  psHost:   '#3b82f6',
+  psSep:    'var(--color-text-tertiary)',
+  psPath:   '#eab308',
+  psDollar: 'var(--color-text-tertiary)',
 
-  okBg:     'rgba(40,201,64,0.1)',
-  okBorder: 'rgba(40,201,64,0.18)',
-  okText:   '#28c940',
-  errBg:    'rgba(255,95,87,0.1)',
-  errBorder:'rgba(255,95,87,0.18)',
-  errText:  '#ff5f57',
+  okBg:     'rgba(34,197,94,0.08)',
+  okBorder: 'rgba(34,197,94,0.15)',
+  okText:   '#22c55e',
+  errBg:    'rgba(239,68,68,0.08)',
+  errBorder:'rgba(239,68,68,0.15)',
+  errText:  '#ef4444',
 };
 
 const monoStack = '"Geist Mono","Berkeley Mono",ui-monospace,"SF Mono",Menlo,monospace';
@@ -2403,7 +2545,7 @@ function TerminalChrome({
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      background: '#151515',
+      background: 'var(--color-bg-base)',
       overflow: 'hidden',
       fontFamily: monoStack,
     }}>
@@ -2446,6 +2588,7 @@ function TerminalAnsiOutput({
         wordBreak: 'break-word',
         margin: '0 0 8px',
         fontFamily: monoStack,
+        fontWeight: 400,
         tabSize: 2,
       }}
     >
@@ -2489,7 +2632,7 @@ function BlinkCursor() {
     <motion.span
       style={{
         display: 'inline-block', width: 7, height: 14,
-        background: 'rgba(255,255,255,0.6)', borderRadius: 1,
+        background: 'var(--color-text-primary)', borderRadius: 1,
         verticalAlign: 'text-bottom', marginLeft: 1,
       }}
       animate={{ opacity: [1, 1, 0, 0] }}
@@ -2516,7 +2659,12 @@ export function TerminalView({
   status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
-  const cleanOutput = normalizeTerminalOutput(output, command);
+  const MAX_OUTPUT_LENGTH = 50000;
+  const isOutputTruncated = output && output.length > MAX_OUTPUT_LENGTH;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_OUTPUT_LENGTH) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
+  const cleanOutput = normalizeTerminalOutput(displayOutput, command);
   const hasOutput = hasVisibleTerminalOutput(cleanOutput);
   const looksLikePS = shellType === 'windows';
 
@@ -2526,24 +2674,24 @@ export function TerminalView({
   // ── Windows/PowerShell Terminal Style ──
   if (looksLikePS) {
     const WIN = {
-      bg:       '#151515',
-      border:   '#2b2b2b',
-      divider:  '#242424',
-      textCmd:  '#f8f8f2',
-      textOut:  '#f1f1f1',
-      textErr:  '#ff7b72',
-      textDim:  '#777777',
+      bg:       'var(--color-bg-base)',
+      border:   'var(--color-border)',
+      divider:  'var(--color-border-subtle)',
+      textCmd:  'var(--color-text-primary)',
+      textOut:  'var(--color-text-secondary)',
+      textErr:  '#ef4444',
+      textDim:  'var(--color-text-tertiary)',
       textMeta: 'var(--color-text-tertiary)',
-      psPrefix: '#f8f8f2',
-      psPath:   'var(--color-bg-surface)',
-      psChevron:'#f8f8f2',
+      psPrefix: 'var(--color-text-primary)',
+      psPath:   'var(--color-text-secondary)',
+      psChevron:'var(--color-text-primary)',
     };
     const promptCwd = cwd || DEFAULT_TOOL_DETAIL_ROOT;
 
     return (
       <TerminalChrome title="Windows PowerShell" tint="#58a6ff">
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px 20px', display: 'flex', flexDirection: 'column', background: WIN.bg }}>
-          <div style={{ fontSize: 13, color: WIN.textOut, fontFamily: monoStack, marginBottom: 18 }}>
+          <div style={{ fontSize: 13, color: WIN.textDim, fontFamily: monoStack, marginBottom: 18, fontWeight: 400 }}>
             PowerShell 7.5.5
           </div>
 
@@ -2555,7 +2703,7 @@ export function TerminalView({
               <span style={{ color: WIN.psChevron, margin: '0 8px 0 4px' }}>&gt;</span>
             </span>
             {command ? (
-              <code style={{ fontSize: 12.5, color: WIN.textCmd, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+              <code style={{ fontSize: 12.5, color: WIN.textCmd, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: monoStack, fontWeight: 400 }}>
                 {command}
               </code>
             ) : (
@@ -2604,7 +2752,7 @@ export function TerminalView({
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px 20px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 10 }}>
           <PS1 user={user} host={host} path={path} />
-          <code style={{ fontSize: 12.5, color: TERM.textCmd, lineHeight: 1.52, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack }}>
+          <code style={{ fontSize: 12.5, color: TERM.textCmd, lineHeight: 1.52, wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontFamily: monoStack, fontWeight: 400 }}>
             {command}
           </code>
         </div>
@@ -3351,6 +3499,12 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
 
 function GenericView({ args, output, result }: { toolName: string; args?: any; output?: string; result?: any }) {
   const argEntries = Object.entries(args || {});
+  
+  const MAX_GENERIC_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_GENERIC_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_GENERIC_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -3416,7 +3570,7 @@ function GenericView({ args, output, result }: { toolName: string; args?: any; o
                 </div>
               )}
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingRight: 60 }}>
-                <code>{output}</code>
+                <code>{displayOutput}</code>
               </pre>
             </div>
           </CollapsibleSection>
@@ -4092,7 +4246,22 @@ export function extractFernData(tc: any, progressEvents: any[] = []) {
     // Ensure correct chronological order for video playback
     screenshots.sort((a, b) => (a.sequenceNumber ?? 0) - (b.sequenceNumber ?? 0));
     const slicedScreenshots = screenshots.slice(-12);
-    return { screenshots: slicedScreenshots, screenshotPaths, thinkingEvents: thinkingEvents.slice(-80), url: tc.args?.url, action: tc.args?.action };
+
+    // Extract latest navisReport from progress events
+    let navisReport: string | undefined;
+    if (Array.isArray(progressEvents)) {
+      for (let i = progressEvents.length - 1; i >= 0; i--) {
+        const ev = progressEvents[i] as any;
+        const r = ev?.navisReport || ev?.data?.navisReport;
+        if (r) { navisReport = r; break; }
+      }
+    }
+    // Also check tc.data for persisted report
+    if (!navisReport) {
+      navisReport = (tc.data || tc.result?.data)?.navisReport || undefined;
+    }
+
+    return { screenshots: slicedScreenshots, screenshotPaths, thinkingEvents: thinkingEvents.slice(-80), url: tc.args?.url, action: tc.args?.action, navisReport };
   } catch { return null; }
 }
 
@@ -4164,6 +4333,32 @@ function extractFileSystemData(tc: any) {
     data,
     output: extractOutputText(tc)
   };
+}
+
+function extractGrepData(tc: any) {
+  const args = parseToolCallArgs(tc);
+  const data = tc.data || tc.result?.data || {};
+  const output = extractOutputText(tc);
+  const pattern = String(args.pattern || args.query || args.search || data.pattern || '');
+  const searchPath = String(args.path || args.SearchPath || data.path || '');
+  const matches: Array<{ path: string; relativePath: string; line: number; text: string }> = Array.isArray(data.matches) ? data.matches : [];
+  const filesSearched = data.filesSearched || 0;
+  const dirsScanned = data.dirsScanned || 0;
+  const timedOut = data.timedOut || false;
+  const limitReached = data.limitReached || false;
+
+  // If no structured matches, try to parse from output text
+  if (matches.length === 0 && output) {
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^(.+?):(\d+):\s(.*)$/);
+      if (m) {
+        matches.push({ path: m[1], relativePath: m[1], line: parseInt(m[2], 10), text: m[3] });
+      }
+    }
+  }
+
+  return { pattern, searchPath, matches, filesSearched, dirsScanned, timedOut, limitReached, output, args };
 }
 
 function extractMemoryData(tc: any) {
@@ -4428,8 +4623,195 @@ function FileSystemList({ rows }: { rows: FileSystemListRow[] }) {
   );
 }
 
+/* ============================================================
+   GREP VIEW — IDE-style search results
+   ============================================================ */
+function GrepView({
+  pattern, searchPath, matches, filesSearched, dirsScanned, timedOut, limitReached, output, args,
+}: {
+  pattern: string;
+  searchPath: string;
+  matches: Array<{ path: string; relativePath: string; line: number; text: string }>;
+  filesSearched: number;
+  dirsScanned: number;
+  timedOut: boolean;
+  limitReached: boolean;
+  output: string;
+  args: any;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const MAX_VISIBLE = 200;
+  const visibleMatches = showAll ? matches : matches.slice(0, MAX_VISIBLE);
+  const hasMore = matches.length > MAX_VISIBLE && !showAll;
+
+  // Group matches by file
+  const grouped = useMemo(() => {
+    const map = new Map<string, Array<{ line: number; text: string }>>();
+    for (const m of visibleMatches) {
+      const key = m.relativePath || m.path;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push({ line: m.line, text: m.text });
+    }
+    return Array.from(map.entries());
+  }, [visibleMatches]);
+
+  const displayPath = searchPath
+    ? searchPath.replace(/\\/g, '/').split('/').slice(-3).join('/')
+    : '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: VS.bg }}>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ padding: '18px 24px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Search size={14} color={VS.blue} />
+            <span style={{ fontSize: 11, color: VS.blue, background: CLAY.card, border: `1px solid ${VS.border}`, padding: '2px 10px', borderRadius: 20, fontFamily: T.sans, fontWeight: 500 }}>
+              Search
+            </span>
+          </div>
+
+          {/* Pattern display */}
+          <div style={{
+            background: CLAY.cardMuted,
+            border: `1px solid ${VS.border}`,
+            borderRadius: T.r8,
+            padding: '10px 14px',
+            marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 10, color: VS.dim, fontFamily: T.sans, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Pattern</div>
+            <code style={{ fontSize: 13, color: VS.text, fontFamily: T.mono, fontWeight: 500, wordBreak: 'break-all' }}>
+              {pattern || '(empty)'}
+            </code>
+          </div>
+
+          {/* Path */}
+          {displayPath && (
+            <p style={{ fontSize: 11, color: VS.muted, fontFamily: T.mono, wordBreak: 'break-all', margin: '0 0 10px' }}>
+              <Folder size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              {displayPath}
+            </p>
+          )}
+
+          {/* Stats row */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: VS.dim, fontFamily: T.sans }}>
+            <span style={{ color: matches.length > 0 ? VS.green : VS.dim }}>
+              {matches.length} match{matches.length !== 1 ? 'es' : ''}
+            </span>
+            {filesSearched > 0 && <span>{filesSearched} files searched</span>}
+            {dirsScanned > 0 && <span>{dirsScanned} dirs scanned</span>}
+            {timedOut && <span style={{ color: VS.yellow }}>⏱ Timed out</span>}
+            {limitReached && <span style={{ color: VS.yellow }}>Limit reached</span>}
+          </div>
+        </div>
+
+        {/* Match results */}
+        {grouped.length > 0 ? (
+          <div style={{ padding: '0 24px 24px' }}>
+            {grouped.map(([filePath, fileMatches], fileIdx) => (
+              <div key={fileIdx} style={{ marginBottom: 16 }}>
+                {/* File header */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 0', marginBottom: 2,
+                  fontSize: 12, color: VS.muted, fontFamily: T.mono,
+                  borderBottom: `1px solid ${VS.border}`,
+                }}>
+                  <FileIcon size={12} color={VS.blue} />
+                  <span style={{ fontWeight: 500, color: VS.text }}>{filePath.split(/[/\\]/).pop()}</span>
+                  <span style={{ color: VS.dim, fontSize: 10 }}>
+                    {filePath.split(/[/\\]/).slice(0, -1).join('/')}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: VS.dim, background: CLAY.card, padding: '1px 6px', borderRadius: 10 }}>
+                    {fileMatches.length}
+                  </span>
+                </div>
+
+                {/* Lines */}
+                {fileMatches.map((match, lineIdx) => (
+                  <div
+                    key={lineIdx}
+                    style={{
+                      display: 'flex', gap: 0, fontSize: 12, fontFamily: T.mono,
+                      lineHeight: 1.65,
+                      borderLeft: `2px solid transparent`,
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderLeftColor = VS.blue; e.currentTarget.style.background = CLAY.hover; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderLeftColor = 'transparent'; e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {/* Line number */}
+                    <span style={{
+                      minWidth: 42, textAlign: 'right', paddingRight: 10, paddingLeft: 6,
+                      color: VS.dim, fontSize: 11, userSelect: 'none', flexShrink: 0,
+                    }}>
+                      {match.line}
+                    </span>
+                    {/* Match text */}
+                    <span style={{
+                      color: VS.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: 400,
+                      padding: '0 8px',
+                    }}>
+                      {highlightPattern(match.text, pattern)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {hasMore && (
+              <button
+                onClick={() => setShowAll(true)}
+                style={{
+                  width: '100%', padding: '8px 0', border: `1px solid ${VS.border}`,
+                  borderRadius: T.r8, background: CLAY.card, color: VS.muted,
+                  fontSize: 12, fontFamily: T.sans, cursor: 'pointer', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = CLAY.hover; }}
+                onMouseLeave={e => { e.currentTarget.style.background = CLAY.card; }}
+              >
+                Show all {matches.length} matches ({matches.length - MAX_VISIBLE} more)
+              </button>
+            )}
+          </div>
+        ) : pattern && (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: VS.dim, fontFamily: T.sans }}>
+            <Search size={28} style={{ opacity: 0.2, marginBottom: 8 }} />
+            <div style={{ fontSize: 13 }}>No matches found</div>
+            <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>Pattern "{pattern}" returned 0 results</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Highlight occurrences of `pattern` in `text` with a subtle background. */
+function highlightPattern(text: string, pattern: string): React.ReactNode {
+  if (!pattern || !text) return text;
+  try {
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(re);
+    if (parts.length <= 1) return text;
+    return parts.map((part, i) =>
+      re.test(part)
+        ? React.createElement('mark', { key: i, style: { background: 'rgba(234,179,8,0.25)', color: 'inherit', borderRadius: 2, padding: '0 1px' } }, part)
+        : part
+    );
+  } catch {
+    return text;
+  }
+}
+
 function FileSystemView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
   const argEntries = Object.entries(args || {});
+
+  const MAX_FS_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_FS_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_FS_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
   const n = String(toolName || '').toLowerCase();
   const isListOperation = n === 'ls' || n.includes('list_dir') || n.includes('system_files');
   const operation =
@@ -4446,7 +4828,7 @@ function FileSystemView({ toolName, path, args, output, data }: { toolName: stri
         : [];
   const rootPath = path || data?.path || args?.path || args?.cwd || DEFAULT_TOOL_DETAIL_ROOT;
   const listRows = normalizeFileSystemRows(structuredRows, output, rootPath, isListOperation);
-  const renderedOutput = output || (structuredRows.length > 0 ? structuredRows.map((row: any) => {
+  const renderedOutput = displayOutput || (structuredRows.length > 0 ? structuredRows.map((row: any) => {
     if (typeof row === 'string') return row;
     return row.path || row.file || row.name || JSON.stringify(row);
   }).join('\n') : '');
@@ -4677,21 +5059,82 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
   );
 };
 
-function pickString(source: any, keys: string[]) {
+function pickString(source: any, keys: string[]): string {
   if (!source) return '';
+  
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return '';
+    }
+  }
+
+  const extractText = (val: any): string => {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    if (Array.isArray(val)) {
+      return val.map(item => extractText(item)).filter(Boolean).join('\n');
+    }
+    if (typeof val === 'object' && val !== null) {
+      if (typeof val.text === 'string') return val.text;
+      if (typeof val.content === 'string') return val.content;
+      // Avoid infinite loop by not recursing on itself or cyclic structures
+      try {
+        return Object.values(val).map(item => {
+          if (item === val) return '';
+          return extractText(item);
+        }).filter(Boolean).join('\n');
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  };
+
   for (const key of keys) {
     const value = source?.[key];
-    if (typeof value === 'string') return value;
+    if (value !== undefined && value !== null) {
+      const extracted = extractText(value);
+      if (extracted) return extracted;
+    }
   }
+
+  const nestedSources = [source?.params, source?.parameters, source?.arguments, source?.args, source?.result, source?.data];
+  for (const nested of nestedSources) {
+    if (nested && typeof nested === 'object') {
+      const res = pickString(nested, keys);
+      if (res) return res;
+    }
+  }
+
   return '';
 }
 
-function pickArray(source: any, keys: string[]) {
+function pickArray(source: any, keys: string[]): any[] {
   if (!source) return [];
+  
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return [];
+    }
+  }
+
   for (const key of keys) {
     const value = source?.[key];
     if (Array.isArray(value)) return value;
   }
+
+  const nestedSources = [source?.params, source?.parameters, source?.arguments, source?.args, source?.result, source?.data];
+  for (const nested of nestedSources) {
+    if (nested && typeof nested === 'object') {
+      const res = pickArray(nested, keys);
+      if (res.length > 0) return res;
+    }
+  }
+
   return [];
 }
 
@@ -5801,6 +6244,8 @@ export default function ToolDetailSidePanel({
         extracted = extractPresentationData(toolCall);
       } else if (type === ToolType.TODO_WRITE) {
         extracted = extractTodoWriteData(toolCall);
+      } else if (type === ToolType.GREP) {
+        extracted = extractGrepData(toolCall);
       } else if (type === ToolType.FILE_SYSTEM || type === ToolType.FILE_EDITOR) {
         extracted = extractFileSystemData(toolCall);
       } else if (type === ToolType.LOCAL_PERMISSION) {
@@ -6065,6 +6510,7 @@ export default function ToolDetailSidePanel({
     if (toolType === ToolType.PLAN) return <PlanView {...toolData} />;
     if (toolType === ToolType.PRESENTATION) return <PresentationView {...toolData} />;
     if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;
+    if (toolType === ToolType.GREP) return <GrepView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
     if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
     if (toolType === ToolType.LOCAL_PERMISSION) return <LocalPermissionView {...toolData} />;
@@ -6188,7 +6634,7 @@ export default function ToolDetailSidePanel({
                         top: 0,
                         bottom: 0,
                         width: 28,
-                        background: 'linear-gradient(90deg, #f5f4f0 0%, rgba(245,244,240,0.76) 46%, rgba(245,244,240,0) 100%)',
+                        background: 'linear-gradient(90deg, var(--color-bg-base) 0%, color-mix(in srgb, var(--color-bg-base) 76%, transparent) 46%, var(--color-bg-base-transparent) 100%)',
                         pointerEvents: 'none',
                         zIndex: 2,
                       }} />
@@ -6200,7 +6646,7 @@ export default function ToolDetailSidePanel({
                         top: 0,
                         bottom: 0,
                         width: 34,
-                        background: 'linear-gradient(270deg, #f5f4f0 0%, rgba(245,244,240,0.76) 46%, rgba(245,244,240,0) 100%)',
+                        background: 'linear-gradient(270deg, var(--color-bg-base) 0%, color-mix(in srgb, var(--color-bg-base) 76%, transparent) 46%, var(--color-bg-base-transparent) 100%)',
                         pointerEvents: 'none',
                         zIndex: 2,
                       }} />

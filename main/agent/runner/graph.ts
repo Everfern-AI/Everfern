@@ -644,6 +644,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
             console.log('[Graph] 🔀 Operator intent detected → operator_coordinator');
             return 'operator_coordinator';
         }
+        if (['question', 'conversation'].includes(intent)) {
+            console.log('[Graph] 🔀 Question or conversation intent detected → brain');
+            return 'brain';
+        }
         if (['coding', 'build', 'fix'].includes(intent) && isProjectScaleCodingRequest(state)) {
             console.log('[Graph] 🔀 Project-scale coding intent detected → task_decomposer');
             return 'task_decomposer';
@@ -668,7 +672,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
         coding_specialist: 'coding_specialist',
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
-        task_decomposer: 'task_decomposer'
+        task_decomposer: 'task_decomposer',
+        brain: 'brain'
     })
     .addConditionalEdges('debate_chamber', (state) => {
         const dr = state.debateResult;

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "@/components/ThemeProvider";
 import {
     GlobeAltIcon,
     MagnifyingGlassIcon,
@@ -2131,6 +2132,7 @@ export const AgentTimeline = React.memo(({
     planSteps,
     planTitle,
 }: AgentTimelineProps) => {
+    const { theme } = useTheme();
     // Elapsed time
     const startTime = useRef(new Date());
     const [elapsed, setElapsed] = useState("0:00");
@@ -2239,7 +2241,10 @@ export const AgentTimeline = React.memo(({
                         src="/images/logos/everfern-withoutbg.png"
                         alt="EverFern"
                         width={40} height={40}
-                        style={{ objectFit: "contain" }}
+                        style={{ 
+                            objectFit: "contain",
+                            filter: "none"
+                        }}
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
                 </div>

@@ -6,7 +6,7 @@ import { findMatchingSensitivePreference } from '../../learning/memory/persisten
 import { askUserTool } from '../../tools/ask-user';
 import { saveHitlRequest } from '../../../store/hitl';
 import { stateManager } from '../state-manager';
-import { interrupt } from '@langchain/langgraph';
+import { interrupt, GraphInterrupt } from '@langchain/langgraph';
 import * as crypto from 'crypto';
 
 const getLatestUserText = (state: GraphStateType): string => {
@@ -121,7 +121,10 @@ export const createMemoryCheckNode = (
     let answer: any;
     try {
       answer = interrupt(approvalRequest);
-    } catch (interruptErr) {
+    } catch (interruptErr: any) {
+      if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
+        throw interruptErr;
+      }
       console.warn('[MemoryCheck] interrupt() failed or unsupported, routing forward.');
       return { taskPhase: 'triage' as const };
     }

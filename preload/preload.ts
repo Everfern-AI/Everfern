@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url: string) => ipcRenderer.invoke('system:open-external', url),
     fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
     checkWSL:       () => ipcRenderer.invoke('system:checkWSL'),
+    getWSLInfo:     () => ipcRenderer.invoke('system:getWSLInfo'),
     checkDocker:    () => ipcRenderer.invoke('system:checkDocker'),
     installWSL:     () => ipcRenderer.invoke('system:installWSL'),
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
@@ -220,7 +221,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onProtocolLink: (cb: (url: string) => void) => {
       ipcRenderer.on('acp:protocol-link', (_e, url) => cb(url));
     },
-    onUsage: (cb: (data: { promptTokens: number; completionTokens: number; totalTokens: number }) => void) => {
+    onUsage: (cb: (data: { promptTokens: number; completionTokens: number; totalTokens: number; systemPromptTokens?: number }) => void) => {
       ipcRenderer.on('acp:usage', (_e, data) => cb(data));
     },
     onAgentPermissionRequest: (cb: () => void) => {
@@ -609,6 +610,7 @@ export type ElectronAPI = {
     openExternal: (url: string) => Promise<void>;
     fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
     checkWSL:       () => Promise<boolean>;
+    getWSLInfo:     () => Promise<{ healthy: boolean; osName?: string; uptime?: string }>;
     checkDocker:    () => Promise<boolean>;
     installWSL:     () => Promise<{ success: boolean; warning?: string; error?: string }>;
     setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;

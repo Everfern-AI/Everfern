@@ -147,6 +147,11 @@ For complex tasks, multiple specialized agents debate the best solution before a
 <tr>
 <td width="50%" valign="top">
 
+### 🧠 Persistent Self-Learning Memory
+EverFern remembers everything you teach it across every session, building a private, local tree knowledge base of your preferences, workflows, and project patterns. Instead of starting from scratch, it automatically recalls relevant context and applies what it has learned, becoming more personalized and useful the more you use it.
+</td>
+<td width="50%" valign="top">
+
 ### 🛠️ 20+ Built-in Tools
 Everything EverFern needs is built in:
 - **Desktop**: Computer Use, Screenshot, Mouse, Keyboard, App Launcher
@@ -159,14 +164,12 @@ Everything EverFern needs is built in:
 Plus custom tools via MCP — connect anything.
 
 </td>
-<td width="50%" valign="top">
-
-### 🔌 Multi-Provider Support
-Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
-
-</td>
 </tr>
 </table>
+
+## 🔌 Multi-Provider Support
+
+Use local models (Ollama, LMStudio) for complete privacy, or connect to 10+ cloud providers — OpenAI, Anthropic, DeepSeek, Google Gemini, OpenRouter, Nvidia NIM, Mistral, Groq, and more. Switch providers anytime without changing anything else.
 
 ---
 
@@ -188,7 +191,7 @@ npm run dev
 
 **Windows installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
 
-**macOS installer** coming soon. For now, build from source with the commands above.
+**macOS installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
 
 ### Production Build
 

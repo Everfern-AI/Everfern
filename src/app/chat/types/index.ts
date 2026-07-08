@@ -39,6 +39,7 @@ export interface Message {
     planSteps?: Array<{ id: string; title?: string; description: string; tool?: string }> | null;
     planTitle?: string | null;
     missionTimeline?: any;
+    limitReached?: boolean; // True if this error message is an EverFern Cloud daily-limit hit
 }
 
 export interface FileAttachment {

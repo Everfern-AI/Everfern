@@ -42,11 +42,11 @@ export interface PillNarrativeTimelineComponentProps {
  * Status color mapping
  */
 const STATUS_COLORS: Record<ExecutionStatus, string> = {
-  pending: 'bg-gray-100 text-gray-700 border-gray-300',
-  'in-progress': 'bg-blue-100 text-blue-700 border-blue-300 animate-pulse',
-  completed: 'bg-green-100 text-green-700 border-green-300',
-  failed: 'bg-red-100 text-red-700 border-red-300',
-  skipped: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+  pending: 'bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border-gray-300 dark:border-zinc-600',
+  'in-progress': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 animate-pulse',
+  completed: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700',
+  failed: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700',
+  skipped: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700',
 };
 
 /**
@@ -306,7 +306,7 @@ function MemoryTimelineCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-800">
+            <span className="text-sm font-semibold text-gray-800 dark:text-zinc-200">
               {isRunning ? "Accessing EverFern Memory..." : opLabel}
             </span>
             {!isRunning && (
@@ -323,7 +323,7 @@ function MemoryTimelineCard({
               e.stopPropagation();
               onClick(pill);
             }}
-            className="px-2 py-1 bg-black/5 hover:bg-black/10 rounded text-[10px] font-semibold text-gray-600 transition-colors"
+            className="px-2 py-1 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 rounded text-[10px] font-semibold text-gray-600 dark:text-zinc-300 transition-colors"
           >
             Trace
           </button>
@@ -342,11 +342,11 @@ function MemoryTimelineCard({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden mt-2 pt-2 border-t border-gray-100 flex flex-col gap-1.5"
+            className="overflow-hidden mt-2 pt-2 border-t border-gray-100 dark:border-zinc-700 flex flex-col gap-1.5"
           >
             {query && (
-              <div className="text-[11px] text-gray-500">
-                <span className="font-semibold">Query:</span> <code className="font-mono text-gray-700 break-all">{String(query)}</code>
+              <div className="text-[11px] text-gray-500 dark:text-zinc-400">
+                <span className="font-semibold">Query:</span> <code className="font-mono text-gray-700 dark:text-zinc-300 break-all">{String(query)}</code>
               </div>
             )}
             
@@ -358,13 +358,13 @@ function MemoryTimelineCard({
                     parsedFacts.map((fact, fIdx) => {
                       const formattedTime = formatTimestamp(fact.timestamp);
                       return (
-                        <div key={fIdx} className={`flex items-start justify-between gap-4 py-1 ${fIdx > 0 ? 'border-t border-gray-50' : ''}`}>
-                          <p className="text-xs text-gray-700 leading-normal flex-1">
+                        <div key={fIdx} className={`flex items-start justify-between gap-4 py-1 ${fIdx > 0 ? 'border-t border-gray-50 dark:border-zinc-700/50' : ''}`}>
+                          <p className="text-xs text-gray-700 dark:text-zinc-300 leading-normal flex-1">
                             {fact.content}
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
                             {fact.tags.map((tag) => (
-                              <span key={tag} className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200/50 uppercase tracking-wide">
+                              <span key={tag} className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 border border-gray-200/50 dark:border-zinc-600 uppercase tracking-wide">
                                 {tag}
                               </span>
                             ))}
@@ -457,7 +457,7 @@ function TaskSection({
 
   return (
     <motion.div
-      className="border border-gray-200 rounded-lg overflow-hidden bg-white hover:shadow-md transition-shadow"
+      className="border border-gray-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-md transition-shadow"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
@@ -465,7 +465,7 @@ function TaskSection({
       {/* Task Header */}
       <button
         onClick={onToggleCollapse}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors"
       >
         <div className="flex items-center gap-3 flex-1 text-left">
           {/* Collapse/Expand Icon */}
@@ -479,9 +479,9 @@ function TaskSection({
 
           {/* Task Title and Status */}
           <div className="flex-1">
-            <h3 className="font-semibold text-gray-900">{task.title}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-zinc-100">{task.title}</h3>
             {task.description && (
-              <p className="text-xs text-gray-500 mt-1">{task.description}</p>
+              <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">{task.description}</p>
             )}
           </div>
 
@@ -495,16 +495,16 @@ function TaskSection({
 
       {/* Progress Bar */}
       {totalPills > 0 && (
-        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+        <div className="px-4 py-2 bg-gray-50 dark:bg-zinc-800/50 border-t border-gray-100 dark:border-zinc-700">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-gray-600">
+            <span className="text-xs text-gray-600 dark:text-zinc-400">
               {completedPills}/{totalPills} completed
             </span>
             {failedPills > 0 && (
-              <span className="text-xs text-red-600">{failedPills} failed</span>
+              <span className="text-xs text-red-600 dark:text-red-400">{failedPills} failed</span>
             )}
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5 overflow-hidden">
             <motion.div
               className="bg-green-500 h-full"
               initial={{ width: 0 }}
@@ -519,7 +519,7 @@ function TaskSection({
       <AnimatePresence>
         {!isCollapsed && (
           <motion.div
-            className="px-4 py-3 border-t border-gray-100 bg-gray-50"
+            className="px-4 py-3 border-t border-gray-100 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/30"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}

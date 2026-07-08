@@ -46,36 +46,36 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
             try {
                 let name = "User";
                 let avatar = null;
-                if ((window as any).electronAPI?.loadConfig) {
-                    const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success && res.config?.provider === 'everfern' && res.config?.apiKey) {
-                        try {
-                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
-                            const userRes = await fetch(`${API_URL}/api/user/me`, {
-                                headers: { Authorization: `Bearer ${res.config.apiKey}` }
-                            });
-                            if (userRes.ok) {
-                                const userData = await userRes.json();
-                                // API returns { id, email, fullName, displayName, avatarUrl } or similar structure
-                                const userName = userData.displayName || userData.fullName || userData.name;
-                                if (userName) name = userName;
-                                else if (userData.email) name = userData.email.split('@')[0];
+                const sessionStr = localStorage.getItem('everfern_cloud_session');
+                if (sessionStr) {
+                    try {
+                        const session = JSON.parse(sessionStr);
+                        if (!session?.accessToken) return;
+                        const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+                        const userRes = await fetch(`${API_URL}/api/user/me`, {
+                            headers: { Authorization: `Bearer ${session.accessToken}` }
+                        });
+                        if (userRes.ok) {
+                            const userData = await userRes.json();
+                            const userName = userData.displayName || userData.fullName || userData.name;
+                            if (userName) name = userName;
+                            else if (userData.email) name = userData.email.split('@')[0];
 
-                                if (userData.avatarUrl || userData.avatar_url) avatar = userData.avatarUrl || userData.avatar_url;
-                                if (userData.plan) setUserPlan(userData.plan);
-                                if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
-                                if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
-                            }
-                        } catch (e) {
-                            console.error("Failed to fetch user from API", e);
+                            if (userData.avatarUrl || userData.avatar_url) avatar = userData.avatarUrl || userData.avatar_url;
+                            if (userData.plan) setUserPlan(userData.plan);
+                            if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
+                            if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
                         }
+                    } catch (e) {
+                        console.error("Failed to fetch user from API", e);
                     }
-                    if (name === "User") {
-                        if (res.success && res.config?.userName) {
-                            name = res.config.userName;
-                        } else if ((window as any).electronAPI?.system?.getUsername) {
-                            name = await (window as any).electronAPI.system.getUsername();
-                        }
+                }
+                if (name === "User" && (window as any).electronAPI?.loadConfig) {
+                    const res = await (window as any).electronAPI.loadConfig();
+                    if (res.success && res.config?.userName) {
+                        name = res.config.userName;
+                    } else if ((window as any).electronAPI?.system?.getUsername) {
+                        name = await (window as any).electronAPI.system.getUsername();
                     }
                 }
                 setUsername(name.charAt(0).toUpperCase() + name.slice(1));
@@ -84,7 +84,6 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
         };
         fetchUsername();
 
-        // Refresh username periodically in case it changes
         const interval = setInterval(fetchUsername, 5000);
         return () => clearInterval(interval);
     }, []);
@@ -418,8 +417,9 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                         <div style={{
                                             width: `${Math.min(100, (dailyUsed / dailyLimit) * 100)}%`,
                                             height: "100%",
-                                            background: "linear-gradient(to right, #10b981, #3b82f6)",
-                                            borderRadius: 2
+                                            backgroundColor: (dailyUsed / dailyLimit) >= 1 ? "#ef4444" : "#10b981",
+                                            borderRadius: 2,
+                                            transition: "width 0.3s ease"
                                         }}></div>
                                     </div>
                                     <div style={{ fontSize: 9, color: "var(--sidebar-limit-text)", textAlign: "right", fontWeight: 500 }}>

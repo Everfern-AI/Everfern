@@ -12,6 +12,7 @@ import {
   getSessionPersistenceManager,
   initializeSessionPersistenceManager,
 } from '../../persistence/session-manager';
+import { loadSoul } from '../../personality-manager';
 
 // ── State restoration types ───────────────────────────────────────────
 
@@ -429,7 +430,6 @@ export async function runAgentStep(
 
     // Global OpenClaw SOUL.md personality injection
     try {
-      const { loadSoul } = require('../../personality-manager');
       const soulContent = loadSoul(runner.workspaceDir);
       
       let systemMsg = normalizedMessages.find(m => m.role === 'system');
@@ -524,9 +524,11 @@ export async function runAgentStep(
         }
       },
       onStreamChunk: (chunk: string) => {
-        // First chunk received - clear initialization and show thinking
+        // First chunk received
         if (!streamedText && !thoughtBuffer && !isThinking) {
-           isThinking = true;
+           // We intentionally do not force isThinking = true here, 
+           // as many models (like Ollama, LM Studio) do not use <think> tags.
+           // Setting it here forces them into an infinite thinking buffer loop.
         }
         console.log(`[Stream] Received chunk: "${chunk}" (buffer: ${thoughtBuffer.length} chars)`);
         thoughtBuffer += chunk;
@@ -633,8 +635,13 @@ export async function runAgentStep(
 
     if (response.usage) {
       const usage = response.usage;
-      runner.telemetry.info(`Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}`);
-      eventQueue?.push({ type: 'usage', ...response.usage });
+      
+      // Calculate system prompt tokens from the system message
+      const systemMsg = normalizedMessages.find(m => m.role === 'system');
+      const systemPromptTokens = systemMsg && typeof systemMsg.content === 'string' ? Math.ceil(systemMsg.content.length / 4) : 0;
+      
+      runner.telemetry.info(`Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}, System=${systemPromptTokens}`);
+      eventQueue?.push({ type: 'usage', ...response.usage, systemPromptTokens });
 
       // Record into analytics DB (fire-and-forget — never block the agent)
       try {

@@ -11,11 +11,17 @@
  * - Parallel iframe processing
  * - Performance targets: <50ms for <100 elements, <100ms for 100-500, <200ms for >500
  * - Full-screen capture mode for consistent resolution
+ *
+ * Architecture ports from BrowserOS browser-core:
+ * - URL-stability loop (observer.ts): retry snapshot if URL changes mid-capture
+ * - Screenshot serialization queue (screenshot-queue.ts): mutex for parallel screenshots
+ * - Extended ref metadata TTL to keep refs valid across SPA re-renders
  */
 
 import { Page } from 'playwright';
 import parseHtmlDom, { type DOMNode, type Element as HtmlDomElement } from 'html-dom-parser';
 import { FullScreenCaptureModule } from './full-screen-capture';
+import { runExclusiveScreenshotCapture } from './screenshot-queue';
 
 export interface AriaSnapshotResult {
   raw: string;
@@ -150,6 +156,8 @@ export function getRefMetadata(page: Page, ref: string): RefMetadata | null {
   const key = getCacheKey(page);
   const cached = refMetadataCache.get(key);
   if (!cached) return null;
+  // BrowserOS: extend ref metadata TTL to 5 s (10× the snapshot TTL) so refs
+  // remain resolvable across SPA re-renders that don't change the URL.
   if (cached.url !== page.url() || Date.now() - cached.timestamp > CACHE_TTL_MS * 10) {
     refMetadataCache.delete(key);
     return null;
@@ -645,9 +653,33 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         '[role="heading"]',
         'main',
         'article',
-        '[role="main"]'
+        '[role="main"]',
+        'div',
+        'span',
+        'li',
+        'p',
+        'img',
+        'svg',
       ].join(',');
-      const elements = document.querySelectorAll(selector);
+
+      const queryShadowAll = (root: Document | ShadowRoot, selectorString: string, results: Element[] = []): Element[] => {
+        try {
+          const matched = root.querySelectorAll(selectorString);
+          for (let i = 0; i < matched.length; i++) {
+            results.push(matched[i]);
+          }
+          const all = root.querySelectorAll('*');
+          for (let i = 0; i < all.length; i++) {
+            const el = all[i];
+            if (el.shadowRoot) {
+              queryShadowAll(el.shadowRoot, selectorString, results);
+            }
+          }
+        } catch (e) {}
+        return results;
+      };
+
+      const elements = queryShadowAll(document, selector);
 
       let ref = 0;
       const lines: string[] = [];
@@ -682,7 +714,6 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
           }
         }
       }
-
       // Optimization: Pre-compute interactive tag set for faster lookup
       const interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY']);
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option']);
@@ -696,6 +727,27 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         // Check if element is visible (opacity, display, visibility)
         const style = window.getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || rect.width < 1 || rect.height < 1) {
+          continue;
+        }
+
+        // Parent/Ancestor Opacity Check
+        let parentEl: Element | null = el.parentElement;
+        let effectiveOpacity = parseFloat(style.opacity);
+        if (isNaN(effectiveOpacity)) effectiveOpacity = 1.0;
+        while (parentEl && effectiveOpacity >= 0.01) {
+          const parentStyle = window.getComputedStyle(parentEl);
+          const parentOp = parseFloat(parentStyle.opacity);
+          if (!isNaN(parentOp)) {
+            effectiveOpacity *= parentOp;
+          }
+          parentEl = parentEl.parentElement;
+        }
+        if (effectiveOpacity < 0.01) {
+          continue;
+        }
+
+        // Skip elements inside aria-hidden subtrees
+        if (el.closest('[aria-hidden="true"]')) {
           continue;
         }
 
@@ -714,8 +766,56 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         const tagName = el.tagName;
         const role = el.getAttribute('role') || tagName.toLowerCase();
         const isContentEditable = (el as HTMLElement).isContentEditable;
-        const hasClickHandler = Boolean((el as HTMLElement).onclick) || el.hasAttribute('onclick');
+        
+        let hasPointerCursor = style.cursor === 'pointer';
+        if (hasPointerCursor) {
+          const parent = el.parentElement;
+          if (parent && window.getComputedStyle(parent).cursor === 'pointer') {
+            hasPointerCursor = false;
+          }
+        }
+        
+        const hasClickHandler = Boolean((el as HTMLElement).onclick) || el.hasAttribute('onclick') || hasPointerCursor;
         const isInteractive = interactiveTags.has(tagName) || interactiveRoles.has(role) || hasClickHandler || isContentEditable || (el as HTMLElement).tabIndex >= 0;
+
+        // Skip non-interactive generic elements (div, span, li, p, img, svg) to avoid bloating the prompt
+        if (!isInteractive && ['DIV', 'SPAN', 'LI', 'P', 'IMG', 'SVG'].includes(tagName)) {
+          continue;
+        }
+
+        const inViewport = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vHeight && rect.left <= vWidth;
+
+        // Skip obscured interactive elements in viewport
+        if (isInteractive && inViewport) {
+          const cx = Math.floor(rect.left + rect.width / 2);
+          const cy = Math.floor(rect.top + rect.height / 2);
+          if (cx >= 0 && cy >= 0 && cx <= vWidth && cy <= vHeight) {
+            const topEl = document.elementFromPoint(cx, cy);
+            if (topEl) {
+              let isObscured = !el.contains(topEl) && !topEl.contains(el);
+              // If top element is a label for this element, it's not obscured
+              if (isObscured && topEl.tagName === 'LABEL' && topEl.getAttribute('for') === el.id) {
+                isObscured = false;
+              }
+              // If top element has pointer-events: none, clicks pass through to us
+              if (isObscured) {
+                const topStyle = window.getComputedStyle(topEl);
+                if (topStyle.pointerEvents === 'none') {
+                  isObscured = false;
+                }
+              }
+              // Skip sibling overlays (small icons/spans/paths/images inside same component parent)
+              if (isObscured && ['SVG', 'SPAN', 'PATH', 'I', 'IMG'].includes(topEl.tagName)) {
+                if (el.parentElement && el.parentElement.contains(topEl)) {
+                  isObscured = false;
+                }
+              }
+              if (isObscured) {
+                continue;
+              }
+            }
+          }
+        }
 
         const tag = tagName.toLowerCase();
         const inputLike = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
@@ -774,7 +874,6 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         const selected = el.getAttribute('aria-selected');
         const describedBy = el.getAttribute('aria-describedby');
 
-        const inViewport = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vHeight && rect.left <= vWidth;
         const fullyInViewport = rect.top >= 0 && rect.left >= 0 && rect.bottom <= vHeight && rect.right <= vWidth;
         const viewport =
           fullyInViewport ? 'full' :
@@ -836,6 +935,19 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
           if (expanded != null) item.expanded = expanded === 'true';
           if (selected != null) item.selected = selected === 'true';
           if (describedBy) item.describedBy = describedBy;
+
+          const hasPopup = el.getAttribute('aria-haspopup');
+          if (hasPopup) item.hasPopup = hasPopup;
+
+          const container = el.closest('[role="listbox"],[role="menu"],[role="dialog"],[role="navigation"],nav,[role="tablist"]');
+          if (container) {
+            item.containerRole = container.getAttribute('role') || container.tagName.toLowerCase();
+            const containerName = container.getAttribute('aria-label') || resolveTextRefs(container, 'aria-labelledby') || container.getAttribute('name');
+            if (containerName) {
+              item.containerName = containerName.replace(/\s+/g, ' ').trim().slice(0, 80);
+            }
+          }
+
           return item;
         };
 
@@ -880,53 +992,82 @@ export async function captureInteractiveElements(page: Page): Promise<AriaSnapsh
     return cached;
   }
 
-  // Try fast method first (in-browser DOM query, very fast)
-  const fastResult = await captureFastSnapshot(page);
+  // BrowserOS pattern (Observer.capture): URL-stability loop.
+  // If the URL changes during the DOM capture (SPA navigation mid-flight),
+  // the snapshot and refs are mismatched. Retry up to 3 times.
+  const MAX_STABLE_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_STABLE_ATTEMPTS; attempt++) {
+    const urlBefore = page.url();
 
-  // The enriched DOM JSON is the primary agent state. It is faster and carries
-  // selectors, action hints, form context, viewport status, and nearby labels.
-  if (fastResult && fastResult.elementCount > 0) {
-    setCachedSnapshot(page, fastResult);
-    return fastResult;
-  }
+    // Try fast method first (in-browser DOM query, very fast)
+    const fastResult = await captureFastSnapshot(page);
 
-  // If fast DOM capture found nothing, fall back to Playwright's accessibility snapshot.
-  try {
-    const ariaStart = Date.now();
-    const raw = await page.ariaSnapshot({
-      mode: 'ai',
-      timeout: 5000,
-    } as any);
-
-    // Merge or pick the best. Usually, ariaSnapshot is much better for semantic roles.
-    if (raw && raw.length > (fastResult?.raw.length || 0)) {
-      const refs = parseRefsOptimized(raw);
-      const result: AriaSnapshotResult = {
-        raw,
-        refs,
-        elementCount: refs.size,
-        captureTimeMs: Date.now() - ariaStart,
-      };
-      setCachedSnapshot(page, result);
-      return result;
+    // Check if URL changed during capture — if so, the refs are stale, retry.
+    const urlAfter = page.url();
+    if (urlBefore !== urlAfter && urlBefore !== 'about:blank' && urlAfter !== 'about:blank') {
+      console.log(`[Navis] URL changed during snapshot capture (${urlBefore} → ${urlAfter}), retrying (${attempt + 1}/${MAX_STABLE_ATTEMPTS})`);
+      continue;
     }
-  } catch (err) {
-    console.warn('[Navis] ariaSnapshot failed, using fast result or empty:', err);
+
+    // The enriched DOM JSON is the primary agent state. It is faster and carries
+    // selectors, action hints, form context, viewport status, and nearby labels.
+    if (fastResult && fastResult.elementCount > 0) {
+      setCachedSnapshot(page, fastResult);
+      return fastResult;
+    }
+
+    // If fast DOM capture found nothing, fall back to Playwright's accessibility snapshot.
+    try {
+      const ariaStart = Date.now();
+      const raw = await page.ariaSnapshot({
+        mode: 'ai',
+        timeout: 5000,
+      } as any);
+
+      // Check again after ariaSnapshot (it can be slow, navigation may have fired).
+      const urlAfterAria = page.url();
+      if (urlBefore !== urlAfterAria && urlBefore !== 'about:blank' && urlAfterAria !== 'about:blank') {
+        console.log(`[Navis] URL changed during aria snapshot (${urlBefore} → ${urlAfterAria}), retrying`);
+        continue;
+      }
+
+      // Merge or pick the best. Usually, ariaSnapshot is much better for semantic roles.
+      if (raw && raw.length > (fastResult?.raw.length || 0)) {
+        const refs = parseRefsOptimized(raw);
+        const result: AriaSnapshotResult = {
+          raw,
+          refs,
+          elementCount: refs.size,
+          captureTimeMs: Date.now() - ariaStart,
+        };
+        setCachedSnapshot(page, result);
+        return result;
+      }
+    } catch (err) {
+      console.warn('[Navis] ariaSnapshot failed, using fast result or empty:', err);
+    }
+
+    if (fastResult) {
+      setCachedSnapshot(page, fastResult);
+      return fastResult;
+    }
+
+    const fallback: AriaSnapshotResult = {
+      raw: `- ${await page.title().catch(() => 'page')} "no interactive elements found" [ref=e1]`,
+      refs: new Map([['e1', { role: 'heading', name: 'no interactive elements found' }]]),
+      elementCount: 0,
+      captureTimeMs: Date.now() - Date.now(),
+    };
+    setCachedSnapshot(page, fallback);
+    return fallback;
   }
 
-  if (fastResult) {
-    setCachedSnapshot(page, fastResult);
-    return fastResult;
-  }
-
-  const fallback: AriaSnapshotResult = {
-    raw: `- ${await page.title().catch(() => 'page')} "no interactive elements found" [ref=e1]`,
-    refs: new Map([['e1', { role: 'heading', name: 'no interactive elements found' }]]),
+  return {
+    raw: '',
+    refs: new Map(),
     elementCount: 0,
-    captureTimeMs: Date.now() - Date.now(),
+    captureTimeMs: 0
   };
-  setCachedSnapshot(page, fallback);
-  return fallback;
 }
 
 export function parseRefs(snapshot: string): Map<string, RefMetadata> {
@@ -1092,38 +1233,44 @@ export function getCacheStats(): { size: number; entries: Array<{ key: string; a
 }
 
 /**
- * Capture screenshot for vision model (full-screen mode)
+ * Capture screenshot for vision model (full-screen mode).
+ *
+ * BrowserOS pattern: runs inside runExclusiveScreenshotCapture so concurrent
+ * calls (live UI stream + AI decision loop) are serialized per-page, preventing
+ * annotation overlay DOM from being modified while a screenshot is in flight.
  */
 export async function captureForVision(page: Page): Promise<Buffer> {
-  const fullScreenCapture = new FullScreenCaptureModule();
+  return runExclusiveScreenshotCapture(page, async () => {
+    const fullScreenCapture = new FullScreenCaptureModule();
 
-  // Hide overlay before screenshot so AI doesn't see it
-  await page.evaluate(() => {
-    const w = window as any;
-    if (w.__navis_controls && w.__navis_controls.hideForScreenshot) {
-      w.__navis_controls.hideForScreenshot();
-    }
-  }).catch(() => {});
-
-  try {
-    const result = await fullScreenCapture.captureFullScreen(page, {
-      format: 'jpeg',
-      quality: 85,
-      fullScreen: true,
-    });
-
-    console.log(
-      `[NAVIS] Captured at ${result.resolution.width}x${result.resolution.height} (window: ${result.windowSize.width}x${result.windowSize.height})`
-    );
-
-    return result.screenshot;
-  } finally {
-    // Show overlay again after screenshot
+    // Hide overlay before screenshot so AI doesn't see it
     await page.evaluate(() => {
       const w = window as any;
-      if (w.__navis_controls && w.__navis_controls.showAfterScreenshot) {
-        w.__navis_controls.showAfterScreenshot();
+      if (w.__navis_controls && w.__navis_controls.hideForScreenshot) {
+        w.__navis_controls.hideForScreenshot();
       }
     }).catch(() => {});
-  }
+
+    try {
+      const result = await fullScreenCapture.captureFullScreen(page, {
+        format: 'jpeg',
+        quality: 85,
+        fullScreen: true,
+      });
+
+      console.log(
+        `[NAVIS] Captured at ${result.resolution.width}x${result.resolution.height} (window: ${result.windowSize.width}x${result.windowSize.height})`
+      );
+
+      return result.screenshot;
+    } finally {
+      // Show overlay again after screenshot
+      await page.evaluate(() => {
+        const w = window as any;
+        if (w.__navis_controls && w.__navis_controls.showAfterScreenshot) {
+          w.__navis_controls.showAfterScreenshot();
+        }
+      }).catch(() => {});
+    }
+  });
 }

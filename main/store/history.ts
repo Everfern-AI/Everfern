@@ -240,8 +240,12 @@ export class ChatHistoryStore {
 
     await this.acquireSaveLock();
 
+    let transactionStarted = false;
+    const indexTasks: Array<{ id: string; content: string }> = [];
+
     try {
       await dbOps.run('BEGIN TRANSACTION');
+      transactionStarted = true;
 
       // 1. Upsert Conversation — use INSERT OR REPLACE to avoid race conditions
       // when saveConversation is called concurrently from the frontend.
@@ -249,10 +253,10 @@ export class ChatHistoryStore {
         `INSERT INTO conversations (id, title, provider, model, project_id, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM conversations WHERE id = ?), ?), ?)
          ON CONFLICT(id) DO UPDATE SET
-           title = excluded.title,
-           provider = excluded.provider,
-           model = excluded.model,
-           project_id = excluded.project_id,
+           title = COALESCE(excluded.title, conversations.title),
+           provider = COALESCE(excluded.provider, conversations.provider),
+           model = COALESCE(excluded.model, conversations.model),
+           project_id = COALESCE(excluded.project_id, conversations.project_id),
            updated_at = excluded.updated_at`,
         [
           conversation.id,
@@ -304,10 +308,10 @@ export class ChatHistoryStore {
           ]
         );
 
-        // Async fire-and-forget: index message content for semantic search
+        // Collect indexing tasks to run AFTER the transaction commits
         if (msg.role === 'user' || msg.role === 'assistant') {
            const textContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-           this.indexMessage(msgId, textContent).catch(() => {});
+           indexTasks.push({ id: msgId, content: textContent });
         }
       }
 
@@ -329,13 +333,28 @@ export class ChatHistoryStore {
       }
 
       await dbOps.run('COMMIT');
+      transactionStarted = false;
       return { success: true };
     } catch (err) {
-      await dbOps.run('ROLLBACK').catch(e => console.error('[History] Failed to rollback:', e));
       const msg = err instanceof Error ? err.message : String(err);
+      if (transactionStarted) {
+        try {
+          await dbOps.run('ROLLBACK');
+        } catch (rollbackErr) {
+          const rollMsg = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+          // Only log rollback errors that aren't the cascading "no transaction" case
+          if (!rollMsg.includes('no transaction is active')) {
+            console.error('[History] Failed to rollback:', rollbackErr);
+          }
+        }
+      }
       console.error(`[History] Failed to save conversation:`, msg);
       return { success: false, error: msg };
     } finally {
+      // Fire-and-forget indexing tasks only after the transaction is fully resolved
+      for (const task of indexTasks) {
+        this.indexMessage(task.id, task.content).catch(() => {});
+      }
       this.releaseSaveLock();
     }
   }

@@ -6,6 +6,11 @@
  *
  * Phase 1: Basic Actions (go_to_url, click, input, etc.)
  * Phase 2: Advanced Form Interactions (upload_file, select_option, set_date, drag_and_drop, hover, right_click)
+ *
+ * Architecture ports from BrowserOS browser-core:
+ * - Key alias normalization (keyboard.ts)
+ * - Triple-click clear fallback for React controlled inputs (input.ts)
+ * - Screenshot serialization queue (screenshot-queue.ts)
  */
 
 import { Page } from 'playwright';
@@ -24,6 +29,46 @@ import { captureForVision, getRefMetadata, invalidateElementSnapshotCache, type 
 import { loadConfig } from './config';
 import { AIClient } from '../../../lib/ai-client';
 import { createNavisExtractionReport } from './content-extraction-report';
+import { runExclusiveScreenshotCapture } from './screenshot-queue';
+
+// ── Key Alias Normalization (ported from BrowserOS keyboard.ts) ──────────────
+// Normalises AI-provided key names so combos like "Esc", "Cmd", "Return",
+// "Del", "Ctrl+A" all resolve to Playwright's canonical names.
+const KEY_ALIASES: Record<string, string> = {
+  Return: 'Enter',
+  Esc: 'Escape',
+  Del: 'Delete',
+  Ctrl: 'Control',
+  Cmd: 'Meta',
+  Command: 'Meta',
+  Option: 'Alt',
+  Left: 'ArrowLeft',
+  Right: 'ArrowRight',
+  Up: 'ArrowUp',
+  Down: 'ArrowDown',
+  Backspace: 'Backspace',
+  Space: ' ',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+  Home: 'Home',
+  End: 'End',
+};
+
+/** Normalises a raw key string, handling aliases and combo modifiers like "Ctrl+A". */
+function normalizeKey(key: string): string {
+  // Handle combos: "Ctrl+A", "Meta+Shift+Z", etc.
+  return key
+    .split('+')
+    .map((part) => {
+      const trimmed = part.trim();
+      // Case-insensitive alias lookup
+      const alias = Object.entries(KEY_ALIASES).find(
+        ([k]) => k.toLowerCase() === trimmed.toLowerCase()
+      );
+      return alias ? alias[1] : trimmed;
+    })
+    .join('+');
+}
 
 export type ActionName =
   | 'go_to_url'
@@ -45,6 +90,7 @@ export type ActionName =
   | 'switch_tab'
   | 'close_tab'
   | 'wait_for_navigation'
+  | 'wait_for_dom_change'
   | 'solve_captcha'
   | 'done'
   // Phase 2: Advanced Form Interactions
@@ -172,7 +218,7 @@ function metadataLabel(meta: RefMetadata | null, ref: string): string {
 }
 
 // ── Multi-Strategy Element Finder ───────────────────────────────
-async function findElement(
+export async function findElement(
   page: Page,
   ref: string,
   logger?: NavisLogger,
@@ -861,14 +907,35 @@ async function performReliableType(page: Page, locator: any, text: string): Prom
 
   const attempts: Array<{ method: string; run: () => Promise<void> }> = [
     {
-      method: 'fill',
-      run: async () => { await locator.fill(text, { timeout: 1200 }); },
+      method: 'press-sequentially',
+      run: async () => {
+        await locator.clear({ timeout: 500 }).catch(() => {});
+        await locator.pressSequentially(text, { delay: 10, timeout: 1200 });
+      },
     },
     {
+      // BrowserOS pattern: click → Ctrl+A → Backspace, then check if still populated.
+      // If value is STILL there after Ctrl+A+Backspace (React controlled inputs), use
+      // a triple-click to select-all before overwriting. This is the most reliable
+      // strategy for controlled React/Vue inputs that ignore programmatic clear().
       method: 'click-keyboard',
       run: async () => {
+        const box = await locator.boundingBox().catch(() => null);
+        const cx = box ? box.x + box.width / 2 : undefined;
+        const cy = box ? box.y + box.height / 2 : undefined;
+
         await locator.click({ timeout: 800, force: true }).catch(() => clickAtLocatorCenter(page, locator));
-        await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A').catch(() => {});
+        const selectAll = process.platform === 'darwin' ? 'Meta+A' : 'Control+A';
+        await page.keyboard.press(selectAll).catch(() => {});
+        await page.keyboard.press('Backspace').catch(() => {});
+
+        // BrowserOS triple-click fallback: if value is still populated, the field
+        // uses controlled state and ignores keyboard clear — select-all via triple click.
+        const stillPopulated = await readLocatorEditableValue(locator).then((v) => Boolean(v));
+        if (stillPopulated && cx !== undefined && cy !== undefined) {
+          await page.mouse.click(cx, cy, { clickCount: 3 }).catch(() => {});
+        }
+
         await page.keyboard.type(text, { delay: 0 });
       },
     },
@@ -1313,6 +1380,10 @@ async function executePressKey(
 ): Promise<ActionResult> {
   if (!args.key) return { success: false, message: 'Missing key parameter', stateChanged: false };
 
+  // BrowserOS pattern: normalise key aliases before dispatch so AI-provided
+  // strings like "Esc", "Cmd", "Return", "Del", "Ctrl+A" all work correctly.
+  const key = normalizeKey(args.key);
+
   try {
     if (args.ref) {
       const { locator } = await findElement(page, args.ref, logger);
@@ -1327,25 +1398,31 @@ async function executePressKey(
       }
 
       const watcher = startBrowserChangeWatch(page);
-      await locator.press(args.key, { timeout: 1200 });
-      if (/^(Enter|NumpadEnter)$/i.test(args.key)) {
+      try {
+        await locator.focus().catch(() => {});
+        await page.keyboard.press(key);
+      } catch (err) {
+        console.warn('[Navis] page.keyboard.press failed, falling back to locator.press:', err);
+        await locator.press(key, { timeout: 1500 });
+      }
+      if (/^(Enter|NumpadEnter)$/i.test(key)) {
         await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
       } else {
         invalidateElementSnapshotCache(page);
       }
-      logger?.elementInput(step, maxSteps, `key:${args.key}`, args.ref);
+      logger?.elementInput(step, maxSteps, `key:${key}`, args.ref);
     } else {
       const watcher = startBrowserChangeWatch(page);
-      await page.keyboard.press(args.key);
-      if (/^(Enter|NumpadEnter)$/i.test(args.key)) {
+      await page.keyboard.press(key);
+      if (/^(Enter|NumpadEnter)$/i.test(key)) {
         await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
       } else {
         invalidateElementSnapshotCache(page);
       }
-      logger?.elementInput(step, maxSteps, `key:${args.key}`, '(global)');
+      logger?.elementInput(step, maxSteps, `key:${key}`, '(global)');
     }
-    await session.setOverlayStatus(`Pressed "${args.key}"`);
-    return { success: true, message: `Pressed key: ${args.key}`, stateChanged: true };
+    await session.setOverlayStatus(`Pressed "${key}"`);
+    return { success: true, message: `Pressed key: ${key}`, stateChanged: true };
   } catch (err: any) {
     return { success: false, message: `Key press failed: ${err.message}`, stateChanged: false };
   }

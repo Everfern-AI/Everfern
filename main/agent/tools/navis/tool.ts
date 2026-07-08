@@ -134,12 +134,15 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
       let currentStepNumber = -1;
 
       const unsubscribe = logger.on((event: NavisEvent) => {
-        if (event.type === 'screenshot' && event.base64) {
-          screenshots.push({
-            base64: event.base64,
-            timestamp: event.timestamp,
-            sequenceNumber: event.step
-          });
+        if (event.type === 'screenshot' && event.screenshotKey !== undefined) {
+          const b64 = logger.getScreenshot(event.screenshotKey);
+          if (b64) {
+            screenshots.push({
+              base64: b64,
+              timestamp: event.timestamp,
+              sequenceNumber: event.step
+            });
+          }
         }
         let label = '';
         switch (event.type) {
@@ -247,8 +250,8 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             timestamp: new Date(event.timestamp).toISOString(),
             data: {
               ...compactProgressData,
-              content: event.type === 'screenshot' ? event.base64 : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
-              screenshot: event.type === 'screenshot' ? { base64: event.base64, width: 1280, height: 720 } : undefined,
+              content: event.type === 'screenshot' && event.screenshotKey !== undefined ? logger.getScreenshot(event.screenshotKey) : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
+              screenshot: event.type === 'screenshot' && event.screenshotKey !== undefined ? { base64: logger.getScreenshot(event.screenshotKey), width: 1280, height: 720 } : undefined,
               navisReport: navisReportMd,
             }
           });
@@ -299,7 +302,11 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           }
 
           if (getNavisCompanionStatus().connected) {
-            const extensionOrchestrator = new NavisExtensionOrchestrator(orchestrator.getAIClient(), logger);
+            const extensionOrchestrator = new NavisExtensionOrchestrator(
+              orchestrator.getAIClient(),
+              logger,
+              orchestrator.getVisionClient() || undefined
+            );
             console.log('[Navis Tool] 🔌 Calling extension-first orchestrator.run()...');
             const extensionResult = await extensionOrchestrator.run({
               task,

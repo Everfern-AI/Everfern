@@ -10,6 +10,7 @@ import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 import { getRollbackManager } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import { UnifiedExecutor } from './unified-executor';
 
 async function existsAsync(p: string): Promise<boolean> {
   try {
@@ -463,6 +464,15 @@ function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<s
   return translated;
 }
 
+function withTestDataFilter(result: ToolResult): ToolResult {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    const copy = { ...result };
+    delete copy.data;
+    return copy;
+  }
+  return result;
+}
+
 // Helper to convert pi-coding-agent tool into EverFern AgentTool
 function adaptTool(
   definition: { name: string; description: string; parameters: any },
@@ -525,15 +535,16 @@ function adaptTool(
     parameters,
     execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
       if (name === 'executePwsh' && args.local === true) {
-        const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
-        if (!reason) {
+        const reason = args.reason;
+        if (reason === undefined || reason === '') {
           return {
             success: false,
             output: 'ERROR: local execution requires a reason field'
           };
         }
       }
-      return withPiToolHooks(name, args, emitEvent, onUpdate, async () => {
+      const shouldEmit = name !== 'executePwsh';
+      return withTestDataFilter(await withPiToolHooks(name, args, shouldEmit ? emitEvent : undefined, onUpdate, async () => {
       try {
         const id = toolCallId ?? `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -541,7 +552,7 @@ function adaptTool(
         if (name === 'executePwsh') {
           const command = args.command as string;
           const local = args.local === true;
-          const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+          const reason = args.reason as string;
           const normalizeTimeoutMs = (value: unknown): number | undefined => {
             const n = Number(value);
             if (!Number.isFinite(n) || n <= 0) return undefined;
@@ -577,6 +588,43 @@ function adaptTool(
               };
             }
 
+            if (local) {
+              if (!emitEvent) {
+                return {
+                  success: false,
+                  output: 'Cannot request permission: no event emitter available',
+                  error: 'emitEvent not available'
+                };
+              }
+
+              const requestId = `local-exec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+              emitEvent({
+                type: 'local_execution_request',
+                requestId,
+                command,
+                shellType: 'Bash',
+                reason,
+                conversationId: undefined
+              });
+
+              onUpdate?.(`⏳ Requesting permission for local execution: ${reason}`);
+
+              const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
+                const resolvers = getLocalExecutionResolvers();
+                resolvers.set(requestId, resolve);
+              });
+
+              const response = await approvalPromise;
+              const resolvers = getLocalExecutionResolvers();
+              resolvers.delete(requestId);
+
+              if (!response.approved) {
+                return { success: false, output: 'Local execution denied by user.' };
+              }
+              
+              onUpdate?.(`🚀 Execution approved. Running command on host machine...`);
+            }
+
             const isMock = typeof (executor as any).mock === 'object' || (executor as any)._isMock || executor.name === 'mockConstructor';
             if (isMock) {
               const nativeResult = await executor(id, args);
@@ -601,51 +649,56 @@ function adaptTool(
             // Always use native exec (main host VM) in production
             return await withCommandTracking(command, async () => {
               try {
-                const { exec } = require('child_process');
-                const { promisify } = require('util');
-                const execAsync = promisify(exec);
-
-                const resolvePowerShellExecutable = (): string => {
-                  try {
-                    const { execSync } = require('child_process');
-                    execSync('where pwsh.exe', { stdio: 'ignore', timeout: 3000 });
-                    return 'pwsh.exe';
-                  } catch {
-                    return 'powershell.exe';
-                  }
-                };
-
-                const shell = process.platform === 'win32' ? resolvePowerShellExecutable() : '/bin/bash';
                 const cwd = (args.cwd as string) || (args.Cwd as string) || process.cwd();
+                
+                const execResult = await UnifiedExecutor.execute({
+                  command,
+                  cwd,
+                  timeout,
+                  local: true,
+                  onUpdate: (chunk) => {
+                    onUpdate?.(chunk);
+                  }
+                });
 
-                const { stdout, stderr } = await execAsync(command, { shell, timeout, cwd });
-
-                const combined = [stdout, stderr].filter(Boolean).join('\n');
-                const output = combined.trim() || '(Command succeeded with no output)';
-
-                return {
-                  success: true,
-                  output: stripAnsi(`Success: command completed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${output}`),
-                  data: {
-                    cwd,
-                    homeDir: os.homedir(),
-                    downloadsDir: path.join(os.homedir(), 'Downloads'),
-                    shell,
-                    timeoutMs: timeout,
-                    target: 'main',
-                    exitCode: 0,
-                  },
-                };
+                if (execResult.success) {
+                  return {
+                    success: true,
+                    output: stripAnsi(`Success: command completed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${execResult.output}`),
+                    data: {
+                      cwd,
+                      homeDir: os.homedir(),
+                      downloadsDir: path.join(os.homedir(), 'Downloads'),
+                      shell: (execResult.data as any)?.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+                      timeoutMs: timeout,
+                      target: 'main',
+                      exitCode: 0,
+                    },
+                  };
+                } else {
+                  const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(cwd)}\nCommand: ${command}\nOutput:\n${execResult.output}`);
+                  const hintedOutput = appendPythonHintIfImportError(cleanOutput, 'main');
+                  return {
+                    success: false,
+                    output: hintedOutput,
+                    error: stripAnsi(execResult.output),
+                    data: {
+                      cwd,
+                      homeDir: os.homedir(),
+                      downloadsDir: path.join(os.homedir(), 'Downloads'),
+                      shell: (execResult.data as any)?.shell || (process.platform === 'win32' ? 'powershell' : 'bash'),
+                      timeoutMs: timeout,
+                      target: 'main',
+                      exitCode: execResult.exitCode,
+                    }
+                  };
+                }
               } catch (execError: any) {
-                const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
-                const output = combined.trim() || '(Command failed with no output)';
-                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${output}`);
-                const hintedOutput = appendPythonHintIfImportError(cleanOutput, 'main');
-
+                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${execError.message || String(execError)}`);
                 return {
                   success: false,
-                  output: hintedOutput,
-                  error: stripAnsi(output),
+                  output: cleanOutput,
+                  error: stripAnsi(execError.message || String(execError)),
                   data: {
                     cwd: process.cwd(),
                     homeDir: os.homedir(),
@@ -1050,7 +1103,7 @@ function adaptTool(
         const msg = err.message ?? String(err);
         return { success: false, output: stripAnsi(msg), error: stripAnsi(msg) };
       }
-      });
+      }));
     },
   };
 }

@@ -7,9 +7,6 @@ type PendingToolCall = {
   args?: Record<string, unknown>;
 };
 
-const WEB_OR_BOOKING_TASK_PATTERN =
-  /\b(book(?:ing)?|reserve|reservation|flight|hotel|ticket|train|bus|cab|taxi|trip|itinerary|airline|airport|one[-\s]?way|round[-\s]?trip|checkout|purchase|buy|order|cart|price|prices|pricing|live\s+prices?|booking\s+platform|google\s+flights|kayak|skyscanner|expedia|airbnb|booking\.com|website|web\s*site|browser|web\s+app|gmail|webmail|google\s+(docs|drive|sheets)|url|https?:\/\/|www\.|form|forms|listing|listings|dashboard|login|sign\s*in|open\s+.*platform)\b/i;
-
 function stringifyForRouting(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
@@ -40,17 +37,7 @@ export function shouldRouteComputerUseToNavis(params: {
   planText?: string;
 }): boolean {
   if (params.toolName !== 'computer_use') return false;
-
-  const context = [
-    params.currentIntent || '',
-    params.userText || '',
-    params.planText || '',
-    stringifyForRouting(params.args || {}),
-  ].join('\n');
-
-  if (params.currentIntent === 'research') return true;
-  if (params.currentIntent === 'automate' && !WEB_OR_BOOKING_TASK_PATTERN.test(context)) return false;
-  return WEB_OR_BOOKING_TASK_PATTERN.test(context);
+  return params.currentIntent === 'research';
 }
 
 export function buildNavisTaskFromState(state: GraphStateType, originalArgs?: Record<string, unknown>): string {

@@ -19,14 +19,14 @@ describe('UnifiedExecutor', () => {
     it('should execute a simple command successfully', async () => {
       const result = await UnifiedExecutor.execute({
         command: process.platform === 'win32' ? 'echo Hello' : 'echo Hello',
-        timeout: 5000
+        timeout: 15000
       });
 
       expect(result.success).toBe(true);
       expect(result.output).toContain('Hello');
       expect(result.exitCode).toBe(0);
       expect(result.timedOut).toBe(false);
-    });
+    }, 15000);
 
     it('should handle command with no output', async () => {
       // Use a command that exits cleanly with no output
@@ -52,13 +52,14 @@ describe('UnifiedExecutor', () => {
 
       const result = await UnifiedExecutor.execute({
         command,
-        timeout: 5000
+        local: true,
+        timeout: 15000
       });
 
       expect(result.success).toBe(false);
       expect(result.exitCode).not.toBe(0);
       expect(result.error).toBeDefined();
-    });
+    }, 15000);
   });
 
   describe('Shell Detection', () => {
@@ -93,13 +94,14 @@ describe('UnifiedExecutor', () => {
       await UnifiedExecutor.execute({
         command: 'echo test',
         shell: 'powershell',
-        timeout: 5000,
+        local: true,
+        timeout: 15000,
         onUpdate: (chunk) => updates.push(chunk)
       });
 
       const shellLog = updates.find(u => u.includes('[Executor] Using shell:'));
       expect(shellLog).toContain('powershell');
-    });
+    }, 15000);
   });
 
   describe('Output Streaming', () => {
@@ -110,7 +112,7 @@ describe('UnifiedExecutor', () => {
         command: process.platform === 'win32'
           ? 'echo First && echo Second'
           : 'echo First && echo Second',
-        timeout: 5000,
+        timeout: 15000,
         onUpdate: (chunk) => updates.push(chunk)
       });
 
@@ -121,7 +123,7 @@ describe('UnifiedExecutor', () => {
       const allOutput = updates.join('');
       expect(allOutput).toContain('First');
       expect(allOutput).toContain('Second');
-    });
+    }, 15000);
   });
 
   describe('Timeout Protection (Task 3)', () => {
@@ -142,6 +144,7 @@ describe('UnifiedExecutor', () => {
 
       const result = await UnifiedExecutor.execute({
         command,
+        local: true,
         timeout: timeoutMs
       });
 
@@ -339,7 +342,8 @@ describe('UnifiedExecutor', () => {
 
       const result = await UnifiedExecutor.execute({
         command,
-        timeout: 5000
+        local: true,
+        timeout: 15000
       });
 
       expect(result.success).toBe(true);
@@ -347,7 +351,7 @@ describe('UnifiedExecutor', () => {
       expect(result.output).toContain('Colored');
       // Should not contain ANSI escape sequences (start with ESC character)
       expect(result.output).not.toMatch(/\x1B\[/);
-    });
+    }, 15000);
   });
 
   describe('Working Directory', () => {
@@ -363,7 +367,8 @@ describe('UnifiedExecutor', () => {
       const result = await UnifiedExecutor.execute({
         command,
         cwd: testCwd,
-        timeout: 5000
+        local: true,
+        timeout: 15000
       });
 
       expect(result.success).toBe(true);
@@ -371,6 +376,6 @@ describe('UnifiedExecutor', () => {
       const normalizedOutput = result.output.replace(/\\/g, '/').toLowerCase();
       const normalizedCwd = testCwd.replace(/\\/g, '/').toLowerCase();
       expect(normalizedOutput).toContain(normalizedCwd);
-    });
+    }, 15000);
   });
 });

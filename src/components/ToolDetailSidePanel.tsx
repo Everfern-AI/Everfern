@@ -593,7 +593,7 @@ const CursorOverlayOnImage = ({ coordinate, action }: { coordinate: any, action:
           strokeWidth="0.5"
         />
       </svg>
-      
+
       <style>{`
         @keyframes ripple-ping {
           0% { transform: scale(0.5); opacity: 1; }
@@ -942,29 +942,29 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
    ============================================================ */
 
 const TERM = {
-  bg:       '#0c0c0c',
-  border:   'rgba(255,255,255,0.08)',
-  divider:  'rgba(255,255,255,0.05)',
+  bg: '#0c0c0c',
+  border: 'rgba(255,255,255,0.08)',
+  divider: 'rgba(255,255,255,0.05)',
 
-  textCmd:  'rgba(255,255,255,0.88)',
-  textOut:  'rgba(238,242,247,0.86)',
-  textErr:  '#ff5f57',
-  textDim:  'rgba(255,255,255,0.2)',
+  textCmd: 'rgba(255,255,255,0.88)',
+  textOut: 'rgba(238,242,247,0.86)',
+  textErr: '#ff5f57',
+  textDim: 'rgba(255,255,255,0.2)',
   textMeta: 'rgba(255,255,255,0.3)',
 
-  psUser:   '#5af78e',
-  psAt:     'rgba(255,255,255,0.25)',
-  psHost:   '#57c7ff',
-  psSep:    'rgba(255,255,255,0.2)',
-  psPath:   '#f3f99d',
+  psUser: '#5af78e',
+  psAt: 'rgba(255,255,255,0.25)',
+  psHost: '#57c7ff',
+  psSep: 'rgba(255,255,255,0.2)',
+  psPath: '#f3f99d',
   psDollar: 'rgba(255,255,255,0.4)',
 
-  okBg:     'rgba(40,201,64,0.1)',
+  okBg: 'rgba(40,201,64,0.1)',
   okBorder: 'rgba(40,201,64,0.18)',
-  okText:   '#28c940',
-  errBg:    'rgba(255,95,87,0.1)',
-  errBorder:'rgba(255,95,87,0.18)',
-  errText:  '#ff5f57',
+  okText: '#28c940',
+  errBg: 'rgba(255,95,87,0.1)',
+  errBorder: 'rgba(255,95,87,0.18)',
+  errText: '#ff5f57',
 };
 
 const monoStack = '"Geist Mono","Berkeley Mono",ui-monospace,"SF Mono",Menlo,monospace';
@@ -1131,7 +1131,15 @@ export function TerminalView({
   status?: string;
 }) {
   const isError = exitCode !== undefined && exitCode !== 0;
-  const hasOutput = hasVisibleTerminalOutput(output);
+
+  // Truncate output if it is too large to prevent React rendering lag
+  const MAX_OUTPUT_LENGTH = 50000;
+  const isOutputTruncated = output && output.length > MAX_OUTPUT_LENGTH;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_OUTPUT_LENGTH) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
+
+  const hasOutput = hasVisibleTerminalOutput(displayOutput);
   const looksLikePS = shellType === 'windows';
 
   const isFinished = status === 'done' || status === 'error' || exitCode !== undefined || duration !== undefined;
@@ -1152,7 +1160,7 @@ export function TerminalView({
       textMeta: 'rgba(255,255,255,0.42)',
       accent: '#d19a3a',
     };
-    const displayCwd = cwd || 'C:\\Users\\user\\Downloads\\EverFern\\everfern-desktop\\apps\\desktop';
+    const displayCwd = cwd || 'C:\\pathcantbefound';
     const tabTitle = displayCwd.length > 18 ? `${displayCwd.slice(0, 14)}...` : displayCwd;
 
     return (
@@ -1210,7 +1218,7 @@ export function TerminalView({
             </code>
           </div>
           {hasOutput ? (
-            <TerminalAnsiOutput output={output} isError={isError} palette={WIN} />
+            <TerminalAnsiOutput output={displayOutput} isError={isError} palette={WIN} />
           ) : (
             <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: WIN.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
               (no output)
@@ -1259,7 +1267,7 @@ export function TerminalView({
           </code>
         </div>
         {hasOutput ? (
-          <TerminalAnsiOutput output={output} isError={isError} palette={TERM} />
+          <TerminalAnsiOutput output={displayOutput} isError={isError} palette={TERM} />
         ) : (
           <pre style={{ margin: '0 0 8px', fontSize: 12.5, color: TERM.textDim, fontStyle: 'italic', fontFamily: monoStack }}>
             (no output)
@@ -1428,8 +1436,8 @@ function LivePreviewView({ url }: { url: string }) {
       }}>
         {/* Nav Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button 
-            disabled 
+          <button
+            disabled
             style={{
               background: 'transparent',
               border: 'none',
@@ -1444,8 +1452,8 @@ function LivePreviewView({ url }: { url: string }) {
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
-          <button 
-            disabled 
+          <button
+            disabled
             style={{
               background: 'transparent',
               border: 'none',
@@ -1460,7 +1468,7 @@ function LivePreviewView({ url }: { url: string }) {
               <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
-          <button 
+          <button
             onClick={handleReload}
             style={{
               background: 'transparent',
@@ -1514,9 +1522,9 @@ function LivePreviewView({ url }: { url: string }) {
         </form>
 
         {/* Open External */}
-        <a 
-          href={iframeUrl} 
-          target="_blank" 
+        <a
+          href={iframeUrl}
+          target="_blank"
           rel="noopener noreferrer"
           style={{
             background: 'transparent',
@@ -1868,6 +1876,13 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
 function GenericView({ toolName, args, output }: { toolName: string; args?: any; output?: string }) {
   const argEntries = Object.entries(args || {});
 
+  // Truncate output if it is too large to prevent React rendering lag
+  const MAX_GENERIC_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_GENERIC_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_GENERIC_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Subtitle bar */}
@@ -1895,7 +1910,7 @@ function GenericView({ toolName, args, output }: { toolName: string; args?: any;
         {output && (
           <CollapsibleSection icon={Terminal} label="Output" defaultOpen>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-              <CopyBtn text={output} />
+              <CopyBtn text={displayOutput || ''} />
             </div>
             <pre style={{
               margin: 0, fontFamily: T.mono, fontSize: 12, lineHeight: 1.85,
@@ -1903,7 +1918,7 @@ function GenericView({ toolName, args, output }: { toolName: string; args?: any;
               padding: '18px 20px', borderRadius: T.r10,
               border: `1px solid ${T.inkBorder}`, maxHeight: 360, overflowY: 'auto',
             }}>
-              <code>{output}</code>
+              <code>{displayOutput}</code>
             </pre>
           </CollapsibleSection>
         )}
@@ -1941,8 +1956,8 @@ function SkillView({ skillName, name, path, content }: { skillName: string; name
               <CopyBtn text={content} />
             </div>
             <div style={{
-              background: T.surface, 
-              border: `1px solid ${T.border}`, 
+              background: T.surface,
+              border: `1px solid ${T.border}`,
               borderRadius: T.r10,
               overflow: 'hidden'
             }}>
@@ -2167,10 +2182,10 @@ function extractTerminalData(tc: any) {
   const toolName = (tc.toolName || '').toLowerCase();
   const args = tc.args || tc.arguments || {};
   const data = tc.data || tc.result?.data || {};
-  
+
   const requestedShell = String(args.shellType || data.shellType || data.shell || '').toLowerCase();
   const target = String(args.target || data.target || tc.result?.target || tc.result?.data?.target || '').toLowerCase();
-  
+
   const normalizedCmd = command.trim().toLowerCase();
   const hasLinuxIndicators = normalizedCmd.includes('/mnt/') ||
     normalizedCmd.includes('/home/') ||
@@ -2180,17 +2195,17 @@ function extractTerminalData(tc: any) {
     /\b(apt-get|apt)\b/.test(normalizedCmd) ||
     target === 'vm';
 
-  const isExplicitLinux = toolName.includes('linux') || 
-    requestedShell.includes('bash') || 
-    requestedShell.includes('sh') || 
+  const isExplicitLinux = toolName.includes('linux') ||
+    requestedShell.includes('bash') ||
+    requestedShell.includes('sh') ||
     target === 'vm' ||
     hasLinuxIndicators;
 
   const isWindows = !isExplicitLinux && (
-    toolName.includes('pwsh') || 
-    toolName.includes('powershell') || 
-    command.includes('powershell.exe') || 
-    command.includes('pwsh') || 
+    toolName.includes('pwsh') ||
+    toolName.includes('powershell') ||
+    command.includes('powershell.exe') ||
+    command.includes('pwsh') ||
     command.startsWith('powershell') ||
     requestedShell.includes('powershell') ||
     requestedShell.includes('pwsh') ||
@@ -2257,6 +2272,14 @@ function extractImageAnalysisData(tc: any) {
 
 function FileSystemView({ toolName, path, args, output }: { toolName: string; path: string; args: any; output: string }) {
   const argEntries = Object.entries(args || {});
+
+  // Truncate output if it is too large to prevent React rendering lag
+  const MAX_FS_OUTPUT = 50000;
+  const isOutputTruncated = output && output.length > MAX_FS_OUTPUT;
+  const displayOutput = isOutputTruncated
+    ? output.substring(0, MAX_FS_OUTPUT) + `\n\n... [Output truncated for performance. Total length: ${output.length} characters]`
+    : output;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
@@ -2278,10 +2301,10 @@ function FileSystemView({ toolName, path, args, output }: { toolName: string; pa
         {output && (
           <div style={{ padding: '20px 24px 28px' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', paddingBottom: 10 }}>
-              <CopyBtn text={output} />
+              <CopyBtn text={displayOutput} />
             </div>
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r10, overflow: 'hidden' }}>
-              <MarkdownViewer content={output} />
+              <MarkdownViewer content={displayOutput} />
             </div>
           </div>
         )}
@@ -2317,7 +2340,7 @@ const detectLanguage = (ext: string): string => {
 
 const syntaxHighlightLine = (line: string, ext: string) => {
   const colors = EDITOR_COLORS;
-  
+
   // Comment detection
   const commentMatch = line.match(/^(\s*)(#|\/\/|\/\*|<!--)(.*)/);
   if (commentMatch) {
@@ -2439,7 +2462,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
   const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
   const { isWrite, isMulti, chunks, oldContent, newContent, isRead, hasRenderableContent } = useMemo(() => {
     const name = (toolName || '').toLowerCase();
-    
+
     let oldContent = '';
     let newContent = '';
     let isWrite = false;
@@ -2509,9 +2532,14 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
 
   // Helper to render diff lines for a target and replacement
   const renderDiffLines = (oldText: string, newText: string, startLine = 1) => {
+    const MAX_LINES_TO_RENDER = 1000;
+
     if (isWrite || isRead) {
       const lines = newText.split('\n');
-      return lines.map((line, idx) => (
+      const truncated = lines.length > MAX_LINES_TO_RENDER;
+      const linesToRender = truncated ? lines.slice(0, MAX_LINES_TO_RENDER) : lines;
+
+      const elements = linesToRender.map((line, idx) => (
         <CodeLine
           key={idx}
           type={isRead ? 'normal' : 'add'}
@@ -2520,6 +2548,15 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
           ext={ext}
         />
       ));
+
+      if (truncated) {
+        elements.push(
+          <div key="trunc-msg" style={{ padding: '8px 16px', color: '#71717a', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
+            ... [Remaining {lines.length - MAX_LINES_TO_RENDER} lines truncated for performance]
+          </div>
+        );
+      }
+      return elements;
     }
 
     // Compute diff
@@ -2527,11 +2564,24 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
     const lineElements: React.ReactNode[] = [];
     let oldLine = startLine;
     let newLine = startLine;
+    let linesCount = 0;
+    let wasTruncated = false;
 
-    changes.forEach((change, changeIdx) => {
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+      if (linesCount >= MAX_LINES_TO_RENDER) {
+        wasTruncated = true;
+        break;
+      }
+      const change = changes[changeIdx];
       // Split the text while keeping trailing spaces/newlines
       const lines = change.value.replace(/\n$/, '').split('\n');
-      lines.forEach((line, lineIdx) => {
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        if (linesCount >= MAX_LINES_TO_RENDER) {
+          wasTruncated = true;
+          break;
+        }
+        linesCount++;
+        const line = lines[lineIdx];
         const key = `${changeIdx}-${lineIdx}`;
         if (change.added) {
           lineElements.push(
@@ -2565,8 +2615,16 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
           );
           oldLine++;
         }
-      });
-    });
+      }
+    }
+
+    if (wasTruncated) {
+      lineElements.push(
+        <div key="trunc-msg" style={{ padding: '8px 16px', color: '#71717a', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
+          ... [Remaining lines truncated for performance]
+        </div>
+      );
+    }
 
     return lineElements;
   };
@@ -3033,6 +3091,10 @@ function FilePreviewOverlay({
 }) {
   const ext = filePath.split('.').pop() || 'text';
   const lines = (content || '').split('\n');
+  const MAX_PREVIEW_LINES = 1000;
+  const truncated = lines.length > MAX_PREVIEW_LINES;
+  const linesToRender = truncated ? lines.slice(0, MAX_PREVIEW_LINES) : lines;
+
   return (
     <div style={{
       position: 'absolute',
@@ -3066,12 +3128,21 @@ function FilePreviewOverlay({
       <div style={{ flex: 1, overflow: 'auto', fontFamily: T.mono, fontSize: 12.5, lineHeight: '20px', padding: '12px 0' }}>
         {content == null ? (
           <div style={{ padding: 18, color: '#7c7c7c' }}>Unable to preview this file.</div>
-        ) : lines.map((line, idx) => (
-          <div key={idx} style={{ display: 'flex', minWidth: 'fit-content' }}>
-            <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: 'var(--color-text-tertiary)', userSelect: 'none' }}>{idx + 1}</span>
-            <pre style={{ margin: 0, paddingRight: 18, color: 'var(--color-border)', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
-          </div>
-        ))}
+        ) : (
+          <>
+            {linesToRender.map((line, idx) => (
+              <div key={idx} style={{ display: 'flex', minWidth: 'fit-content' }}>
+                <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: 'var(--color-text-tertiary)', userSelect: 'none' }}>{idx + 1}</span>
+                <pre style={{ margin: 0, paddingRight: 18, color: 'var(--color-border)', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
+              </div>
+            ))}
+            {truncated && (
+              <div style={{ padding: '8px 16px 8px 64px', color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
+                ... [Remaining {lines.length - MAX_PREVIEW_LINES} lines truncated for performance]
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -3163,10 +3234,10 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
       setToolData(extracted);
     } catch { setError('Failed to load details'); }
     setIsLoading(false);
-  // toolCall?.id changes when a different tool call is selected.
-  // toolCall?.output changes when an in-progress tool call finishes.
-  // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // toolCall?.id changes when a different tool call is selected.
+    // toolCall?.output changes when an in-progress tool call finishes.
+    // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, toolCall?.id, toolCall?.output]);
 
   useEffect(() => {
@@ -3263,8 +3334,8 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
         setToolData(extracted);
       }
     } catch { /* silently ignore mid-stream parse errors */ }
-  // subAgentProgressVersion is a cheap counter that increments on each new event batch
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // subAgentProgressVersion is a cheap counter that increments on each new event batch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subAgentProgressVersion, toolCall?.id, isOpen, toolType]);
 
   // Async disk-path screenshot loader: fires when toolData contains screenshots that have a
@@ -3309,8 +3380,8 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     })();
 
     return () => { cancelled = true; };
-  // Only fire when the set of path-only screenshots changes (toolData ref change on restore)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only fire when the set of path-only screenshots changes (toolData ref change on restore)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolData?.toolCallId, isOpen, toolType]);
 
   // Poll for live terminal output if the command is still running

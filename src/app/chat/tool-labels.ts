@@ -280,6 +280,22 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       ), label, color: '#06b6d4' };
     }
 
+    case 'grep':
+    case 'grep_search': {
+      const pattern = typeof args?.pattern === 'string' ? args.pattern.trim()
+        : typeof args?.query === 'string' ? args.query.trim()
+        : typeof args?.search === 'string' ? args.search.trim() : '';
+      const searchPath = typeof args?.path === 'string' ? basename(args.path) : '';
+      const label = pattern
+        ? `Searching "${truncate(pattern, 40)}"${searchPath ? ` in ${truncate(searchPath, 30)}` : ''}`
+        : 'Searching files';
+      return {
+        icon: React.createElement(MagnifyingGlassIcon, { width: 16, height: 16 }),
+        label,
+        color: '#8b5cf6'
+      };
+    }
+
     default: {
       const cleaned = toolName.replace(/_/g, ' ').trim();
       const label = cleaned ? capitalize(cleaned) : 'Running tool';

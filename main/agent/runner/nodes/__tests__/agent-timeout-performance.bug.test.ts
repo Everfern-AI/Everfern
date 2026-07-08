@@ -29,6 +29,49 @@ vi.mock('../../services/message-utils', () => ({
   normalizeMessages: (msgs: any[]) => msgs || [],
 }));
 
+vi.mock('../../../../persistence/checkpoint-engine', () => ({
+  getCheckpointEngine: () => ({
+    createCheckpoint: vi.fn(),
+    getLatestCheckpoint: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../../../lib/db', () => ({
+  dbOps: {},
+}));
+
+vi.mock('../../../../personality-manager', () => ({
+  loadSoul: vi.fn().mockReturnValue(''),
+  loadAgents: vi.fn().mockReturnValue(''),
+}));
+
+vi.mock('../../../../../lib/prompt-sync', () => ({
+  loadPrompt: vi.fn().mockReturnValue(''),
+}));
+
+vi.mock('../../services/agent-runtime', () => ({
+  runAgentStep: vi.fn(),
+}));
+
+vi.mock('../../runner', () => ({
+  AgentRunner: class {},
+}));
+
+vi.mock('../../../../../lib/ai-client', () => ({}));
+
+vi.mock('../../abort-manager', () => ({
+  globalAbortManager: {
+    abortController: { signal: {} }
+  }
+}));
+
+vi.mock('../../services/node-utils', () => ({
+  nodeLifecycle: {
+    onNodeStart: vi.fn(),
+    onNodeEnd: vi.fn(),
+  }
+}));
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('Bug Condition Exploration — Agent Timeout Performance Degradation (FIXED)', () => {

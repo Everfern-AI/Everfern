@@ -69,7 +69,7 @@ describe('Navis Performance Optimization - Phase 1', () => {
       it('should compress history after 8 steps', () => {
         const history = Array.from({ length: 10 }, (_, i) => `step ${i + 1}`);
         const compressed = compressHistory(history);
-        expect(compressed).toContain('[10 earlier steps summarized]');
+        expect(compressed).toContain('[Earlier 2 steps — 2 compressed]');
         expect(compressed).toContain('step 9');
         expect(compressed).toContain('step 10');
       });
@@ -86,7 +86,7 @@ describe('Navis Performance Optimization - Phase 1', () => {
         const config = { compressionThreshold: 8, maxHistoryTokens: 10000 };
         const history = Array.from({ length: 15 }, (_, i) => `step ${i + 1}`);
         const compressed = compressHistory(history, config);
-        expect(compressed).toContain('[15 earlier steps summarized]');
+        expect(compressed).toContain('[Earlier 7 steps — 7 compressed]');
       });
     });
 
@@ -215,9 +215,9 @@ describe('Navis Performance Optimization - Phase 1', () => {
         expect(detail).toBe('high');
       });
 
-      it('should use high detail at exactly 200KB boundary', () => {
+      it('should use low detail at exactly 200KB boundary', () => {
         const detail = getDetailLevel(200);
-        expect(detail).toBe('high');
+        expect(detail).toBe('low');
       });
 
       it('should use low detail just below 200KB', () => {

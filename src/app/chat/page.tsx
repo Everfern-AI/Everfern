@@ -601,9 +601,42 @@ const isNavisQuestion = (questions: any[]) => {
 };
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
+function EverFernCloudLimitNotice() {
+    return (
+        <div style={{
+            marginTop: 4,
+            padding: 18,
+            borderRadius: 16,
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-bg-subtle)',
+            display: 'flex',
+            gap: 14,
+            alignItems: 'flex-start',
+            maxWidth: 560,
+        }}>
+            <div style={{
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18,
+            }}>🌿</div>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+                    You've reached your EverFern Cloud daily limit
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.6 }}>
+                    EverFern Cloud gives you managed access to our AI models with a daily usage allowance.
+                    You've used today's allowance — it resets automatically at midnight. In the meantime you can
+                    switch to your own API key in Settings to keep going, or check your usage details there.
+                </p>
+            </div>
+        </div>
+    );
+}
+
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
+    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const lastAssistantIdx = useMemo(() => {
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i].role === 'assistant') {
@@ -636,8 +669,51 @@ export default function ChatPage() {
     const [showTasksPanel, setShowTasksPanel] = useState(false);
     const [panelTasks, setPanelTasks] = useState<{ description: string; status: 'pending' | 'in_progress' | 'completed' }[]>([]);
     const [tasksFilePath, setTasksFilePath] = useState<string | undefined>(undefined);
+    
+    // Poll for task.md to update TasksPanel
+    useEffect(() => {
+        if (!activeConversationId) {
+            setPanelTasks([]);
+            return;
+        }
+        const fetchTasks = async () => {
+            try {
+                const content = await (window as any).electronAPI?.artifacts?.read(activeConversationId, 'task.md');
+                if (content) {
+                    const lines = content.split('\n');
+                    const newTasks: { description: string; status: 'pending' | 'in_progress' | 'completed' }[] = [];
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        let match = trimmed.match(/^- `?\[ \]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'pending' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[\/\]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'in_progress' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[[xX]\]?`?\s+(.+)/);
+                        if (match) {
+                            newTasks.push({ description: match[1], status: 'completed' });
+                            continue;
+                        }
+                    }
+                    if (newTasks.length > 0) {
+                        setPanelTasks(newTasks);
+                    }
+                }
+            } catch (e) {
+                // Ignored (file might not exist)
+            }
+        };
+        fetchTasks();
+        const interval = setInterval(fetchTasks, 4000);
+        return () => clearInterval(interval);
+    }, [activeConversationId]);
+
     const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
-    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const availableModelsRef = useRef<ModelOption[]>([]);
@@ -737,9 +813,10 @@ export default function ChatPage() {
 
     const mapToolCallForDetail = (tc: ToolCallDisplay) => {
         // Collect any real-time screenshots from subAgentProgress events
-        const progressEvents = subAgentProgressRef.current.get(tc.id) || tc.subAgentProgress || [];
+        const baseEvents = subAgentProgressRef.current.get(tc.id) || tc.subAgentProgress || [];
+        const progressEvents = Array.isArray(baseEvents) ? baseEvents : [];
         const progressScreenshots = progressEvents
-            .filter(e => e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
+            .filter(e => e && e.type === 'screenshot' && (e.screenshot?.base64 || e.content))
             .map(e => (e.screenshot?.base64 || e.content) as string);
 
         // Combine static screenshot and live streamed screenshots
@@ -764,6 +841,17 @@ export default function ChatPage() {
 
         const finalScreenshots = screenshotData.slice(-12);
 
+        // Extract live navisReport from most recent progress event that has it
+        const latestNavisReportEvent = progressEvents
+            .slice()
+            .reverse()
+            .find((e: any) => e && (e.navisReport || e.data?.navisReport));
+        const navisReport: string | undefined =
+            (latestNavisReportEvent as any)?.navisReport ||
+            (latestNavisReportEvent as any)?.data?.navisReport ||
+            tc.data?.navisReport ||
+            undefined;
+
         // Construct toolCall structure expected by ToolDetailSidePanel
         return {
             id: tc.id,
@@ -772,6 +860,7 @@ export default function ChatPage() {
             output: tc.output || '',
             duration: tc.durationMs,
             status: tc.status,
+            navisReport,
             data: {
                 ...tc.data,
                 screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,
@@ -896,15 +985,7 @@ export default function ChatPage() {
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        const style = document.createElement('style');
-        style.textContent = `
-            .token-ring-tooltip { opacity: 0 !important; transition: opacity 0.15s ease !important; }
-            div:hover > .token-ring-tooltip { opacity: 1 !important; }
-        `;
-        document.head.appendChild(style);
-        return () => { document.head.removeChild(style); };
-    }, []);
+
 
     // ── EverFern Dispatch: receive commands from the web UI ───────────────────
     // When a command arrives from the web via Dispatch, we inject it into the
@@ -1182,7 +1263,7 @@ export default function ChatPage() {
     const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
     const [lastEventJson, setLastEventJson] = useState<string>("");
     const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number }>({ used: 0, max: 128000 });
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
@@ -1802,7 +1883,7 @@ export default function ChatPage() {
     // Update context tokens based on messages (fallback when no real usage data)
     useEffect(() => {
         if (messages.length === 0) {
-            setContextTokens({ used: 0, max: 128000 });
+            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
             return;
         }
 
@@ -1839,7 +1920,7 @@ export default function ChatPage() {
         // Add overhead for message format (~10% overhead)
         const totalTokens = Math.ceil(totalChars * 1.1);
 
-        setContextTokens({ used: totalTokens, max: 128000 });
+        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens });
     }, [messages, inputValue]);
 
 
@@ -2806,7 +2887,7 @@ export default function ChatPage() {
                     setStreamingThought(streamingThoughtRef.current);
                 }
             });
-            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 // Calculate pricing using model info if available
                 if (modelInfo) {
@@ -2819,7 +2900,14 @@ export default function ChatPage() {
                 }
 
                 hasReceivedUsageData.current = true;
-                setContextTokens({ used: totalTokens, max: 128000 });
+                const sysTokens = systemPromptTokens ?? 0;
+                const chatHistTokens = Math.max(0, (promptTokens || 0) - sysTokens);
+                setContextTokens({
+                    used: totalTokens,
+                    max: 128000,
+                    systemTokens: sysTokens,
+                    chatTokens: chatHistTokens + completionTokens
+                });
             });
             acpApi.onSurfaceAction((data: any) => {
                 if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
@@ -3450,7 +3538,7 @@ export default function ChatPage() {
                         }
                     }
                 });
-                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string }) => {
+                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
 
@@ -3465,7 +3553,14 @@ export default function ChatPage() {
                     }
 
                     hasReceivedUsageData.current = true;
-                    setContextTokens({ used: totalTokens, max: 128000 });
+                    const sysTokens = systemPromptTokens ?? 0;
+                    const chatHistTokens = Math.max(0, (promptTokens || 0) - sysTokens);
+                    setContextTokens({
+                        used: totalTokens,
+                        max: 128000,
+                        systemTokens: sysTokens,
+                        chatTokens: chatHistTokens + completionTokens
+                    });
                 });
                 api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
@@ -3809,6 +3904,7 @@ export default function ChatPage() {
                 isMessageCommittedRef.current = true;
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 api?.removeStreamListeners?.();
+                const isLimitReached = /daily limit|daily_limit_reached|rate_limit_exceeded|used your daily/i.test(errorMessage);
                 const finalToolCalls = persistableToolCalls(
                     liveToolCallsRef.current,
                     t => t.status === 'running' ? 'error' : undefined
@@ -3816,12 +3912,15 @@ export default function ChatPage() {
                 const assistantMsg: Message = {
                     id: crypto.randomUUID(),
                     role: "assistant",
-                    content: streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`,
+                    content: isLimitReached
+                        ? (streamingContentRef.current || "")
+                        : (streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`),
                     thought: streamingThoughtRef.current,
                     reasoning_content: streamingThoughtRef.current,
                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                     timestamp: new Date(),
                     missionTimeline: missionTimelineRef.current,
+                    limitReached: isLimitReached || undefined,
                 };
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
@@ -4194,9 +4293,9 @@ export default function ChatPage() {
             <AnimatePresence>
                 {showModelSelector && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
-                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 240, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
+                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
                         <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
-                        <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                        <div style={{ maxHeight: 320, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}>
                             {availableModels.map(model => {
                                 const isDisabled = model.id.endsWith('-error') || model.id.endsWith('-empty');
                                 return (
@@ -4218,7 +4317,7 @@ export default function ChatPage() {
                                         onMouseLeave={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "transparent"; }}
                                     >
                                         {model.logo ? <model.logo size={14} /> : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
-                                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{model.name}</span>
+                                        <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{model.name}</span>
                                         {selectedModel === model.id && <CheckSolidIcon width={14} height={14} className="text-indigo-400" />}
                                     </button>
                                 );
@@ -4252,7 +4351,7 @@ export default function ChatPage() {
               const sessionStr = localStorage.getItem('everfern_cloud_session');
               if (sessionStr) {
                 const session = JSON.parse(sessionStr);
-                finalCloudKey = session.accessToken;
+                finalCloudKey = session?.accessToken;
               }
             } catch (e) {}
           }
@@ -4442,11 +4541,14 @@ export default function ChatPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {/* Context Token Ring */}
             <ContextTokenRing
-                used={contextTokens.used}
+                used={contextTokens.used + currentTokens}
                 max={contextTokens.max}
                 modelInfo={modelInfo}
                 estimatedCost={estimatedCost}
                 isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
+                systemTokens={contextTokens.systemTokens}
+                chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
+                modelName={selectedModel || currentModel.id || currentModel.name}
             />
 
             {renderModelSelector(true)}
@@ -5375,6 +5477,7 @@ export default function ChatPage() {
 
                                                                             </div>
                                                                         ) : null}
+                                                                        {msg.limitReached && <EverFernCloudLimitNotice />}
                                                                         {artifacts.map((art, i) => {
                                                                             const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                             const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);

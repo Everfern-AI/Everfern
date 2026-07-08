@@ -10,6 +10,7 @@
 !.yarn/releases
 !.yarn/versions
 .kiro/
+package/
 cli/node_modules
 # testing
 /coverage

@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Copy, Check, ChevronDown, Code2, Zap, AlertCircle,
-  Clock, CheckCircle, AlertTriangle, ArrowRight
+  Clock, CheckCircle, AlertTriangle, ArrowRight, FileText, Loader2
 } from 'lucide-react';
 
 /* ============================================================
@@ -22,6 +22,7 @@ export interface ToolCallDetail {
   error?: string;
   agent?: string;
   duration?: number;
+  navisReport?: string;
 }
 
 const T = {
@@ -100,7 +101,12 @@ function CopyButton({ text }: { text: string }) {
 
 function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const jsonStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const jsonStrRaw = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const MAX_JSON_LENGTH = 30000;
+  const isTruncated = jsonStrRaw.length > MAX_JSON_LENGTH;
+  const jsonStr = isTruncated
+    ? jsonStrRaw.substring(0, MAX_JSON_LENGTH) + `\n\n... [JSON truncated for performance. Total size: ${jsonStrRaw.length} bytes]`
+    : jsonStrRaw;
   const isLarge = jsonStr.length > 500;
 
   return (
@@ -111,7 +117,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
         borderRadius: T.r8,
         fontFamily: T.mono,
         fontSize: 11,
-        color: '#2d2d2a',
+        color: T.text,
         overflow: 'hidden',
       }}
     >
@@ -210,6 +216,173 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 /* ============================================================
+   NAVIS REPORT VIEWER
+   ============================================================ */
+
+function NavisReportViewer({ report, isRunning }: { report: string; isRunning: boolean }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [displayedReport, setDisplayedReport] = useState(report);
+
+  // Stream in new content smoothly: just keep synced, auto-scroll
+  useEffect(() => {
+    setDisplayedReport(report);
+    if (isRunning) {
+      // Small delay so DOM has painted before scrolling
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+    }
+  }, [report, isRunning]);
+
+  // Parse markdown into styled sections
+  const renderMarkdown = (text: string) => {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeLines: string[] = [];
+    let codeLang = '';
+
+    const flushCode = (key: number) => {
+      elements.push(
+        <div key={`code-${key}`} style={{
+          background: '#0d1117',
+          border: '1px solid #30363d',
+          borderRadius: 8,
+          padding: '12px 16px',
+          marginBottom: 10,
+          fontFamily: '"Geist Mono", ui-monospace, monospace',
+          fontSize: 11.5,
+          lineHeight: 1.7,
+          color: '#e6edf3',
+          overflowX: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}>
+          {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+          {codeLines.join('\n')}
+        </div>
+      );
+      codeLines = [];
+      codeLang = '';
+    };
+
+    lines.forEach((line, idx) => {
+      if (line.startsWith('```')) {
+        if (inCodeBlock) {
+          flushCode(idx);
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+          codeLang = line.slice(3).trim();
+        }
+        return;
+      }
+
+      if (inCodeBlock) {
+        codeLines.push(line);
+        return;
+      }
+
+      // H1
+      if (line.startsWith('# ')) {
+        elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', margin: '0 0 12px', fontFamily: '"Geist", ui-sans-serif, sans-serif', borderBottom: '1px solid #21262d', paddingBottom: 8 }}>{line.slice(2)}</h1>);
+        return;
+      }
+      // H2
+      if (line.startsWith('## ')) {
+        elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: '#58a6ff', margin: '16px 0 8px', fontFamily: '"Geist", ui-sans-serif, sans-serif', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
+        return;
+      }
+      // H3  
+      if (line.startsWith('### ')) {
+        elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: '#79c0ff', margin: '12px 0 6px', fontFamily: '"Geist", ui-sans-serif, sans-serif', display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: '#30363d' }}>◆</span>{line.slice(4)}</h3>);
+        return;
+      }
+      // Bullet with bold key
+      if (line.startsWith('- ') || line.startsWith('* ')) {
+        const content = line.slice(2);
+        // Render inline bold (**text**)
+        const parts = content.split(/\*\*(.+?)\*\*/);
+        const rendered = parts.map((part, pi) =>
+          pi % 2 === 1
+            ? <span key={pi} style={{ color: '#e6edf3', fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: '#8b949e' }}>{part}</span>
+        );
+        elements.push(
+          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: '"Geist Mono", monospace' }}>
+            <span style={{ color: '#58a6ff', flexShrink: 0, marginTop: 1 }}>›</span>
+            <span>{rendered}</span>
+          </div>
+        );
+        return;
+      }
+      // Bold **Status** lines
+      if (line.includes('**')) {
+        const parts = line.split(/\*\*(.+?)\*\*/);
+        const rendered = parts.map((part, pi) =>
+          pi % 2 === 1
+            ? <span key={pi} style={{ color: '#e6edf3', fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: '#8b949e' }}>{part}</span>
+        );
+        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: '"Geist Mono", monospace' }}>{rendered}</div>);
+        return;
+      }
+      // Empty line
+      if (line.trim() === '') {
+        elements.push(<div key={idx} style={{ height: 6 }} />);
+        return;
+      }
+      // Normal text
+      elements.push(<div key={idx} style={{ fontSize: 12, color: '#8b949e', lineHeight: 1.6, fontFamily: '"Geist Mono", monospace', marginBottom: 2 }}>{line}</div>);
+    });
+
+    if (inCodeBlock && codeLines.length > 0) flushCode(lines.length);
+    return elements;
+  };
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#010409' }}>
+      {/* Status bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 16px',
+        borderBottom: '1px solid #21262d',
+        background: '#0d1117',
+        flexShrink: 0,
+      }}>
+        <FileText size={12} color="#58a6ff" />
+        <span style={{ fontSize: 11, color: '#8b949e', fontFamily: '"Geist", sans-serif', flex: 1 }}>Navis Execution Report</span>
+        {isRunning ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(56,139,253,0.1)', border: '1px solid rgba(56,139,253,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+            <Loader2 size={10} color="#58a6ff" style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 10, color: '#58a6ff', fontFamily: '"Geist", sans-serif', fontWeight: 600 }}>Writing...</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(46,160,67,0.1)', border: '1px solid rgba(46,160,67,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+            <CheckCircle size={10} color="#3fb950" />
+            <span style={{ fontSize: 10, color: '#3fb950', fontFamily: '"Geist", sans-serif', fontWeight: 600 }}>Complete</span>
+          </div>
+        )}
+      </div>
+
+      {/* Report content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px', scrollBehavior: 'smooth' }}>
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }`}</style>
+        {displayedReport
+          ? renderMarkdown(displayedReport)
+          : <div style={{ color: '#8b949e', fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: '"Geist", sans-serif' }}>Waiting for Navis to start...</div>
+        }
+        {/* Blinking cursor when running */}
+        {isRunning && (
+          <span style={{ display: 'inline-block', width: 8, height: 14, background: '#58a6ff', borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    TOOL CALL DETAIL PANE
    ============================================================ */
 
@@ -220,7 +393,9 @@ export function ToolCallDetailPane({
   toolCall: ToolCallDetail;
   onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'input' | 'output' | 'timeline'>('input');
+  const isNavis = toolCall.toolName === 'navis' || toolCall.toolName?.toLowerCase().includes('navis');
+  const defaultTab = isNavis ? 'report' : 'input';
+  const [activeTab, setActiveTab] = useState<'report' | 'input' | 'output' | 'timeline'>(defaultTab as any);
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
   const toolNameLower = toolCall.toolName.toLowerCase();
   const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
@@ -247,7 +422,7 @@ export function ToolCallDetailPane({
       {/* Header */}
       <div
         style={{
-          padding: '16px 20px',
+          padding: '20px 24px',
           borderBottom: `1px solid ${T.border}`,
           background: T.surface,
           display: 'flex',
@@ -314,11 +489,11 @@ export function ToolCallDetailPane({
       {/* Meta Info */}
       <div
         style={{
-          padding: '12px 20px',
+          padding: '16px 24px',
           borderBottom: `1px solid ${T.border}`,
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 8,
+          gap: 12,
         }}
       >
         {[
@@ -362,16 +537,16 @@ export function ToolCallDetailPane({
               display: 'flex',
               borderBottom: `1px solid ${T.border}`,
               background: T.surface,
-              padding: '0 20px',
+              padding: '0 24px',
               gap: 0,
             }}
           >
-            {['input', 'output', 'timeline'].map((tab) => (
+            {(isNavis ? ['report', 'input', 'output', 'timeline'] : ['input', 'output', 'timeline']).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 style={{
-                  padding: '12px 16px',
+                  padding: '14px 18px',
                   fontSize: 12,
                   fontWeight: 600,
                   color: activeTab === tab ? T.text : T.textMuted,
@@ -382,16 +557,29 @@ export function ToolCallDetailPane({
                   fontFamily: T.sans,
                   transition: 'all 0.2s',
                   textTransform: 'capitalize',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
                 }}
               >
+                {tab === 'report' && <FileText size={11} />}
                 {tab}
               </button>
             ))}
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+          <div style={{ flex: 1, overflowY: activeTab === 'report' ? 'hidden' : 'auto', padding: activeTab === 'report' ? 0 : '22px 26px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <AnimatePresence mode="wait">
+              {activeTab === 'report' && (
+                <motion.div key="report" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+                  <NavisReportViewer
+                    report={toolCall.navisReport || ''}
+                    isRunning={toolCall.status === 'executing' || toolCall.status === 'pending'}
+                  />
+                </motion.div>
+              )}
+
               {activeTab === 'input' && (
                 <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   <div style={{ marginBottom: 12 }}>
@@ -745,70 +933,88 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
       >
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <tbody>
-            {codeLines.map((line, idx) => {
-              const isAdded = line.type === 'added';
-              const isRemoved = line.type === 'removed';
-              const rowBg = isAdded 
-                ? 'rgba(46, 160, 67, 0.15)' 
-                : isRemoved 
-                  ? 'rgba(248, 81, 112, 0.15)' 
-                  : 'transparent';
-              
-              const textColor = isAdded 
-                ? '#4ade80' 
-                : isRemoved 
-                  ? '#f87171' 
-                  : '#8b949e';
+            {(() => {
+              const MAX_PREVIEW_LINES = 1000;
+              const truncated = codeLines.length > MAX_PREVIEW_LINES;
+              const linesToRender = truncated ? codeLines.slice(0, MAX_PREVIEW_LINES) : codeLines;
 
-              const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+              const elements = linesToRender.map((line, idx) => {
+                const isAdded = line.type === 'added';
+                const isRemoved = line.type === 'removed';
+                const rowBg = isAdded 
+                  ? 'rgba(46, 160, 67, 0.15)' 
+                  : isRemoved 
+                    ? 'rgba(248, 81, 112, 0.15)' 
+                    : 'transparent';
+                
+                const textColor = isAdded 
+                  ? '#4ade80' 
+                  : isRemoved 
+                    ? '#f87171' 
+                    : '#8b949e';
 
-              return (
-                <tr 
-                  key={idx} 
-                  style={{ 
-                    background: rowBg,
-                    transition: 'background 0.1s',
-                  }}
-                >
-                  <td
-                    style={{
-                      width: 45,
-                      textAlign: 'right',
-                      paddingRight: 12,
-                      color: '#484f58',
-                      userSelect: 'none',
-                      borderRight: '1px solid #21262d',
-                      fontSize: 11,
+                const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+
+                return (
+                  <tr 
+                    key={idx} 
+                    style={{ 
+                      background: rowBg,
+                      transition: 'background 0.1s',
                     }}
                   >
-                    {idx + 1}
-                  </td>
-                  <td
-                    style={{
-                      width: 24,
-                      textAlign: 'center',
-                      color: textColor,
-                      fontWeight: 'bold',
-                      userSelect: 'none',
-                      fontSize: 12,
-                    }}
-                  >
-                    {prefix}
-                  </td>
-                  <td
-                    style={{
-                      paddingLeft: 8,
-                      paddingRight: 16,
-                      color: textColor,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {line.text}
-                  </td>
-                </tr>
-              );
-            })}
+                    <td
+                      style={{
+                        width: 45,
+                        textAlign: 'right',
+                        paddingRight: 12,
+                        color: '#484f58',
+                        userSelect: 'none',
+                        borderRight: '1px solid #21262d',
+                        fontSize: 11,
+                      }}
+                    >
+                      {idx + 1}
+                    </td>
+                    <td
+                      style={{
+                        width: 24,
+                        textAlign: 'center',
+                        color: textColor,
+                        fontWeight: 'bold',
+                        userSelect: 'none',
+                        fontSize: 12,
+                      }}
+                    >
+                      {prefix}
+                    </td>
+                    <td
+                      style={{
+                        paddingLeft: 8,
+                        paddingRight: 16,
+                        color: textColor,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {line.text}
+                    </td>
+                  </tr>
+                );
+              });
+
+              if (truncated) {
+                elements.push(
+                  <tr key="trunc-msg" style={{ background: 'transparent' }}>
+                    <td colSpan={3} style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
+                      ... [Remaining {codeLines.length - MAX_PREVIEW_LINES} lines truncated for performance]
+                    </td>
+                  </tr>
+                );
+              }
+
+              return elements;
+            })()}
           </tbody>
         </table>
       </div>

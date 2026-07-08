@@ -18,6 +18,7 @@ import {
     ServerIcon,
     WrenchScrewdriverIcon,
     CircleStackIcon,
+    ComputerDesktopIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import Image from 'next/image';
@@ -45,6 +46,7 @@ const navSections = [
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
     { id: 'privacy', label: 'Privacy & Data', icon: ShieldCheckIcon },
     { id: 'dispatch', label: 'EverFern Dispatch', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>📡</span> },
+    { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon },
     { id: 'help', label: 'Help & Architecture', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>❓</span> },
 ];
 
@@ -258,6 +260,115 @@ const RegisteredToolsList = () => {
         </div>
     );
 };
+const LinuxVMSection = () => {
+    const { theme } = useTheme();
+    const [wslStatus, setWslStatus] = useState<{ installed: boolean | null; healthy: boolean | null; osName?: string; uptime?: string }>({ installed: null, healthy: null });
+    const [isInstalling, setIsInstalling] = useState(false);
+    const [installError, setInstallError] = useState('');
+    const [installWarning, setInstallWarning] = useState('');
+
+    useEffect(() => {
+        const check = async () => {
+            try {
+                const isInstalled = await (window as any).electronAPI?.system?.checkWSL?.();
+                if (isInstalled) {
+                    const info = await (window as any).electronAPI?.system?.getWSLInfo?.();
+                    setWslStatus({ installed: true, healthy: info?.healthy, osName: info?.osName, uptime: info?.uptime });
+                } else {
+                    setWslStatus({ installed: false, healthy: null });
+                }
+            } catch (e) {
+                console.error('Failed to check WSL', e);
+                setWslStatus({ installed: false, healthy: null });
+            }
+        };
+        check();
+    }, []);
+
+    const handleInstall = async () => {
+        setIsInstalling(true);
+        setInstallError('');
+        setInstallWarning('');
+        try {
+            const res = await (window as any).electronAPI?.system?.installWSL?.();
+            if (res?.success) {
+                setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Just now' });
+                if (res.warning) setInstallWarning(res.warning);
+            } else {
+                setInstallError(res?.error || 'Failed to install Linux VM.');
+            }
+        } catch (e: any) {
+            setInstallError(e.message || 'Unknown error occurred.');
+        } finally {
+            setIsInstalling(false);
+        }
+    };
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <SectionTitle>Linux VM Settings</SectionTitle>
+            <SectionSubtitle>Manage the local Linux virtual machine (WSL) used by EverFern for advanced tasks and code execution.</SectionSubtitle>
+
+            <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                            <ComputerDesktopIcon width={20} height={20} style={{ color: 'var(--color-text-secondary)' }} />
+                            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Linux Subsystem</h3>
+                            {wslStatus.installed === null ? (
+                                <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Checking...</span>
+                            ) : wslStatus.installed ? (
+                                <span style={{ fontSize: 12, fontWeight: 600, color: wslStatus.healthy ? '#10b981' : '#f59e0b', padding: '2px 8px', backgroundColor: wslStatus.healthy ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', borderRadius: 12 }}>
+                                    {wslStatus.healthy ? 'Healthy' : 'Unresponsive'}
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#ef4444', padding: '2px 8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 12 }}>Not Installed</span>
+                            )}
+                        </div>
+                        <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: 0 }}>
+                            {wslStatus.installed === false 
+                                ? 'A Linux VM is required for many tools to function properly on Windows.'
+                                : wslStatus.osName ? `OS: ${wslStatus.osName}` : 'Virtual machine environment'}
+                        </p>
+                        {wslStatus.uptime && (
+                            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '4px 0 0 0' }}>
+                                Uptime: {wslStatus.uptime}
+                            </p>
+                        )}
+                    </div>
+
+                    {wslStatus.installed === false && (
+                        <button
+                            onClick={handleInstall}
+                            disabled={isInstalling}
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: theme === 'dark' ? '#000000' : 'var(--color-text-primary)',
+                                color: theme === 'dark' ? '#ffffff' : 'var(--color-bg-primary)',
+                                border: theme === 'dark' ? '1px solid var(--color-border)' : 'none',
+                                borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: isInstalling ? 'not-allowed' : 'pointer',
+                                opacity: isInstalling ? 0.7 : 1, transition: 'opacity 0.2s'
+                            }}
+                        >
+                            {isInstalling ? 'Installing...' : 'Install Linux VM'}
+                        </button>
+                    )}
+                </div>
+                
+                {installError && (
+                    <div style={{ marginTop: 12, padding: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 8 }}>
+                        <p style={{ fontSize: 13, color: '#ef4444', margin: 0, fontWeight: 500 }}>{installError}</p>
+                    </div>
+                )}
+                {installWarning && (
+                    <div style={{ marginTop: 12, padding: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: 8 }}>
+                        <p style={{ fontSize: 13, color: '#f59e0b', margin: 0, fontWeight: 500 }}>{installWarning}</p>
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+};
 
 const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
     const [status, setStatus] = useState<'idle' | 'pending' | 'connected' | 'error'>('idle');
@@ -272,7 +383,13 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
         const fetchSessionsAndRestore = async () => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) return;
-            const session = JSON.parse(sessionStr);
+            let session;
+            try {
+                session = JSON.parse(sessionStr);
+            } catch {
+                return;
+            }
+            if (!session?.accessToken) return;
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
             
             // 1. Fetch existing sessions
@@ -327,6 +444,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) throw new Error("No cloud session found");
             const session = JSON.parse(sessionStr);
+            if (!session?.accessToken) throw new Error("No access token found");
             
             const res = await (window as any).electronAPI?.system?.startDispatch?.({ 
                 sessionId: newSessionId, 
@@ -369,6 +487,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (!sessionStr) return;
             const session = JSON.parse(sessionStr);
+            if (!session?.accessToken) return;
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app';
 
             await fetch(`${apiUrl.replace(/\/$/, '')}/api/dispatch/session/${id}`, {
@@ -699,6 +818,14 @@ export default function SettingsPage({
     const [preferences, setPreferences] = useState('');
     const [isCloudUser, setIsCloudUser] = useState(false);
     const [cloudEmail, setCloudEmail] = useState('');
+    const [cloudUsage, setCloudUsage] = useState<{
+        dailyUsed: number;
+        dailyLimit: number;
+        inputTokensUsed: number;
+        inputTokenLimit: number;
+        outputTokensUsed: number;
+        outputTokenLimit: number;
+    } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; url?: string } | null>(null);
@@ -732,8 +859,10 @@ export default function SettingsPage({
             const sessionStr = localStorage.getItem('everfern_cloud_session');
             if (sessionStr) {
                 const session = JSON.parse(sessionStr);
-                setIsCloudUser(true);
-                setCloudEmail(session.user?.email || '');
+                if (session?.user) {
+                    setIsCloudUser(true);
+                    setCloudEmail(session.user?.email || '');
+                }
             }
         } catch (e) {}
     }, []);
@@ -743,6 +872,34 @@ export default function SettingsPage({
         localStorage.removeItem('everfern_auth_token');
         router.push('/auth');
     };
+
+    useEffect(() => {
+        if (!isCloudUser) return;
+        const fetchUsage = async () => {
+            try {
+                const sessionStr = localStorage.getItem('everfern_cloud_session');
+                if (!sessionStr) return;
+                const session = JSON.parse(sessionStr);
+                const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app').replace(/\/$/, '');
+                const res = await fetch(`${apiUrl}/api/user/me`, {
+                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                setCloudUsage({
+                    dailyUsed: data.dailyUsed ?? 0,
+                    dailyLimit: data.dailyLimit ?? 0,
+                    inputTokensUsed: data.inputTokensUsed ?? 0,
+                    inputTokenLimit: data.inputTokenLimit ?? 0,
+                    outputTokensUsed: data.outputTokensUsed ?? 0,
+                    outputTokenLimit: data.outputTokenLimit ?? 0,
+                });
+            } catch (e) {
+                console.error('Failed to fetch cloud usage', e);
+            }
+        };
+        fetchUsage();
+    }, [isCloudUser]);
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -1010,6 +1167,38 @@ export default function SettingsPage({
                                 Sign Out
                             </button>
                         </div>
+                        {cloudUsage && (
+                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--color-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Daily usage</span>
+                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{cloudUsage.dailyUsed} / {cloudUsage.dailyLimit} credits</span>
+                                </div>
+                                <div style={{ width: '100%', height: 6, backgroundColor: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        width: `${cloudUsage.dailyLimit ? Math.min(100, (cloudUsage.dailyUsed / cloudUsage.dailyLimit) * 100) : 0}%`,
+                                        height: '100%',
+                                        backgroundColor: (cloudUsage.dailyLimit && cloudUsage.dailyUsed / cloudUsage.dailyLimit >= 1) ? '#ef4444' : '#10b981',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: 24, marginTop: 16 }}>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Input tokens</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            {cloudUsage.inputTokensUsed.toLocaleString()} / {cloudUsage.inputTokenLimit.toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Output tokens</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            {cloudUsage.outputTokensUsed.toLocaleString()} / {cloudUsage.outputTokenLimit.toLocaleString()}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '14px 0 0' }}>Usage resets daily at midnight.</p>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div style={{ marginTop: 24, padding: 20, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 16 }}>
@@ -1083,17 +1272,40 @@ export default function SettingsPage({
                 })}
             </div>
 
-            {/* Local URL */}
+            {/* Local Models Settings */}
             <AnimatePresence initial={false}>
                 {settingsEngine === 'local' && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
                         <Card>
+                            <Label>Local Provider</Label>
+                            <Select 
+                                value={settingsProvider || 'ollama'}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSettingsProvider(val);
+                                    if (val === 'lmstudio') setSettingsApiKey('http://localhost:1234/v1');
+                                    else if (val === 'ollama') setSettingsApiKey('http://localhost:11434');
+                                }}
+                                style={{ marginBottom: 16 }}
+                            >
+                                <option value="ollama">Ollama (Default)</option>
+                                <option value="lmstudio">LM Studio</option>
+                            </Select>
+
                             <Label>Local Server URL (Optional)</Label>
                             <div style={{ position: 'relative' }}>
                                 <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
-                                <Input type="text" placeholder="http://localhost:11434" value={settingsApiKey} onChange={e => setSettingsApiKey(e.target.value)} style={{ paddingLeft: 40 }} />
+                                <Input 
+                                    type="text" 
+                                    placeholder={settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
+                                    value={settingsApiKey} 
+                                    onChange={e => setSettingsApiKey(e.target.value)} 
+                                    style={{ paddingLeft: 40 }} 
+                                />
                             </div>
-                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>Leave blank to use the default Ollama address. Stored locally — never sent to servers.</p>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>
+                                Leave blank to use the default address for the selected provider. Stored locally — never sent to servers.
+                            </p>
                         </Card>
                     </motion.div>
                 )}
@@ -3457,6 +3669,7 @@ export default function SettingsPage({
         ),
         privacy: PrivacySection(),
         dispatch: <DispatchSection isCloudUser={isCloudUser} />,
+        'linux-vm': <LinuxVMSection />,
         help: HelpSection(),
     };
 

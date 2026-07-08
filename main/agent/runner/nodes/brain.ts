@@ -117,12 +117,16 @@ async function createAgentCheckpoint(
  * from the brain itself.
  *
  * IMPROVEMENTS (Sub-task 3.1):
- * - Increased timeout from 20s to 30s for slower LLM responses
+ * - Reduced timeout to 5s (5000ms) for completion signals
  * - Added fallback completion signal when LLM fails
  * - Improved JSON extraction and error handling
  * - Added detailed logging at each step
+ *
+ * @param runner - Agent runner
+ * @param responseContent - Content of the response
+ * @param originalRequest - Original request text
  */
-async function buildCompletionSignal(
+export async function buildCompletionSignal(
   runner: AgentRunner,
   responseContent: string,
   originalRequest: string,
@@ -159,21 +163,29 @@ Respond with JSON only:
     console.log('[Brain] Original request (first 100 chars):', originalRequest.slice(0, 100));
     const startTime = Date.now();
 
-    // Increased timeout from 20s to 30s (Sub-task 3.1)
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('completion signal timed out after 30s')), 30000)
-    );
+    // Reduced timeout from 30s to 5s for fast responses
+    let timerId: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => reject(new Error('completion signal timed out after 5s')), 5000);
+    });
 
-    const response = await Promise.race([
-      runner.client.chat({
-        messages: [{ role: 'user', content: prompt }],
-        responseFormat: 'json',
-        temperature: 0.3,
-        maxTokens: 1500,
-        abortSignal: globalAbortManager.abortController.signal,
-      }),
-      timeoutPromise,
-    ]) as any;
+    let response: any;
+    try {
+      response = await Promise.race([
+        runner.client.chat({
+          messages: [{ role: 'user', content: prompt }],
+          responseFormat: 'json',
+          temperature: 0.3,
+          maxTokens: 1500,
+          abortSignal: globalAbortManager.abortController.signal,
+        }),
+        timeoutPromise,
+      ]) as any;
+    } finally {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    }
 
     const duration = Date.now() - startTime;
     console.log(`[Brain] Completion signal response received in ${duration}ms`);
@@ -302,7 +314,7 @@ YOUR CURRENT RESPONSE: "${responseContent.slice(0, 300)}"
 CONVERSATION CONTEXT: ${JSON.stringify(conversationHistory).slice(0, 200)}
 
 Available routing options:
-- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction)
+- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction, or desktop automation/computer_use)
 - "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
 - "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
 - "route_web_explorer" — Route to Web Explorer for complex multi-step web research (multiple page visits, form filling, login workflows). For simple web lookups or single-page research, use your available web_search/navis tools directly.
@@ -319,6 +331,7 @@ CRITICAL ROUTING RULES:
 8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
 9. IMAGE/FILE ORGANIZATION: For tasks like "organize my images/pictures/photos", "sort files by content", "classify images", "move anime pictures into anime folder" → ALWAYS use "continue_brain". Use system_files to list image files. For 20+ images, use visual_classification_sheet to create numbered contact sheets and a manifest, analyze the sheet(s) with vision, then map IDs back to original file paths. For smaller folders, use analyze_image to classify by actual visual content in batches of 10-20. Use system_files to move files after approval. Never classify anime/photos from filenames or metadata. For large folders, continue_brain may spawn generic sub-agents to classify independent sheet batches and aggregate their JSON results. Read the image-viewer skill (SKILL.md) and follow its workflows.
 10. BOOKING/TRANSACTIONAL TASKS: For tasks like "book a flight", "reserve a hotel", "buy tickets", "purchase", "order food", "make a reservation", or any task requiring interactive web form-filling and transactions → ALWAYS use "route_web_explorer". These are multi-step interactive workflows requiring form filling, option selection, and confirmation flows. NEVER use "continue_brain" for booking tasks.
+11. DESKTOP AUTOMATION: For automate/computer-use tasks (such as "open Spotify", "open VS Code", "play music", "click on UI", or native desktop GUI automation), ALWAYS use "continue_brain" to execute the computer_use tool directly. The brain has the computer_use tool available.
 
 Respond with JSON only:
 {
@@ -471,6 +484,18 @@ export const createBrainNode = (
     const allTools = toolDefs || (runner as any)._buildToolDefinitions();
     const isSubAgent = !!runner.currentAgentSessionKey;
 
+    // Get original user request for context
+    const allMessages = state.messages || [];
+    const firstUserMsg = allMessages.find((m: any) => {
+      const role = m.role || m._getType?.();
+      return role === 'user' || role === 'human';
+    });
+    const originalRequest = firstUserMsg
+      ? (typeof (firstUserMsg as any).content === 'string'
+          ? (firstUserMsg as any).content
+          : JSON.stringify((firstUserMsg as any).content))
+      : '';
+
     // Debug logging
     console.log(`[Brain] Current intent: ${state.currentIntent}`);
     console.log(`[Brain] Is sub-agent: ${isSubAgent}`);
@@ -572,10 +597,32 @@ export const createBrainNode = (
         completionSignal: null,
         taskPhase: 'specialized_agent' as const,
         brainToolsInFlight: false,
-        returningFromSpecialist: 'coding_specialist'
+        returningFromSpecialist: 'coding_specialist',
+        harnessRecoveryActions: [],
       };
     }
     // ────────────────────────────────────────────────────────────────────────
+
+    const hasExecutedComputerUse = allMessages.some((m: any) => {
+      const type = m._getType?.() || m.type;
+      return type === 'tool' && (m.name === 'computer_use' || m.tool_name === 'computer_use');
+    });
+
+    if (state.currentIntent === 'automate' && !hasExecutedComputerUse) {
+      console.log('[Brain] Automate intent detected → generating computer_use tool call directly');
+      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const taskPrompt = state.decomposedTask?.steps?.[0]?.agentPrompt || originalRequest;
+      return {
+        pendingToolCalls: [{
+          id: toolCallId,
+          name: 'computer_use',
+          arguments: {
+            task: taskPrompt
+          }
+        }],
+        taskPhase: 'executing' as const,
+      };
+    }
 
     // Load the main system prompt from synchronized location
     let systemPrompt = systemPromptOverride;
@@ -629,17 +676,13 @@ export const createBrainNode = (
       console.warn('[Brain] Failed to inject OpenClaw configurations:', openclawErr);
     }
 
-    // Get original user request for context
-    const allMessages = state.messages || [];
-    const firstUserMsg = allMessages.find((m: any) => {
-      const role = m.role || m._getType?.();
-      return role === 'user' || role === 'human';
-    });
-    const originalRequest = firstUserMsg
-      ? (typeof (firstUserMsg as any).content === 'string'
-          ? (firstUserMsg as any).content
-          : JSON.stringify((firstUserMsg as any).content))
-      : '';
+    // Inject harness workflow phase prompt if available
+    if (systemPrompt && state.harnessPhasePrompt) {
+      systemPrompt += `\n\n=== WORKFLOW PHASE ===\n${state.harnessPhasePrompt}\n`;
+      console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
+    }
+
+
 
     let skipRouting = false;
     // ── EARLY CHECK FOR WEB_EXPLORER COMPLETION (Sub-task 3.2) ──────────────
@@ -815,49 +858,66 @@ export const createBrainNode = (
       console.log('[Brain] Skipping routing decision because web explorer complete and returning from it');
     }
 
-    // If routing to a specialized agent, set the routing decision
-    if (routingDecision && routingDecision.decision.startsWith('route_')) {
+    // Check if the target specialist (or task) has already completed
+    if (routingDecision) {
       const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete;
       const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete;
       const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete;
+      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete;
+      const isComputerUseDone = ((routingDecision.decision as any) === 'route_computer_use' || 
+                                 (routingDecision.decision === 'continue_brain' && state.currentIntent === 'automate')) && 
+                                state.computerUseComplete;
 
-      if (isCodingDone || isWebExplorerDone || isDataAnalystDone) {
-        runner.telemetry.info(`[Brain] Refusing to route to ${routingDecision.decision} because it has already completed`);
-        routingDecision = null;
-      } else {
-        // Auto-enable Coding Mode UI when routing to coding specialist
-        if (routingDecision.decision === 'route_coding') {
-          eventQueue?.push({
-            type: 'surface_action',
-            action: 'coding_mode',
-            active: true,
-            surfaceId: 'coding-mode'
-          });
-        }
-
-        const routedState = {
-          ...result,
-          routingDecision: routingDecision,
-          completionSignal: null,
-          // Set task phase to route to specialized agents
-          taskPhase: 'specialized_agent' as const,
-          brainToolsInFlight: false,
-          returningFromSpecialist: null
+      if (isCodingDone || isWebExplorerDone || isDataAnalystDone || isDeepResearchDone || isComputerUseDone) {
+        runner.telemetry.info(`[Brain] Override routing decision to complete_task because target specialist/task (${routingDecision.decision}) has already completed`);
+        routingDecision = {
+          decision: 'complete_task',
+          explanation: 'Specialist task has already completed.'
         };
-
-        // Create checkpoint before routing to specialist
-        await createAgentCheckpoint(
-          { ...state, ...routedState },
-          runner,
-          `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
-        );
-
-        return routedState;
       }
     }
 
+    // If routing to a specialized agent, set the routing decision
+    if (routingDecision && routingDecision.decision.startsWith('route_')) {
+      // Auto-enable Coding Mode UI when routing to coding specialist
+      if (routingDecision.decision === 'route_coding') {
+        eventQueue?.push({
+          type: 'surface_action',
+          action: 'coding_mode',
+          active: true,
+          surfaceId: 'coding-mode'
+        });
+      }
+
+      const routedState = {
+        ...result,
+        routingDecision: routingDecision,
+        completionSignal: null,
+        taskPhase: 'specialized_agent' as const,
+        brainToolsInFlight: false,
+        returningFromSpecialist: null,
+        harnessRecoveryActions: [],
+      };
+
+      // Create checkpoint before routing to specialist
+      await createAgentCheckpoint(
+        { ...state, ...routedState },
+        runner,
+        `Brain routing to ${routingDecision.decision}: ${routingDecision.explanation}`
+      );
+
+      return routedState;
+    }
+
     // If continuing with brain or completing task, build completion signal
-    const signal = await buildCompletionSignal(runner, responseContent, originalRequest);
+    let signal = await buildCompletionSignal(runner, responseContent, originalRequest);
+
+    if (routingDecision && routingDecision.decision === 'complete_task') {
+      signal = {
+        reason: 'task_complete' as const,
+        explanation: routingDecision.explanation || 'Specialist task has already completed.'
+      };
+    }
 
     if (signal) {
       runner.telemetry.info(`Brain completion signal: ${signal.reason} — ${signal.explanation}`);

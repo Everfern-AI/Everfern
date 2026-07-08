@@ -161,7 +161,7 @@ export class ConversationContextManager extends EventEmitter {
       baseDir: path.join(os.homedir(), '.everfern', 'conversations'),
       maxContextMessages: 50,
       maxContextTokens: 8000,
-      saveInterval: 30000, // 30 seconds
+      saveInterval: 5000, // 5 seconds (reduced from 30s for power-cut resilience)
       retentionDays: 90,
       enableSummarization: true,
       crossPlatformSync: {
