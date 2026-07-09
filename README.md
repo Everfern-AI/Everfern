@@ -44,7 +44,7 @@ It's the free, open-source alternative to **Claude Cowork**, **Manus Desktop**, 
 **Privacy:** ✅ Runs locally, data stays on your machine<br>
 **Open Source:** ✅ MIT Licensed<br>
 **AI Providers:** 10+ (Local & Cloud)<br>
-**Capabilities:** Full computer use + Navis browser agent
+**Capabilities:** Full computer use + Navis browser agent + **Self-Evolving Runtime**
 
 </td>
 <td width="50%" valign="top">
@@ -105,6 +105,20 @@ Navigate websites, fill forms, scrape data, and interact with web apps in plain 
 <tr>
 <td width="50%" valign="top">
 
+### 🧬 Self-Evolving Tool Synthesis
+When existing tools aren't enough, EverFern autonomously **writes, compiles, and registers its own tools at runtime** — protected by a secure **Human-in-the-Loop (HITL)** code approval gate before activation.
+
+</td>
+<td width="50%" valign="top">
+
+### 📚 Autonomous Reusable Skills
+The agent dynamically builds reusable expert instructions and system prompts, saving them locally as skills to supercharge future workflows and preserve long-term context.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### 📄 Document Processing
 Read, analyze, and create PDFs, Word docs, Excel sheets, PowerPoints, and CSVs. Works with your existing files.
 
@@ -119,8 +133,8 @@ Write, review, debug, and refactor code with full project context. Works inside 
 <tr>
 <td width="50%" valign="top">
 
-### 🧩 Skills System
-Reusable task modules you can install from the community or build yourself. Each skill teaches EverFern how to handle a specific workflow — shareable, auditable, yours.
+### 🛡️ Self-Healing Loop & Rollback
+Failed terminal runs or code edits trigger the **Self-Healing Hook**. EverFern rolls back dirty changes, analyzes errors, and auto-corrects code autonomously — no user intervention needed.
 
 </td>
 <td width="50%" valign="top">
@@ -140,26 +154,27 @@ Shell commands run in an isolated sandbox so nothing can accidentally break your
 <td width="50%" valign="top">
 
 ### 🤝 Peer Agent Debate
-For complex tasks, multiple specialized agents debate the best solution before anything gets executed. Each agent challenges the others' reasoning, catches blind spots, and votes on the final approach. The result is a plan that's been stress-tested before it touches your machine.
+For complex tasks, multiple specialized agents debate the best solution before anything gets executed. Each agent challenges the others' reasoning, catches blind spots, and votes on the final approach.
 
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 
-### 🧠 Persistent Self-Learning Memory
-EverFern remembers everything you teach it across every session, building a private, local tree knowledge base of your preferences, workflows, and project patterns. Instead of starting from scratch, it automatically recalls relevant context and applies what it has learned, becoming more personalized and useful the more you use it.
+### 🧠 Persistent Memory & Smart Compression
+EverFern remembers preferences and workflows across sessions. When LLM context limits approach, it semantically compresses history into high-density facts — saving up to 80% in tokens with zero information loss.
+
 </td>
 <td width="50%" valign="top">
 
 ### 🛠️ 20+ Built-in Tools
 Everything EverFern needs is built in:
-- **Desktop**: Computer Use, Screenshot, Mouse, Keyboard, App Launcher
-- **Browser**: Navis, Web Search, Page Scrape, Form Fill, Tab Manager
-- **Files**: Read, Write, Edit, Move, Copy, Delete, Grep, Find, Watch
+- **Desktop**: Computer Use, Mouse, Keyboard, App Launcher
+- **Browser**: Navis, Web Search, Page Scrape, Form Fill
+- **Files**: Read, Write, Edit, Move, Grep, Find
 - **Code**: Run Script, Terminal, Diff, Patch, Lint
-- **Data**: PDF, CSV, JSON, Excel
-- **System**: Linux VM Shell, Process Manager, Clipboard, Notifications
+- **System**: Linux VM Shell, Process Manager, Notifications
+- **Synthesis**: Tool Creator, Skill Synthesizer
 
 Plus custom tools via MCP — connect anything.
 
@@ -187,115 +202,3 @@ npm install
 
 # Run in development
 npm run dev
-```
-
-**Windows installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
-
-**macOS installer** available on the [releases page](https://github.com/CodenRust/Everfern/releases).
-
-### Production Build
-
-```bash
-npm run build
-npm run make
-```
-
----
-
-## How It Works
-
-Just tell EverFern what you need:
-
-```
-"Open Spotify and play my liked songs"
-
-"Summarize all the PDFs in my Downloads folder into one document"
-
-"Open VS Code and refactor the auth module to use JWT tokens"
-
-"Research the top 5 AI coding tools and make a comparison spreadsheet"
-
-"Find all my photos from last year and organize them by month"
-```
-
-EverFern breaks down the request, plans the steps, shows you its thinking in real time, and executes — pausing for confirmation before anything destructive.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    EverFern                         │
-│  ┌─────────────────┐    ┌─────────────────────────┐ │
-│  │   React UI      │◄──►│   Agent Engine          │ │
-│  │   (Next.js)     │    │   (LangGraph)           │ │
-│  └─────────────────┘    └──────────┬──────────────┘ │
-│                                    │                 │
-│                         ┌──────────▼──────────┐      │
-│                         │  Peer Agent Debate  │      │
-│                         │  (multi-agent plan) │      │
-│                         └──────────┬──────────┘      │
-└────────────────────────────────────┼────────────────┘
-                                     │
-          ┌──────────────────────────┼──────────────┐
-          │                          │              │
-     ┌────▼────┐     ┌───────────────▼────────┐   ┌─▼────────────────┐
-     │Local AI │     │ 10+ Cloud Providers    │   │ 20+ Tools        │
-     │Ollama   │     │ OpenAI • Anthropic     │   │ Computer Use     │
-     │LMStudio │     │ DeepSeek • Gemini      │   │ Navis Browser    │
-     └─────────┘     │ OpenRouter • Groq      │   │ Web Search       │
-                     │ Mistral • Nvidia NIM   │   │ Files • Grep     │
-                     │ and more...            │   │ Shell • VM       │
-                     └────────────────────────┘   └──────────────────┘
-```
-
----
-
-## Privacy & Security
-
-- All data, keys, and history stored in `~/.everfern/store` — never synced anywhere
-- API keys encrypted locally
-- Shell commands run in an isolated Linux VM
-- Full source code available to audit yourself
-
----
-
-## Project Structure
-
-```
-everfern/
-├── src/              # Next.js frontend
-│   ├── app/          # Chat interface, settings
-│   └── components/   # React components
-├── main/             # Electron backend
-│   ├── agent/        # Agent orchestration (LangGraph)
-│   ├── tools/        # Built-in tools
-│   └── acp/          # AI provider clients
-├── docs/             # Architecture documentation
-└── public/           # Static assets
-```
-
----
-
-## Contributing
-
-Bug reports, feature requests, and pull requests are all welcome.
-
-- **Issues** — report bugs or suggest features
-- **Discussions** — join community conversations
-- **PRs** — see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
-
----
-
-## License
-
-MIT — free for personal and commercial use.
-
-**Copyright © 2026 EverFern Community**
-
----
-
-Built with [LangGraph](https://langchain-ai.github.io/langgraph/), [Next.js](https://nextjs.org/), [Electron](https://www.electronjs.org/), and [TypeScript](https://www.typescriptlang.org/).
-
-**Made with ❤️ by the EverFern Community**
