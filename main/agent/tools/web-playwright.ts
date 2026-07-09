@@ -31,7 +31,6 @@ export async function playwrightWebSearch(
 ): Promise<PlaywrightSearchResult[]> {
   const browser = await chromium.launch({
     headless,
-    channel: 'chrome',
     args: ANTI_DETECTION_ARGS,
   }).catch((err: Error) => {
     throw new Error(`Playwright failed to launch Chromium for web search: ${err.message}`);
@@ -166,7 +165,6 @@ export async function playwrightWebCrawl(
 ): Promise<string> {
   const browser = await chromium.launch({
     headless,
-    channel: 'chrome',
     args: ANTI_DETECTION_ARGS,
   }).catch((err: Error) => {
     throw new Error(`Playwright failed to launch Chromium for web crawl: ${err.message}`);

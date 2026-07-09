@@ -12,6 +12,7 @@
 
 import type { AgentTool, ToolCallRecord, ToolResult } from './types';
 import type { StreamEvent } from './state';
+import { toolCache } from './tool-cache';
 
 const MAX_CONCURRENT_TOOLS = 4;
 const MAX_RESULT_OUTPUT_SIZE = 2 * 1024 * 1024; // 2MB
@@ -223,6 +224,20 @@ export async function executeSynchronizedParallelGroup(
             toolCallId: tc.id
         });
 
+        // Check cache before execution
+        const cachedOutput = toolCache.interceptCall(tc.name, tc.args);
+        if (cachedOutput !== null) {
+            const record: ToolCallRecord = {
+                id: tc.id,
+                toolName: tc.name,
+                args: tc.args,
+                result: cachedOutput,
+                timestamp: new Date().toISOString()
+            };
+            eventQueue?.push({ type: 'tool_call', toolCall: record });
+            return record;
+        }
+
         try {
             const result = await tool.execute(
                 tc.args,
@@ -238,6 +253,11 @@ export async function executeSynchronizedParallelGroup(
             // BUG-09 FIX: Apply truncateToolResult to prevent OOM from huge outputs
             // (e.g. read_file on a 50MB file). Previously this was defined but never called.
             const truncatedResult = truncateToolResult(result);
+
+            // Save to cache if successful
+            if (truncatedResult && truncatedResult.success) {
+                toolCache.set(tc.name, tc.args, truncatedResult);
+            }
 
             const record: ToolCallRecord = {
                 id: tc.id,

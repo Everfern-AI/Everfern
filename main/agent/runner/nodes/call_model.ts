@@ -72,6 +72,49 @@ Respond with JSON:
 }
 
 /**
+ * Generates a semantic summary of older/dropped messages to conserve context window
+ */
+async function generateSemanticSummary(
+  droppedMessages: ChatMessage[],
+  client?: AIClient
+): Promise<string> {
+  if (!client || droppedMessages.length === 0) return '';
+  
+  try {
+    const serialized = droppedMessages.map(m => {
+      const role = m.role;
+      let content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      if (m.tool_calls) {
+        content += `\n[Tool Calls: ${JSON.stringify(m.tool_calls)}]`;
+      }
+      return `${role.toUpperCase()}: ${content.substring(0, 400)}`;
+    }).join('\n---\n');
+
+    const prompt = `Summarize the following historical execution turns of an AI software development agent into a high-density, concise bulleted list of facts, files created/edited, commands run, and current state. Do not include introductory text, just return the bulleted list.
+    
+Execution turns:
+${serialized}
+
+Format:
+- [File Action] Created/Edited src/path/file.ts
+- [Command Action] Executed npm run test (Passed/Failed)
+- [Context] State details...`;
+
+    const response = await client.chat({
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      maxTokens: 300
+    });
+
+    return typeof response.content === 'string' ? response.content.trim() : '';
+  } catch (err) {
+    console.warn('[CallModel] generateSemanticSummary error:', err);
+    return '';
+  }
+}
+
+
+/**
  * AI-based model nudging decision
  * Replaces regex pattern matching with semantic analysis
  */
@@ -241,11 +284,73 @@ export const createCallModelNode = (
 Keep your responses friendly and direct.
 The user is engaging in a simple conversation or asking a direct question.
 You do not need to use complex execution plans or tools for this interaction.`;
+      
       runner.telemetry.info('Optima: Using slimmed system prompt for read-only intent.');
     }
 
-    // Enhanced message pruning with better image handling
+    // Enhanced message pruning with tool result truncation and image handling
     const prunedMessages = normalizedMessages.map((m, idx) => {
+      const isRecent = idx >= normalizedMessages.length - 4;
+
+      // 1. Tool result truncation for older messages to prevent quadratic context bloat
+      if (!isRecent && m.role === 'tool' && typeof m.content === 'string' && m.content.length > 1000) {
+        const originalLength = m.content.length;
+        const truncatedContent = m.content.substring(0, 400) + 
+          `\n\n... [Tool Output Truncated: ${originalLength - 800} characters omitted to save tokens] ...\n\n` + 
+          m.content.substring(originalLength - 400);
+        return {
+          ...m,
+          content: truncatedContent
+        };
+      }
+
+      // 2. Strip historical thinking/reasoning blocks from older assistant messages to save tokens
+      if (!isRecent && m.role === 'assistant' && typeof m.content === 'string') {
+        if (m.content.includes('<think>') || m.content.includes('<thought>')) {
+          const strippedContent = m.content
+            .replace(/<(think|thought)>[\s\S]*?<\/\1>/gi, '')
+            .trim();
+          return {
+            ...m,
+            content: strippedContent
+          };
+        }
+      }
+
+      // 3. Prune large arguments in tool_calls of older assistant messages to save tokens
+      if (!isRecent && m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        const prunedToolCalls = m.tool_calls.map((tc: any) => {
+          if (!tc || typeof tc !== 'object') return tc;
+          const newTc = JSON.parse(JSON.stringify(tc));
+          if (newTc.function && newTc.function.arguments) {
+            let args = newTc.function.arguments;
+            let isJsonString = typeof args === 'string';
+            if (isJsonString) {
+              try { args = JSON.parse(args); } catch (e) {}
+            }
+            if (args && typeof args === 'object') {
+              let modified = false;
+              for (const key of Object.keys(args)) {
+                if (typeof args[key] === 'string' && args[key].length > 1000) {
+                  const originalLen = args[key].length;
+                  args[key] = `[Argument Truncated: ${originalLen} characters omitted to save tokens]`;
+                  modified = true;
+                }
+              }
+              if (modified) {
+                newTc.function.arguments = isJsonString ? JSON.stringify(args) : args;
+              }
+            }
+          }
+          return newTc;
+        });
+        return {
+          ...m,
+          tool_calls: prunedToolCalls
+        };
+      }
+
+      // 4. Image pruning for user messages
       if (m.role === "user") {
         if (typeof m.content === 'string') return m;
         const hasImage = Array.isArray(m.content) && m.content.some((c: any) => c.type === 'image_url');
@@ -267,11 +372,32 @@ You do not need to use complex execution plans or tools for this interaction.`;
       return m;
     });
 
-    // Limit message history for performance (keep last 20 messages)
+    // Limit message history for performance (keep last 20 messages) and compress context
     const maxMessages = 20;
-    const limitedMessages = prunedMessages.length > maxMessages
-      ? [prunedMessages[0], ...prunedMessages.slice(-maxMessages + 1)] // Keep system prompt + last N messages
-      : prunedMessages;
+    let limitedMessages = prunedMessages;
+    if (prunedMessages.length > maxMessages) {
+      const systemPromptMsg = prunedMessages[0];
+      const droppedMessages = prunedMessages.slice(1, -maxMessages + 1);
+      const remainingMessages = prunedMessages.slice(-maxMessages + 1);
+      
+      let summaryText = '';
+      try {
+        runner.telemetry.info(`Optima: Compressing ${droppedMessages.length} older historical turns into semantic summary...`);
+        summaryText = await generateSemanticSummary(droppedMessages, client);
+      } catch (err) {
+        console.warn('[CallModel] Failed to generate semantic summary:', err);
+      }
+      
+      if (summaryText) {
+        const memorySummaryMsg: ChatMessage = {
+          role: 'system',
+          content: `## Compressed Session Memory (Historical Context Summary)\nBelow is a summary of the actions and changes made in earlier steps of this session:\n${summaryText}\n`
+        };
+        limitedMessages = [systemPromptMsg, memorySummaryMsg, ...remainingMessages];
+      } else {
+        limitedMessages = [systemPromptMsg, ...remainingMessages];
+      }
+    }
 
     const request: ChatRequest = {
       messages: limitedMessages,

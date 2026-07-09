@@ -101,8 +101,8 @@ export const CODING_HARNESS: WorkflowDefinition = {
     exploration: ['terminal_execute', 'terminal_status', 'read', 'grep', 'find', 'ls', 'glob', 'executePwsh', 'write'],
     planning: ['read', 'write', 'todo_write', 'memory_save', 'ls', 'terminal_execute'],
     implementation: ['read', 'write', 'edit', 'terminal_execute', 'terminal_status', 'grep', 'find', 'ls', 'executePwsh'],
-    review: ['read', 'grep', 'diff', 'terminal_execute', 'terminal_status', 'ls', 'write'],
-    testing: ['terminal_execute', 'terminal_status', 'read', 'grep', 'ls'],
+    review: ['read', 'grep', 'diff', 'terminal_execute', 'terminal_status', 'ls', 'write', 'edit', 'executePwsh'],
+    testing: ['terminal_execute', 'terminal_status', 'read', 'grep', 'ls', 'write', 'edit', 'executePwsh'],
     complete: []
   },
   phasePrompts: {

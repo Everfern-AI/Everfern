@@ -171,6 +171,12 @@ export class AbortSignalManager {
           if (toolCallRegistry && typeof toolCallRegistry.markAllAborted === 'function') {
             toolCallRegistry.markAllAborted();
           }
+          try {
+            const { stopAllServers } = require('../tools/dev-preview');
+            stopAllServers();
+          } catch (devServerErr) {
+            console.warn('[Cleanup] Dev preview server stop failed:', devServerErr);
+          }
         } catch (err) {
           console.error('[Cleanup] Tool call cancellation error:', err);
           throw err;

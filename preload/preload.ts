@@ -497,6 +497,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getBrowsers: () => ipcRenderer.invoke('tool-settings:get-browsers'),
     prepareNavisMainProfileExtension: (startUrl?: string) => ipcRenderer.invoke('navis-extension:prepare-main-profile', startUrl),
     getNavisExtensionStatus: () => ipcRenderer.invoke('navis-extension:status'),
+    listSynthesized: () => ipcRenderer.invoke('tool-settings:list-synthesized'),
+    deleteSynthesized: (name: string) => ipcRenderer.invoke('tool-settings:delete-synthesized', name),
   },
 
   // ── Chat Title ─────────────────────────────────────────────────────
@@ -873,6 +875,8 @@ export type ElectronAPI = {
       firefoxExtensionPath?: string;
       sourceDir?: string;
     }>;
+    listSynthesized: () => Promise<any[]>;
+    deleteSynthesized: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
   chat: {
     generateTitle: (conversationId: string, firstMessage: string) => Promise<{ queued: boolean }>;

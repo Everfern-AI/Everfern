@@ -105,6 +105,7 @@ function getWslCmd(): string {
 let _wslSetupDone = false;
 
 export async function ensureWSLSetup(): Promise<void> {
+  if (process.platform !== 'win32') return;
   if (_wslSetupDone) return;
   _wslSetupDone = true; // only attempt once
   const wslCmd = getWslCmd();

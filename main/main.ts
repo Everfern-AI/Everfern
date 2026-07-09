@@ -35,7 +35,6 @@ import type { ProviderType } from './acp/types';
 import { ChatHistoryStore } from './store/history';
 import { scheduledTasksManager } from './scheduled-tasks';
 import { AgentRunner } from './agent/runner/runner';
-import { ensureShowUIServer, killShowUIServer } from './agent/runner/showui-server';
 import { AIClient } from './lib/ai-client';
 import { hydrateConfigWithIsolatedKeys } from './lib/vlm-config';
 import { getAllModelsFlat, FlatModelEntry, PROVIDER_REGISTRY, getModelsForProvider, formatModelName } from './lib/providers';
@@ -215,8 +214,6 @@ if (!gotTheLock) {
   });
 }
 
-// Tracks the ShowUI install/run process so we can kill it on app quit
-let installProc: import('child_process').ChildProcess | null = null;
 
 // Message handler for bot integrations
 let messageHandler: MessageHandler | null = null;
@@ -917,13 +914,6 @@ app.on('before-quit', async () => {
     console.error('[App] Error stopping integration services:', error);
   }
 
-  // Kill the install/run process spawned by showui:install
-  if (installProc) {
-    try { installProc.kill('SIGTERM'); } catch { /* ignore */ }
-    installProc = null;
-  }
-  // Kill the server managed by showui-server.ts (e.g. from showui:launch)
-  killShowUIServer();
 
   // Stop extension bridge server
   try {
@@ -1351,206 +1341,6 @@ ipcMain.handle('debug:copy-to-clipboard', (_e, text: string) => {
   return true;
 });
 
-// ── IPC: ShowUI Local Install ─────────────────────────────────────────
-
-/**
- * Runs the ShowUI installation pipeline step-by-step.
- * Streams each line of stdout/stderr back via 'showui:install-line' events.
- * Emits 'showui:install-done' when all steps complete (or on failure).
- *
- * Steps:
- *   1. conda create -n showui python=3.11 -y
- *   2. conda run -n showui git clone https://github.com/showlab/ShowUI.git <dest>
- *   3. conda run -n showui pip install -r requirements.txt  (in cloned dir)
- */
-ipcMain.handle('showui:install', async (event) => {
-  const { spawn, execSync } = require('child_process') as typeof import('child_process');
-  const installSender = event.sender;
-
-  const isWindows = process.platform === 'win32';
-  const scriptsDir = path.join(app.getAppPath(), 'scripts');
-
-  const emit = (line: string, step: number, kind: 'out' | 'err' | 'info' | 'done' | 'fail' | 'pip', pkg?: string, pct?: number, speed?: string, eta?: string) => {
-    if (!installSender.isDestroyed()) {
-      installSender.send('showui:install-line', { line, step, kind, pkg, pct, speed, eta });
-    }
-  };
-
-  // ── Determine which command to run ────────────────────────────────
-  let cmd: string;
-  let args: string[];
-  let spawnOpts: import('child_process').SpawnOptions;
-
-  if (isWindows) {
-    // Windows: always use setup-showui.bat which internally calls WSL
-    const batScript = path.join(scriptsDir, 'setup-showui.bat');
-    cmd = batScript;
-    args = [];
-    spawnOpts = { shell: true, env: { ...process.env, PYTHONUNBUFFERED: '1' } };
-    emit('Windows detected — will use WSL if available, then native Python fallback.', 1, 'info');
-  } else {
-    // macOS / Linux: run setup-unix.sh directly
-    const shScript = path.join(scriptsDir, 'setup-unix.sh');
-    try { execSync(`chmod +x "${shScript}"`); } catch { /* ignore */ }
-    cmd = 'bash';
-    args = [shScript];
-    spawnOpts = { shell: false, env: { ...process.env, PYTHONUNBUFFERED: '1' } };
-    emit('Unix detected — running native setup-unix.sh.', 1, 'info');
-  }
-
-  try {
-    emit('Initializing EverFern ShowUI Installer...', 1, 'info');
-
-    return new Promise((resolve) => {
-      const proc = spawn(cmd, args, spawnOpts);
-      installProc = proc; // track for cleanup on app quit
-      let resolvedAlready = false;
-
-      // Fallback: actively poll the server in case logs are swallowed
-      const pollTimer = setInterval(async () => {
-        if (resolvedAlready) {
-          clearInterval(pollTimer);
-          return;
-        }
-        try {
-          // Send a quick GET to the Gradio port. Any response (even 404/405) means it's alive.
-          const res = await fetch('http://127.0.0.1:7860/', { method: 'GET', signal: AbortSignal.timeout(1500) });
-          if (res.status && !resolvedAlready) {
-            resolvedAlready = true;
-            clearInterval(pollTimer);
-            emit('EVERFERN_PROGRESS:100', 1, 'info', undefined, 100);
-            emit('✅ ShowUI is running on port 7860! Setup complete.', 3, 'done', undefined, 100);
-            resolve({ success: true });
-          }
-        } catch (e) { /* ignore ECONNREFUSED */ }
-      }, 3000);
-
-      const parseLine = (l: string) => {
-        const line = l.trim();
-        if (!line) return;
-
-        // Progress markers
-        if (line.includes('EVERFERN_PROGRESS:')) {
-          const pct = parseInt(line.split('EVERFERN_PROGRESS:')[1], 10);
-          if (!isNaN(pct)) { emit(line, 1, 'info', undefined, pct); return; }
-        }
-        // ── ShowUI Gradio server is live ────────────────────────────────
-        if (line.includes('Running on local URL:') || line.includes('Running on public URL:')) {
-          emit(line, 1, 'out');
-          if (!resolvedAlready) {
-            resolvedAlready = true;
-            emit('EVERFERN_PROGRESS:100', 1, 'info', undefined, 100);
-            emit('✅ ShowUI is running! Setup complete.', 3, 'done', undefined, 100);
-            resolve({ success: true });
-          }
-          return;
-        }
-        // Reboot required (exit 11 from bat)
-        if (line.includes('REBOOT')) {
-          emit('⚠️ WSL installed! Please REBOOT your PC and re-run EverFern.', 1, 'info', undefined, 0);
-          return;
-        }
-        // pip Collecting
-        if (line.startsWith('Collecting ')) {
-          emit(line, 1, 'pip', line.split(' ')[1]);
-          // fall through to print the log
-        }
-        // pip Downloading
-        if (line.startsWith('Downloading ')) {
-          emit(line, 1, 'pip', line.split(' ')[1]);
-          // fall through to print the log
-        }
-        // pip progress: ━━━━━━━━━━━━━━━━ 1.2/3.4 MB 2.5 MB/s eta 0:00:01
-        const progressMatch = line.match(/([\d\.]+)\/([\d\.]+)\s+([kMGPE]?B)/i);
-        if (progressMatch) {
-          const dl = parseFloat(progressMatch[1]);
-          const total = parseFloat(progressMatch[2]);
-          if (total > 0) {
-            const pct = Math.round((dl / total) * 100);
-            const speedMatch = line.match(/([\d\.]+\s+[kMGPE]?B\/s)/i);
-            const etaMatch = line.match(/eta\s+([\d:]+)/i);
-            emit('', 1, 'pip', undefined, pct, speedMatch?.[1], etaMatch?.[1]);
-            // Don't return, let it print the progress bar cleanly or drop it? Let's hide the raw pip bar to keep logs clean
-            return;
-          }
-        }
-
-        emit(line, 1, 'out');
-      };
-
-      let bufferedOut = '';
-      proc.stdout?.on('data', (d: Buffer) => {
-        bufferedOut += d.toString();
-        let idx;
-        while ((idx = bufferedOut.search(/[\r\n]/)) !== -1) {
-          const line = bufferedOut.substring(0, idx);
-          bufferedOut = bufferedOut.substring(idx + 1);
-          parseLine(line);
-        }
-      });
-
-      let bufferedErr = '';
-      proc.stderr?.on('data', (d: Buffer) => {
-        bufferedErr += d.toString();
-        let idx;
-        while ((idx = bufferedErr.search(/[\r\n]/)) !== -1) {
-          const line = bufferedErr.substring(0, idx).trim();
-          bufferedErr = bufferedErr.substring(idx + 1);
-          if (!line) continue;
-          // Gradio prints "Running on local URL:" to stderr — run through parseLine
-          // so our URL-detection / progress logic fires correctly.
-          if (line.includes('Running on local URL:') || line.includes('Running on public URL:') || line.includes('EVERFERN_PROGRESS:')) {
-            parseLine(line);
-          } else {
-            emit(line, 1, 'err');
-          }
-        }
-      });
-
-      proc.on('close', (code) => {
-        clearInterval(pollTimer);
-        if (resolvedAlready) return; // already resolved when Gradio URL appeared
-        if (code === 0) {
-          emit('✅ ShowUI installation complete!', 3, 'done', undefined, 100);
-          resolve({ success: true });
-        } else if (code === 11) {
-          // Special: reboot required for WSL
-          emit('⚠️ Reboot required to finish WSL setup. Please restart your PC.', 2, 'info');
-          resolve({ success: false, error: 'reboot_required' });
-        } else {
-          const msg = `Installation failed with exit code ${code}`;
-          emit(`❌ ${msg}`, 0, 'fail');
-          resolve({ success: false, error: msg });
-        }
-      });
-
-      proc.on('error', (err) => {
-        clearInterval(pollTimer);
-        emit(`❌ Process Error: ${err.message}`, 0, 'fail');
-        resolve({ success: false, error: err.message });
-      });
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    emit(`❌ Setup Exception: ${msg}`, 0, 'fail');
-    return { success: false, error: msg };
-  }
-});
-
-ipcMain.handle('showui:launch', async (event) => {
-  const launchSender = event.sender;
-  const emit = (line: string, kind: 'out' | 'err' | 'info' | 'done') => {
-    if (!launchSender.isDestroyed()) launchSender.send('showui:install-line', { line, step: 4, kind });
-  };
-
-  try {
-    const success = await ensureShowUIServer((line) => emit(line, 'info'));
-    return { success };
-  } catch (error) {
-    emit(`[Launch] Error: ${error}`, 'err');
-    return { success: false, error: String(error) };
-  }
-});
 
 // ── IPC: Permissions ──────────────────────────────────────────────────
 

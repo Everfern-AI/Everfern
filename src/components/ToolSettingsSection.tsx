@@ -229,12 +229,56 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
 
 // ── ToolSettingsSection ───────────────────────────────────────────────────────
 
+interface SynthesizedToolCardProps {
+    tool: {
+        name: string;
+        description: string;
+        parameters: any;
+        code: string;
+    };
+    onDelete: (name: string) => void;
+}
+
+function SynthesizedToolCard({ tool, onDelete }: SynthesizedToolCardProps) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 600 }}>{tool.name}</span>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>{tool.description}</p>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                        onClick={() => setExpanded(!expanded)}
+                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+                    >
+                        {expanded ? 'Hide Code' : 'View Code'}
+                    </button>
+                    <button
+                        onClick={() => onDelete(tool.name)}
+                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', cursor: 'pointer' }}
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+            {expanded && (
+                <pre style={{ marginTop: 12, padding: 12, backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 11, color: 'var(--color-text-primary)', overflowX: 'auto', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                    {tool.code}
+                </pre>
+            )}
+        </div>
+    );
+}
+
 export function ToolSettingsSection() {
     const [config, setConfig] = useState<ToolSettingsConfig>(DEFAULT_TOOL_SETTINGS);
     const [isLoading, setIsLoading] = useState(true);
     const [extensionStatus, setExtensionStatus] = useState<any>(null);
     const [extensionMessage, setExtensionMessage] = useState<string>('');
     const [isPreparingMainProfileExtension, setIsPreparingMainProfileExtension] = useState(false);
+    const [synthesizedTools, setSynthesizedTools] = useState<any[]>([]);
 
     // Load config on mount
     useEffect(() => {
@@ -258,10 +302,45 @@ export function ToolSettingsSection() {
             } catch (e) {
                 console.error('[ToolSettingsSection] Failed to load config:', e);
             }
+            try {
+                if ((window as any).electronAPI?.toolSettings?.listSynthesized) {
+                    const list = await (window as any).electronAPI.toolSettings.listSynthesized();
+                    setSynthesizedTools(list || []);
+                }
+            } catch (err) {
+                console.error('[ToolSettingsSection] Failed to load synthesized tools:', err);
+            }
             setIsLoading(false);
         };
         load();
     }, []);
+
+    const loadSynthesized = async () => {
+        try {
+            if ((window as any).electronAPI?.toolSettings?.listSynthesized) {
+                const list = await (window as any).electronAPI.toolSettings.listSynthesized();
+                setSynthesizedTools(list || []);
+            }
+        } catch (e) {
+            console.error('[ToolSettingsSection] Failed to load synthesized tools:', e);
+        }
+    };
+
+    const handleDeleteSynthesized = async (name: string) => {
+        if (!confirm(`Are you sure you want to delete the synthesized tool "${name}"?`)) {
+            return;
+        }
+        try {
+            const res = await (window as any).electronAPI?.toolSettings?.deleteSynthesized?.(name);
+            if (res?.success) {
+                await loadSynthesized();
+            } else {
+                alert(`Failed to delete tool: ${res?.error || 'Unknown error'}`);
+            }
+        } catch (e: any) {
+            alert(`Error deleting tool: ${e.message || String(e)}`);
+        }
+    };
 
     const handleChange = async (key: keyof ToolSettingsConfig, toolConfig: ToolConfig) => {
         const next = { ...config, [key]: toolConfig };
@@ -516,6 +595,35 @@ export function ToolSettingsSection() {
                             <span style={{ fontSize: 10, color: 'var(--color-text-placeholder)' }}>200 (thorough)</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* ── Synthesized Tools Panel ─────────────────────────────── */}
+            <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #111827 0%, #1f2937 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-inverse)' }}>
+                        <WrenchScrewdriverIcon width={18} height={18} />
+                    </div>
+                    <div>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Synthesized Dynamic Tools</h3>
+                        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '2px 0 0' }}>AI-generated tools running dynamically in the session</p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {synthesizedTools.length === 0 ? (
+                        <p style={{ fontSize: 12, color: 'var(--color-text-placeholder)', margin: 0, textAlign: 'center', padding: '16px 0' }}>
+                            No synthesized tools registered yet. When the agent gets stuck, it will suggest creating a new custom tool.
+                        </p>
+                    ) : (
+                        synthesizedTools.map(tool => (
+                            <SynthesizedToolCard
+                                key={tool.name}
+                                tool={tool}
+                                onDelete={handleDeleteSynthesized}
+                            />
+                        ))
+                    )}
                 </div>
             </div>
 

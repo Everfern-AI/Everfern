@@ -23,6 +23,7 @@ import {
   recordExecution,
   getPhasePrompt,
   workflowEngine,
+  handleFailedStep,
 } from '../harness';
 
 /**
@@ -261,6 +262,24 @@ export const createExecuteToolsNode = (
         const stepId = `${rollbackTaskId}:${rec.toolName}:${rec.id || Date.now()}`;
         const errorStr = rec.result?.error || (rec.result?.success === false ? rec.result?.output : undefined);
         recordExecution(stepId, rec.toolName, rec.args || {}, rec.result, errorStr);
+
+        if (errorStr && ['terminal_execute', 'executePwsh', 'write', 'edit'].includes(rec.toolName)) {
+          // Dynamic Self-Healing: Check if harness detects a failure and has a recovery action
+          try {
+            const recoveryAction = await handleFailedStep(harnessConfig, stepId, rec.toolName, errorStr);
+            if (recoveryAction) {
+              console.warn(`[Harness Self-Healing] ⚠️ Detected failure in ${rec.toolName}. Recovery action: ${recoveryAction.message}`);
+              harnessRecoveryActions.push({
+                toolName: rec.toolName,
+                stepId,
+                recoveryAction,
+                blocked: false
+              });
+            }
+          } catch (healingErr) {
+            console.error('[Harness Self-Healing] Error handling failed step:', healingErr);
+          }
+        }
 
         const postCheck = postExecutionCheck(stepId, rec.toolName, rec.result);
         if (!postCheck.valid) {

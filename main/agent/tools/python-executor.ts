@@ -166,7 +166,7 @@ if _kiro_plot_paths:
     // Escape code for shell execution
     const escapedCode = this.escapeCodeForShell(codeToExecute);
     const isWin = process.platform === 'win32';
-    const command = isWin ? `python ${escapedCode}` : `python -c ${escapedCode}`;
+    const command = isWin ? `python ${escapedCode}` : `python3 -c ${escapedCode}`;
     const cwd = path.join(os.homedir(), '.everfern');
 
     // Start execution

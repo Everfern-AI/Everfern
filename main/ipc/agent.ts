@@ -297,6 +297,21 @@ export function registerAgentHandlers() {
     }
   });
 
+  ipcMain.handle('tool-settings:list-synthesized', async () => {
+    const { getSynthesizedToolsList } = require('../agent/tools/tool-synthesizer');
+    return getSynthesizedToolsList();
+  });
+
+  ipcMain.handle('tool-settings:delete-synthesized', async (_event, name: string) => {
+    const { deleteSynthesizedTool } = require('../agent/tools/tool-synthesizer');
+    try {
+      deleteSynthesizedTool(name);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
   ipcMain.handle('terminal:get-status', (_event, id: string) => {
     const { CommandRegistry } = require('../agent/tools/terminal/registry');
     const registry = CommandRegistry.getInstance();
@@ -749,6 +764,14 @@ export function registerAgentHandlers() {
         const { getComputerOverlayManager } = require('../computer-overlay');
         getComputerOverlayManager().hide();
       } catch (e) {}
+
+      // Trigger cleanup sequence on crash to prevent process/file handle leaks
+      try {
+        await globalAbortManager.executeCleanupSequence();
+      } catch (cleanupErr) {
+        console.error('[AgentIPC] Cleanup sequence error on stream crash:', cleanupErr);
+      }
+
       streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
     }
   });

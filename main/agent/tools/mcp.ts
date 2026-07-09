@@ -83,7 +83,10 @@ class MCPConnection {
         );
 
         try {
-            await this.client.connect(transport);
+            await Promise.race([
+                this.client.connect(transport),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('MCP server connection handshake timed out (15s)')), 15000))
+            ]);
             this.connected = true;
             console.log(`[MCP] Connected: ${this.config.name}`);
             return true;
@@ -113,7 +116,10 @@ class MCPConnection {
         );
 
         try {
-            await this.client.connect(transport);
+            await Promise.race([
+                this.client.connect(transport),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('MCP server Docker connection handshake timed out (15s)')), 15000))
+            ]);
             this.connected = true;
             console.log(`[MCP] Connected (Docker): ${this.config.name}`);
             return true;
