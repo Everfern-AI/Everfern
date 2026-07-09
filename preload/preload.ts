@@ -171,6 +171,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stop:          ()            => ipcRenderer.invoke('acp:stop'),
     rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
     getRollbackChanges: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-changes', conversationId, timestamp),
+    getRollbackPreview: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-preview', conversationId, timestamp),
+    getSnapshotContent: (snapshotId: string) => ipcRenderer.invoke('agent:get-snapshot-content', snapshotId),
 
     onStreamChunk: (cb: (chunk: { delta: string; done: boolean }) => void) => {
       ipcRenderer.on('acp:stream-chunk', (_e, chunk) => cb(chunk));
@@ -662,6 +664,30 @@ export type ElectronAPI = {
     stream:                (req: any) => Promise<any>;
     rollbackTurn:          (conversationId: string, timestamp: number) => Promise<any>;
     getRollbackChanges:    (conversationId: string, timestamp: number) => Promise<{ files: { path: string; operation: string; timestamp: number }[]; commands: { command: string; reversible: boolean; timestamp: number }[] }>;
+    getRollbackPreview:    (conversationId: string, timestamp: number) => Promise<{
+      stepNumber: number;
+      files: Array<{
+        filePath: string;
+        operation: 'create' | 'modify' | 'delete';
+        contentSizeBytes: number;
+        willRestore: boolean;
+        warning?: string;
+        lastModified?: string;
+        snapshotId?: string;
+      }>;
+      commands: Array<{
+        command: string;
+        reversible: boolean;
+        rollbackCommand?: string;
+        linkedSnapshots: number;
+      }>;
+      totalFilesToRestore: number;
+      totalSizeBytes: number;
+      hasIrreversibleCommands: boolean;
+      hasUnrestorableFiles: boolean;
+      riskLevel: 'low' | 'medium' | 'high';
+    }>;
+    getSnapshotContent:   (snapshotId: string) => Promise<{ contentBefore: string; contentAfter: string } | null>;
     onStreamChunk:         (cb: (chunk: { delta: string; done: boolean }) => void) => void;
     onThought:             (cb: (data: { content: string }) => void) => void;
     onToolStart:           (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => void;

@@ -650,7 +650,9 @@ If you failed to find the info, report that clearly.`;
           console.log('[Navis] AI requested visual grounding for next step');
         }
 
-        this.logger.aiDecision(steps, maxSteps, currentGoal);
+        if (currentGoal && currentGoal !== 'Choose the next browser action') {
+          this.logger.aiDecision(steps, maxSteps, currentGoal);
+        }
         await this.session.setOverlayStatus(currentGoal || 'Working...');
 
         const t6 = Date.now();

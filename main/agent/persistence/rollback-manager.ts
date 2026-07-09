@@ -730,7 +730,7 @@ export class RollbackManager {
         // For deletion, restore the content
         try {
           const content = await this.decompressContent(snapshot.contentBefore);
-          await fsPromises.writeFile(snapshot.filePath, content, 'utf-8');
+          await fsPromises.writeFile(snapshot.filePath, content);
           return {
             filePath: snapshot.filePath,
             success: true,
@@ -748,7 +748,7 @@ export class RollbackManager {
         // For modification, restore to the before state
         try {
           const content = await this.decompressContent(snapshot.contentBefore);
-          await fsPromises.writeFile(snapshot.filePath, content, 'utf-8');
+          await fsPromises.writeFile(snapshot.filePath, content);
           return {
             filePath: snapshot.filePath,
             success: true,
@@ -857,12 +857,12 @@ export class RollbackManager {
    *
    * Requirement 4.6: Compress file snapshots using gzip to reduce storage
    *
-   * @param content - Uncompressed content string
+   * @param content - Uncompressed content string or Buffer
    * @returns Base64-encoded gzipped content
    */
-  private async compressContent(content: string): Promise<string> {
+  private async compressContent(content: string | Buffer): Promise<string> {
     try {
-      const buffer = Buffer.from(content, 'utf-8');
+      const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8');
       const compressed = await gzip(buffer);
       return compressed.toString('base64');
     } catch (error) {
@@ -877,13 +877,13 @@ export class RollbackManager {
    * Requirement 4.6: Support decompression for content restoration
    *
    * @param compressed - Base64-encoded gzipped content
-   * @returns Decompressed content string
+   * @returns Decompressed content Buffer
    */
-  private async decompressContent(compressed: string): Promise<string> {
+  private async decompressContent(compressed: string): Promise<Buffer> {
     try {
       const buffer = Buffer.from(compressed, 'base64');
       const decompressed = await gunzip(buffer);
-      return decompressed.toString('utf-8');
+      return decompressed;
     } catch (error) {
       console.error('[RollbackManager] Decompression failed:', error);
       throw new Error(`Failed to decompress content: ${(error as Error).message}`);
@@ -1004,9 +1004,27 @@ export class RollbackManager {
       };
     }
 
+    // ── Harmless / read-only commands ─────────────────────────────────
+    if (/^(?:git\s+(status|diff|log|show|branch|tag|rev-parse|remote|config)|test-path|resolve-path|get-command|get-help|get-location|pwd)(?:\s+|$)/i.test(trimmed)) {
+      return {
+        strategy: 'manual',
+        reversible: true,
+        reason: 'Read-only or harmless query command',
+        rollbackCommand: 'echo "Read-only command - no rollback required"',
+      };
+    }
+
+    // ── git add ───────────────────────────────────────────────────────
+    if (/^git\s+add\s+/i.test(trimmed)) {
+      return {
+        strategy: 'git_revert',
+        reversible: true,
+        reason: 'Can be reverted by resetting staged changes',
+        rollbackCommand: 'git reset HEAD',
+      };
+    }
+
     // ── File operations (rm, mv, cp, sed, tee, dd, truncate, sponge) ──
-    // These are marked reversible ONLY if snapshots were captured.
-    // Default: manual (post-tracking, linkSnapshotsToCommand will update to reversible)
     if (/^(rm|del|erase|remove-item|rd|rmdir)\s+/i.test(trimmed)) {
       return {
         strategy: 'file_restore',
@@ -2359,6 +2377,133 @@ export class RollbackManager {
   }
 
   /**
+   * Capture a list of paths in parallel using a concurrency pool.
+   */
+  async capturePathsParallel(
+    pathsToCapture: Array<{ resolved: string; original: string }>,
+    taskId: string,
+    stepNumber: number,
+    concurrencyLimit = 15
+  ): Promise<{ snapshotIds: string[]; totalSizeBytes: number; paths: string[]; warnings: string[] }> {
+    const snapshotIds: string[] = [];
+    const capturedPaths: string[] = [];
+    const warnings: string[] = [];
+    let totalSizeBytes = 0;
+
+    const results: Array<{ snapshotId: string | null; path: string; size: number; warning?: string; paths?: string[]; snapshotIds?: string[] }> = [];
+
+    // Simple queue-based concurrency pool
+    let index = 0;
+    const workers = Array(Math.min(concurrencyLimit, pathsToCapture.length)).fill(null).map(async () => {
+      while (index < pathsToCapture.length) {
+        const currentIdx = index++;
+        const target = pathsToCapture[currentIdx];
+        try {
+          if (!fsSync.existsSync(target.resolved)) {
+            results.push({ snapshotId: null, path: target.resolved, size: 0, warning: `Target does not exist: ${target.original}` });
+            continue;
+          }
+          const stat = fsSync.statSync(target.resolved);
+          if (stat.isDirectory()) {
+            const dirSummary = await this._captureDirectory(target.resolved, taskId, stepNumber);
+            results.push({
+              snapshotId: null,
+              path: target.resolved,
+              size: dirSummary.totalSizeBytes,
+              paths: dirSummary.paths,
+              snapshotIds: dirSummary.snapshotIds,
+            });
+            if (dirSummary.warnings.length > 0) {
+              for (const w of dirSummary.warnings) {
+                results.push({ snapshotId: null, path: target.resolved, size: 0, warning: w });
+              }
+            }
+          } else if (stat.isFile()) {
+            const snapshotId = await this._captureSingleFile(target.resolved, taskId, stepNumber);
+            results.push({
+              snapshotId,
+              path: target.resolved,
+              size: snapshotId ? stat.size : 0,
+              warning: snapshotId ? undefined : `Could not capture file: ${target.original}`
+            });
+          }
+        } catch (err) {
+          results.push({
+            snapshotId: null,
+            path: target.resolved,
+            size: 0,
+            warning: `Could not capture ${target.original}: ${(err as Error).message}`
+          });
+        }
+      }
+    });
+
+    await Promise.all(workers);
+
+    for (const res of results) {
+      if (res.snapshotId) {
+        snapshotIds.push(res.snapshotId);
+        capturedPaths.push(res.path);
+        totalSizeBytes += res.size;
+      } else if (res.snapshotIds && res.paths) {
+        snapshotIds.push(...res.snapshotIds);
+        capturedPaths.push(...res.paths);
+        totalSizeBytes += res.size;
+      }
+      if (res.warning) {
+        warnings.push(res.warning);
+      }
+    }
+
+    return { snapshotIds, totalSizeBytes, paths: capturedPaths, warnings };
+  }
+
+  /**
+   * Auto-detect and capture all modified/deleted/staged files in the git working tree.
+   */
+  async captureGitChangedFiles(cwd: string, taskId: string, stepNumber: number): Promise<CaptureSummary> {
+    const warnings: string[] = [];
+    const pathsToCapture: Array<{ resolved: string; original: string }> = [];
+
+    try {
+      const { execSync } = require('child_process');
+      const output = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
+      const lines = output.split('\n').filter(Boolean);
+
+      for (const line of lines) {
+        let file = line.slice(3).trim();
+        if (file.startsWith('"') && file.endsWith('"')) {
+          file = file.slice(1, -1);
+        }
+
+        // Handle renamed files (status XY renamed-from -> renamed-to)
+        if (file.includes(' -> ')) {
+          const parts = file.split(' -> ');
+          file = parts[parts.length - 1].trim();
+        }
+
+        const resolved = path.resolve(cwd, file);
+        pathsToCapture.push({ resolved, original: file });
+      }
+    } catch (err) {
+      warnings.push(`Failed to list git changed files: ${(err as Error).message}`);
+    }
+
+    if (pathsToCapture.length === 0) {
+      return { snapshotIds: [], fileCount: 0, totalSizeBytes: 0, paths: [], warnings };
+    }
+
+    const parallelResult = await this.capturePathsParallel(pathsToCapture, taskId, stepNumber);
+    return {
+      snapshotIds: parallelResult.snapshotIds,
+      fileCount: parallelResult.snapshotIds.length,
+      totalSizeBytes: parallelResult.totalSizeBytes,
+      paths: parallelResult.paths,
+      warnings: [...warnings, ...parallelResult.warnings]
+    };
+  }
+
+  /**
    * Capture file content and create deletion/modification snapshots BEFORE
    * a destructive operation. Handles rm, mv, cp, sed -i, tee, dd, truncate,
    * sponge, and shell redirections (> file, 2> file, &> file).
@@ -2390,34 +2535,7 @@ export class RollbackManager {
     const warnings: string[] = [];
     let totalSizeBytes = 0;
 
-    // ── Helper: capture a single file target ───────────────────────────
-    const captureTarget = async (filePath: string, original: string): Promise<boolean> => {
-      try {
-        if (!fsSync.existsSync(filePath)) {
-          warnings.push(`Target does not exist: ${original}`);
-          return false;
-        }
-        const stat = fsSync.statSync(filePath);
-        if (stat.isDirectory()) {
-          const dirSummary = await this._captureDirectory(filePath, taskId, stepNumber);
-          snapshotIds.push(...dirSummary.snapshotIds);
-          allPaths.push(...dirSummary.paths);
-          totalSizeBytes += dirSummary.totalSizeBytes;
-          warnings.push(...dirSummary.warnings);
-        } else if (stat.isFile()) {
-          const snapshotId = await this._captureSingleFile(filePath, taskId, stepNumber);
-          if (snapshotId) {
-            snapshotIds.push(snapshotId);
-            allPaths.push(filePath);
-            totalSizeBytes += stat.size;
-          }
-        }
-        return true;
-      } catch (err) {
-        warnings.push(`Could not capture ${original}: ${(err as Error).message}`);
-        return false;
-      }
-    };
+    const pathsToCapture: Array<{ resolved: string; original: string }> = [];
 
     // ── rm: File/directory deletion ──────────────────────────────────
     if (cmdInfo.operation === 'rm') {
@@ -2431,7 +2549,7 @@ export class RollbackManager {
           const actualMatches = globResults.filter(r => { try { return fsSync.existsSync(r); } catch { return false; } });
           if (actualMatches.length > 0) {
             for (const globPath of actualMatches) {
-              await captureTarget(globPath, target.original);
+              pathsToCapture.push({ resolved: globPath, original: target.original });
             }
             continue;
           }
@@ -2445,9 +2563,9 @@ export class RollbackManager {
             warnings.push(`Skipping directory (no -r flag): ${target.original}`);
             continue;
           }
-          await captureTarget(target.resolved, target.original);
+          pathsToCapture.push({ resolved: target.resolved, original: target.original });
         } else if (stat.isFile()) {
-          await captureTarget(target.resolved, target.original);
+          pathsToCapture.push({ resolved: target.resolved, original: target.original });
         }
       }
     }
@@ -2459,11 +2577,11 @@ export class RollbackManager {
           if (fsSync.existsSync(cmdInfo.destination)) {
             const stat = fsSync.statSync(cmdInfo.destination);
             if (stat.isFile()) {
-              await captureTarget(cmdInfo.destination, cmdInfo.destination);
+              pathsToCapture.push({ resolved: cmdInfo.destination, original: cmdInfo.destination });
             } else if (stat.isDirectory() && cmdInfo.operation === 'mv') {
               for (const target of cmdInfo.targets) {
                 const destFile = path.join(cmdInfo.destination, path.basename(target.resolved));
-                await captureTarget(destFile, path.basename(target.original));
+                pathsToCapture.push({ resolved: destFile, original: path.basename(target.original) });
               }
             }
           }
@@ -2473,72 +2591,45 @@ export class RollbackManager {
       }
     }
 
-    // ── sed -i: In-place file editing (capture files before sed modifies them) ──
-    else if (cmdInfo.operation === 'sed') {
+    // ── sed / tee / dd / truncate / sponge / sort / download ───────────
+    else if (
+      cmdInfo.operation === 'sed' ||
+      cmdInfo.operation === 'tee' ||
+      cmdInfo.operation === 'dd' ||
+      cmdInfo.operation === 'truncate' ||
+      cmdInfo.operation === 'sponge' ||
+      cmdInfo.operation === 'sort' ||
+      cmdInfo.operation === 'download'
+    ) {
       for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
+        pathsToCapture.push({ resolved: target.resolved, original: target.original });
       }
     }
 
-    // ── tee: Pipe output to file(s) (capture files before tee overwrites them) ──
-    else if (cmdInfo.operation === 'tee') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── dd of=...: Raw write to file (capture before dd overwrites) ─────
-    else if (cmdInfo.operation === 'dd') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── truncate: Shrink/extend files (capture before truncation) ──────
-    else if (cmdInfo.operation === 'truncate') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── sponge: Soak stdin and write to file ────────────────────────────
-    else if (cmdInfo.operation === 'sponge') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── sort -o: In-place sort (overwrite input) ────────────────────────
-    else if (cmdInfo.operation === 'sort') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── install: Copy and set attributes (capture dest before overwrite) ─
-    else if (cmdInfo.operation === 'install') {
+    // ── install / rsync ──────────────────────────────────────────────
+    else if (cmdInfo.operation === 'install' || cmdInfo.operation === 'rsync') {
       if (cmdInfo.destination) {
-        await captureTarget(cmdInfo.destination, cmdInfo.destination);
+        pathsToCapture.push({ resolved: cmdInfo.destination, original: cmdInfo.destination });
       }
       for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
+        pathsToCapture.push({ resolved: target.resolved, original: target.original });
       }
     }
 
-    // ── rsync: File sync (capture dest before overwrite) ─────────────────
-    else if (cmdInfo.operation === 'rsync') {
-      if (cmdInfo.destination) {
-        await captureTarget(cmdInfo.destination, cmdInfo.destination);
-      }
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
-      }
-    }
-
-    // ── git checkout/restore: Capture files before git overwrites them ──
+    // ── git checkout/restore/clean ───────────────────────────────────
     else if (cmdInfo.operation === 'git') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
+      const isWholeRepoAction = cmdInfo.targets.length === 0 || cmdInfo.targets.some(t => t.original === '.' || t.original === '*');
+      if (isWholeRepoAction) {
+        // Sophisticated auto-detection of all modified files in working tree
+        const gitSummary = await this.captureGitChangedFiles(cwd, taskId, stepNumber);
+        snapshotIds.push(...gitSummary.snapshotIds);
+        allPaths.push(...gitSummary.paths);
+        totalSizeBytes += gitSummary.totalSizeBytes;
+        warnings.push(...gitSummary.warnings);
+      } else {
+        for (const target of cmdInfo.targets) {
+          pathsToCapture.push({ resolved: target.resolved, original: target.original });
+        }
       }
       // For git clean -fd, need to list and capture untracked files
       if (cmdInfo.force && cmdInfo.targets.length === 0) {
@@ -2548,16 +2639,9 @@ export class RollbackManager {
           const untracked = result.split('\n').filter(Boolean);
           for (const file of untracked) {
             const resolved = path.resolve(cwd, file);
-            await captureTarget(resolved, file);
+            pathsToCapture.push({ resolved, original: file });
           }
         } catch { /* git not available or not a git repo — skip */ }
-      }
-    }
-
-    // ── download: curl -o / wget -O / npm init (capture before overwrite) ─
-    else if (cmdInfo.operation === 'download') {
-      for (const target of cmdInfo.targets) {
-        await captureTarget(target.resolved, target.original);
       }
     }
 
@@ -2566,9 +2650,18 @@ export class RollbackManager {
     if (cmdInfo.redirectFiles && cmdInfo.redirectFiles.length > 0) {
       for (const redirectPath of cmdInfo.redirectFiles) {
         // Skip if already captured as part of the main operation
-        if (allPaths.includes(redirectPath)) continue;
-        await captureTarget(redirectPath, path.relative(cwd, redirectPath));
+        if (pathsToCapture.some(p => p.resolved === redirectPath) || allPaths.includes(redirectPath)) continue;
+        pathsToCapture.push({ resolved: redirectPath, original: path.relative(cwd, redirectPath) });
       }
+    }
+
+    // Execute parallel capturing
+    if (pathsToCapture.length > 0) {
+      const parallelResult = await this.capturePathsParallel(pathsToCapture, taskId, stepNumber);
+      snapshotIds.push(...parallelResult.snapshotIds);
+      allPaths.push(...parallelResult.paths);
+      totalSizeBytes += parallelResult.totalSizeBytes;
+      warnings.push(...parallelResult.warnings);
     }
 
     console.log(
@@ -2591,7 +2684,7 @@ export class RollbackManager {
       // Exclude pattern check
       if (this.isFileExcluded(filePath)) return null;
 
-      const content = await fsPromises.readFile(filePath, 'utf-8');
+      const content = await fsPromises.readFile(filePath);
       return await this._storeDeleteSnapshot(filePath, content, taskId, stepNumber);
     } catch (err) {
       console.warn(`[RollbackManager] Failed to capture file ${filePath}:`, (err as Error).message);
@@ -2604,7 +2697,7 @@ export class RollbackManager {
    */
   private async _storeDeleteSnapshot(
     filePath: string,
-    content: string,
+    content: string | Buffer,
     taskId: string,
     stepNumber: number
   ): Promise<string> {
@@ -2686,12 +2779,13 @@ export class RollbackManager {
    */
   async linkSnapshotsToCommand(commandId: string, snapshotIds: string[]): Promise<LinkSnapshotsResult> {
     this.ensureInitialized();
-    if (!commandId || !snapshotIds || snapshotIds.length === 0) {
+    if (!commandId) {
       return { commandId, snapshotIds: snapshotIds || [], linked: 0 };
     }
 
+    const snaps = snapshotIds || [];
     let linked = 0;
-    for (const snapId of snapshotIds) {
+    for (const snapId of snaps) {
       try {
         await dbOps.run(
           `INSERT OR IGNORE INTO command_file_links (command_id, snapshot_id) VALUES (?, ?)`,
@@ -2703,18 +2797,30 @@ export class RollbackManager {
       }
     }
 
-    // Update the command record to be reversible (since we have snapshots)
+    // Always update the command record to be reversible if it is a file/destructive command
+    // (even if 0 snapshots were linked, e.g. target didn't exist or no files were modified)
     try {
-      await dbOps.run(
-        `UPDATE command_history SET reversible = 1, rollback_command = ? WHERE id = ?`,
-        [`[File restoration] Restore ${snapshotIds.length} file(s) from pre-capture snapshots`, commandId]
-      );
+      const cmdRec = await this.getCommandRecord(commandId);
+      if (cmdRec) {
+        const strategyInfo = this.identifyRollbackStrategy(cmdRec.command);
+        if (strategyInfo.strategy === 'file_restore') {
+          await dbOps.run(
+            `UPDATE command_history SET reversible = 1, rollback_command = ? WHERE id = ?`,
+            [
+              snaps.length > 0
+                ? `[File restoration] Restore ${snaps.length} file(s) from pre-capture snapshots`
+                : `[File restoration] No files to restore (no files were affected)`,
+              commandId
+            ]
+          );
+        }
+      }
     } catch (err) {
       console.warn(`[RollbackManager] Failed to update command reversibility:`, err);
     }
 
-    console.log(`[RollbackManager] Linked ${linked}/${snapshotIds.length} snapshot(s) to command ${commandId}`);
-    return { commandId, snapshotIds, linked };
+    console.log(`[RollbackManager] Linked ${linked}/${snaps.length} snapshot(s) to command ${commandId}`);
+    return { commandId, snapshotIds: snaps, linked };
   }
 
   /**
@@ -2738,6 +2844,142 @@ export class RollbackManager {
       console.error(`[RollbackManager] Failed to get snapshots for command ${commandId}:`, err);
       return [];
     }
+  }
+
+  /**
+   * Get a rollback preview since a specific timestamp.
+   *
+   * @param taskId - Task identifier
+   * @param timestamp - Starting timestamp
+   * @returns Rollback preview with file/command details and risk assessment
+   */
+  async getRollbackPreviewByTimestamp(taskId: string, timestamp: number): Promise<RollbackPreview> {
+    this.ensureInitialized();
+
+    // Fetch snapshots since timestamp
+    let fileSnapshots: FileSnapshot[] = [];
+    try {
+      const rows = await dbOps.all(
+        `SELECT * FROM file_snapshots WHERE task_id = ? AND timestamp >= ? ORDER BY timestamp ASC`,
+        [taskId, timestamp]
+      );
+      fileSnapshots = rows.map(r => this.rowToSnapshot(r));
+    } catch (err) {
+      console.error('[RollbackManager] Failed to get snapshots for preview:', err);
+    }
+
+    // Fetch commands since timestamp
+    let commands: CommandRecord[] = [];
+    try {
+      const rows = await dbOps.all(
+        `SELECT * FROM command_history WHERE task_id = ? AND timestamp >= ? ORDER BY timestamp ASC`,
+        [taskId, timestamp]
+      );
+      commands = rows.map(r => this.rowToCommandRecord(r));
+    } catch (err) {
+      console.error('[RollbackManager] Failed to get commands for preview:', err);
+    }
+
+    // Get linked snapshots for each command
+    const linkedSnapshotIds = new Set<string>();
+    for (const cmd of commands) {
+      const linked = await this.getFileSnapshotsForCommand(cmd.id);
+      for (const snap of linked) {
+        linkedSnapshotIds.add(snap.id);
+      }
+    }
+
+    const files: RollbackPreviewItem[] = [];
+    let totalSizeBytes = 0;
+    let hasUnrestorableFiles = false;
+
+    for (const snap of fileSnapshots) {
+      let contentSize = 0;
+      if (snap.contentBefore) {
+        try {
+          const decoded = Buffer.from(snap.contentBefore, 'base64');
+          contentSize = decoded.length;
+        } catch { contentSize = snap.contentBefore.length; }
+      }
+      totalSizeBytes += contentSize;
+
+      let warning: string | undefined;
+      let willRestore = true;
+
+      // Check if file still exists in its current state
+      if (snap.operation === 'delete') {
+        const stillDeleted = !fsSync.existsSync(snap.filePath);
+        if (!stillDeleted) {
+          warning = 'File has been re-created since deletion — restoring may overwrite current content';
+        }
+      } else if (snap.operation === 'create') {
+        if (!fsSync.existsSync(snap.filePath)) {
+          warning = 'File was already deleted or never created';
+          hasUnrestorableFiles = true;
+        }
+      } else if (snap.operation === 'modify') {
+        try {
+          const currentContent = fsSync.existsSync(snap.filePath)
+            ? await fsPromises.readFile(snap.filePath).catch(() => null)
+            : null;
+
+          if (currentContent === null) {
+            warning = 'File no longer exists — snapshot content will be restored as new file';
+          } else {
+            try {
+              const expectedAfter = await this.decompressContent(snap.contentAfter);
+              if (currentContent && expectedAfter && currentContent.equals(expectedAfter)) {
+                // Clean restore
+              } else {
+                warning = 'File was modified since snapshot — restoring may cause data loss';
+              }
+            } catch { /* can't compare */ }
+          }
+        } catch { warning = 'Cannot verify current file state'; }
+      }
+
+      let lastModified: string | undefined;
+      try {
+        if (fsSync.existsSync(snap.filePath)) {
+          lastModified = fsSync.statSync(snap.filePath).mtime.toISOString();
+        }
+      } catch { /* ignore */ }
+
+      files.push({
+        filePath: snap.filePath,
+        operation: snap.operation,
+        contentSizeBytes: contentSize,
+        willRestore,
+        warning,
+        lastModified,
+      });
+    }
+
+    const commandItems = commands.map(cmd => ({
+      command: cmd.command,
+      reversible: cmd.reversible,
+      rollbackCommand: cmd.rollbackCommand || undefined,
+      linkedSnapshots: linkedSnapshotIds.size,
+    }));
+
+    const hasIrreversibleCommands = commands.some(c => !c.reversible);
+    const totalFilesToRestore = files.filter(f => f.willRestore).length;
+
+    // Calculate risk level
+    let riskLevel: 'low' | 'medium' | 'high' = 'low';
+    if (files.some(f => f.warning)) riskLevel = 'medium';
+    if (hasIrreversibleCommands || hasUnrestorableFiles || totalFilesToRestore > 50) riskLevel = 'high';
+
+    return {
+      stepNumber: 0,
+      files,
+      commands: commandItems,
+      totalFilesToRestore,
+      totalSizeBytes,
+      hasIrreversibleCommands,
+      hasUnrestorableFiles,
+      riskLevel,
+    };
   }
 
   /**
@@ -2794,7 +3036,7 @@ export class RollbackManager {
       } else if (snap.operation === 'modify') {
         try {
           const currentContent = fsSync.existsSync(snap.filePath)
-            ? await fsPromises.readFile(snap.filePath, 'utf-8').catch(() => null)
+            ? await fsPromises.readFile(snap.filePath).catch(() => null)
             : null;
 
           if (currentContent === null) {
@@ -2803,7 +3045,7 @@ export class RollbackManager {
             // Check if content matches what was expected (no conflict)
             try {
               const expectedAfter = await this.decompressContent(snap.contentAfter);
-              if (currentContent === expectedAfter) {
+              if (currentContent && expectedAfter && currentContent.equals(expectedAfter)) {
                 // Clean restore — nobody modified it since
               } else {
                 warning = 'File was modified since snapshot — restoring may cause data loss';

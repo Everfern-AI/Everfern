@@ -1341,8 +1341,8 @@ async function withCommandTracking(
         stepNumber
       );
 
-      // Link pre-captured snapshots to this command
-      if (cmdRecord && capturedSnapshotIds.length > 0) {
+      // Link pre-captured snapshots to this command (even if 0, to register the rollback command)
+      if (cmdRecord) {
         await rollbackManager.linkSnapshotsToCommand(cmdRecord.id, capturedSnapshotIds).catch(e =>
           console.warn('[pi-tools] Failed to link snapshots to command:', e)
         );

@@ -363,6 +363,15 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
     // Clean the inner content (strip markdown code blocks if present)
     let innerText = match[1].trim();
     innerText = innerText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    
+    // Auto-fix common LLM JSON syntax errors before parsing
+    // 1. Missing commas between objects/arrays: } { -> },{
+    innerText = innerText.replace(/}\s*([{\[])/g, '},$1');
+    // 2. Missing commas between key-value pairs: "value" "key" -> "value", "key"
+    innerText = innerText.replace(/"\s*"/g, '", "');
+    // 3. Trailing commas before closing brackets: , } -> }
+    innerText = innerText.replace(/,\s*([\]}])/g, '$1');
+
     innerText = escapeControlCharsInStrings(innerText);
 
     try {
@@ -377,7 +386,7 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
     } catch (e) {
-        console.warn("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
+        console.debug("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
         
         // 1. Try to extract valid JSON objects using brace-matching with reset on new '{'
         // Resetting startIdx on '{' allows us to skip unclosed/truncated JSON objects and capture subsequent valid ones.
@@ -677,6 +686,7 @@ export default function ChatPage() {
             return;
         }
         const fetchTasks = async () => {
+            let tasksLoaded = false;
             try {
                 const content = await (window as any).electronAPI?.artifacts?.read(activeConversationId, 'task.md');
                 if (content) {
@@ -702,10 +712,48 @@ export default function ChatPage() {
                     }
                     if (newTasks.length > 0) {
                         setPanelTasks(newTasks);
+                        tasksLoaded = true;
                     }
                 }
             } catch (e) {
                 // Ignored (file might not exist)
+            }
+
+            // Fallback: If task.md doesn't exist, parse the latest assistant message for checklists
+            if (!tasksLoaded && messagesRef.current && messagesRef.current.length > 0) {
+                const assistantMsgs = messagesRef.current.filter(m => m.role === 'assistant');
+                if (assistantMsgs.length > 0) {
+                    const lastAssistantMsg = assistantMsgs[assistantMsgs.length - 1];
+                    const content = lastAssistantMsg.content || '';
+                    const lines = content.split('\n');
+                    const fallbackTasks: { description: string; status: 'pending' | 'in_progress' | 'completed' }[] = [];
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        let match = trimmed.match(/^- `?\[ \]?`?\s+(.+)/);
+                        if (match) {
+                            fallbackTasks.push({ description: match[1], status: 'pending' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[\/\]?`?\s+(.+)/);
+                        if (match) {
+                            fallbackTasks.push({ description: match[1], status: 'in_progress' });
+                            continue;
+                        }
+                        match = trimmed.match(/^- `?\[[xX]\]?`?\s+(.+)/);
+                        if (match) {
+                            fallbackTasks.push({ description: match[1], status: 'completed' });
+                            continue;
+                        }
+                    }
+                    if (fallbackTasks.length > 0) {
+                        setPanelTasks(fallbackTasks);
+                        tasksLoaded = true;
+                    }
+                }
+            }
+
+            if (!tasksLoaded) {
+                setPanelTasks([]);
             }
         };
         fetchTasks();
@@ -3887,7 +3935,25 @@ export default function ChatPage() {
                             const blocks: any[] = [];
                             if (m.content) blocks.push({ type: 'text', text: m.content });
                             const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
-                            m.attachments.forEach(a => { if (a.mimeType.startsWith('image/') && a.base64) blocks.push({ type: 'image_url', image_url: { url: a.base64 } }); else blocks.push({ type: 'text', text: `[Attached File: ${a.name}]\n[Location: /everfern/${a.name}]\n\nUse your tools (e.g. read, python) to access the file from this path.` }); });
+                            m.attachments.forEach(a => {
+                                if (a.mimeType.startsWith('image/') && a.base64) {
+                                    blocks.push({ type: 'image_url', image_url: { url: a.base64 } });
+                                } else {
+                                    const hostPath = a.path || '';
+                                    const wslPath = hostPath ? toLinuxPath(hostPath) : `/everfern/${a.name}`;
+                                    const escapedHost = hostPath.replace(/\\/g, '\\\\');
+                                    blocks.push({
+                                        type: 'text',
+                                        text: `[Attached File: ${a.name}]
+[Host Path: ${escapedHost || '(not available)'}]
+[WSL Path: ${wslPath}]
+
+This file is available on the Windows host machine at ${escapedHost || '(path unavailable)'}.
+For file analysis tasks (reading PDFs, parsing CSVs, analyzing images, processing documents), use the local machine tools (PowerShell, python on Windows) via the execute_pwsh tool with local=true.
+Only use the WSL path ${wslPath} as fallback if local execution is not possible.`
+                                    });
+                                }
+                            });
                             return { role: m.role, content: blocks };
                         }
                         return { role: m.role, content: m.content };
@@ -5369,11 +5435,16 @@ export default function ChatPage() {
                                                             {msg.attachments && msg.attachments.length > 0 && (
                                                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                                                                     {msg.attachments.map(a => (
-                                                                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)" }}>
-                                                                            {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center" }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
-                                                                            <div style={{ display: "flex", flexDirection: "column" }}>
-                                                                                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span>
+                                                                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)", maxWidth: '100%' }}>
+                                                                            {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
+                                                                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                                                                                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={a.path || a.name}>{a.name}</span>
                                                                                 <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
+                                                                                {a.path && (
+                                                                                    <span style={{ fontSize: 9, color: "var(--color-text-placeholder)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }} title={a.path}>
+                                                                                        {a.path}
+                                                                                    </span>
+                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                     ))}
@@ -5537,7 +5608,7 @@ export default function ChatPage() {
                                                                     height={tc.args?.height as number}
                                                                 />
                                                             ))}
-                                                            <RateLimitContinueButton content={msg.content} onContinue={() => handleSend("continue")} />
+                                                            <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                             {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                 <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                     <UserQuestionForm

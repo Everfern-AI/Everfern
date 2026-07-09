@@ -314,8 +314,10 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
       let decision: any = await this.askAI(systemPrompt, userPrompt, screenshotB64, dom, state.refs, state.snapshot?.viewport, history);
 
         steps += 1;
-        const nextGoal = clamp(decision?.current_state?.next_goal || 'Choose the next browser action', 240);
-        this.logger.aiDecision(steps, maxSteps, nextGoal);
+        const nextGoal = clamp(decision?.current_state?.next_goal || '', 240);
+        if (nextGoal && nextGoal !== 'Choose the next browser action') {
+          this.logger.aiDecision(steps, maxSteps, nextGoal);
+        }
 
         const actions = Array.isArray(decision?.action) ? decision.action.slice(0, effectiveMaxActionsPerStep) : [];
         if (actions.length === 0) {
@@ -470,13 +472,20 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           abortSignal: globalAbortManager.abortController.signal,
         };
 
-        const isNativeToolModel = ['openai', 'anthropic', 'gemini', 'deepseek', 'openrouter'].includes(client.provider) ||
-                                  client.model.toLowerCase().includes('gpt-') ||
-                                  client.model.toLowerCase().includes('claude-') ||
-                                  client.model.toLowerCase().includes('gemini-') ||
-                                  client.model.toLowerCase().includes('deepseek-');
+        const modelNameLower = client.model.toLowerCase();
+        const isTarsModel = modelNameLower.includes('tars') || modelNameLower.startsWith('everfern-tars');
 
-        if (isVisionCall && !isNativeToolModel) {
+        const isNativeToolModel = !isTarsModel && (
+                                  ['openai', 'anthropic', 'gemini', 'deepseek', 'openrouter'].includes(client.provider) ||
+                                  modelNameLower.includes('gpt-') ||
+                                  modelNameLower.includes('claude-') ||
+                                  modelNameLower.includes('gemini-') ||
+                                  modelNameLower.includes('deepseek-')
+                                  );
+
+        if (isTarsModel) {
+          // Do not send tools or response format for action-trained TARS models
+        } else if (isVisionCall && !isNativeToolModel) {
           chatOptions.responseFormat = 'json';
           chatOptions.jsonSchema = NAVIS_DECISION_SCHEMA;
         } else {
@@ -489,7 +498,30 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         let toolCalls: any[] = [];
         const contentStr = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
 
-        if (isVisionCall && !isNativeToolModel) {
+        if (isTarsModel) {
+          try {
+            const lines = contentStr.split('\n').map((l: string) => l.trim()).filter(Boolean);
+            const tarsActions: any[] = [];
+            const dimensions = viewport ? { width: viewport.width, height: viewport.height } : null;
+            for (const line of lines) {
+              const parsed = this._parseTarsAction(line, dimensions, refs, viewport);
+              if (parsed) tarsActions.push(parsed);
+            }
+            if (tarsActions.length > 0) {
+              toolCalls = tarsActions.map((act: any, idx: number) => {
+                const name = Object.keys(act)[0];
+                const args = act[name];
+                return {
+                  id: `call_${Date.now()}_${idx}`,
+                  name,
+                  arguments: args
+                };
+              });
+            }
+          } catch (e) {
+            console.warn('[Navis Extension] Failed to parse TARS actions from response:', e);
+          }
+        } else if (isVisionCall && !isNativeToolModel) {
           try {
             const parsed = extractJson(contentStr);
             if (parsed && parsed.action) {

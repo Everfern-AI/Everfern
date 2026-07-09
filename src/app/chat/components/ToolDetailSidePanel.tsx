@@ -4922,11 +4922,11 @@ const EDITOR_COLORS = {
   gutterBg: '#18181b',
   gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
-  text: 'var(--color-border)',
+  text: '#e2e8f0',
   keyword: '#e879f9', // pink/magenta
   string: '#34d399', // green
   number: '#60a5fa', // blue
-  comment: '#71717a', // grey
+  comment: '#a1a1aa', // grey
 };
 
 const detectLanguage = (ext: string): string => {

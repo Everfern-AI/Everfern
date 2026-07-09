@@ -248,6 +248,22 @@ export function registerAgentHandlers() {
     };
   });
 
+  ipcMain.handle('agent:get-rollback-preview', async (_event, conversationId: string, timestamp: number) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const manager = getRollbackManager();
+    await manager.initialize();
+    const preview = await manager.getRollbackPreviewByTimestamp(conversationId, timestamp);
+    return preview;
+  });
+
+  ipcMain.handle('agent:get-snapshot-content', async (_event, snapshotId: string) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const manager = getRollbackManager();
+    await manager.initialize();
+    const content = await manager.getSnapshotContent(snapshotId);
+    return content;
+  });
+
   // NOTE: Must use ipcMain.on (not ipcMain.handle) here because the renderer preload
   // uses ipcRenderer.send (one-way fire-and-forget), not ipcRenderer.invoke.
   // ipcMain.handle only receives messages from ipcRenderer.invoke.

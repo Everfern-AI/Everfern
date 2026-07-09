@@ -19,13 +19,21 @@ export default function TasksPanel({ tasks, path }: TasksPanelProps) {
     if (!tasks || tasks.length === 0) return null;
 
     return (
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl overflow-hidden p-4 shadow-sm transition-colors duration-200">
+        <div 
+            className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl shadow-sm transition-colors duration-200"
+            style={{ padding: '20px 16px 16px 16px' }}
+        >
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="w-full flex items-center justify-between bg-transparent border-none cursor-pointer p-0"
-                style={{ marginBottom: isExpanded ? 16 : 0 }}
+                className="w-full flex items-center justify-between bg-transparent border-none cursor-pointer overflow-visible"
+                style={{ padding: 0, margin: 0, marginBottom: isExpanded ? 16 : 0, outline: 'none' }}
             >
-                <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 tracking-wide uppercase">Progress</span>
+                <span 
+                    className="text-xs font-semibold text-stone-500 dark:text-stone-400 tracking-wide uppercase"
+                    style={{ lineHeight: '1.5', display: 'inline-block' }}
+                >
+                    Progress
+                </span>
                 <ChevronDownIcon 
                     width={16} 
                     height={16} 

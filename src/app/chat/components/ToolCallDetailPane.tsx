@@ -101,7 +101,11 @@ function CopyButton({ text }: { text: string }) {
 
 function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const jsonStrRaw = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const jsonStrRaw = typeof data === 'string'
+    ? data
+    : data === undefined
+      ? 'undefined'
+      : JSON.stringify(data, null, 2) || '{}';
   const MAX_JSON_LENGTH = 30000;
   const isTruncated = jsonStrRaw.length > MAX_JSON_LENGTH;
   const jsonStr = isTruncated
@@ -716,7 +720,8 @@ export function ToolCallDetailPane({
 
 function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   const args = toolCall.arguments || (toolCall as any).args || {};
-  const filePath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+  const filePathRaw = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+  const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
   
   const toolNameLower = toolCall.toolName.toLowerCase();

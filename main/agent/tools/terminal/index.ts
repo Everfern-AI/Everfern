@@ -63,12 +63,25 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
 
     // ── Pre-execution: Capture file state for destructive commands ──
     let capturedSnapshotIds: string[] = [];
+    let agentTaskId = '';
+    let agentStepNumber = 0;
+    try {
+      const { getAgentContext } = require('../pi-tools');
+      const { taskId, stepNumber } = getAgentContext();
+      if (taskId && stepNumber !== undefined) {
+        agentTaskId = taskId;
+        agentStepNumber = stepNumber;
+      }
+    } catch (contextError) {
+      console.warn(`[terminalTool] Could not get agent context before execution: ${contextError}`);
+    }
+
     try {
       const { getRollbackManager } = require('../../persistence/rollback-manager');
       const rollbackManager = getRollbackManager();
       await rollbackManager.initialize();
       const captureResult = await rollbackManager.captureFilesBeforeDestructiveCommand(
-        command, cwd, '', 0
+        command, cwd, agentTaskId, agentStepNumber
       );
       if (captureResult.snapshotIds.length > 0) {
         capturedSnapshotIds = captureResult.snapshotIds;
@@ -100,9 +113,9 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
           stepNumber
         );
 
-        // Link pre-captured snapshots to this command if we captured any
-        if (cmdRecord && capturedSnapshotIds.length > 0) {
-          await rollbackManager.linkSnapshotsToCommand(cmdRecord.id, capturedSnapshotIds).catch(e =>
+        // Link pre-captured snapshots to this command (even if 0, to register the rollback command)
+        if (cmdRecord) {
+          await rollbackManager.linkSnapshotsToCommand(cmdRecord.id, capturedSnapshotIds).catch((e: any) =>
             console.warn('[terminalTool] Failed to link snapshots to command:', e)
           );
         }

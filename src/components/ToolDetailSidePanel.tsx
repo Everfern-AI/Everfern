@@ -839,7 +839,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
             </div>
             <div style={{
               position: 'absolute', bottom: 12, left: 12,
-              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
+              background: 'rgba(0,0,0,0.6)', color: '#ffffff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -848,7 +848,7 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
             </div>
             <div style={{
               position: 'absolute', bottom: 12, right: 12,
-              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
+              background: 'rgba(0,0,0,0.6)', color: '#ffffff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -2321,11 +2321,11 @@ const EDITOR_COLORS = {
   gutterBg: '#18181b',
   gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
-  text: 'var(--color-border)',
+  text: '#e2e8f0',
   keyword: '#e879f9', // pink/magenta
   string: '#34d399', // green
   number: '#60a5fa', // blue
-  comment: '#71717a', // grey
+  comment: '#a1a1aa', // grey
 };
 
 const detectLanguage = (ext: string): string => {
