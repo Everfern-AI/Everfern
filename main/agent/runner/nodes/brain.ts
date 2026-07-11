@@ -10,6 +10,8 @@ import { globalAbortManager } from '../abort-manager';
 import { nodeLifecycle } from '../services/node-utils';
 import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../../persistence/checkpoint-engine';
 import { loadSoul, loadAgents } from '../../personality-manager';
+import * as fs from 'fs';
+import * as path from 'path';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
@@ -509,46 +511,11 @@ export const createBrainNode = (
     // Emit initial brain activation message
 
 
-    // ── EARLY RESEARCH INTENT DETECTION ──────────────────────────────────────
-    // If the current intent is 'research' AND we haven't already routed to web-explorer
-    // in this turn, immediately route to web-explorer without executing any tools.
-    // This prevents the brain from attempting web_search execution and ensures research
-    // requests are delegated to the specialized web-explorer agent.
-    //
-    // CRITICAL: Only route on the FIRST brain call for research intent.
-    // If returningFromSpecialist is already set to 'web_explorer', we've already routed
-    // and should NOT route again (that would create an infinite loop).
-    //
-    // ALSO: If web-explorer has already completed (webExplorerComplete === true),
-    // do NOT route back to it — the task is done.
-    if (state.currentIntent === 'research' && !state.returningFromSpecialist && !state.webExplorerComplete) {
-      console.log('[Brain] Research intent detected → routing to web-explorer immediately');
-
-      eventQueue?.push({
-        type: 'thought',
-        content: 'Research intent detected — delegating to web-explorer.'
-      });
-
-      return {
-        pendingToolCalls: [],
-        routingDecision: {
-          decision: 'route_web_explorer',
-          explanation: 'Research intent detected — delegating to web-explorer'
-        },
-        completionSignal: null,
-        taskPhase: 'specialized_agent' as const,
-        brainToolsInFlight: false,
-        returningFromSpecialist: 'web_explorer'
-      };
-    }
-
     // ── BOOKING INTENT OVERRIDE ─────────────────────────────────────────────
     // Even if triage classified the task as 'task' or 'automate', if the user message
     // contains booking/purchasing keywords, override to web_explorer.
     // This is a safety net for cases where triage misclassifies booking requests.
-    if (!state.returningFromSpecialist && !state.webExplorerComplete &&
-        state.currentIntent !== 'research' && state.currentIntent !== 'coding' &&
-        state.currentIntent !== 'build' && state.currentIntent !== 'fix') {
+    if (!state.returningFromSpecialist && !state.webExplorerComplete) {
       const allMsgs = state.messages || [];
       const lastUserMsg = [...allMsgs].reverse().find((m: any) => {
         const role = m.role || m._getType?.();
@@ -564,7 +531,7 @@ export const createBrainNode = (
       const bookingKeywords = /\b(book|reserve|buy|purchase|order|checkout|sign\s*up|register)\b.*\b(flight|trip|hotel|ticket|cab|taxi|bus|train|room|stay|airbnb|hostel|table|appointment)\b|\b(flight|trip|hotel|ticket).*\b(book|reserve|buy|purchase)\b|\b(from|to)\s+\w+.*\b(to|from)\s+\w+.*\b(flight|trip|book)\b|\b[A-Z]{3}\s+(to|from)\s+[A-Z]{3}\b/i;
 
       if (bookingKeywords.test(userText) || bookingKeywords.test(lower)) {
-        console.log('[Brain] Booking keywords detected in non-research intent → overriding to web-explorer');
+        console.log('[Brain] Booking keywords detected → overriding to web-explorer');
 
         eventQueue?.push({
           type: 'thought',
@@ -585,45 +552,6 @@ export const createBrainNode = (
       }
     }
 
-    if ((state.currentIntent === 'coding' || state.currentIntent === 'build' || state.currentIntent === 'fix') && !state.returningFromSpecialist && !state.codingComplete) {
-      console.log(`[Brain] ${state.currentIntent} intent detected → routing to coding_specialist immediately`);
-
-      return {
-        pendingToolCalls: [],
-        routingDecision: {
-          decision: 'route_coding',
-          explanation: `${state.currentIntent} intent detected — delegating to coding_specialist`
-        },
-        completionSignal: null,
-        taskPhase: 'specialized_agent' as const,
-        brainToolsInFlight: false,
-        returningFromSpecialist: 'coding_specialist',
-        harnessRecoveryActions: [],
-      };
-    }
-    // ────────────────────────────────────────────────────────────────────────
-
-    const hasExecutedComputerUse = allMessages.some((m: any) => {
-      const type = m._getType?.() || m.type;
-      return type === 'tool' && (m.name === 'computer_use' || m.tool_name === 'computer_use');
-    });
-
-    if (state.currentIntent === 'automate' && !hasExecutedComputerUse) {
-      console.log('[Brain] Automate intent detected → generating computer_use tool call directly');
-      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const taskPrompt = state.decomposedTask?.steps?.[0]?.agentPrompt || originalRequest;
-      return {
-        pendingToolCalls: [{
-          id: toolCallId,
-          name: 'computer_use',
-          arguments: {
-            task: taskPrompt
-          }
-        }],
-        taskPhase: 'executing' as const,
-      };
-    }
-
     // Load the main system prompt from synchronized location
     let systemPrompt = systemPromptOverride;
     if (!systemPrompt) {
@@ -638,8 +566,6 @@ export const createBrainNode = (
 
     // Inject graph-based persistent memories (USER_PROFILE.md and PROJECT_STATE.md)
     try {
-      const fs = require('fs');
-      const path = require('path');
       const os = require('os');
       const memoryDir = path.join(os.homedir(), '.everfern', 'memory');
       const profilePath = path.join(memoryDir, 'USER_PROFILE.md');
@@ -682,7 +608,19 @@ export const createBrainNode = (
       console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
     }
 
-
+    // Inject recent findings from findings.md so the brain doesn't repeat navis/web_search work
+    try {
+      const findingsPath = runner.workspaceDir ? path.join(runner.workspaceDir, 'findings.md') : null;
+      if (findingsPath && fs.existsSync(findingsPath)) {
+        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
+        if (findingsContent && findingsContent.length > 0) {
+          systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
+          console.log('[Brain] 📄 Injected findings.md context into system prompt');
+        }
+      }
+    } catch (findingsErr) {
+      console.warn('[Brain] Failed to inject findings:', findingsErr);
+    }
 
     let skipRouting = false;
     // ── EARLY CHECK FOR WEB_EXPLORER COMPLETION (Sub-task 3.2) ──────────────
@@ -747,14 +685,69 @@ export const createBrainNode = (
         completionSignal: null,
         routingDecision: null,
         brainToolsInFlight: true,
-        returningFromSpecialist: null
+        returningFromSpecialist: null,
+        resumingFromFormResponse: false
       };
+    }
+
+    // Compute hasNoOutput early — used by circuit breaker, auto-routing, and form-response continuation
+    const hasNoOutput = !responseContent || responseContent.trim().length === 0;
+
+    // ── FORM RESPONSE CONTINUATION ────────────────────────────────────────
+    // When resuming from ask_user_wait, the brain's LLM may acknowledge the
+    // form response with text but no tool calls. If we let it fall through to
+    // buildCompletionSignal(), the LLM may classify the acknowledgment as
+    // task_complete, ending the task prematurely.
+    //
+    // When this flag is set and the LLM produced no tools, we force auto-routing
+    // based on intent so the brain gets routed to the right specialist or
+    // continues with its tools.
+    if (state.resumingFromFormResponse && !hasPendingTools) {
+      console.log('[Brain] Resuming from form response — checking if brain needs to continue with tools');
+
+      // If the LLM produced text without tools, it may have just acknowledged the
+      // form response. Force auto-routing based on intent to continue the task.
+      if (hasNoOutput && state.currentIntent) {
+        const intentRoutingMap: Record<string, RoutingDecision> = {
+          'research': 'route_web_explorer',
+          'coding': 'route_coding',
+          'build': 'route_coding',
+          'fix': 'route_coding',
+          'analyze': 'route_data_analyst',
+          'automate': 'continue_brain',
+        };
+        const autoDecision = intentRoutingMap[state.currentIntent];
+        if (autoDecision) {
+          const isDone = (
+            (autoDecision === 'route_coding' && state.codingComplete) ||
+            (autoDecision === 'route_web_explorer' && state.webExplorerComplete) ||
+            (autoDecision === 'route_data_analyst' && state.dataAnalysisComplete)
+          );
+          if (!isDone) {
+            runner.telemetry.info(`[Brain] Form response continuation — auto-routing to ${autoDecision} for intent ${state.currentIntent}`);
+            return {
+              ...result,
+              routingDecision: { decision: autoDecision, explanation: `Form response continuation for intent ${state.currentIntent}` },
+              completionSignal: null,
+              taskPhase: 'specialized_agent' as const,
+              brainToolsInFlight: false,
+              returningFromSpecialist: state.returningFromSpecialist,
+              resumingFromFormResponse: false,
+            };
+          }
+        }
+      }
+
+      // Even if the LLM produced text with tools, make sure we don't short-circuit
+      // via the completion signal. If there ARE tools, they'll be handled by the
+      // pendingTools check above. If there are no tools and non-empty text, let it
+      // fall through to normal routing logic (but clear the flag so the next
+      // iteration doesn't re-enter this block).
     }
 
     // Circuit breaker: if brain produced no meaningful output on repeat iterations,
     // signal task complete to prevent infinite loops (e.g. after spawn_agent returns
     // and the brain hallucinates filtered tools with empty response).
-    const hasNoOutput = !responseContent || responseContent.trim().length === 0;
     if (hasNoOutput && state.iterations > 1) {
       runner.telemetry.warn(`[Brain] No output on iteration ${state.iterations} — forcing task_complete to prevent loop`);
 
@@ -763,7 +756,8 @@ export const createBrainNode = (
         completionSignal: { reason: 'task_complete' as const, explanation: 'Brain produced no output after multiple iterations.' },
         routingDecision: null,
         brainToolsInFlight: false,
-        returningFromSpecialist: null
+        returningFromSpecialist: null,
+        resumingFromFormResponse: false
       };
 
       // Create checkpoint before forcing completion
@@ -806,7 +800,8 @@ export const createBrainNode = (
             completionSignal: null,
             taskPhase: 'specialized_agent' as const,
             brainToolsInFlight: false,
-            returningFromSpecialist: null
+            returningFromSpecialist: null,
+            resumingFromFormResponse: false
           };
 
           // Create checkpoint before auto-routing
@@ -897,6 +892,7 @@ export const createBrainNode = (
         brainToolsInFlight: false,
         returningFromSpecialist: null,
         harnessRecoveryActions: [],
+        resumingFromFormResponse: false,
       };
 
       // Create checkpoint before routing to specialist
@@ -937,7 +933,8 @@ export const createBrainNode = (
           routingDecision: null,
           brainToolsInFlight: true,
           returningFromSpecialist: null,
-          webExplorerComplete: state.webExplorerComplete
+          webExplorerComplete: state.webExplorerComplete,
+          resumingFromFormResponse: false
         };
 
         await createAgentCheckpoint(
@@ -971,7 +968,8 @@ export const createBrainNode = (
       brainToolsInFlight: false,
       returningFromSpecialist: null,
       // Preserve webExplorerComplete flag from input state (Sub-task 3.2)
-      webExplorerComplete: state.webExplorerComplete
+      webExplorerComplete: state.webExplorerComplete,
+      resumingFromFormResponse: false
     };
   };
 };

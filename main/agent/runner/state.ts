@@ -198,6 +198,10 @@ export const GraphState = Annotation.Root({
   // Harness Engineering: workflow state machine tracking
   harnessPhasePrompt: Annotation<string>(),
   harnessRecoveryActions: Annotation<any[]>(),
+
+  // Form response continuation flag — set by ask_user_wait so brain
+  // knows to skip premature task_complete when resuming after user answered a form
+  resumingFromFormResponse: Annotation<boolean>(),
 });
 
 export type GraphStateType = typeof GraphState.State;

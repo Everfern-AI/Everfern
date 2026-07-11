@@ -825,10 +825,14 @@ export default function SettingsPage({
         inputTokenLimit: number;
         outputTokensUsed: number;
         outputTokenLimit: number;
+        dailyCostUsd: number;
     } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; url?: string } | null>(null);
+    const [autoUpdateAvailable, setAutoUpdateAvailable] = useState(false);
+    const [autoUpdateDownloaded, setAutoUpdateDownloaded] = useState(false);
+    const [autoUpdateProgress, setAutoUpdateProgress] = useState<number | null>(null);
     const [showVectorsModal, setShowVectorsModal] = useState(false);
     const [vectorsData, setVectorsData] = useState<any[]>([]);
     const [loadingVectors, setLoadingVectors] = useState(false);
@@ -840,6 +844,28 @@ export default function SettingsPage({
             if (version) setAppVersion(version);
         };
         fetchVersion();
+    }, []);
+
+    useEffect(() => {
+        const api = (window as any).electronAPI?.system;
+        if (!api) return;
+
+        const onAvailable = () => setAutoUpdateAvailable(true);
+        const onDownloaded = () => { setAutoUpdateDownloaded(true); setAutoUpdateProgress(null); };
+        const onProgress = (p: any) => setAutoUpdateProgress(p?.percent ?? null);
+        const onError = () => { setAutoUpdateAvailable(false); setAutoUpdateProgress(null); };
+
+        api.onUpdateAvailable?.(onAvailable);
+        api.onUpdateDownloaded?.(onDownloaded);
+        api.onUpdateProgress?.(onProgress);
+        api.onUpdateError?.(onError);
+
+        return () => {
+            api._offUpdateAvailable?.(onAvailable);
+            api._offUpdateDownloaded?.(onDownloaded);
+            api._offUpdateProgress?.(onProgress);
+            api._offUpdateError?.(onError);
+        };
     }, []);
 
     const handleCheckUpdate = async () => {
@@ -893,6 +919,7 @@ export default function SettingsPage({
                     inputTokenLimit: data.inputTokenLimit ?? 0,
                     outputTokensUsed: data.outputTokensUsed ?? 0,
                     outputTokenLimit: data.outputTokenLimit ?? 0,
+                    dailyCostUsd: data.dailyCostUsd ?? 0,
                 });
             } catch (e) {
                 console.error('Failed to fetch cloud usage', e);
@@ -1193,6 +1220,12 @@ export default function SettingsPage({
                                         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Output tokens</div>
                                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                                             {cloudUsage.outputTokensUsed.toLocaleString()} / {cloudUsage.outputTokenLimit.toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>Daily cost</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            ${cloudUsage.dailyCostUsd.toFixed(2)}
                                         </div>
                                     </div>
                                 </div>
@@ -3748,12 +3781,30 @@ export default function SettingsPage({
                         {updateInfo?.hasUpdate && (
                             <div style={{ marginTop: 10, padding: 8, backgroundColor: 'var(--color-navis-active-bg)', borderRadius: 8, border: '1px solid var(--color-navis-active-border)' }}>
                                 <div style={{ fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600, marginBottom: 2 }}>Update Available: v{updateInfo.latestVersion}</div>
-                                <button 
-                                    onClick={() => (window as any).electronAPI?.system?.openExternal?.(updateInfo.url)}
-                                    style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
-                                >
-                                    Download from GitHub
-                                </button>
+                                {autoUpdateDownloaded ? (
+                                    <button 
+                                        onClick={() => (window as any).electronAPI?.system?.restartAndUpdate?.()}
+                                        style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
+                                    >
+                                        Restart &amp; Install
+                                    </button>
+                                ) : autoUpdateProgress !== null ? (
+                                    <div style={{ marginTop: 4 }}>
+                                        <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginBottom: 2 }}>Downloading... {autoUpdateProgress.toFixed(1)}%</div>
+                                        <div style={{ height: 4, backgroundColor: 'var(--color-border)', borderRadius: 2, overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${autoUpdateProgress}%`, backgroundColor: 'var(--color-navis-active-border)', transition: 'width 0.3s' }} />
+                                        </div>
+                                    </div>
+                                ) : autoUpdateAvailable ? (
+                                    <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 4 }}>Downloading update in background...</div>
+                                ) : (
+                                    <button 
+                                        onClick={() => (window as any).electronAPI?.system?.openExternal?.(`https://github.com/Everfern-AI/Everfern/releases/tag/v${updateInfo.latestVersion}`)}
+                                        style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
+                                    >
+                                        Download from GitHub
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

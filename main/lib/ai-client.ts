@@ -1303,8 +1303,29 @@ export class AIClient {
     if (req.responseFormat === 'json') {
       if (this.config.provider === 'nvidia' && req.guidedJson) {
         options.nvext = { guided_json: req.guidedJson };
+      } else if (this.config.provider === 'everfern') {
+        // EverFern Cloud models (like fern-1) may not support response_format: json_object.
+        // Instead, inject the JSON schema into the prompt (like Ollama fallback).
+        // Only set response_format for models known to support it.
+        const modelLower = (req.model ?? this.config.model).toLowerCase();
+        const supportsResponseFormat = modelLower.includes('gemini') || modelLower.includes('gpt');
+        if (supportsResponseFormat) {
+          options.response_format = { type: 'json_object' };
+        }
+        // Schema injection is handled below for all providers
       } else {
         options.response_format = { type: 'json_object' };
+      }
+    }
+
+    // Inject JSON schema into prompt for providers that don't support structured output natively
+    if (req.jsonSchema && this.config.provider !== 'nvidia' && this.config.provider !== 'openai') {
+      const schemaHint = `\n\nIMPORTANT: You MUST respond with a JSON object that matches this schema:\n${JSON.stringify(req.jsonSchema, null, 2)}\n\nReturn ONLY valid JSON matching this schema. No extra text, no markdown fences.`;
+      const sysIdx = messages.findIndex((m: any) => m.role === 'system');
+      if (sysIdx !== -1) {
+        messages[sysIdx] = { ...messages[sysIdx], content: (messages[sysIdx].content || '') + schemaHint };
+      } else {
+        messages.unshift({ role: 'system', content: schemaHint });
       }
     }
 

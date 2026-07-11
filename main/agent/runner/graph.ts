@@ -630,6 +630,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       dataAnalysisComplete: false,
       webExplorerComplete: false,
       deepResearchComplete: false,
+      resumingFromFormResponse: true,
     };
   };
 
@@ -677,8 +678,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'coding_specialist';
         }
         if (intent === 'research') {
-            console.log('[Graph] 🔀 Research/browser intent detected → web_explorer');
-            return 'web_explorer';
+            console.log('[Graph] 🔀 Research/browser intent detected → brain');
+            return 'brain';
         }
         if (['automate', 'task'].includes(intent)) {
             console.log('[Graph] 🔀 Complex intent detected → debate_chamber');
@@ -713,15 +714,16 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'coding_specialist';
         }
         if (state.currentIntent === 'research') {
-            console.log(`[Graph] ➡️ Decomposed research/browser task → web_explorer`);
-            return 'web_explorer';
+            console.log(`[Graph] ➡️ Decomposed research/browser task → brain`);
+            return 'brain';
         }
         console.log(`[Graph] ➡️ Routing to global_planner`);
         return 'global_planner';
     }, {
         coding_specialist: 'coding_specialist',
         web_explorer: 'web_explorer',
-        global_planner: 'global_planner'
+        global_planner: 'global_planner',
+        brain: 'brain'
     })
     .addEdge('global_planner', 'brain')
     .addEdge('memory_consolidator', END)

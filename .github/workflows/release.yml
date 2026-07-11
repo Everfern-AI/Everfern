@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
       - name: Check out repository
@@ -34,10 +34,10 @@ jobs:
       - name: Compile Native Modules
         run: npm run rebuild:electron
 
-      - name: Package NextJS & Electron Application
-        run: npm run build
+      - name: Build and Publish
+        run: npm run build -- --publish always
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

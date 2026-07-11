@@ -106,7 +106,6 @@ const ALWAYS_INCLUDE = new Set<string>([
   'create_artifact',
   'edit_artifact',
   'visualize',
-  'pptx_generator',
   'present_files',
   // Memory & planning
   'todo_write',

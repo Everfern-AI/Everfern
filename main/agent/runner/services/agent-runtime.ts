@@ -197,6 +197,7 @@ function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateTyp
     ...(state as Record<string, unknown>)['finalResponse'] !== undefined
       ? { finalResponse: (state as Record<string, unknown>)['finalResponse'] }
       : { finalResponse: '' },
+    resumingFromFormResponse: (state as any).resumingFromFormResponse ?? false,
   } as GraphStateType;
 }
 

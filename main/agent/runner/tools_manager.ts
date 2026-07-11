@@ -17,12 +17,11 @@ import { localPermissionTool } from '../tools/local-permission';
 import { createArtifactTool } from '../tools/create-artifact';
 import { editArtifactTool } from '../tools/edit-artifact';
 import { visualizeTool } from '../tools/visualize';
-import { pptxGeneratorTool } from '../tools/pptx-generator';
 import { sendDiscordMessageTool, sendTelegramMessageTool } from '../tools/messaging';
 import { createScheduledTaskTool, listScheduledTasksTool, deleteScheduledTaskTool } from '../tools/scheduled-tasks';
 import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
-import { NavisOrchestrator } from '../tools/navis/orchestrator';
+import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import { hydrateVlmApiKey } from '../../lib/vlm-config';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
@@ -134,7 +133,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     createArtifactTool(runner),
     editArtifactTool(runner),
     visualizeTool,
-    pptxGeneratorTool,
+    // pptx_generator removed — use WSL with pptxgenjs via terminal instead
     sendDiscordMessageTool,
     sendTelegramMessageTool,
     createScheduledTaskTool,

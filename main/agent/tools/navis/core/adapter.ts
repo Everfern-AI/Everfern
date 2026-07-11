@@ -1,41 +1,26 @@
-import { bridgeServer } from '../../../lib/extension-server';
-import type { AIClient } from '../../../lib/ai-client';
-import { BrowserSession } from './session';
-import { executeAction, type ActionName } from './actions';
-import type { NavisLogger } from './logger';
+/**
+ * Navis — Browser Control Adapters
+ *
+ * Implements the BrowserControlAdapter interface for two backends:
+ * - ExtensionBrowserAdapter: controls user's real browser via WebSocket bridge
+ * - PlaywrightBrowserAdapter: controls isolated Playwright browser
+ *
+ * Equivalent to BrowserOS's CDP backend connection layer.
+ */
 
-export interface BrowserPageState {
-  tabId?: number;
-  url: string;
-  title: string;
-  text?: string;
-  refs: any[];
-  tabs: any[];
-  snapshot?: any;
-  mode: 'extension' | 'playwright';
-}
+import { bridgeServer } from '../../../../lib/extension-server';
+import type { AIClient } from '../../../../lib/ai-client';
+import { BrowserSession } from '../session';
+import { executeAction } from '../actions';
+import type { NavisLogger } from '../logger';
+import type {
+  BrowserControlAdapter,
+  BrowserPageState,
+  BrowserActionResult,
+  ActionName,
+} from './types';
 
-export interface BrowserActionResult {
-  success: boolean;
-  message: string;
-  stateChanged: boolean;
-  data?: any;
-}
-
-export interface BrowserControlAdapter {
-  readonly mode: 'extension' | 'playwright';
-  isAvailable(): boolean;
-  launch(options: { startUrl?: string; headless?: boolean; selectedBrowserId?: string }): Promise<void>;
-  capture(): Promise<BrowserPageState>;
-  screenshot(options?: { quality?: number }): Promise<string>;
-  executeAction(
-    actionName: ActionName,
-    actionArgs: Record<string, unknown>,
-    step: number,
-    maxSteps: number,
-  ): Promise<BrowserActionResult>;
-  close?(): Promise<void>;
-}
+export type { BrowserPageState, BrowserActionResult };
 
 function normalizeResult(raw: any, fallbackMessage: string, stateChanged = false): BrowserActionResult {
   const success = raw?.success !== false;
@@ -51,10 +36,11 @@ function firstActionValue<T = Record<string, unknown>>(value: unknown): T {
   return (value && typeof value === 'object' ? value : {}) as T;
 }
 
+// ── Extension Adapter ────────────────────────────────────────────────────────
+
 export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   readonly mode = 'extension' as const;
   private activeTabId?: number;
-  /** Tab list cache — re-fetched on tab-changing actions or after TTL */
   private cachedTabs: any[] = [];
   private tabCacheExpiresAt = 0;
   private static readonly TAB_CACHE_TTL_MS = 5000;
@@ -86,12 +72,27 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   async capture(): Promise<BrowserPageState> {
     const now = Date.now();
     const needsTabs = now >= this.tabCacheExpiresAt;
-    const [capture, tabsResult] = await Promise.all([
-      bridgeServer.sendRequest('capture', { tabId: this.activeTabId }, 12000),
-      needsTabs
-        ? bridgeServer.sendRequest('get_tabs', {}, 8000).catch(() => ({ tabs: [] }))
-        : Promise.resolve({ tabs: this.cachedTabs }),
-    ]);
+
+    let capture: any;
+    let lastCaptureError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        capture = await bridgeServer.sendRequest('capture', { tabId: this.activeTabId }, 15000);
+        break;
+      } catch (err: any) {
+        lastCaptureError = err;
+        const isTimeout = String(err?.message || '').toLowerCase().includes('timed out') ||
+                          String(err?.message || '').toLowerCase().includes('unresponsive');
+        console.warn(`[Navis] capture attempt ${attempt + 1}/3 failed: ${err.message}${isTimeout ? ' (retrying...)' : ''}`);
+        if (!isTimeout || attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+    if (!capture) throw lastCaptureError || new Error('capture failed');
+
+    const tabsResult = needsTabs
+      ? await bridgeServer.sendRequest('get_tabs', {}, 8000).catch(() => ({ tabs: [] }))
+      : { tabs: this.cachedTabs };
 
     if (needsTabs && Array.isArray(tabsResult?.tabs)) {
       this.cachedTabs = tabsResult.tabs;
@@ -116,12 +117,22 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   }
 
   async screenshot(options?: { quality?: number }): Promise<string> {
-    const result = await bridgeServer.sendRequest('screenshot', { tabId: this.activeTabId, quality: options?.quality || 70 }, 15000);
-    if (!result || !result.success || !result.dataUrl) {
-      throw new Error(result?.message || 'Failed to capture screenshot via extension');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await bridgeServer.sendRequest('screenshot', { tabId: this.activeTabId, quality: options?.quality || 70 }, 15000);
+        if (!result || !result.success || !result.dataUrl) {
+          throw new Error(result?.message || 'Failed to capture screenshot via extension');
+        }
+        return result.dataUrl;
+      } catch (err: any) {
+        const isTimeout = String(err?.message || '').toLowerCase().includes('timed out') ||
+                          String(err?.message || '').toLowerCase().includes('unresponsive');
+        console.warn(`[Navis] screenshot attempt ${attempt + 1}/3 failed: ${err.message}${isTimeout ? ' (retrying...)' : ''}`);
+        if (!isTimeout || attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
-    // Return full data URL — callers should not need to re-add the prefix
-    return result.dataUrl;
+    throw new Error('Screenshot failed after retries');
   }
 
   async executeAction(
@@ -215,7 +226,6 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'press_key': {
         const result = await bridgeServer.sendRequest('press_key', { tabId: this.activeTabId, ...args }, 12000);
         this.logger.elementInput(step, maxSteps, String(args.ref || 'page'), String(args.key || 'key'));
-        // Only mark state changed for Enter / Tab (which typically submit or navigate)
         const key = String(args.key || '').toLowerCase();
         const changesState = key === 'enter' || key === 'return' || key === 'tab';
         return normalizeResult(result, `Pressed ${args.key || 'key'}`, changesState);
@@ -225,7 +235,6 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         const direction = actionName === 'scroll_up' ? 'up' : 'down';
         const result = await bridgeServer.sendRequest('scroll', { tabId: this.activeTabId, direction, ...args }, 10000);
         this.logger.scroll(step, maxSteps, direction);
-        // Scroll rarely changes refs — skip forced re-capture
         return normalizeResult(result, `Scrolled ${direction}`, false);
       }
       case 'wait':
@@ -246,7 +255,6 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'open_tab': {
         const result = await bridgeServer.sendRequest('open_tab', { url: args.url, active: true }, 15000);
         this.activeTabId = Number(result?.tabId || result?.tab?.id || 0) || this.activeTabId;
-        // Invalidate tab cache after tab changes
         this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, `Opened ${args.url || 'tab'}`);
         return normalizeResult(result, `Opened ${args.url || 'tab'}`, true);
@@ -259,7 +267,6 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
           index: args.index,
         }, 10000);
         this.activeTabId = Number(result?.tabId || result?.tab?.id || this.activeTabId || 0) || undefined;
-        // Invalidate tab cache on switch
         this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, `Activated tab ${args.index ?? args.target ?? ''}`);
         return normalizeResult(result, 'Activated tab', true);
@@ -267,7 +274,6 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'close_tab': {
         const result = await bridgeServer.sendRequest('close_tab', { tabId: this.activeTabId }, 10000);
         this.activeTabId = undefined;
-        // Invalidate tab cache after tab changes
         this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, 'Closed tab');
         return normalizeResult(result, 'Closed tab', true);
@@ -289,6 +295,8 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
     }
   }
 }
+
+// ── Playwright Adapter ───────────────────────────────────────────────────────
 
 export class PlaywrightBrowserAdapter implements BrowserControlAdapter {
   readonly mode = 'playwright' as const;

@@ -39,6 +39,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
     const [userPlan, setUserPlan] = useState<string>("free");
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+    const [dailyCostUsd, setDailyCostUsd] = useState<number | null>(null);
     const { theme } = useTheme();
 
     useEffect(() => {
@@ -65,6 +66,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             if (userData.plan) setUserPlan(userData.plan);
                             if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
                             if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
+                            if (userData.dailyCostUsd !== undefined) setDailyCostUsd(userData.dailyCostUsd);
                         }
                     } catch (e) {
                         console.error("Failed to fetch user from API", e);
@@ -423,7 +425,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                         }}></div>
                                     </div>
                                     <div style={{ fontSize: 9, color: "var(--sidebar-limit-text)", textAlign: "right", fontWeight: 500 }}>
-                                        {Math.round((dailyUsed / dailyLimit) * 100)}% used
+                                        {Math.round((dailyUsed / dailyLimit) * 100)}% used{dailyCostUsd !== null ? ` · $${dailyCostUsd.toFixed(2)}` : ''}
                                     </div>
                                 </div>
                             )}

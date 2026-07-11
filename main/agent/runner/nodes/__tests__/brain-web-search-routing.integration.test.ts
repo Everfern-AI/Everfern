@@ -188,13 +188,7 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
       );
       expect(result.brainToolsInFlight).toBe(false);
 
-      // Step 3: Verify event queue shows routing to web-explorer
-      const routingEvent = eventQueue.find(e =>
-        e.type === 'thought' && e.content.includes('web-explorer')
-      );
-      expect(routingEvent).toBeDefined();
-
-      // Step 4: Verify task phase is set to specialized_agent
+      // Step 3: Verify task phase is set to specialized_agent
       expect(result.taskPhase).toBe('specialized_agent');
     });
 
@@ -267,18 +261,6 @@ describe('Integration Tests — Brain Web Search Routing Fix', () => {
         (tc: any) => tc.name === 'web_search'
       );
       expect(hasWebSearchInPending).toBe(false);
-
-      // Verify event queue shows routing to web-explorer, not tool execution by brain
-      const webSearchEvent = eventQueue.find(e =>
-        e.type === 'thought' && e.content.includes('web_search')
-      );
-      expect(webSearchEvent).toBeUndefined();
-
-      // Verify routing event is present
-      const routingEvent = eventQueue.find(e =>
-        e.type === 'thought' && e.content.includes('web-explorer')
-      );
-      expect(routingEvent).toBeDefined();
 
       // Verify brainToolsInFlight is false (no tools executing)
       expect(result.brainToolsInFlight).toBe(false);

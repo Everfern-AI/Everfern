@@ -102,6 +102,12 @@
       ],
       "icon": "public/images/logos/everfern.icns"
     },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/images/logos/everfern.ico"
+    },
     "linux": {
       "category": "Productivity",
       "target": [
