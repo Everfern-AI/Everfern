@@ -101,7 +101,11 @@ function CopyButton({ text }: { text: string }) {
 
 function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const jsonStrRaw = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const jsonStrRaw = typeof data === 'string'
+    ? data
+    : data === undefined
+      ? 'undefined'
+      : JSON.stringify(data, null, 2) || '{}';
   const MAX_JSON_LENGTH = 30000;
   const isTruncated = jsonStrRaw.length > MAX_JSON_LENGTH;
   const jsonStr = isTruncated
@@ -223,16 +227,13 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
   const bottomRef = useRef<HTMLDivElement>(null);
   const [displayedReport, setDisplayedReport] = useState(report);
 
-  // Stream in new content smoothly: just keep synced, auto-scroll
   useEffect(() => {
     setDisplayedReport(report);
     if (isRunning) {
-      // Small delay so DOM has painted before scrolling
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
     }
   }, [report, isRunning]);
 
-  // Parse markdown into styled sections
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n');
     const elements: React.ReactNode[] = [];
@@ -243,20 +244,20 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     const flushCode = (key: number) => {
       elements.push(
         <div key={`code-${key}`} style={{
-          background: '#0d1117',
-          border: '1px solid #30363d',
-          borderRadius: 8,
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.r8,
           padding: '12px 16px',
           marginBottom: 10,
-          fontFamily: '"Geist Mono", ui-monospace, monospace',
+          fontFamily: T.mono,
           fontSize: 11.5,
           lineHeight: 1.7,
-          color: '#e6edf3',
+          color: T.text,
           overflowX: 'auto',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>
-          {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+          {codeLang && <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
           {codeLines.join('\n')}
         </div>
       );
@@ -266,72 +267,51 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
 
     lines.forEach((line, idx) => {
       if (line.startsWith('```')) {
-        if (inCodeBlock) {
-          flushCode(idx);
-          inCodeBlock = false;
-        } else {
-          inCodeBlock = true;
-          codeLang = line.slice(3).trim();
-        }
+        if (inCodeBlock) { flushCode(idx); inCodeBlock = false; }
+        else { inCodeBlock = true; codeLang = line.slice(3).trim(); }
         return;
       }
-
-      if (inCodeBlock) {
-        codeLines.push(line);
-        return;
-      }
-
-      // H1
+      if (inCodeBlock) { codeLines.push(line); return; }
       if (line.startsWith('# ')) {
-        elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', margin: '0 0 12px', fontFamily: '"Geist", ui-sans-serif, sans-serif', borderBottom: '1px solid #21262d', paddingBottom: 8 }}>{line.slice(2)}</h1>);
+        elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 12px', fontFamily: T.sans, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>{line.slice(2)}</h1>);
         return;
       }
-      // H2
       if (line.startsWith('## ')) {
-        elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: '#58a6ff', margin: '16px 0 8px', fontFamily: '"Geist", ui-sans-serif, sans-serif', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
+        elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: T.blue, margin: '16px 0 8px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
         return;
       }
-      // H3  
       if (line.startsWith('### ')) {
-        elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: '#79c0ff', margin: '12px 0 6px', fontFamily: '"Geist", ui-sans-serif, sans-serif', display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ color: '#30363d' }}>◆</span>{line.slice(4)}</h3>);
+        elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: T.blue, margin: '12px 0 6px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}><span style={{ color: T.border }}>◆</span>{line.slice(4)}</h3>);
         return;
       }
-      // Bullet with bold key
       if (line.startsWith('- ') || line.startsWith('* ')) {
         const content = line.slice(2);
-        // Render inline bold (**text**)
         const parts = content.split(/\*\*(.+?)\*\*/);
         const rendered = parts.map((part, pi) =>
           pi % 2 === 1
-            ? <span key={pi} style={{ color: '#e6edf3', fontWeight: 600 }}>{part}</span>
-            : <span key={pi} style={{ color: '#8b949e' }}>{part}</span>
+            ? <span key={pi} style={{ color: T.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: T.textSecondary }}>{part}</span>
         );
         elements.push(
-          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: '"Geist Mono", monospace' }}>
-            <span style={{ color: '#58a6ff', flexShrink: 0, marginTop: 1 }}>›</span>
+          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}>
+            <span style={{ color: T.blue, flexShrink: 0, marginTop: 1 }}>›</span>
             <span>{rendered}</span>
           </div>
         );
         return;
       }
-      // Bold **Status** lines
       if (line.includes('**')) {
         const parts = line.split(/\*\*(.+?)\*\*/);
         const rendered = parts.map((part, pi) =>
           pi % 2 === 1
-            ? <span key={pi} style={{ color: '#e6edf3', fontWeight: 600 }}>{part}</span>
-            : <span key={pi} style={{ color: '#8b949e' }}>{part}</span>
+            ? <span key={pi} style={{ color: T.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: T.textSecondary }}>{part}</span>
         );
-        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: '"Geist Mono", monospace' }}>{rendered}</div>);
+        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: T.mono }}>{rendered}</div>);
         return;
       }
-      // Empty line
-      if (line.trim() === '') {
-        elements.push(<div key={idx} style={{ height: 6 }} />);
-        return;
-      }
-      // Normal text
-      elements.push(<div key={idx} style={{ fontSize: 12, color: '#8b949e', lineHeight: 1.6, fontFamily: '"Geist Mono", monospace', marginBottom: 2 }}>{line}</div>);
+      if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 6 }} />); return; }
+      elements.push(<div key={idx} style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
     });
 
     if (inCodeBlock && codeLines.length > 0) flushCode(lines.length);
@@ -339,42 +319,34 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#010409' }}>
-      {/* Status bar */}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
       <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 16px',
-        borderBottom: '1px solid #21262d',
-        background: '#0d1117',
-        flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 16px', borderBottom: `1px solid ${T.border}`,
+        background: T.surface, flexShrink: 0,
       }}>
-        <FileText size={12} color="#58a6ff" />
-        <span style={{ fontSize: 11, color: '#8b949e', fontFamily: '"Geist", sans-serif', flex: 1 }}>Navis Execution Report</span>
+        <FileText size={12} color={T.blue} />
+        <span style={{ fontSize: 11, color: T.textSecondary, fontFamily: T.sans, flex: 1 }}>Navis Execution Report</span>
         {isRunning ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(56,139,253,0.1)', border: '1px solid rgba(56,139,253,0.3)', borderRadius: 20, padding: '2px 8px' }}>
-            <Loader2 size={10} color="#58a6ff" style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={{ fontSize: 10, color: '#58a6ff', fontFamily: '"Geist", sans-serif', fontWeight: 600 }}>Writing...</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.blueFaint, border: `1px solid rgba(59,130,246,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+            <Loader2 size={10} color={T.blue} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 10, color: T.blue, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(46,160,67,0.1)', border: '1px solid rgba(46,160,67,0.3)', borderRadius: 20, padding: '2px 8px' }}>
-            <CheckCircle size={10} color="#3fb950" />
-            <span style={{ fontSize: 10, color: '#3fb950', fontFamily: '"Geist", sans-serif', fontWeight: 600 }}>Complete</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.greenFaint, border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+            <CheckCircle size={10} color={T.green} />
+            <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
           </div>
         )}
       </div>
-
-      {/* Report content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px', scrollBehavior: 'smooth' }}>
         <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }`}</style>
         {displayedReport
           ? renderMarkdown(displayedReport)
-          : <div style={{ color: '#8b949e', fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: '"Geist", sans-serif' }}>Waiting for Navis to start...</div>
+          : <div style={{ color: T.textSecondary, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>Waiting for Navis to start...</div>
         }
-        {/* Blinking cursor when running */}
         {isRunning && (
-          <span style={{ display: 'inline-block', width: 8, height: 14, background: '#58a6ff', borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
+          <span style={{ display: 'inline-block', width: 8, height: 14, background: T.blue, borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
         )}
         <div ref={bottomRef} />
       </div>
@@ -716,7 +688,8 @@ export function ToolCallDetailPane({
 
 function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   const args = toolCall.arguments || (toolCall as any).args || {};
-  const filePath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+  const filePathRaw = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+  const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
   
   const toolNameLower = toolCall.toolName.toLowerCase();

@@ -1050,7 +1050,20 @@ class ComputerUseTool {
         up: "up", down: "down", left: "left", right: "right",
         home: "home", end: "end", pageup: "pageup", pagedown: "pagedown",
       };
-      const parts = keys.map(k => KEY_MAP[k.toLowerCase()] ?? k.toLowerCase());
+
+      const normalizedKeys = [...keys];
+      if (process.platform === "darwin") {
+        const commandShortcuts = new Set(["c", "v", "a", "x", "z", "f", "t", "w", "n", "s", "r"]);
+        if (
+          normalizedKeys.length === 2 &&
+          (normalizedKeys[0].toLowerCase() === "ctrl" || normalizedKeys[0].toLowerCase() === "control") &&
+          commandShortcuts.has(normalizedKeys[1].toLowerCase())
+        ) {
+          normalizedKeys[0] = "command";
+        }
+      }
+
+      const parts = normalizedKeys.map(k => KEY_MAP[k.toLowerCase()] ?? k.toLowerCase());
       console.log(`[PressKeys] Pressing keys: ${parts}`);
       if (parts.length === 1) {
         robot.keyTap(parts[0]);

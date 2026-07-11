@@ -29,6 +29,7 @@ import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { createVisualClassificationSheetTool } from '../tools/visual-classification-sheet';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
 import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
+import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
 import * as os from 'os';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
@@ -61,6 +62,14 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     runner.navisOrchestrator = new NavisOrchestrator(runner.client, undefined, visionClient);
   }
 
+  // Load dynamic/synthesized tools
+  let dynamicTools: AgentTool[] = [];
+  try {
+    dynamicTools = loadAllSynthesizedTools();
+  } catch (err) {
+    console.error('[ToolsManager] Failed to load synthesized tools:', err);
+  }
+
   // Static tools
   const tools: AgentTool[] = [
     terminalTool,
@@ -68,6 +77,9 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     plannerTool,
     updateStepTool,
     executionPlanTool,
+    synthesizeToolTool,
+    synthesizeSkillTool,
+    ...dynamicTools,
   ];
 
   // Create computer_use tool with production build validation
@@ -77,7 +89,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
       runner.client,
       platform,
       config.visionModel,
-      config.showuiUrl,
+      undefined, // showuiUrl removed
       config.ollamaBaseUrl,
       config.checkPermission,
       config.requestPermission,

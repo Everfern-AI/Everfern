@@ -258,6 +258,12 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
     const db = new sqlite3.Database(dbPath, (err) => {
       if (err) return reject(err);
 
+      // Configure WAL mode and busy timeout to handle concurrent writes safely
+      db.serialize(() => {
+        db.run('PRAGMA journal_mode = WAL');
+        db.run('PRAGMA busy_timeout = 5000');
+      });
+
       // Load sqlite-vec extension with a timeout guard
       let extLoaded = false;
       const extTimeout = setTimeout(() => {

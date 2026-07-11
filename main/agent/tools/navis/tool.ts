@@ -56,6 +56,29 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
   }
 }
 
+function writeFindingsFile(task: string, output: string) {
+  try {
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    const cleanTask = task.replace(/\r?\n/g, ' ').trim();
+    const taskTitle = cleanTask.length > 80 ? cleanTask.slice(0, 80) + '...' : cleanTask;
+    
+    const findingsContent = `Research Findings: ${taskTitle}
+Project: Everfern Web Research Task
+Last Updated: ${formattedDate}
+Agent Status: Completed
+
+${output}
+`;
+    const findingsPath = path.join(process.cwd(), 'findings.md');
+    fs.writeFileSync(findingsPath, findingsContent, 'utf8');
+    console.log(`[Navis Tool] Successfully wrote findings to ${findingsPath}`);
+  } catch (e) {
+    console.error('[Navis Tool] Failed to write findings.md:', e);
+  }
+}
+
 export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
   return {
     name: 'navis',
@@ -220,7 +243,21 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
           if (err) console.error('[Navis Tool] Error writing report update:', err);
         });
 
-        const progressType = mapNavisToProgressType(event.type);
+        let progressType = mapNavisToProgressType(event.type);
+        if (progressType === 'reasoning') {
+          const detailText = event.detail || event.action || '';
+          if (
+            detailText.includes('Choose the next browser action') ||
+            detailText.includes('Choosing the next browser action') ||
+            detailText.includes('Choosing the next coordinate-based browser action') ||
+            (detailText.includes('Reading ') && detailText.includes('DOM refs')) ||
+            detailText.includes('Running ') ||
+            detailText.includes('Thinking...') ||
+            detailText.includes('Analyzing page...')
+          ) {
+            progressType = 'step';
+          }
+        }
         const actionPayload = buildActionPayload(event);
         const compactProgressData = {
           type: progressType,
@@ -325,17 +362,19 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             if (extensionResult.success || !extensionResult.output.includes('[EXTENSION_FALLBACK_REQUIRED]')) {
               const executionTime = Date.now() - toolStartTime;
               console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
+              writeFindingsFile(task, extensionResult.output);
               return {
                 success: extensionResult.success,
-                output: extensionResult.output + '\n\n' + navisReportMd,
+                output: extensionResult.output,
                 data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
               };
             }
 
             onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
+            writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'));
             return {
               success: false,
-              output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:') + '\n\n' + navisReportMd,
+              output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
               data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
             };
           } else {
@@ -377,9 +416,11 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         console.log(`[Navis Tool] ✅ orchestrator.run() COMPLETED - Total execution time: ${executionTime}ms`);
         console.log(`[Navis Tool] ✅ NAVIS TOOL RETURNING RESULT TO MAIN AGENT - Success: ${result.success}, Steps: ${result.steps}`);
 
+        writeFindingsFile(task, result.output);
+
         return {
           success: result.success,
-          output: result.output + '\n\n' + navisReportMd,
+          output: result.output,
           data: { steps: result.steps, screenshots, automationMode: 'playwright-isolated' },
         };
       } catch (toolErr) {

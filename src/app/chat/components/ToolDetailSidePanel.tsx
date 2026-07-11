@@ -2212,9 +2212,9 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
       const flush = (key: number) => {
         elements.push(
           <div key={`code-${key}`} style={{
-            background: '#0d1117', border: '1px solid #30363d', borderRadius: 8,
+            background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r8,
             padding: '12px 16px', marginBottom: 10,
-            fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.7, color: '#e6edf3',
+            fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.7, color: T.text,
             overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>
             {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
@@ -4370,7 +4370,11 @@ function extractMemoryData(tc: any) {
 function extractGenericData(tc: any) {
   const args = parseToolCallArgs(tc);
   const output = extractOutputText(tc);
-  return { toolName: tc.toolName, args, output, result: tc.result || tc.data || (output ? { exitCode: 0 } : null) };
+  let result = tc.result || tc.data || (output ? { exitCode: 0 } : null);
+  if (result && result.exitCode === undefined) {
+    result = { ...result, exitCode: result.success !== false ? 0 : 1 };
+  }
+  return { toolName: tc.toolName, args, output, result };
 }
 
 function extractTodoWriteData(tc: any) {
@@ -4922,11 +4926,11 @@ const EDITOR_COLORS = {
   gutterBg: '#18181b',
   gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
-  text: 'var(--color-border)',
+  text: '#e2e8f0',
   keyword: '#e879f9', // pink/magenta
   string: '#34d399', // green
   number: '#60a5fa', // blue
-  comment: '#71717a', // grey
+  comment: '#a1a1aa', // grey
 };
 
 const detectLanguage = (ext: string): string => {

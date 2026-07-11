@@ -594,7 +594,7 @@ Activate venv before pip-installed scripts: `source ~/.everfern/venv/bin/activat
 | Image file mentioned, attached, or needing analysis | `image-viewer/SKILL.md` |
 | Image classification, organization, OCR, or content analysis | `image-viewer/SKILL.md` |
 
-For new presentation decks, use `pptx_generator` in adaptive mode. It is backed by PptxGenJS and is the default tool for creating editable PowerPoint decks. Provide a custom `visualDirection`, audience, deck goal, varied slide intents, visual ideas, and speaker notes. Avoid repeated title-and-bullet slides; dense content belongs in speaker notes, not on-slide text.
+For new presentation decks, read `pptx/SKILL.md` and follow the **Design-First Workflow** (Phase 1 → Phase 2 → Phase 3). Use `pptx_generator` in adaptive mode as the default tool. Lock the visual system BEFORE drafting slide content — but let the content and story dictate the structure, not a preset template. Available intent types: hero, sectionBreak, bigNumber, timeline, map, diagram, quote, comparison, storyboard, gallery, dataCallout, splitNarrative, closing. Use whatever combination serves the material. Provide `visualDirection`, audience, deck goal, slides with unique intents, `visualIdea`, and `speakerNotes`. Dense content belongs in speaker notes, not on-slide text.
 
 ---
 

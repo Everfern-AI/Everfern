@@ -64,7 +64,7 @@ const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
   return state.currentIntent === 'build';
 };
 
-const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use']);
+const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use', 'synthesize_tool', 'synthesize_skill']);
 
 const getToolCallArgs = (call: any): Record<string, any> => {
   const raw = call?.arguments ?? call?.args ?? {};
@@ -199,11 +199,17 @@ export const buildGraph = (
       );
 
       const hasInteractiveAutomation = toolsToDisplay.some((tc: any) => INTERACTIVE_AUTOMATION_TOOLS.has(tc.name));
+      const hasToolSynthesis = toolsToDisplay.some((tc: any) => tc.name === 'synthesize_tool');
+      const hasSkillSynthesis = toolsToDisplay.some((tc: any) => tc.name === 'synthesize_skill');
       const hitlRationale = originalRequest ? originalRequest.details.reasoning : (
         state.completionSignal?.hitlRationale ||
-        (hasInteractiveAutomation
-          ? 'Interactive browser or desktop automation requires your permission before EverFern can control Navis or the computer.'
-          : 'High-risk operation detected')
+        (hasToolSynthesis
+          ? 'An agent is requesting to synthesize and register a new custom tool. Please review the proposed tool code before approving.'
+          : hasSkillSynthesis
+            ? 'An agent is requesting to synthesize and register a new custom skill. Please review the proposed skill instructions before approving.'
+            : hasInteractiveAutomation
+              ? 'Interactive browser or desktop automation requires your permission before EverFern can control Navis or the computer.'
+              : 'High-risk operation detected')
       );
       const reasoning = hitlRationale;
       const requestId = originalRequest ? originalRequest.id : crypto.randomUUID();
@@ -455,7 +461,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
     if (ctx.shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
     }
-    const node = createCodingSpecialistNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, toolDefs);
+    const codingTools = toolDefs.filter(t => 
+      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'grep_search', 'list_dir', 'run_command', 'terminal_execute', 'spawn_agent', 'ask_user_question'].includes(t.name) || 
+      t.name.includes('mcp')
+    );
+    const node = createCodingSpecialistNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, codingTools);
     return node(state);
   };
 
@@ -465,7 +475,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
     if (ctx.shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
     }
-    const node = createDataAnalystNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, toolDefs);
+    const dataTools = toolDefs.filter(t => 
+      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'run_command', 'terminal_execute', 'ask_user_question'].includes(t.name) || 
+      t.name.includes('mcp')
+    );
+    const node = createDataAnalystNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, dataTools);
     return node(state);
   };
 
@@ -475,7 +489,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
     if (ctx.shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
     }
-    const node = createWebExplorerNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, toolDefs);
+    const browserTools = toolDefs.filter(t => 
+      ['browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
+    );
+    const node = createWebExplorerNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
   };
 
@@ -484,7 +501,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
     if (ctx.shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
     }
-    const node = createDeepResearchNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, toolDefs);
+    const browserTools = toolDefs.filter(t => 
+      ['browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
+    );
+    const node = createDeepResearchNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
   };
 

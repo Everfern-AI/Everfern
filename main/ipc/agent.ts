@@ -248,6 +248,22 @@ export function registerAgentHandlers() {
     };
   });
 
+  ipcMain.handle('agent:get-rollback-preview', async (_event, conversationId: string, timestamp: number) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const manager = getRollbackManager();
+    await manager.initialize();
+    const preview = await manager.getRollbackPreviewByTimestamp(conversationId, timestamp);
+    return preview;
+  });
+
+  ipcMain.handle('agent:get-snapshot-content', async (_event, snapshotId: string) => {
+    const { getRollbackManager } = require('../agent/persistence/rollback-manager');
+    const manager = getRollbackManager();
+    await manager.initialize();
+    const content = await manager.getSnapshotContent(snapshotId);
+    return content;
+  });
+
   // NOTE: Must use ipcMain.on (not ipcMain.handle) here because the renderer preload
   // uses ipcRenderer.send (one-way fire-and-forget), not ipcRenderer.invoke.
   // ipcMain.handle only receives messages from ipcRenderer.invoke.
@@ -278,6 +294,21 @@ export function registerAgentHandlers() {
       resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow });
     } else {
       console.warn('[local-execution-response] ❌ No resolver found for requestId:', response?.requestId);
+    }
+  });
+
+  ipcMain.handle('tool-settings:list-synthesized', async () => {
+    const { getSynthesizedToolsList } = require('../agent/tools/tool-synthesizer');
+    return getSynthesizedToolsList();
+  });
+
+  ipcMain.handle('tool-settings:delete-synthesized', async (_event, name: string) => {
+    const { deleteSynthesizedTool } = require('../agent/tools/tool-synthesizer');
+    try {
+      deleteSynthesizedTool(name);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
     }
   });
 
@@ -733,6 +764,14 @@ export function registerAgentHandlers() {
         const { getComputerOverlayManager } = require('../computer-overlay');
         getComputerOverlayManager().hide();
       } catch (e) {}
+
+      // Trigger cleanup sequence on crash to prevent process/file handle leaks
+      try {
+        await globalAbortManager.executeCleanupSequence();
+      } catch (cleanupErr) {
+        console.error('[AgentIPC] Cleanup sequence error on stream crash:', cleanupErr);
+      }
+
       streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
     }
   });

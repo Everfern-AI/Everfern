@@ -140,6 +140,7 @@
     "electron-log": "^5.4.4",
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9",
+    "fast-glob": "^3.3.3",
     "framer-motion": "^12.38.0",
     "html-dom-parser": "^8.0.0",
     "ibm-cloud-sdk-core": "^5.4.11",

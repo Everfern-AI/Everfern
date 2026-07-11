@@ -2369,22 +2369,27 @@ export class AIClient {
       }),
       stream: isStreaming,
     };
-    if (system) body['system'] = system;
+    if (system) {
+      body['system'] = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    }
     if (req.tools?.length) {
-      body['tools'] = req.tools.map(t => {
+      body['tools'] = req.tools.map((t, index, arr) => {
+        let name, description, input_schema;
         if (t && (t as any).type === 'function' && (t as any).function) {
           const fn = (t as any).function;
-          return {
-            name: fn.name,
-            description: fn.description,
-            input_schema: fn.parameters
-          };
+          name = fn.name;
+          description = fn.description;
+          input_schema = fn.parameters;
+        } else {
+          name = t.name;
+          description = t.description;
+          input_schema = t.parameters;
         }
-        return {
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters,
-        };
+        const toolObj: any = { name, description, input_schema };
+        if (index === arr.length - 1) {
+          toolObj.cache_control = { type: 'ephemeral' };
+        }
+        return toolObj;
       });
     }
 
@@ -2498,7 +2503,30 @@ export class AIClient {
       messages: msgs,
       stream: true,
     };
-    if (system) body['system'] = system;
+    if (system) {
+      body['system'] = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    }
+    
+    if (req.tools?.length) {
+      body['tools'] = req.tools.map((t, index, arr) => {
+        let name, description, input_schema;
+        if (t && (t as any).type === 'function' && (t as any).function) {
+          const fn = (t as any).function;
+          name = fn.name;
+          description = fn.description;
+          input_schema = fn.parameters;
+        } else {
+          name = t.name;
+          description = t.description;
+          input_schema = t.parameters;
+        }
+        const toolObj: any = { name, description, input_schema };
+        if (index === arr.length - 1) {
+          toolObj.cache_control = { type: 'ephemeral' };
+        }
+        return toolObj;
+      });
+    }
 
     const headers = this._anthropicHeaders;
     if (isStreaming) {

@@ -93,60 +93,71 @@ export const localPermissionTool: AgentTool = {
     // Approved — execute the command on the host machine
     onUpdate?.(`🚀 Execution approved. Running command on host machine...`);
 
-    let shell: string | undefined;
     try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
+      const { UnifiedExecutor } = require('./unified-executor');
 
-      // Select shell based on platform and request
+      let targetShell: 'powershell' | 'cmd' | 'bash' = 'bash';
       if (process.platform === 'win32') {
-        if (shellType === 'PowerShell') {
-          shell = 'powershell.exe';
-        } else if (shellType === 'PowerShell7') {
-          shell = 'pwsh.exe';
-        } else if (shellType === 'CMD') {
-          shell = 'cmd.exe';
+        if (shellType === 'CMD') {
+          targetShell = 'cmd';
+        } else if (shellType === 'PowerShell' || shellType === 'PowerShell7') {
+          targetShell = 'powershell';
         } else {
-          shell = 'powershell.exe';
-        }
-      } else {
-        if (shellType === 'PowerShell' || shellType === 'PowerShell7') {
-          shell = 'pwsh';
-        } else {
-          shell = '/bin/bash';
+          targetShell = 'powershell';
         }
       }
 
-      const { stdout, stderr } = await execAsync(command, { shell, timeout: 300000 });
+      const result = await UnifiedExecutor.execute({
+        command,
+        timeout: 300000,
+        local: true,
+        shell: targetShell,
+        onUpdate
+      });
 
-      const combined = [stdout, stderr].filter(Boolean).join('\n');
-      const output = combined.trim() || '(Command succeeded with no output)';
-
+      const output = result.output.trim() || '(Command succeeded with no output)';
       const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 
-      return {
-        success: true,
-        output: stripAnsi(`Success: local command completed\n${getHostExecutionContext(process.cwd(), shell)}\nCommand: ${command}\nOutput:\n${output}`),
-        data: {
-          approved: true,
-          alwaysAllow: response.alwaysAllow,
-          command,
-          shellType,
-          cwd: process.cwd(),
-          homeDir: os.homedir(),
-          downloadsDir: path.join(os.homedir(), 'Downloads'),
-          shell,
-        }
-      };
+      if (result.success) {
+        return {
+          success: true,
+          output: stripAnsi(`Success: local command completed\n${getHostExecutionContext(process.cwd(), targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
+          data: {
+            approved: true,
+            alwaysAllow: response.alwaysAllow,
+            command,
+            shellType,
+            cwd: process.cwd(),
+            homeDir: os.homedir(),
+            downloadsDir: path.join(os.homedir(), 'Downloads'),
+            shell: targetShell,
+          }
+        };
+      } else {
+        return {
+          success: false,
+          output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd(), targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
+          error: stripAnsi(result.error || output),
+          data: {
+            approved: true,
+            alwaysAllow: response.alwaysAllow,
+            command,
+            shellType,
+            cwd: process.cwd(),
+            homeDir: os.homedir(),
+            downloadsDir: path.join(os.homedir(), 'Downloads'),
+            shell: targetShell,
+          }
+        };
+      }
     } catch (execError: any) {
-      const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
+      const combined = [execError.message].filter(Boolean).join('\n');
       const output = combined.trim() || '(Command failed with no output)';
       const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 
       return {
         success: false,
-        output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd(), shell)}\nCommand: ${command}\nOutput:\n${output}`),
+        output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${output}`),
         error: stripAnsi(output),
         data: {
           approved: true,
@@ -156,7 +167,6 @@ export const localPermissionTool: AgentTool = {
           cwd: process.cwd(),
           homeDir: os.homedir(),
           downloadsDir: path.join(os.homedir(), 'Downloads'),
-          shell,
         }
       };
     }

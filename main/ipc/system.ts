@@ -825,8 +825,9 @@ export function registerSystemHandlers() {
           fs.unlinkSync(zipPath);
         }
       } else {
-        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
-        await execAsync(cmd);
+        const { execFile } = require('child_process');
+        const execFileAsync = promisify(execFile);
+        await execFileAsync('unzip', ['-q', '-o', filePath, '-d', tempDir]);
       }
 
       const slidesDir = path.join(tempDir, 'ppt', 'slides');
@@ -997,8 +998,9 @@ export function registerSystemHandlers() {
           fs.unlinkSync(zipPath);
         }
       } else {
-        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
-        await execAsync(cmd);
+        const { execFile } = require('child_process');
+        const execFileAsync = promisify(execFile);
+        await execFileAsync('unzip', ['-q', '-o', filePath, '-d', tempDir]);
       }
 
       const docXmlPath = path.join(tempDir, 'word', 'document.xml');
@@ -1079,8 +1081,9 @@ export function registerSystemHandlers() {
           fs.unlinkSync(zipPath);
         }
       } else {
-        const cmd = `unzip -q -o "${filePath}" -d "${tempDir}"`;
-        await execAsync(cmd);
+        const { execFile } = require('child_process');
+        const execFileAsync = promisify(execFile);
+        await execFileAsync('unzip', ['-q', '-o', filePath, '-d', tempDir]);
       }
 
       // 1. Read shared strings

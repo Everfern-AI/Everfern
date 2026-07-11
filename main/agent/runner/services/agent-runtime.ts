@@ -641,7 +641,8 @@ export async function runAgentStep(
       const systemPromptTokens = systemMsg && typeof systemMsg.content === 'string' ? Math.ceil(systemMsg.content.length / 4) : 0;
       
       runner.telemetry.info(`Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}, System=${systemPromptTokens}`);
-      eventQueue?.push({ type: 'usage', ...response.usage, systemPromptTokens });
+      const tr = (runner as any).lastTruncationDetails;
+      eventQueue?.push({ type: 'usage', ...response.usage, systemPromptTokens, ...(tr ?? {}) });
 
       // Record into analytics DB (fire-and-forget — never block the agent)
       try {

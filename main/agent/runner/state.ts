@@ -52,7 +52,7 @@ export type StreamEvent =
   | { type: 'mission_phase_change'; conversationId?: string; phase: string; timeline: MissionTimeline | null }
   | { type: 'parallel_group_start'; groupIndex: number; stepCount: number }
   | { type: 'parallel_group_end'; groupIndex: number; durationMs: number }
-  | { type: 'usage'; promptTokens: number; completionTokens: number; totalTokens: number; systemPromptTokens?: number }
+  | { type: 'usage'; promptTokens: number; completionTokens: number; totalTokens: number; systemPromptTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }
   | { type: 'done' }
   | { type: 'tool_call_start'; index: number; toolName: string }
   | { type: 'tool_call_chunk'; index: number; argumentsDelta: string }
