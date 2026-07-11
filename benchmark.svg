@@ -1,15 +1,15 @@
 <svg viewBox="0 0 1000 580" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>Tool comparison: openwork, Claude cowork, Manus Desktop, GPT-5.5, and EverFern on productivity capabilities</title>
 
-  <text x="500" y="24" font-size="16" font-weight="700" fill="#1f2937" text-anchor="middle">Productivity agent comparison (June 2026 — capability &amp; efficiency)</text>
+  <text x="500" y="24" font-size="16" font-weight="700" fill="#888" text-anchor="middle">Productivity agent comparison (June 2026 — capability &amp; efficiency)</text>
 
-  <rect x="80" y="36" width="14" height="14" rx="2" fill="#6b7280"/><text x="102" y="48" font-size="12" fill="#374151">openwork (Koda)</text>
-  <rect x="250" y="36" width="14" height="14" rx="3" fill="#d97706"/><text x="272" y="48" font-size="12" fill="#374151">Claude cowork (Sonnet 4.5/4.6)</text>
-  <rect x="470" y="36" width="14" height="14" rx="2" fill="#059669"/><text x="492" y="48" font-size="12" fill="#374151">Manus Desktop</text>
-  <rect x="630" y="36" width="14" height="14" rx="2" fill="#7c3aed"/><text x="652" y="48" font-size="12" fill="#374151">GPT-5.5 (API)</text>
-  <rect x="790" y="36" width="14" height="14" rx="2" fill="#ea580c"/><text x="812" y="48" font-size="12" fill="#374151">EverFern (desktop-first)</text>
+  <rect x="80" y="36" width="14" height="14" rx="2" fill="#999"/><text x="102" y="48" font-size="12" fill="#888">openwork (Koda)</text>
+  <rect x="250" y="36" width="14" height="14" rx="3" fill="#d97706"/><text x="272" y="48" font-size="12" fill="#888">Claude cowork (Sonnet 4.5/4.6)</text>
+  <rect x="470" y="36" width="14" height="14" rx="2" fill="#059669"/><text x="492" y="48" font-size="12" fill="#888">Manus Desktop</text>
+  <rect x="630" y="36" width="14" height="14" rx="2" fill="#7c3aed"/><text x="652" y="48" font-size="12" fill="#888">GPT-5.5 (API)</text>
+  <rect x="790" y="36" width="14" height="14" rx="2" fill="#ea580c"/><text x="812" y="48" font-size="12" fill="#888">EverFern (desktop-first)</text>
 
-  <text x="18" y="280" font-size="12" fill="#374151" text-anchor="middle" transform="rotate(-90 18 280)">Score (0–100)</text>
+  <text x="18" y="280" font-size="12" fill="#888" text-anchor="middle" transform="rotate(-90 18 280)">Score (0–100)</text>
 
   <!-- Grid: y = 420 - (score * 3.2), so 100→100, 0→420 -->
   <line x1="75" y1="420" x2="975" y2="420" stroke="#374151" stroke-opacity="0.5"/>
@@ -19,69 +19,69 @@
   <line x1="75" y1="164" x2="975" y2="164" stroke="#374151" stroke-opacity="0.12"/>
   <line x1="75" y1="100" x2="975" y2="100" stroke="#374151" stroke-opacity="0.4" stroke-dasharray="4 4"/>
 
-  <text x="68" y="424" font-size="11" fill="#374151" text-anchor="end">0</text>
-  <text x="68" y="360" font-size="11" fill="#374151" text-anchor="end">20</text>
-  <text x="68" y="296" font-size="11" fill="#374151" text-anchor="end">40</text>
-  <text x="68" y="232" font-size="11" fill="#374151" text-anchor="end">60</text>
-  <text x="68" y="168" font-size="11" fill="#374151" text-anchor="end">80</text>
-  <text x="68" y="104" font-size="11" fill="#374151" text-anchor="end">100</text>
+  <text x="68" y="424" font-size="11" fill="#888" text-anchor="end">0</text>
+  <text x="68" y="360" font-size="11" fill="#888" text-anchor="end">20</text>
+  <text x="68" y="296" font-size="11" fill="#888" text-anchor="end">40</text>
+  <text x="68" y="232" font-size="11" fill="#888" text-anchor="end">60</text>
+  <text x="68" y="168" font-size="11" fill="#888" text-anchor="end">80</text>
+  <text x="68" y="104" font-size="11" fill="#888" text-anchor="end">100</text>
 
   <!-- ============ Computer use ============ -->
-  <text x="128" y="72" font-size="12" fill="#1f2937" text-anchor="middle">Computer use</text>
-  <text x="128" y="86" font-size="9" fill="#6b7280" text-anchor="middle">screen nav, click, type</text>
+  <text x="128" y="72" font-size="12" fill="#888" text-anchor="middle">Computer use</text>
+  <text x="128" y="86" font-size="9" fill="#999" text-anchor="middle">screen nav, click, type</text>
 
-  <rect x="88" y="388" width="22" height="32" rx="2" fill="#6b7280"/><text x="99" y="382" font-size="9" fill="#1f2937" text-anchor="middle">10</text>
-  <rect x="114" y="260" width="22" height="160" rx="3" fill="#d97706"/><text x="125" y="255" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">50</text>
-  <rect x="140" y="202" width="22" height="218" rx="2" fill="#059669"/><text x="151" y="197" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">68</text>
-  <rect x="166" y="292" width="22" height="128" rx="2" fill="#7c3aed"/><text x="177" y="287" font-size="9" fill="#1f2937" text-anchor="middle">40</text>
-  <rect x="192" y="170" width="22" height="250" rx="2" fill="#ea580c"/><text x="203" y="165" font-size="9" font-weight="700" fill="#1f2937" text-anchor="middle">78</text>
+  <rect x="88" y="388" width="22" height="32" rx="2" fill="#999"/><text x="99" y="382" font-size="9" fill="#888" text-anchor="middle">10</text>
+  <rect x="114" y="260" width="22" height="160" rx="3" fill="#d97706"/><text x="125" y="255" font-size="9" font-weight="600" fill="#888" text-anchor="middle">50</text>
+  <rect x="140" y="202" width="22" height="218" rx="2" fill="#059669"/><text x="151" y="197" font-size="9" font-weight="600" fill="#888" text-anchor="middle">68</text>
+  <rect x="166" y="292" width="22" height="128" rx="2" fill="#7c3aed"/><text x="177" y="287" font-size="9" fill="#888" text-anchor="middle">40</text>
+  <rect x="192" y="170" width="22" height="250" rx="2" fill="#ea580c"/><text x="203" y="165" font-size="9" font-weight="700" fill="#888" text-anchor="middle">78</text>
 
   <!-- ============ Browser agent ============ -->
-  <text x="310" y="72" font-size="12" fill="#1f2937" text-anchor="middle">Browser agent</text>
-  <text x="310" y="86" font-size="9" fill="#6b7280" text-anchor="middle">web nav, form fill, extract</text>
+  <text x="310" y="72" font-size="12" fill="#888" text-anchor="middle">Browser agent</text>
+  <text x="310" y="86" font-size="9" fill="#999" text-anchor="middle">web nav, form fill, extract</text>
 
-  <rect x="274" y="333" width="22" height="87" rx="2" fill="#6b7280"/><text x="285" y="327" font-size="9" fill="#1f2937" text-anchor="middle">27</text>
-  <rect x="300" y="228" width="22" height="192" rx="3" fill="#d97706"/><text x="311" y="223" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">60</text>
-  <rect x="326" y="193" width="22" height="227" rx="2" fill="#059669"/><text x="337" y="188" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">71</text>
-  <rect x="352" y="260" width="22" height="160" rx="2" fill="#7c3aed"/><text x="363" y="255" font-size="9" fill="#1f2937" text-anchor="middle">50</text>
-  <rect x="378" y="161" width="22" height="259" rx="2" fill="#ea580c"/><text x="389" y="156" font-size="9" font-weight="700" fill="#1f2937" text-anchor="middle">81</text>
+  <rect x="274" y="333" width="22" height="87" rx="2" fill="#999"/><text x="285" y="327" font-size="9" fill="#888" text-anchor="middle">27</text>
+  <rect x="300" y="228" width="22" height="192" rx="3" fill="#d97706"/><text x="311" y="223" font-size="9" font-weight="600" fill="#888" text-anchor="middle">60</text>
+  <rect x="326" y="193" width="22" height="227" rx="2" fill="#059669"/><text x="337" y="188" font-size="9" font-weight="600" fill="#888" text-anchor="middle">71</text>
+  <rect x="352" y="260" width="22" height="160" rx="2" fill="#7c3aed"/><text x="363" y="255" font-size="9" fill="#888" text-anchor="middle">50</text>
+  <rect x="378" y="161" width="22" height="259" rx="2" fill="#ea580c"/><text x="389" y="156" font-size="9" font-weight="700" fill="#888" text-anchor="middle">81</text>
 
   <!-- ============ Multi-step planning ============ -->
-  <text x="495" y="72" font-size="12" fill="#1f2937" text-anchor="middle">Multi-step planning</text>
-  <text x="495" y="86" font-size="9" fill="#6b7280" text-anchor="middle">task decomposition, execution</text>
+  <text x="495" y="72" font-size="12" fill="#888" text-anchor="middle">Multi-step planning</text>
+  <text x="495" y="86" font-size="9" fill="#999" text-anchor="middle">task decomposition, execution</text>
 
-  <rect x="460" y="359" width="22" height="61" rx="2" fill="#6b7280"/><text x="471" y="353" font-size="9" fill="#1f2937" text-anchor="middle">19</text>
-  <rect x="486" y="199" width="22" height="221" rx="3" fill="#d97706"/><text x="497" y="194" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">69</text>
-  <rect x="512" y="183" width="22" height="237" rx="2" fill="#059669"/><text x="523" y="178" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">74</text>
-  <rect x="538" y="225" width="22" height="195" rx="2" fill="#7c3aed"/><text x="549" y="220" font-size="9" fill="#1f2937" text-anchor="middle">61</text>
-  <rect x="564" y="177" width="22" height="243" rx="2" fill="#ea580c"/><text x="575" y="172" font-size="9" font-weight="700" fill="#1f2937" text-anchor="middle">76</text>
+  <rect x="460" y="359" width="22" height="61" rx="2" fill="#999"/><text x="471" y="353" font-size="9" fill="#888" text-anchor="middle">19</text>
+  <rect x="486" y="199" width="22" height="221" rx="3" fill="#d97706"/><text x="497" y="194" font-size="9" font-weight="600" fill="#888" text-anchor="middle">69</text>
+  <rect x="512" y="183" width="22" height="237" rx="2" fill="#059669"/><text x="523" y="178" font-size="9" font-weight="600" fill="#888" text-anchor="middle">74</text>
+  <rect x="538" y="225" width="22" height="195" rx="2" fill="#7c3aed"/><text x="549" y="220" font-size="9" fill="#888" text-anchor="middle">61</text>
+  <rect x="564" y="177" width="22" height="243" rx="2" fill="#ea580c"/><text x="575" y="172" font-size="9" font-weight="700" fill="#888" text-anchor="middle">76</text>
 
   <!-- ============ Research & synthesis ============ -->
-  <text x="695" y="72" font-size="12" fill="#1f2937" text-anchor="middle">Research &amp; synthesis</text>
-  <text x="695" y="86" font-size="9" fill="#6b7280" text-anchor="middle">multi-source, citations</text>
+  <text x="695" y="72" font-size="12" fill="#888" text-anchor="middle">Research &amp; synthesis</text>
+  <text x="695" y="86" font-size="9" fill="#999" text-anchor="middle">multi-source, citations</text>
 
-  <rect x="654" y="340" width="22" height="80" rx="2" fill="#6b7280"/><text x="665" y="334" font-size="9" fill="#1f2937" text-anchor="middle">25</text>
-  <rect x="680" y="199" width="22" height="221" rx="3" fill="#d97706"/><text x="691" y="194" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">69</text>
-  <rect x="706" y="206" width="22" height="214" rx="2" fill="#059669"/><text x="717" y="201" font-size="9" font-weight="600" fill="#1f2937" text-anchor="middle">67</text>
-  <rect x="732" y="238" width="22" height="182" rx="2" fill="#7c3aed"/><text x="743" y="233" font-size="9" fill="#1f2937" text-anchor="middle">57</text>
-  <rect x="758" y="161" width="22" height="259" rx="2" fill="#ea580c"/><text x="769" y="156" font-size="9" font-weight="700" fill="#1f2937" text-anchor="middle">81</text>
+  <rect x="654" y="340" width="22" height="80" rx="2" fill="#999"/><text x="665" y="334" font-size="9" fill="#888" text-anchor="middle">25</text>
+  <rect x="680" y="199" width="22" height="221" rx="3" fill="#d97706"/><text x="691" y="194" font-size="9" font-weight="600" fill="#888" text-anchor="middle">69</text>
+  <rect x="706" y="206" width="22" height="214" rx="2" fill="#059669"/><text x="717" y="201" font-size="9" font-weight="600" fill="#888" text-anchor="middle">67</text>
+  <rect x="732" y="238" width="22" height="182" rx="2" fill="#7c3aed"/><text x="743" y="233" font-size="9" fill="#888" text-anchor="middle">57</text>
+  <rect x="758" y="161" width="22" height="259" rx="2" fill="#ea580c"/><text x="769" y="156" font-size="9" font-weight="700" fill="#888" text-anchor="middle">81</text>
 
   <!-- ============ Cost efficiency ============ -->
-  <text x="890" y="72" font-size="12" fill="#1f2937" text-anchor="middle">Cost efficiency</text>
-  <text x="890" y="86" font-size="9" fill="#6b7280" text-anchor="middle">lower = better</text>
+  <text x="890" y="72" font-size="12" fill="#888" text-anchor="middle">Cost efficiency</text>
+  <text x="890" y="86" font-size="9" fill="#999" text-anchor="middle">lower = better</text>
 
-  <rect x="843" y="372" width="22" height="48" rx="2" fill="#6b7280"/><text x="854" y="366" font-size="9" fill="#1f2937" text-anchor="middle">15</text>
-  <rect x="869" y="327" width="22" height="93" rx="3" fill="#d97706"/><text x="880" y="322" font-size="9" fill="#1f2937" text-anchor="middle">29</text>
-  <rect x="895" y="302" width="22" height="118" rx="2" fill="#059669"/><text x="906" y="297" font-size="9" fill="#1f2937" text-anchor="middle">37</text>
-  <rect x="921" y="350" width="22" height="70" rx="2" fill="#7c3aed"/><text x="932" y="345" font-size="9" fill="#1f2937" text-anchor="middle">22</text>
-  <rect x="947" y="394" width="22" height="26" rx="2" fill="#ea580c"/><text x="958" y="438" font-size="9" font-weight="700" fill="#1f2937" text-anchor="middle">8</text>
+  <rect x="843" y="372" width="22" height="48" rx="2" fill="#999"/><text x="854" y="366" font-size="9" fill="#888" text-anchor="middle">15</text>
+  <rect x="869" y="327" width="22" height="93" rx="3" fill="#d97706"/><text x="880" y="322" font-size="9" fill="#888" text-anchor="middle">29</text>
+  <rect x="895" y="302" width="22" height="118" rx="2" fill="#059669"/><text x="906" y="297" font-size="9" fill="#888" text-anchor="middle">37</text>
+  <rect x="921" y="350" width="22" height="70" rx="2" fill="#7c3aed"/><text x="932" y="345" font-size="9" fill="#888" text-anchor="middle">22</text>
+  <rect x="947" y="394" width="22" height="26" rx="2" fill="#ea580c"/><text x="958" y="438" font-size="9" font-weight="700" fill="#888" text-anchor="middle">8</text>
 
-  <text x="890" y="465" font-size="9" fill="#6b7280" text-anchor="middle">lower cost = higher bar = better score</text>
+  <text x="890" y="465" font-size="9" fill="#999" text-anchor="middle">lower cost = higher bar = better score</text>
 
   <line x1="20" y1="475" x2="980" y2="475" stroke="#374151" stroke-opacity="0.2"/>
 
-  <text x="20" y="497" font-size="10" fill="#374151" opacity="0.8">Methodology: Scores 0–100 based on published capabilities, first-party docs, independent benchmarks, and community reports. Computer use = screenshot-based screen nav. Browser agent = DOM/Playwright-based web interaction. Multi-step planning = task decomposition + tool chaining + error recovery. Research = web search + multi-source synthesis with citations. Cost efficiency = cost per typical task (inverse: lower cost = higher score).</text>
-  <text x="20" y="517" font-size="10" fill="#374151" opacity="0.6">Sources: Anthropic Cowork docs, Manus Help Center, GPT-5.5 API docs, openwork mission specs, EverFern architecture. Cost figures from public API pricing + published task benchmarks.</text>
-  <text x="20" y="537" font-size="10" fill="#374151" opacity="0.6">EverFern: local inference =  marginal API cost (HW excluded). Multi-step planning uses sub-agent delegation (coding specialist, data analyst, web explorer, deep research). Research via multi-source web search + structured citations.</text>
-  <text x="20" y="557" font-size="10" fill="#374151" opacity="0.6">Claude cowork: Sonnet 4.6 (/ MTok). Manus: ~.55/research task. GPT-5.5: / MTok. openwork: model tier routing (Haiku + Sonnet). EverFern: local LLM + optional cloud fallback.</text>
+  <text x="20" y="497" font-size="10" fill="#888" opacity="0.7">Methodology: Scores 0–100 based on published capabilities, first-party docs, independent benchmarks, and community reports. Computer use = screenshot-based screen nav. Browser agent = DOM/Playwright-based web interaction. Multi-step planning = task decomposition + tool chaining + error recovery. Research = web search + multi-source synthesis with citations. Cost efficiency = cost per typical task (inverse: lower cost = higher score).</text>
+  <text x="20" y="517" font-size="10" fill="#888" opacity="0.5">Sources: Anthropic Cowork docs, Manus Help Center, GPT-5.5 API docs, openwork mission specs, EverFern architecture. Cost figures from public API pricing + published task benchmarks.</text>
+  <text x="20" y="537" font-size="10" fill="#888" opacity="0.5">EverFern: local inference =  marginal API cost (HW excluded). Multi-step planning uses sub-agent delegation (coding specialist, data analyst, web explorer, deep research). Research via multi-source web search + structured citations.</text>
+  <text x="20" y="557" font-size="10" fill="#888" opacity="0.5">Claude cowork: Sonnet 4.6 (/ MTok). Manus: ~.55/research task. GPT-5.5: / MTok. openwork: model tier routing (Haiku + Sonnet). EverFern: local LLM + optional cloud fallback.</text>
 </svg>
