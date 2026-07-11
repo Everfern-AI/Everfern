@@ -458,11 +458,21 @@ You do not need to use complex execution plans or tools for this interaction.`;
       
       runner.telemetry.info(`Model resonance confirmed | Tokens: In=${usage.promptTokens}, Out=${usage.completionTokens}, System=${systemPromptTokens}`);
       runner.telemetry.metrics(iterations, usage.totalTokens);
+      const tr = (runner as any).lastTruncationDetails;
+      const toolSchemaTokens = tr?.toolSchemaTokens ?? undefined;
+      const truncatedTools = tr?.truncatedTools ?? undefined;
+      const schemaTokenSavings = tr?.schemaTokenSavings ?? undefined;
+      const outputTokens = usage.completionTokens ?? undefined;
+
       eventQueue?.push({
         type: 'usage',
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
+        outputTokens,
+        toolSchemaTokens,
+        truncatedTools,
+        schemaTokenSavings,
         promptTokensCost: usage.promptTokensCost,
         completionTokensCost: usage.completionTokensCost,
         imageInputCost: usage.imageInputCost,

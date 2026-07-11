@@ -777,7 +777,7 @@ function addImageIfAvailable(slide: any, imagePath: string | undefined, imageUrl
 
 function addBulletStack(slide: any, pres: any, items: string[], x: number, y: number, w: number, style: StyleGuide, options?: { max?: number; fontSize?: number; color?: string }): void {
   const visible = items.slice(0, options?.max ?? 4);
-  const fontSize = options?.fontSize ?? 13;
+  const fontSize = options?.fontSize ?? 14;
   visible.forEach((item, i) => {
     const top = y + i * 0.48;
     addShape(slide, pres, 'ellipse', {
@@ -852,7 +852,7 @@ function renderTitleSlide(pres: any, request: PresentationRequest, style: StyleG
     y: 5.82,
     w: 4.8,
     h: 0.24,
-    fontSize: 10.8,
+    fontSize: 12,
     color: style.palette.text,
     bold: true,
   }, style);
@@ -890,7 +890,7 @@ function renderHero(slide: any, pres: any, request: PresentationRequest, style: 
     color: style.palette.muted,
   }, style);
   addGeneratedVisual(slide, style, s.visualIdea, 7.35, 0.72, 5.25, 5.35, 'image');
-  addBulletStack(slide, pres, s.displayContent.slice(1), M, 4.32, 5.6, style, { max: 3, fontSize: 12.6 });
+  addBulletStack(slide, pres, s.displayContent.slice(1), M, 4.32, 5.6, style, { max: 3, fontSize: 14 });
   addFooter(slide, pres, request, style, index, total);
 }
 
@@ -910,7 +910,7 @@ function renderSplitNarrative(slide: any, pres: any, request: PresentationReques
     y: 2.4,
     w: 4.25,
     h: 0.9,
-    fontSize: 12.7,
+    fontSize: 14,
     color: style.palette.muted,
   }, style);
 
@@ -979,7 +979,7 @@ function renderBigNumber(slide: any, pres: any, request: PresentationRequest, st
       y: 2.58 + (i % 2) * 0.45,
       w: 1.4,
       h: 1.15,
-      fontSize: 10,
+      fontSize: 11.5,
       color: style.palette.muted,
       align: 'center',
     }, style);
@@ -1032,7 +1032,7 @@ function renderTimeline(slide: any, pres: any, request: PresentationRequest, sty
       y: i % 2 ? y + 0.58 : y - 1.18,
       w: 1.48,
       h: 0.32,
-      fontSize: 9.5,
+      fontSize: 11,
       bold: true,
       align: 'center',
       color: style.palette.text,
@@ -1081,7 +1081,7 @@ function renderComparison(slide: any, pres: any, request: PresentationRequest, s
       bold: true,
       color: style.palette.text,
     }, style);
-    addBulletStack(slide, pres, card.items, card.x + 0.38, 3.1, 4.3, style, { max: 4, fontSize: 11.2 });
+    addBulletStack(slide, pres, card.items, card.x + 0.38, 3.1, 4.3, style, { max: 4, fontSize: 13 });
   });
   addFooter(slide, pres, request, style, index, total);
 }
@@ -1117,7 +1117,7 @@ function renderDiagram(slide: any, pres: any, request: PresentationRequest, styl
     y: cy - 0.25,
     w: 1.36,
     h: 0.42,
-    fontSize: 10.2,
+    fontSize: 11,
     bold: true,
     align: 'center',
     color: style.palette.inverse,
@@ -1134,7 +1134,7 @@ function renderDiagram(slide: any, pres: any, request: PresentationRequest, styl
       y: y - 0.14,
       w: 1.36,
       h: 0.24,
-      fontSize: 8.8,
+      fontSize: 10,
       bold: true,
       align: 'center',
       color: style.palette.text,
@@ -1169,7 +1169,7 @@ function renderQuote(slide: any, pres: any, request: PresentationRequest, style:
     y: 4.18,
     w: 7.35,
     h: 0.28,
-    fontSize: 12,
+    fontSize: 13,
     bold: true,
     color: style.palette.muted,
     align: 'center',
@@ -1206,7 +1206,7 @@ function renderGallery(slide: any, pres: any, request: PresentationRequest, styl
       y: card.y + 2.52,
       w: 2.92,
       h: 0.48,
-      fontSize: 10.5,
+      fontSize: 12,
       bold: true,
       color: style.palette.text,
       align: 'center',
@@ -1236,7 +1236,7 @@ function renderMap(slide: any, pres: any, request: PresentationRequest, style: S
   }, style);
   addGeneratedVisual(slide, style, s.visualIdea, 0.9, 1.9, 7.2, 4.35, 'diagram');
   addCard(slide, pres, 8.75, 2.05, 3.5, 3.95, style);
-  addBulletStack(slide, pres, s.displayContent.length ? s.displayContent : [s.visualIdea], 9.1, 2.55, 2.75, style, { max: 5, fontSize: 10.8 });
+  addBulletStack(slide, pres, s.displayContent.length ? s.displayContent : [s.visualIdea], 9.1, 2.55, 2.75, style, { max: 5, fontSize: 12 });
   addFooter(slide, pres, request, style, index, total);
 }
 
@@ -1294,7 +1294,7 @@ function renderStoryboard(slide: any, pres: any, request: PresentationRequest, s
       y: y + 0.32,
       w: 4.05,
       h: 0.44,
-      fontSize: 12.2,
+      fontSize: 13,
       bold: true,
       color: style.palette.text,
     }, style);
@@ -1367,7 +1367,7 @@ function buildToolOutput(request: PresentationRequest, style: StyleGuide, slides
 export const pptxGeneratorTool: AgentTool = {
   name: 'pptx_generator',
   description:
-    'Create adaptive, editorial-quality editable PowerPoint presentations using PptxGenJS. The tool infers a custom visual direction, story rhythm, palette, and slide treatments from the request instead of repeating static templates. Prefer designMode="adaptive" and use concise slide text with speakerNotes for dense detail.',
+    'Create PowerPoint presentations using PptxGenJS. PREFER using the Linux VM via the terminal tool instead: SSH in, write a Node.js PptxGenJS script, run it, and copy the .pptx back to the host. The VM has pptxgenjs pre-installed. Use this built-in tool only for simple/quick decks. For complex designs or custom fonts, ALWAYS use the Linux VM approach.',
   parameters: {
     type: 'object',
     properties: {

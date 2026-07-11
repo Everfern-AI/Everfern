@@ -5,25 +5,78 @@ description: "Use this skill any time a .pptx file (PowerPoint presentation) is 
 
 # PPTX Skill for EverFern
 
+## ⚠️ Design-First Workflow (MANDATORY)
+
+**You MUST follow this exact sequence. Do not generate content first and style it after. Plan the visual system first.**
+
+### Phase 1 — Plan the Visual System (before writing any slide content)
+
+Choose and lock these **before** filling in slide text:
+
+1. **Typography** — Pick fonts from PptxGenJS-compatible list (Aptos, Calibri, Georgia, etc.). Use 1 heading + 1 body font. For custom fonts, write a Node.js script and run it in the Linux VM.
+
+2. **Color palette** (4-6 hex values: primary, secondary, accent, background, text, muted).
+
+3. **Visual metaphor / design direction** — One sentence describing the artistic treatment.
+
+4. **Slide master archetype** — Choose one that fits (startup/tech, luxury, data/analytics, playful/creative, executive/board, climate/science, anime/gaming, or invent your own).
+
+**Only then proceed to Phase 2.**
+
+### Phase 2 — Generate slide content within the locked visual system
+
+Now that fonts, colors, metaphor, and archetype are locked:
+
+- Use `pptx_generator` with `designMode: "adaptive"`
+- Pass the chosen `visualDirection`, `brand`, and `slides` with unique `intent` values
+- Every slide gets a `visualIdea` that respects the locked visual metaphor
+- Dense detail goes in `speakerNotes`, concise text on slides
+
+### Phase 3 — If the built-in tool can't achieve the design
+
+Write a standalone Node.js PptxGenJS script and run it in the Linux VM. The script owns the full visual system.
+
+## Design Philosophy
+
+**Freedom over templates.** The tool has many intent types (`hero`, `sectionBreak`, `bigNumber`, `timeline`, `map`, `diagram`, `quote`, `comparison`, `storyboard`, `gallery`, `dataCallout`, `splitNarrative`, `closing`) — use **whatever combination fits the story**, not a preset arc. A 3-slide deck might be `quote → dataCallout → closing`. A technical deep-dive might use `diagram` for every slide with different layouts. You are the designer; the intents are your palette, not your cage.
+
+**Design first, content second.** Lock the visual system before writing any slide text. But the visual system should serve the CONTENT, not the other way around. If the content demands an all-`diagram` deck, do it. If it demands six `splitNarrative` slides in a row because you're telling a linear story, that's fine. Rules like "no two consecutive same intents" are training wheels — override them when the story calls for it.
+
+**The content IS the design.** A slide that has nothing to say cannot be saved by styling. Let the substance drive the visual choices. If a slide needs a wall of data, use `dataCallout`. If it needs to show a process, use `timeline` or `diagram`. If it needs to persuade, use `comparison`. Don't pad slides with empty intents.
+
+**Available intent types:** hero, sectionBreak, bigNumber, timeline, map, diagram, quote, comparison, storyboard, gallery, dataCallout, splitNarrative, closing.
+
 ## Adaptive Deck Standard
 
-When creating a new presentation, use the built-in `pptx_generator` tool with `designMode: "adaptive"`. This tool is backed by **PptxGenJS** and should be the default path for generating editable PowerPoint decks. Do not hand-build new decks with `python-pptx` unless the user specifically asks for low-level Python generation.
+When using the built-in `pptx_generator` tool, always use `designMode: "adaptive"`. Do not hand-build new decks with `python-pptx` unless the user specifically asks for low-level Python generation.
 
-Every deck request should include:
+Every deck should include:
 
-* `deckGoal`: what the deck should accomplish.
+* `deckGoal`: what it should accomplish.
 * `audience`: who will see it.
-* `visualDirection`: a custom art direction derived from the topic, brand, mood, or user wording.
-* varied slide `intent` values such as `hero`, `sectionBreak`, `bigNumber`, `timeline`, `diagram`, `comparison`, `gallery`, `dataCallout`, `storyboard`, and `closing`.
+* `visualDirection`: a custom art direction.
+* `slides` with varied `intent` values that serve the story.
 * `visualIdea` and `speakerNotes` for most slides.
+* `brand` with `colors` and `font` when needed.
 
-Anti-boring rules:
+## Expert Presentation Design Guidelines
 
-* Do not create repeated title-and-bullets slides.
-* Do not use the same slide intent twice in a row unless the user explicitly asks for a simple report.
-* Keep visible slide text short. Put dense explanation in `speakerNotes`.
-* Every slide must have a visual role: a metric, contrast, sequence, diagram, image-led moment, quote, or story beat.
-* If the user asks for something unique, create a custom visual direction instead of choosing a static template.
+### 1. Typography & Readability
+- Hierarchy: Title 32–40pt, Section Header 24–28pt, Body 14–18pt, Captions 14pt.
+- Minimum 10pt absolute. Title at least 1.75× body size.
+- 1 heading + 1 body font per deck.
+
+### 2. Design Rules
+- Lock visual system before drafting content. No per-slide design decisions.
+- Color rules: Primary for titles/accents, secondary for support, accent for CTAs, muted for secondary text.
+- Whitespace: 0.5" margin minimum. Don't overcrowd.
+- Alignment: consistent baselines across slides of the same intent.
+
+### 3. Storytelling
+- Vary layouts. Don't repeat intent types unless the story demands it.
+- Search the web for data before designing.
+- Concise on-slide text, dense detail in `speakerNotes`.
+- Edit in place — refine instead of rebuilding.
 
 ## Quick Reference
 

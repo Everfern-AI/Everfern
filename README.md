@@ -32,6 +32,10 @@ It's the free, open-source alternative to **Claude Cowork**, **Manus Desktop**, 
 
 <br>
 
+![Benchmark](benchmark.svg)
+
+<br>
+
 <table width="100%">
 <tr>
 <td width="50%" valign="top">

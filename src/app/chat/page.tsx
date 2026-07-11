@@ -1311,7 +1311,7 @@ export default function ChatPage() {
     const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
     const [lastEventJson, setLastEventJson] = useState<string>("");
     const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
@@ -2897,6 +2897,23 @@ export default function ChatPage() {
                         openToolDetailTab(mapToolCallForDetail(updated[existingIdx]));
                     }
 
+                    // Auto-open PPTX viewer when pptx_generator completes
+                    if (record.toolName === 'pptx_generator' && record.result?.success && record.result?.data?.path) {
+                        const path = record.result.data.path;
+                        const filename = path.split(/[\\/]/).pop() || 'Presentation';
+                        setViewingFile({ name: filename, path });
+                    }
+
+                    // Auto-open PPTX viewer when present_files completes with a .pptx file
+                    if (record.toolName === 'present_files' && record.result?.success && Array.isArray(record.result?.data?.files)) {
+                        const pptxFile = record.result.data.files.find((f: any) => f?.path?.toLowerCase().endsWith('.pptx'));
+                        if (pptxFile) {
+                            const path = pptxFile.path;
+                            const filename = path.split(/[\\/]/).pop() || 'Presentation';
+                            setViewingFile({ name: filename, path });
+                        }
+                    }
+
                     // Detect preference/choice memories from memory_search results using structured data
                     if (record.toolName === 'memory_search' && record.result?.data?.hasPreference) {
                         const data = record.result.data;
@@ -2935,7 +2952,7 @@ export default function ChatPage() {
                     setStreamingThought(streamingThoughtRef.current);
                 }
             });
-            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
+            acpApi.onUsage(({ totalTokens, promptTokens, completionTokens, conversationId, systemPromptTokens, outputTokens, toolSchemaTokens, truncatedTools, schemaTokenSavings }: any) => {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 // Calculate pricing using model info if available
                 if (modelInfo) {
@@ -2954,7 +2971,11 @@ export default function ChatPage() {
                     used: totalTokens,
                     max: 128000,
                     systemTokens: sysTokens,
-                    chatTokens: chatHistTokens + completionTokens
+                    chatTokens: chatHistTokens + completionTokens,
+                    outputTokens: outputTokens ?? undefined,
+                    toolSchemaTokens: toolSchemaTokens ?? undefined,
+                    truncatedTools: truncatedTools ?? undefined,
+                    schemaTokenSavings: schemaTokenSavings ?? undefined,
                 });
             });
             acpApi.onSurfaceAction((data: any) => {
@@ -3586,7 +3607,7 @@ export default function ChatPage() {
                         }
                     }
                 });
-                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId, systemPromptTokens }: { promptTokens: number; completionTokens: number; totalTokens: number; conversationId?: string; systemPromptTokens?: number }) => {
+                api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId, systemPromptTokens, outputTokens, toolSchemaTokens, truncatedTools, schemaTokenSavings }: any) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
 
@@ -3607,7 +3628,11 @@ export default function ChatPage() {
                         used: totalTokens,
                         max: 128000,
                         systemTokens: sysTokens,
-                        chatTokens: chatHistTokens + completionTokens
+                        chatTokens: chatHistTokens + completionTokens,
+                        outputTokens: outputTokens ?? undefined,
+                        toolSchemaTokens: toolSchemaTokens ?? undefined,
+                        truncatedTools: truncatedTools ?? undefined,
+                        schemaTokenSavings: schemaTokenSavings ?? undefined,
                     });
                 });
                 api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
@@ -4615,6 +4640,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 systemTokens={contextTokens.systemTokens}
                 chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
                 modelName={selectedModel || currentModel.id || currentModel.name}
+                outputTokens={contextTokens.outputTokens}
+                toolSchemaTokens={contextTokens.toolSchemaTokens}
+                truncatedTools={contextTokens.truncatedTools}
+                schemaTokenSavings={contextTokens.schemaTokenSavings}
             />
 
             {renderModelSelector(true)}
@@ -5551,7 +5580,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         {msg.limitReached && <EverFernCloudLimitNotice />}
                                                                         {artifacts.map((art, i) => {
                                                                             const ext = art.path.split('.').pop()?.toLowerCase() || '';
-                                                                            const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);
+                                                                            const isPremiumDoc = ext === 'md';
                                                                             return (
                                                                                 <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
                                                                                     {isPremiumDoc ? (
@@ -5757,7 +5786,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             {(finalStreamingContent || streamingContent) && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
                                                             {artifacts.map((art, i) => {
                                                                 const ext = art.path.split('.').pop()?.toLowerCase() || '';
-                                                                const isPremiumDoc = ['md', 'docx', 'doc', 'xlsx', 'xls', 'csv'].includes(ext);
+                                                                const isPremiumDoc = ext === 'md';
                                                                 return (
                                                                     <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
                                                                         {isPremiumDoc ? (

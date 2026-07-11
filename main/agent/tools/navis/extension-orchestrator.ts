@@ -83,7 +83,8 @@ function extractJson(raw: string): any {
   const cleaned = stripThinking(raw)
     .replace(/^```(?:json)?/i, '')
     .replace(/```$/i, '')
-    .replace(/<\/?tool_call>/gi, '')
+    .replace(/<\/?tool_call[^>]*>/gi, '')
+    .replace(/<\/?parameter[^>]*>/gi, '')
     .trim();
 
   try {
@@ -607,21 +608,21 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
           screenshot: screenshotB64
             ? (screenshotB64.startsWith('data:') ? screenshotB64 : `data:image/jpeg;base64,${screenshotB64}`)
             : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-          dom: domContext,
+          dom: domContext || '',
           objective: objective,
           history: history.slice(-8),
           only_vision: false,
-          system_prompt: systemPrompt || undefined,
-          refs: refs.map(r => ({
-            ref: r.ref,
-            rect: r.rect,
-            pos: r.pos,
-            tag: r.tag,
-            name: r.name,
-            role: r.role
+          system_prompt: systemPrompt || '',
+          refs: (refs || []).map(r => ({
+            ref: r.ref || '',
+            rect: r.rect || null,
+            pos: r.pos || '',
+            tag: r.tag || '',
+            name: r.name || '',
+            role: r.role || ''
           })),
-          viewport: viewport,
-          dimensions: dimensions
+          viewport: viewport || { width: 1920, height: 1080 },
+          dimensions: dimensions || { width: 1920, height: 1080 }
         })
       });
 
@@ -711,11 +712,46 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
 
   private _parseXmlActions(text: string): any[] {
     const actions: any[] = [];
+
+    // 1. Handle <tool_call name="action_name"> with JSON body or <parameter> children
+    const toolCallRegex = /<tool_call\s+name\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)(?:<\/tool_call>|$)/gi;
+    let tcMatch;
+    while ((tcMatch = toolCallRegex.exec(text)) !== null) {
+      const actionName = tcMatch[1].toLowerCase();
+      const body = (tcMatch[2] || '').trim();
+      let args: Record<string, any> = {};
+
+      // Try JSON body first
+      try {
+        const jsonStart = body.indexOf('{');
+        if (jsonStart !== -1) {
+          const jsonEnd = body.lastIndexOf('}');
+          if (jsonEnd > jsonStart) {
+            args = JSON.parse(body.slice(jsonStart, jsonEnd + 1));
+          }
+        }
+      } catch { /* fall through to parameter parsing */ }
+
+      // Try <parameter name="key">value</parameter> format
+      if (Object.keys(args).length === 0) {
+        const paramRegex = /<parameter\s+name\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
+        let paramMatch;
+        while ((paramMatch = paramRegex.exec(body)) !== null) {
+          args[paramMatch[1]] = paramMatch[2].trim();
+        }
+      }
+
+      const action = this._buildActionFromParsed(actionName, args);
+      if (action) actions.push(action);
+    }
+
+    // 2. Handle self-closing action tags: <go_to_url url="..." />
     const tagRegex = /<(\w+)((?:\s+\w+\s*=\s*"[^"]*")*)\s*\/?>/g;
     let match;
 
     while ((match = tagRegex.exec(text)) !== null) {
       const tagName = match[1].toLowerCase();
+      if (tagName === 'tool_call' || tagName === 'parameter') continue; // Already handled above
       const attrsStr = match[2] || '';
 
       const attrs: Record<string, string> = {};
@@ -725,46 +761,46 @@ VISION GROUNDING ACTIVE — Screenshot has RED BOUNDING BOXES with [eN] labels d
         attrs[attrMatch[1]] = attrMatch[2];
       }
 
-      switch (tagName) {
-        case 'go_to_url':
-          if (attrs.url) actions.push({ go_to_url: { url: attrs.url } });
-          break;
-        case 'click_element':
-          if (attrs.ref) actions.push({ click_element: { ref: attrs.ref } });
-          break;
-        case 'input_text':
-          if (attrs.ref) actions.push({ input_text: { ref: attrs.ref, text: attrs.text || '' } });
-          break;
-        case 'scroll_down':
-          actions.push({ scroll_down: {} });
-          break;
-        case 'scroll_up':
-          actions.push({ scroll_up: {} });
-          break;
-        case 'go_back':
-          actions.push({ go_back: {} });
-          break;
-        case 'done':
-          actions.push({ done: { success: attrs.success !== 'false', text: attrs.text || 'done' } });
-          break;
-        case 'press_key':
-          if (attrs.key) actions.push({ press_key: { key: attrs.key } });
-          break;
-        case 'wait':
-          actions.push({ wait: { seconds: parseInt(attrs.seconds) || 1 } });
-          break;
-        case 'extract_content':
-          actions.push({ extract_content: {} });
-          break;
-        case 'hover':
-          if (attrs.ref) actions.push({ hover: { ref: attrs.ref } });
-          break;
-        case 'smart_click':
-          if (attrs.ref) actions.push({ smart_click: { ref: attrs.ref } });
-          break;
-      }
+      const action = this._buildActionFromParsed(tagName, attrs);
+      if (action) actions.push(action);
     }
     return actions;
+  }
+
+  private _buildActionFromParsed(actionName: string, args: Record<string, any>): any | null {
+    switch (actionName) {
+      case 'go_to_url':
+        if (args.url) return { go_to_url: { url: args.url } };
+        break;
+      case 'click_element':
+        if (args.ref) return { click_element: { ref: args.ref } };
+        break;
+      case 'input_text':
+        if (args.ref) return { input_text: { ref: args.ref, text: args.text || '' } };
+        break;
+      case 'scroll_down':
+        return { scroll_down: {} };
+      case 'scroll_up':
+        return { scroll_up: {} };
+      case 'go_back':
+        return { go_back: {} };
+      case 'done':
+        return { done: { success: args.success !== 'false', text: args.text || 'done' } };
+      case 'press_key':
+        if (args.key) return { press_key: { key: args.key } };
+        break;
+      case 'wait':
+        return { wait: { seconds: parseInt(args.seconds) || 1 } };
+      case 'extract_content':
+        return { extract_content: {} };
+      case 'hover':
+        if (args.ref) return { hover: { ref: args.ref } };
+        break;
+      case 'smart_click':
+        if (args.ref) return { smart_click: { ref: args.ref } };
+        break;
+    }
+    return null;
   }
 
   private _convertTarsActionsToNavisDecision(

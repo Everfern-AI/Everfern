@@ -39,6 +39,9 @@ import { skillTool } from '../tools/skill-tool';
 import { presentFilesTool } from '../tools/present-files';
 import { NavisOrchestrator } from '../tools/navis/orchestrator';
 
+// Tool Truncator
+import { truncateTools } from './tool-truncator';
+
 // Lifecycle/Infra
 import { getAgentEvents, emitLifecycle } from '../infra/agent-events';
 import { sessionCreated } from '../sessions';
@@ -57,6 +60,8 @@ export class AgentRunner {
   public currentConversationId?: string;
   /** Session key of the currently executing sub-agent (set by subagent-spawn.ts for depth tracking). */
   public currentAgentSessionKey?: string;
+  /** Truncation metadata from the most recent tool-schema truncation (used by call_model to emit usage stats). */
+  public lastTruncationDetails?: { toolSchemaTokens: number; truncatedTools: number; schemaTokenSavings: number };
   public workspaceDir?: string;
   public projectId?: string;
   public telemetry: TelemetryLogger;
@@ -938,6 +943,24 @@ export class AgentRunner {
       try {
         const shouldAbort = globalAbortManager.createShouldAbortCallback();
         let toolDefs = this._buildToolDefinitions();
+
+        // Dynamic Tool-Schema Truncator: strip irrelevant tool definitions
+        {
+          const recentAssistant = history
+            .filter((m) => m.role === 'assistant')
+            .slice(-3)
+            .map((m) => (typeof m.content === 'string' ? m.content : ''))
+            .join('\n');
+          const userText = typeof userInput === 'string' ? userInput : userInput.map((p: any) => p.text || '').filter(Boolean).join(' ');
+          const truncated = truncateTools(toolDefs, userText, recentAssistant);
+          toolDefs = truncated.tools;
+          this.lastTruncationDetails = {
+            toolSchemaTokens: truncated.details.totalSchemaTokens,
+            truncatedTools: truncated.details.toolsRemoved,
+            schemaTokenSavings: truncated.details.totalSchemaTokens - truncated.details.keptSchemaTokens,
+          };
+        }
+
         let currentDepth = 0;
         if (this.currentAgentSessionKey) {
           try {
@@ -1139,7 +1162,7 @@ export class AgentRunner {
                   const firstMessage = priorMessages.length > 0 ? priorMessages[0] : null;
                   const hasFirstUserMsg = firstMessage && firstMessage.role === 'user';
                   
-                  const maxMessages = 50;
+                  const maxMessages = 20;
                   let limitedPriorMessages: any[];
                   if (priorMessages.length > maxMessages) {
                     const sliceStart = priorMessages.length - maxMessages;
@@ -1162,6 +1185,17 @@ export class AgentRunner {
               }
 
               const sanitizedInitialMessages = sanitizeMessagesRoleAlternation(initialMessages);
+
+              // Inject truncation awareness into the system message
+              if (this.lastTruncationDetails && this.lastTruncationDetails.truncatedTools > 0) {
+                const sysMsg = sanitizedInitialMessages[0];
+                if (sysMsg && typeof sysMsg.content === 'string') {
+                  const allToolNames = this.tools
+                    .filter(t => t.name && t.description)
+                    .map(t => `- **${t.name}**: ${t.description.split('\n')[0].substring(0, 100)}`);
+                  sysMsg.content += `\n\n**Available Tool Registry (${this.tools.length} tools):**\n${allToolNames.join('\n')}\n\n> To optimize your context window, ${this.lastTruncationDetails.truncatedTools} tools were omitted from your active tool set (only the most relevant were kept). If you need a tool listed above that isn't currently available, explicitly mention it by name and describe why you need it so it can be made available.`;
+                }
+              }
 
               missionTracker.startStep('step:triage');
               await graph.invoke({

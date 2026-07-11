@@ -108,6 +108,14 @@ const promptCache = new SystemPromptCache();
 // Cleanup cache every 2 minutes
 setInterval(() => promptCache.cleanup(), 120000);
 
+function minifyPrompt(prompt: string): string {
+  if (!prompt) return prompt;
+  return prompt
+    .replace(/<!--[\s\S]*?-->/g, '') // Remove HTML/Markdown comments
+    .replace(/\n{3,}/g, '\n\n')       // Collapse 3+ newlines into 2
+    .trim();
+}
+
 // ─────────────────────────────────────────────
 // ASSEMBLY
 // ─────────────────────────────────────────────
@@ -296,7 +304,7 @@ export async function getSlimSystemPromptAsync(
   }
 
   return resolvePromptPlaceholders(
-    promptMd,
+    minifyPrompt(promptMd),
     platform,
     conversationId,
     sessionCreatedPaths,
@@ -362,7 +370,7 @@ export function getSlimSystemPrompt(
   const skillsTable = formatSkillsForPrompt(skills);
 
   const finalPrompt = resolvePromptPlaceholdersSync(
-    promptMd,
+    minifyPrompt(promptMd),
     platform,
     conversationId,
     sessionCreatedPaths,

@@ -51,7 +51,11 @@ const ContextTokenRing = ({
     isLocalModel,
     systemTokens = 0,
     chatTokens = 0,
-    modelName
+    modelName,
+    outputTokens,
+    toolSchemaTokens,
+    truncatedTools,
+    schemaTokenSavings,
 }: {
     used: number;
     max: number;
@@ -65,6 +69,10 @@ const ContextTokenRing = ({
     systemTokens?: number;
     chatTokens?: number;
     modelName?: string;
+    outputTokens?: number;
+    toolSchemaTokens?: number;
+    truncatedTools?: number;
+    schemaTokenSavings?: number;
 }) => {
     const [apiModelInfo, setApiModelInfo] = useState<ModelApiMatch | null>(null);
     const [isHovered, setIsHovered] = useState(false);
@@ -199,6 +207,45 @@ const ContextTokenRing = ({
                         {isEstimated ? '~' : ''}{displayUsed.toLocaleString('en-US')} / {formattedMax}
                     </span>
                 </div>
+
+                {/* Output Tokens & Tool Schema breakdown (only shown when data is available) */}
+                {(outputTokens !== undefined || toolSchemaTokens !== undefined) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        {outputTokens !== undefined && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Output Tokens</span>
+                                <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    {outputTokens.toLocaleString('en-US')}
+                                </span>
+                            </div>
+                        )}
+                        {toolSchemaTokens !== undefined && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Tool Schema</span>
+                                <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    {toolSchemaTokens.toLocaleString('en-US')} tokens
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Truncator impact (only shown when tools were removed) */}
+                {(truncatedTools !== undefined && truncatedTools > 0 && schemaTokenSavings !== undefined && schemaTokenSavings > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: '#10b981', fontWeight: 500 }}>Truncator</span>
+                            <span style={{ fontSize: 12, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                removed {truncatedTools} tools
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                saved ~{schemaTokenSavings.toLocaleString('en-US')} tokens
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Pricing Rates (Prompt / Completion price per 1M tokens) */}
                 {!isLocalModel && (promptPrice > 0 || completionPrice > 0) && (
