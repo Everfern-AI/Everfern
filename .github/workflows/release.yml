@@ -63,12 +63,6 @@ jobs:
       - name: Install Node Modules
         run: npm install
 
-      - name: Configure Windows for node-gyp
-        if: matrix.os == 'windows-latest'
-        run: |
-          npm config set msvs_version 2022
-          npm config set python python3
-
       # Recompiles heavy binaries safely for the matching host architecture
       - name: Compile Native Modules
         run: npm run rebuild:electron
