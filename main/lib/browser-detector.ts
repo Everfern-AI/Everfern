@@ -2,7 +2,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
-import Registry from 'winreg';
+
+// ── winreg is Windows-only. Lazy-require so Linux/macOS don't crash at import time. ──
+let Registry: any = null;
+if (process.platform === 'win32') {
+  try {
+    Registry = require('winreg');
+  } catch (e) {
+    console.warn('[BrowserDetector] winreg unavailable — Windows registry detection disabled:', e);
+  }
+}
 
 export interface BrowserInfo {
   id: string;          // e.g. "chrome", "msedge", "firefox", "brave"
@@ -13,10 +22,11 @@ export interface BrowserInfo {
   supportsExtension: boolean; 
 }
 
-function getSubKeys(hive: string, key: string): Promise<Registry.Registry[]> {
+function getSubKeys(hive: string, key: string): Promise<any[]> {
   return new Promise((resolve) => {
+    if (!Registry) return resolve([]);
     const regKey = new Registry({ hive, key });
-    regKey.keys((err, keys) => {
+    regKey.keys((err: any, keys: any[]) => {
       if (err) {
         resolve([]);
       } else {
@@ -28,8 +38,9 @@ function getSubKeys(hive: string, key: string): Promise<Registry.Registry[]> {
 
 function getRegistryValue(hive: string, key: string, name: string = ''): Promise<string | null> {
   return new Promise((resolve) => {
+    if (!Registry) return resolve(null);
     const regKey = new Registry({ hive, key });
-    regKey.get(name, (err, item) => {
+    regKey.get(name, (err: any, item: any) => {
       if (err || !item) {
         resolve(null);
       } else {
@@ -47,6 +58,7 @@ function expandEnvVars(pathStr: string): string {
 // Windows browser detection using registry + fallbacks
 async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
   const browsersMap = new Map<string, BrowserInfo>();
+  if (!Registry) return [];
   const registryPaths = [
     { hive: Registry.HKLM, key: '\\SOFTWARE\\Clients\\StartMenuInternet' },
     { hive: Registry.HKCU, key: '\\SOFTWARE\\Clients\\StartMenuInternet' }

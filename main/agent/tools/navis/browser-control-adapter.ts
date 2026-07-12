@@ -232,7 +232,8 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       case 'wait_for_navigation':
       case 'wait_for_dom_change': {
         const timeoutMs = Number(args.ms || args.timeoutMs || 3000);
-        const result = await bridgeServer.sendRequest('wait_for_dom_change', { tabId: this.activeTabId, timeoutMs, urlContains: args.urlContains, text: args.text, selector: args.selector }, Math.max(timeoutMs + 3000, 6000));
+        const extensionRunPageTimeout = Math.max(8000, timeoutMs + 4000);
+        const result = await bridgeServer.sendRequest('wait_for_dom_change', { tabId: this.activeTabId, timeoutMs, urlContains: args.urlContains, text: args.text, selector: args.selector }, extensionRunPageTimeout + 5000);
         this.logger.wait(step, maxSteps, `${timeoutMs}ms${args.text || args.selector ? ` for ${args.text || args.selector}` : ''}`);
         return normalizeResult(result, 'Waited for page change', Boolean(result?.stateChanged));
       }

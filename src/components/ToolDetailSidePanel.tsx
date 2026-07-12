@@ -8,7 +8,8 @@ import {
   X, Terminal, Search, Globe, CameraOff, Maximize2, Copy, Check,
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
-  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image, Brain
+  BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image, Brain,
+  FileText, Loader2
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from './FileViewerModal';
@@ -107,6 +108,7 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
+  if (n.includes('web_fetch') || n.includes('fetch_url')) return ToolType.WEB_SEARCH;
   if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
@@ -137,6 +139,7 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n.includes('preview_live_url')) return { Icon: Globe, label: 'Live Preview' };
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return { Icon: Braces, label: 'MCP Registry' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
+  if (n.includes('web_fetch') || n.includes('fetch_url')) return { Icon: Globe, label: 'Web Fetch' };
   if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('fern') || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return { Icon: Brain, label: 'Memory' };
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };
@@ -661,7 +664,229 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisView({ screenshots = [], toolName, navisReport = '' }: { screenshots: any[]; toolName: string; navisReport?: string }) {
+function NavisReportViewer({ report, isRunning }: { report: string; isRunning: boolean }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [displayedReport, setDisplayedReport] = useState(report);
+  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>('dark');
+
+  useEffect(() => {
+    setDisplayedReport(report);
+    if (isRunning) {
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+    }
+  }, [report, isRunning]);
+
+  const themeColors = readerTheme === 'light' ? {
+    bg: '#fcfbfa',
+    text: '#2d312e',
+    textMuted: '#686c69',
+    border: '#e7e5e0',
+    codeBg: '#f5f3ee',
+    headerColor: '#1d211e',
+    accent: '#d97706',
+    accentFaint: '#fef3c7',
+  } : {
+    bg: '#141413',
+    text: '#e2e2dc',
+    textMuted: '#8b8b83',
+    border: '#2c2b29',
+    codeBg: '#1e1e1c',
+    headerColor: '#f5f5f0',
+    accent: '#f59e0b',
+    accentFaint: 'rgba(245, 158, 11, 0.1)',
+  };
+
+  const renderMarkdown = (text: string) => {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeLines: string[] = [];
+    let codeLang = '';
+
+    const flushCode = (key: number) => {
+      elements.push(
+        <div key={`code-${key}`} style={{
+          background: themeColors.codeBg,
+          border: `1px solid ${themeColors.border}`,
+          borderRadius: T.r8,
+          padding: '12px 16px',
+          marginBottom: 10,
+          fontFamily: T.mono,
+          fontSize: 11.5,
+          lineHeight: 1.7,
+          color: themeColors.text,
+          overflowX: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}>
+          {codeLang && <div style={{ color: themeColors.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{codeLang}</div>}
+          {codeLines.join('\n')}
+        </div>
+      );
+      codeLines = [];
+      codeLang = '';
+    };
+
+    lines.forEach((line, idx) => {
+      if (line.startsWith('```')) {
+        if (inCodeBlock) { flushCode(idx); inCodeBlock = false; }
+        else { inCodeBlock = true; codeLang = line.slice(3).trim(); }
+        return;
+      }
+      if (inCodeBlock) { codeLines.push(line); return; }
+      if (line.startsWith('# ')) {
+        elements.push(<h1 key={idx} style={{ fontSize: 16, fontWeight: 700, color: themeColors.headerColor, margin: '16px 0 12px', fontFamily: T.sans, borderBottom: `1px solid ${themeColors.border}`, paddingBottom: 8 }}>{line.slice(2)}</h1>);
+        return;
+      }
+      if (line.startsWith('## ')) {
+        elements.push(<h2 key={idx} style={{ fontSize: 14, fontWeight: 700, color: themeColors.accent, margin: '20px 0 10px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
+        return;
+      }
+      if (line.startsWith('### ')) {
+        elements.push(<h3 key={idx} style={{ fontSize: 12.5, fontWeight: 600, color: themeColors.accent, margin: '14px 0 8px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}><span style={{ color: themeColors.border }}>◆</span>{line.slice(4)}</h3>);
+        return;
+      }
+      if (line.startsWith('- ') || line.startsWith('* ')) {
+        const content = line.slice(2);
+        const parts = content.split(/\*\*(.+?)\*\*/);
+        const rendered = parts.map((part, pi) =>
+          pi % 2 === 1
+            ? <span key={pi} style={{ color: themeColors.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: themeColors.textMuted }}>{part}</span>
+        );
+        elements.push(
+          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 12, lineHeight: 1.65, fontFamily: T.sans }}>
+            <span style={{ color: themeColors.accent, flexShrink: 0, marginTop: 1 }}>•</span>
+            <span>{rendered}</span>
+          </div>
+        );
+        return;
+      }
+      if (line.includes('**')) {
+        const parts = line.split(/\*\*(.+?)\*\*/);
+        const rendered = parts.map((part, pi) =>
+          pi % 2 === 1
+            ? <span key={pi} style={{ color: themeColors.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: themeColors.textMuted }}>{part}</span>
+        );
+        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.65, marginBottom: 6, fontFamily: T.sans }}>{rendered}</div>);
+        return;
+      }
+      if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 8 }} />); return; }
+      elements.push(<div key={idx} style={{ fontSize: 12, color: themeColors.textMuted, lineHeight: 1.65, fontFamily: T.sans, marginBottom: 4 }}>{line}</div>);
+    });
+
+    if (inCodeBlock && codeLines.length > 0) flushCode(lines.length);
+    return elements;
+  };
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: themeColors.bg, color: themeColors.text, transition: 'all 0.2s ease' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 16px', borderBottom: `1px solid ${themeColors.border}`,
+        background: themeColors.bg, flexShrink: 0,
+      }}>
+        <FileText size={12} color={themeColors.accent} />
+        <span style={{ fontSize: 11, color: themeColors.textMuted, fontFamily: T.sans, flex: 1, fontWeight: 600, letterSpacing: '0.02em' }}>
+          findings.md
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            display: 'flex',
+            background: themeColors.codeBg,
+            borderRadius: 6,
+            padding: 2,
+            border: `1px solid ${themeColors.border}`,
+          }}>
+            <button
+              onClick={() => setReaderTheme('light')}
+              style={{
+                padding: '2px 8px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 650,
+                border: 'none',
+                cursor: 'pointer',
+                background: readerTheme === 'light' ? themeColors.bg : 'transparent',
+                color: readerTheme === 'light' ? themeColors.accent : themeColors.textMuted,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Light
+            </button>
+            <button
+              onClick={() => setReaderTheme('dark')}
+              style={{
+                padding: '2px 8px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 650,
+                border: 'none',
+                cursor: 'pointer',
+                background: readerTheme === 'dark' ? themeColors.bg : 'transparent',
+                color: readerTheme === 'dark' ? themeColors.accent : themeColors.textMuted,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Dark
+            </button>
+          </div>
+
+          {isRunning ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: themeColors.accentFaint, border: `1px solid ${themeColors.accent}40`, borderRadius: 20, padding: '2px 8px' }}>
+              <Loader2 size={10} color={themeColors.accent} style={{ animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 10, color: themeColors.accent, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+              <CheckCircle size={10} color={T.green} />
+              <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '24px 28px',
+        scrollBehavior: 'smooth',
+        fontFamily: 'Georgia, serif',
+        lineHeight: 1.8,
+      }}>
+        <style>{`
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        `}</style>
+        {displayedReport ? (
+          <div style={{ maxWidth: 640, margin: '0 auto' }}>
+            {renderMarkdown(displayedReport)}
+          </div>
+        ) : (
+          <div style={{ color: themeColors.textMuted, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>
+            Waiting for findings...
+          </div>
+        )}
+        {isRunning && (
+          <span style={{ display: 'inline-block', width: 8, height: 14, background: themeColors.accent, borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+function NavisView({
+  screenshots = [],
+  toolName,
+  navisReport = '',
+  toolCall,
+}: {
+  screenshots: any[];
+  toolName: string;
+  navisReport?: string;
+  toolCall?: any;
+}) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
 
@@ -669,6 +894,69 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
   const [activeTab, setActiveTab] = useState<'report' | 'screenshots'>('report');
+
+  const [findingsContent, setFindingsContent] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!toolCall) return;
+
+    const readFindings = async () => {
+      try {
+        const api = (window as any).electronAPI;
+        if (!api?.projects) return;
+
+        const args = toolCall.args || toolCall.arguments || {};
+        const candidateValues = [
+          args.cwd,
+          args.path,
+          args.filePath,
+          args.file,
+          args.TargetFile,
+          args.DirectoryPath,
+        ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
+
+        const projects = await api.projects.list() || [];
+        const normalized = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+        let projectPath = '';
+        for (const value of candidateValues) {
+          const val = normalized(value);
+          const matched = projects.find((p: any) => p?.path && val.startsWith(normalized(p.path)));
+          if (matched?.path) {
+            projectPath = matched.path;
+            break;
+          }
+        }
+
+        if (!projectPath && projects[0]?.path) {
+          projectPath = projects[0].path;
+        }
+
+        if (projectPath) {
+          const content = await api.projects.readFile(projectPath, 'findings.md');
+          if (isMounted && content !== null) {
+            setFindingsContent(content);
+          }
+        }
+      } catch (err) {
+        console.error('Error reading findings.md in NavisView:', err);
+      }
+    };
+
+    readFindings();
+
+    const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
+    let intervalId: any;
+    if (isRunning) {
+      intervalId = setInterval(readFindings, 1000);
+    }
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [toolCall]);
 
   useEffect(() => {
     let interval: any;
@@ -759,16 +1047,14 @@ function NavisView({ screenshots = [], toolName, navisReport = '' }: { screensho
             background: T.surface,
             borderRadius: T.r12,
             border: `1px solid ${T.border}`,
-            padding: '24px',
+            padding: 0,
+            overflow: 'hidden',
             flex: 1,
           }}>
-            {navisReport ? (
-              <MarkdownViewer content={navisReport} />
-            ) : (
-              <div style={{ color: T.textMuted, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
-                ⏳ Awaiting report content...
-              </div>
-            )}
+            <NavisReportViewer
+              report={findingsContent || navisReport || ''}
+              isRunning={toolCall?.status === 'executing' || toolCall?.status === 'pending'}
+            />
           </div>
         </div>
       </div>
@@ -3456,7 +3742,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
     if (toolType === ToolType.LIVE_PREVIEW) return <LivePreviewView {...toolData} />;
     if (toolType === ToolType.MCP_REGISTRY) return <McpRegistryView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
-    if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
+    if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} toolCall={toolCall} />;
     if (toolType === ToolType.MEMORY) return <MemoryView {...toolData} toolName={toolCall?.toolName || ''} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;

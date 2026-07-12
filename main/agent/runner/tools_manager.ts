@@ -17,18 +17,18 @@ import { localPermissionTool } from '../tools/local-permission';
 import { createArtifactTool } from '../tools/create-artifact';
 import { editArtifactTool } from '../tools/edit-artifact';
 import { visualizeTool } from '../tools/visualize';
-import { pptxGeneratorTool } from '../tools/pptx-generator';
 import { sendDiscordMessageTool, sendTelegramMessageTool } from '../tools/messaging';
 import { createScheduledTaskTool, listScheduledTasksTool, deleteScheduledTaskTool } from '../tools/scheduled-tasks';
 import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
-import { NavisOrchestrator } from '../tools/navis/orchestrator';
+import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
 import { AIClient } from '../../lib/ai-client';
 import { hydrateVlmApiKey } from '../../lib/vlm-config';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { createVisualClassificationSheetTool } from '../tools/visual-classification-sheet';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
 import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
+import { webFetchTool } from '../tools/webfetch';
 import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
 import * as os from 'os';
 
@@ -119,6 +119,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     memorySaveTool,
     memorySearchTool,
     webSearchTool,
+    webFetchTool,
     todoWriteTool,
     askUserTool,
     createAnalyzeImageTool(runner.client, runner),
@@ -126,7 +127,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     localPermissionTool,
     skillTool,
     createPresentFilesTool(runner),
-    ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),
+    ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator, runner)] : []),
     allowFileDeleteTool,
     searchMcpRegistryTool,
     connectMcpServerTool,
@@ -134,7 +135,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     createArtifactTool(runner),
     editArtifactTool(runner),
     visualizeTool,
-    pptxGeneratorTool,
+    // pptx_generator removed — use WSL with pptxgenjs via terminal instead
     sendDiscordMessageTool,
     sendTelegramMessageTool,
     createScheduledTaskTool,

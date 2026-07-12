@@ -72,7 +72,7 @@ const EverFernBglessLogo = ({ size = 20 }: { size?: number }) => (
 const RedditIcon = ({ size = 24 }: { size?: number }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#FF4500" style={{ width: size, height: size }}>
         <g>
-            <path d="M17.16,9.15a2,2,0,0,0-3.32-1.5,10.6,10.6,0,0,0-3.69-.65l.78-2.45,2.15.46a1.18,1.18,0,1,0,1.16-.94,1.19,1.19,0,0,0-1.12.83l-2.4-.51a.39.39,0,0,0-.45.27l-.87,2.74a10.87,10.87,0,0,0-3.81.64A2,2,0,0,0,2.26,9.15a2,2,0,0,0,1,1.75,8,8,0,0,0-.1,1.25,8,8,0,0,0,14.62,4,8,8,0,0,0-.1-1.25A2,2,0,0,0,17.16,9.15ZM6.21,11a1,1,0,1,1,1,1A1,1,0,0,1,6.21,11Zm7.33,3.78a5.27,5.27,0,0,1-7.08,0,.35.35,0,0,1,.49-.49,4.56,4.56,0,0,0,6.1,0,.35.35,0,0,1,.49.49Zm-.12-2.78a1,1,0,1,1,1-1A1,1,0,0,1,13.42,12Z"/>
+            <path d="M17.16,9.15a2,2,0,0,0-3.32-1.5,10.6,10.6,0,0,0-3.69-.65l.78-2.45,2.15.46a1.18,1.18,0,1,0,1.16-.94,1.19,1.19,0,0,0-1.12.83l-2.4-.51a.39.39,0,0,0-.45.27l-.87,2.74a10.87,10.87,0,0,0-3.81.64A2,2,0,0,0,2.26,9.15a2,2,0,0,0,1,1.75,8,8,0,0,0-.1,1.25,8,8,0,0,0,14.62,4,8,8,0,0,0-.1-1.25A2,2,0,0,0,17.16,9.15ZM6.21,11a1,1,0,1,1,1,1A1,1,0,0,1,6.21,11Zm7.33,3.78a5.27,5.27,0,0,1-7.08,0,.35.35,0,0,1,.49-.49,4.56,4.56,0,0,0,6.1,0,.35.35,0,0,1,.49.49Zm-.12-2.78a1,1,0,1,1,1-1A1,1,0,0,1,13.42,12Z" />
         </g>
     </svg>
 );
@@ -113,6 +113,12 @@ const GitHubIcon = ({ size = 24 }: { size?: number }) => (
 const OtherIcon = ({ size = 24 }: { size?: number }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" style={{ width: size, height: size }}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+    </svg>
+);
+
+const DiscordIcon = ({ size = 24 }: { size?: number }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#5865F2" style={{ width: size, height: size }}>
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
     </svg>
 );
 
@@ -411,7 +417,7 @@ export default function SetupPage() {
         if (theme !== 'light') {
             setTheme('light');
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Track app install once
@@ -576,7 +582,7 @@ export default function SetupPage() {
                         const parsed = JSON.parse(stored);
                         finalCloudKey = parsed?.accessToken;
                     }
-                } catch {}
+                } catch { }
             }
 
             config.vlm = {
@@ -603,8 +609,8 @@ export default function SetupPage() {
                 if (stored) {
                     cloudToken = JSON.parse(stored).accessToken;
                 }
-            } catch {}
-            
+            } catch { }
+
             config.vlm = {
                 engine: "everfern",
                 provider: "everfern",
@@ -620,7 +626,7 @@ export default function SetupPage() {
                     const session = JSON.parse(stored);
                     config.apiKey = session?.accessToken;
                 }
-            } catch {}
+            } catch { }
         }
 
         if ((window as any).electronAPI?.saveConfig) {
@@ -629,7 +635,7 @@ export default function SetupPage() {
 
         // Mark onboarding complete via landing API (fire-and-forget — best effort)
         try {
-            const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
+            const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "https://everfern.app";
             const stored = localStorage.getItem("everfern_cloud_session");
             if (stored) {
                 const parsed = JSON.parse(stored);
@@ -797,14 +803,14 @@ export default function SetupPage() {
                                 ].map(opt => (
                                     <button
                                         key={opt.id}
-                                        onClick={() => { 
+                                        onClick={() => {
                                             setEngine(opt.id as any);
                                             if (opt.id === "everfern") {
                                                 setProvider("everfern");
                                                 setStep(4);
                                                 return;
                                             }
-                                            setStep(2); 
+                                            setStep(2);
                                         }}
                                         disabled={false}
                                         style={{
@@ -910,18 +916,18 @@ export default function SetupPage() {
                                             }
                                         `}</style>
                                         <div className="provider-scroll" style={{ maxHeight: 460, overflowY: "auto", paddingRight: 8, display: "flex", flexDirection: "column", gap: 10 }}>
-                                        {[
-                                            { id: "openai", name: "OpenAI", logo: OpenAILogo },
-                                            { id: "anthropic", name: "Anthropic", logo: AnthropicLogo },
-                                            { id: "deepseek", name: "DeepSeek", logo: DeepSeekLogo },
-                                            { id: "gemini", name: "Google Gemini", logo: GeminiLogo },
-                                            { id: "ollama-cloud", name: "Ollama Cloud", logo: OllamaLogo },
-                                            { id: "nvidia", name: "Nvidia NIM", logo: NvidiaLogo },
-                                            { id: "openrouter", name: "OpenRouter", logo: OpenRouterLogo },
-                                            { id: "minimax", name: "MiniMax", logo: MiniMaxLogo }
-                                        ].map(p => (
-                                            <ProviderRow key={p.id} p={p} onClick={() => { setProvider(p.id); setStep(3); }} />
-                                        ))}
+                                            {[
+                                                { id: "openai", name: "OpenAI", logo: OpenAILogo },
+                                                { id: "anthropic", name: "Anthropic", logo: AnthropicLogo },
+                                                { id: "deepseek", name: "DeepSeek", logo: DeepSeekLogo },
+                                                { id: "gemini", name: "Google Gemini", logo: GeminiLogo },
+                                                { id: "ollama-cloud", name: "Ollama Cloud", logo: OllamaLogo },
+                                                { id: "nvidia", name: "Nvidia NIM", logo: NvidiaLogo },
+                                                { id: "openrouter", name: "OpenRouter", logo: OpenRouterLogo },
+                                                { id: "minimax", name: "MiniMax", logo: MiniMaxLogo }
+                                            ].map(p => (
+                                                <ProviderRow key={p.id} p={p} onClick={() => { setProvider(p.id); setStep(3); }} />
+                                            ))}
                                         </div>
                                     </>
                                 ) : (
@@ -1435,7 +1441,7 @@ export default function SetupPage() {
                                             alignItems: "center",
                                             gap: 6,
                                         }}>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                                             SkyBooker.com
                                         </div>
                                         <div style={{
@@ -1464,12 +1470,12 @@ export default function SetupPage() {
                                 }}>
                                     {/* Nav buttons */}
                                     <div style={{ display: "flex", gap: 10, color: 'var(--color-text-tertiary)', alignItems: "center" }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6" /></svg>
                                         {/* Reload icon */}
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" /></svg>
                                         {/* Home icon */}
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
                                     </div>
                                     <div style={{
                                         flex: 1,
@@ -1483,17 +1489,17 @@ export default function SetupPage() {
                                         justifyContent: "space-between",
                                     }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-success)' strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-success)' strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                                             <span style={{ color: 'var(--color-success)', fontWeight: 500 }}>Secure |</span>
                                             <span>skybooker.com/flights/NYC-to-LAX</span>
                                         </div>
                                         {/* Bookmark Star Icon */}
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a09f9c" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a09f9c" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                                     </div>
                                     {/* Extension Icon & Navis icon in toolbar */}
                                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                         {/* Puzzle icon */}
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v12M6 12h12"/></svg>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke='var(--color-text-tertiary)' strokeWidth="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" /><path d="M12 6v12M6 12h12" /></svg>
                                         {/* Navis extension icon */}
                                         <div style={{
                                             width: 22, height: 22, borderRadius: 6,
@@ -1501,7 +1507,7 @@ export default function SetupPage() {
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             boxShadow: "0 0 8px rgba(32,30,36,0.25)"
                                         }}>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-base)' strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-base)' strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
                                         </div>
                                     </div>
                                 </div>
@@ -1959,12 +1965,12 @@ export default function SetupPage() {
                                 >
                                     {/* Chrome Grey SVG */}
                                     <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
-                                        <circle cx="24" cy="24" r="22" fill="#d4d4d4"/>
-                                        <circle cx="24" cy="24" r="9" fill='var(--color-bg-surface)'/>
-                                        <circle cx="24" cy="24" r="5.5" fill="#a3a3a3"/>
-                                        <path d="M24 2C14 2 5.7 8.4 3 17l12.5.5L24 15a9 9 0 0 1 8.5 5H46A22 22 0 0 0 24 2z" fill="#b0b0b0"/>
-                                        <path d="M32.5 20A9 9 0 0 1 28 32.5L34 44A22 22 0 0 0 46 20H32.5z" fill="#c0c0c0"/>
-                                        <path d="M20 32.5A9 9 0 0 1 15.5 17L3 17a22 22 0 0 0 31 27l-6-11.5z" fill="#9a9a9a"/>
+                                        <circle cx="24" cy="24" r="22" fill="#d4d4d4" />
+                                        <circle cx="24" cy="24" r="9" fill='var(--color-bg-surface)' />
+                                        <circle cx="24" cy="24" r="5.5" fill="#a3a3a3" />
+                                        <path d="M24 2C14 2 5.7 8.4 3 17l12.5.5L24 15a9 9 0 0 1 8.5 5H46A22 22 0 0 0 24 2z" fill="#b0b0b0" />
+                                        <path d="M32.5 20A9 9 0 0 1 28 32.5L34 44A22 22 0 0 0 46 20H32.5z" fill="#c0c0c0" />
+                                        <path d="M20 32.5A9 9 0 0 1 15.5 17L3 17a22 22 0 0 0 31 27l-6-11.5z" fill="#9a9a9a" />
                                     </svg>
                                     Add to Chrome
                                 </button>
@@ -2004,9 +2010,9 @@ export default function SetupPage() {
                                 >
                                     {/* Firefox Grey SVG */}
                                     <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
-                                        <circle cx="24" cy="24" r="22" fill="#c8c8c8"/>
-                                        <path d="M42 16c.5-3-1-6.5-4-8-2 4-4.5 6.5-5.5 11.5-2 7-7 11-11 12-6 1.5-12-3-12-9 0-6 6-10 10-10 3 0 5 2 5 3s-2 2-3 0c-1-1.5-3-1-4 1s0 4 2 4c5 0 8-3 9-7C30 5 22 2 22 2s9-2 17 3c4 3 5 7 3 11z" fill="#a0a0a0"/>
-                                        <path d="M14 24c0 6 4 11 10 11s10-5 10-11-4-11-10-11-10 5-10 11z" fill="#b8b8b8" fillOpacity="0.4"/>
+                                        <circle cx="24" cy="24" r="22" fill="#c8c8c8" />
+                                        <path d="M42 16c.5-3-1-6.5-4-8-2 4-4.5 6.5-5.5 11.5-2 7-7 11-11 12-6 1.5-12-3-12-9 0-6 6-10 10-10 3 0 5 2 5 3s-2 2-3 0c-1-1.5-3-1-4 1s0 4 2 4c5 0 8-3 9-7C30 5 22 2 22 2s9-2 17 3c4 3 5 7 3 11z" fill="#a0a0a0" />
+                                        <path d="M14 24c0 6 4 11 10 11s10-5 10-11-4-11-10-11-10 5-10 11z" fill="#b8b8b8" fillOpacity="0.4" />
                                     </svg>
                                     Add to Firefox
                                 </button>
@@ -2039,7 +2045,7 @@ export default function SetupPage() {
                                 onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
                                 onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
                             >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle" }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle" }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" /></svg>
                                 View source code on GitHub
                             </button>
 
@@ -2124,7 +2130,7 @@ export default function SetupPage() {
                                         <div style={{ display: "flex", gap: 6, height: 70 }}>
                                             {/* Sidebar strip */}
                                             <div style={{ width: 28, background: "#eceae6", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 6 }}>
-                                                {[1,2,3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#c4c2bc" }} />)}
+                                                {[1, 2, 3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#c4c2bc" }} />)}
                                             </div>
                                             {/* Content area */}
                                             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2177,7 +2183,7 @@ export default function SetupPage() {
                                         <div style={{ display: "flex", gap: 6, height: 70 }}>
                                             {/* Sidebar strip */}
                                             <div style={{ width: 28, background: "#201e1c", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 6 }}>
-                                                {[1,2,3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#3a3835" }} />)}
+                                                {[1, 2, 3].map(i => <div key={i} style={{ width: 12, height: 3, borderRadius: 2, background: "#3a3835" }} />)}
                                             </div>
                                             {/* Content area */}
                                             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2274,28 +2280,28 @@ export default function SetupPage() {
                                             setReferralSource(opt.id);
                                             if (opt.id !== 'other') setReferralOtherText('');
                                         }}
-                                        style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: 8,
-                                            padding: "16px 8px",
-                                            borderRadius: 16,
-                                            background: isSelected ? "rgba(32,30,36,0.05)" : "transparent",
-                                            border: isSelected ? "2px solid var(--color-text-primary)" : "1px solid rgba(32,30,36,0.1)",
-                                            cursor: "pointer",
-                                            transition: "all 0.2s",
-                                            color: "var(--color-text-primary)",
-                                            fontWeight: isSelected ? 600 : 500,
-                                            outline: "none"
-                                        }}
-                                        onMouseEnter={e => {
-                                            if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
-                                        }}
-                                        onMouseLeave={e => {
-                                            if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
-                                        }}
+                                            style={{
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                gap: 8,
+                                                padding: "16px 8px",
+                                                borderRadius: 16,
+                                                background: isSelected ? "rgba(32,30,36,0.05)" : "transparent",
+                                                border: isSelected ? "2px solid var(--color-text-primary)" : "1px solid rgba(32,30,36,0.1)",
+                                                cursor: "pointer",
+                                                transition: "all 0.2s",
+                                                color: "var(--color-text-primary)",
+                                                fontWeight: isSelected ? 600 : 500,
+                                                outline: "none"
+                                            }}
+                                            onMouseEnter={e => {
+                                                if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)";
+                                            }}
+                                            onMouseLeave={e => {
+                                                if (!isSelected) e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)";
+                                            }}
                                         >
                                             <div style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>
                                                 <IconComp size={opt.id === 'twitter' || opt.id === 'github' ? 28 : 24} />
@@ -2322,14 +2328,14 @@ export default function SetupPage() {
                                 >
                                     {submittingReferral ? "Saving..." : "Continue"}
                                 </button>
-                                <button onClick={() => setStep(9)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                <button onClick={() => setStep(10)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                     Skip
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {/* ── Step 9: Privacy & Security ── */}
+                    {/* ── Step 9: Join Discord ── */}
                     {step === 9 && (
                         <motion.div
                             key="step9"
@@ -2342,6 +2348,68 @@ export default function SetupPage() {
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(8)} />
+                            </div>
+
+                            {/* Discord Logo */}
+                            <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "rgba(32,30,36,0.05)", border: "1px solid rgba(32,30,36,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <DiscordIcon size={32} />
+                            </div>
+
+                            <h1 style={{ fontSize: 32, fontWeight: 500, letterSpacing: "-0.03em", color: "var(--color-text-primary)", marginBottom: 12, lineHeight: 1.1 }}>
+                                Join our Discord
+                            </h1>
+                            <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", lineHeight: 1.7, maxWidth: 360, marginBottom: 32 }}>
+                                Connect with the EverFern community. Get help, share feedback, and stay updated on new features.
+                            </p>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", alignItems: "center", justifyContent: "center" }}>
+                                <a
+                                    href="https://discord.gg/4zR2jk799a"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        width: "100%",
+                                        padding: "16px",
+                                        backgroundColor: "var(--color-text-primary)",
+                                        color: "var(--color-bg-surface)",
+                                        borderRadius: 16,
+                                        fontWeight: 600,
+                                        fontSize: 15,
+                                        border: "none",
+                                        cursor: "pointer",
+                                        textDecoration: "none",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 8,
+                                        transition: "all 0.2s"
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                                >
+                                    <DiscordIcon size={18} />
+                                    Join Discord
+                                </a>
+                                <button onClick={() => setStep(10)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                    Skip
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 10: Privacy & Security ── */}
+                    {step === 10 && (
+                        <motion.div
+                            key="step10"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(9)} />
                             </div>
 
                             {/* Static Padlock SVG */}
@@ -2533,21 +2601,21 @@ function ProviderRow({ p, onClick }: { p: { id: string; name: string; logo: any 
         </button>
     );
 }
-    const getVisionDefaultModel = (provider: string) => {
-        if (provider === "openrouter") return "qwen/qwen3-vl-235b-a22b-instruct";
-        if (provider === "minimax") return "MiniMax-M3";
-        if (provider === "ollama") return "qwen3-vl:235b-cloud";
-        if (provider === "openai") return "gpt-5.5";
-        if (provider === "anthropic") return "claude-opus-4.6";
-        if (provider === "everfern") return "fern-1";
-        return "qwen3-vl:235b-cloud";
-    };
+const getVisionDefaultModel = (provider: string) => {
+    if (provider === "openrouter") return "qwen/qwen3-vl-235b-a22b-instruct";
+    if (provider === "minimax") return "MiniMax-M3";
+    if (provider === "ollama") return "qwen3-vl:235b-cloud";
+    if (provider === "openai") return "gpt-5.5";
+    if (provider === "anthropic") return "claude-opus-4.6";
+    if (provider === "everfern") return "fern-1";
+    return "qwen3-vl:235b-cloud";
+};
 
-    const getVisionDefaultBaseUrl = (provider: string) => {
-        if (provider === "minimax") return "https://api.minimax.io/v1";
-        if (provider === "ollama") return "https://ollama.com";
-        if (provider === "openai") return "https://api.openai.com/v1";
-        if (provider === "anthropic") return "https://api.anthropic.com";
-        if (provider === "nvidia") return "https://integrate.api.nvidia.com/v1";
-        return "";
-    };
+const getVisionDefaultBaseUrl = (provider: string) => {
+    if (provider === "minimax") return "https://api.minimax.io/v1";
+    if (provider === "ollama") return "https://ollama.com";
+    if (provider === "openai") return "https://api.openai.com/v1";
+    if (provider === "anthropic") return "https://api.anthropic.com";
+    if (provider === "nvidia") return "https://integrate.api.nvidia.com/v1";
+    return "";
+};

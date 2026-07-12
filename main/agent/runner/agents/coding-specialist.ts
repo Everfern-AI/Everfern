@@ -6,8 +6,6 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { getPiCodingTools } from '../../tools/pi-tools';
-import { createHarnessConfig, getAllowedTools, getPhasePrompt, workflowEngine } from '../harness';
-import type { WorkflowPhase } from '../harness/workflow-engine';
 
 const buildCodingHandoff = (state: GraphStateType): string => {
   const plan = state.decomposedTask;
@@ -120,55 +118,24 @@ export const createCodingSpecialistNode = (
       const codingHandoff = buildCodingHandoff(state);
 
       // ── Harness: phase-driven tool filtering ──
-      const harnessSessionId = state.missionId || `coding-${Date.now()}`;
-      const harnessConfig = createHarnessConfig(harnessSessionId, 'coding_harness');
-      const allowedToolNames = getAllowedTools(harnessConfig);
       const alwaysAvailable = ['spawn_agent', 'ask_user_question', 'todo_write'];
-      const filteredTools = allowedToolNames.length > 0
-        ? managerTools.filter(t => alwaysAvailable.includes(t.name) || allowedToolNames.includes(t.name))
-        : managerTools;
-      console.log(`[CodingSpecialist] Phase ${workflowEngine.getContext(harnessSessionId).currentPhase}: tools [${allowedToolNames.join(', ')}], filtered to ${filteredTools.length} tools`);
+      const filteredTools = managerTools;
 
-      // ── Phase prompt ──
-      const phasePrompt = getPhasePrompt(harnessConfig);
-      const harnessPhaseGuide = phasePrompt
-        ? `\n\n=== WORKFLOW PHASE ===\n${phasePrompt}\n\n`
-        : (state.harnessPhasePrompt
-            ? `\n\n=== WORKFLOW PHASE ===\n${state.harnessPhasePrompt}\n\n`
-            : '');
+      const systemPrompt = `${basePrompt}
 
-      const systemPrompt = `${harnessPhaseGuide}${basePrompt}
-
-PI CODING ${isWorkerSubagent ? 'WORKER' : 'MANAGER'} MODE:
-- ${isWorkerSubagent ? 'You are a coding worker spawned for one specific lane. Complete only your assigned lane and do not spawn agents.' : 'You are the manager for this coding request.'}
-- Use PI coding tools directly for small or tightly coupled changes.
-- ${isWorkerSubagent ? 'Do not use spawn_agent. Report back exact files changed, commands run, and any blockers.' : 'For independent feature lanes, spawn coding-specialist workers with spawn_agent.'}
-- ${isWorkerSubagent ? 'Stay inside the assigned feature/file ownership boundaries from the manager.' : 'Example: if the user asks for two independent features, spawn one worker per feature with the same target root and clear ownership boundaries.'}
-- Do not spawn for tiny single-file changes, tightly coupled edits, or work that needs strict serial ordering.
-- Never let workers use different host target roots for the same project.
-- ${isWorkerSubagent ? 'When finished, return a concise report with exact changed paths and validation evidence.' : 'After workers finish, inspect/verify their outputs, resolve conflicts, and run final validation yourself.'}
-- You have PI coding tools available: read, write, edit, find, grep, ls, and executePwsh.
-- ${isWorkerSubagent ? 'spawn_agent is intentionally unavailable in worker mode.' : 'You may use spawn_agent for coding-specialist workers when independent work can proceed in parallel.'}
-- For scaffolding/build work, execute commands with executePwsh on the main Windows host.
-- If the user asks to create a project in Downloads/Desktop/Documents/C:\\..., resolve that exact host path and create files there.
-- For multiple new files, either use repeated write calls or executePwsh with a safe script that writes files on the host.
-- Treat tool receipts as authoritative: "Success: wrote file", "Success: edited file", and "Success: command completed" mean that step succeeded.
-- After every meaningful write batch, verify with executePwsh from the target root and repair any failures before finalizing.
-- If a package scaffold command fails or is unavailable, manually create a minimal working project and verify it.
-- Never refuse a build/scaffold request because you only have review tools; this mode has file and process tools.
+MODE: ${isWorkerSubagent ? 'WORKER — Complete your assigned lane only, do not spawn agents' : 'MANAGER — You own the full implementation. Use tools directly. Spawn workers only for truly independent parallel lanes.'}
 
 ${codingHandoff}
 
-HANDOFF RULES:
-- Treat the decomposer handoff as the implementation brief.
-- First mirror the handoff into todo_write unless this is a tiny single-step edit.
-- Execute steps in dependency order.
-- Use spawn_agent only for independent parallel groups or clearly separable feature lanes.
-- If inspection proves the handoff is wrong, adapt it, but keep the same user goal and target root.
-- Validation/repair steps are mandatory before final success.
-
 USER REQUEST:
-${userInput}`;
+${userInput}
+
+REMEMBER:
+1. Quick context-gather (2-3 reads/greps)
+2. Ship the change (write or edit)
+3. Verify immediately (typecheck/lint/build)
+4. Fix errors before responding
+5. Use \`[PHASE_COMPLETE: complete]\` when you have verified everything works`;
 
       const result = await integrator.wrapNode(
         'coding_specialist',
@@ -182,36 +149,14 @@ ${userInput}`;
         'Writing code'
       );
 
-      // ── Phase transition detection ──
+      // ── Phase completion detection ──
       const agentMessages = result.messages || [];
       const lastAssistantMsg = [...agentMessages].reverse().find((m: any) => {
         const role = m.role || m._getType?.();
         return role === 'assistant' || role === 'ai';
       });
-      let updatedPhasePrompt = phasePrompt || state.harnessPhasePrompt || '';
-      if (lastAssistantMsg) {
-        const content = typeof lastAssistantMsg.content === 'string' ? lastAssistantMsg.content : '';
-        const match = content.match(/\[PHASE_COMPLETE:\s*(\w+)\]/i);
-        if (match) {
-          const nextPhase = match[1].toLowerCase() as WorkflowPhase;
-          const validPhases: WorkflowPhase[] = ['exploration', 'planning', 'implementation', 'review', 'testing', 'complete'];
-          if (validPhases.includes(nextPhase)) {
-            const wfCtx = workflowEngine.getContext(harnessSessionId);
-            console.log(`[CodingSpecialist] Phase transition: ${wfCtx.currentPhase} → ${nextPhase}`);
-            const transResult = await workflowEngine.transitionTo(harnessSessionId, 'coding_harness', nextPhase);
-            if (transResult.success) {
-              updatedPhasePrompt = getPhasePrompt(harnessConfig);
-              console.log(`[CodingSpecialist] ✅ Transitioned to ${nextPhase}`);
-            } else {
-              console.warn(`[CodingSpecialist] ⚠️ Phase transition rejected: ${transResult.reason}`);
-            }
-          }
-        }
-      }
-
-      // Only mark complete when 'complete' phase is reached
-      const wfCtx = workflowEngine.getContext(harnessSessionId);
-      const isCompletePhase = wfCtx?.currentPhase === 'complete';
+      const content = typeof lastAssistantMsg?.content === 'string' ? lastAssistantMsg.content : '';
+      const isCompletePhase = content.includes('[PHASE_COMPLETE: complete]');
 
       return {
         ...result,
@@ -219,7 +164,6 @@ ${userInput}`;
         returningFromSpecialist: null,
         codingComplete: isCompletePhase,
         codingSpecialistSelfLoopCount: loopCount,
-        harnessPhasePrompt: updatedPhasePrompt,
       };
     } catch (error) {
       console.error('[CodingSpecialist] Error in coding specialist:', error);

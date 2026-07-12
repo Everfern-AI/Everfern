@@ -134,6 +134,11 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: query ? `Searching for "${truncate(query, 60)}"` : 'Searching web', color: '#3b82f6' };
     }
 
+    case 'web_fetch': {
+      const url = typeof args?.url === 'string' ? args.url.trim() : '';
+      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: url ? `Fetching ${truncate(url, 60)}` : 'Fetching URL', color: '#3b82f6' };
+    }
+
     case 'search_mcp_registry': {
       const keyword = typeof args?.keyword === 'string'
         ? args.keyword.trim()

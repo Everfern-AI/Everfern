@@ -430,7 +430,12 @@ class ComputerUseTool {
 
     // Configure mouse delay after robotjs availability check
     if (!robot) {
-      console.warn("[ComputerUse] robotjs unavailable - OS automation will fail");
+      const hint = process.platform === 'linux'
+        ? 'On Linux, run: npm run rebuild:electron'
+        : process.platform === 'darwin'
+        ? 'On macOS, ensure Xcode CLT is installed (xcode-select --install), then run: npm run rebuild:electron'
+        : 'Run: npm run rebuild:electron';
+      console.warn(`[ComputerUse] robotjs unavailable — OS automation (click/type/scroll) will be disabled. ${hint}`);
     } else {
       try {
         robot.setMouseDelay(20);

@@ -1,0 +1,129 @@
+name: Build Linux
+
+on:
+  push:
+    branches:
+      - main
+      - 'codenrust/**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload artifacts to GitHub Release'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  build-linux:
+    name: Build Linux (AppImage · deb · rpm)
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ─────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # ── 3. System dependencies for native modules ───────────────────────
+      # sharp        → libvips
+      # canvas       → cairo, pango, librsvg
+      # uiohook-napi / @jitsi/robotjs → libxtst, libx11
+      # electron-builder AppImage → libfuse2
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libvips-dev \
+            libcairo2-dev \
+            libpango1.0-dev \
+            librsvg2-dev \
+            libpixman-1-dev \
+            libgif-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libx11-dev \
+            libxtst-dev \
+            libxkbfile-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxss-dev \
+            fuse \
+            libfuse2 \
+            python3 \
+            python3-pip \
+            build-essential \
+            gcc \
+            g++ \
+            make
+
+      # ── 4. Install npm dependencies ────────────────────────────────────────
+      # The repo root IS apps/desktop (no nested working-directory needed)
+      - name: Install Node modules
+        run: npm install
+
+      # ── 5. Rebuild native modules against the correct Electron ABI ─────────
+      - name: Rebuild native modules for Electron
+        env:
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_runtime: electron
+        run: |
+          ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
+          echo "Rebuilding native modules for Electron $ELECTRON_VERSION"
+          npm_config_target=$ELECTRON_VERSION npm rebuild \
+            better-sqlite3 \
+            sqlite-vec \
+            uiohook-napi \
+            @jitsi/robotjs \
+            sharp \
+            canvas \
+            --build-from-source
+
+      # ── 6. Build Next.js frontend ──────────────────────────────────────────
+      - name: Build Next.js frontend
+        run: npm run build:next
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      # ── 7. Compile Electron TypeScript ─────────────────────────────────────
+      - name: Compile Electron TypeScript
+        run: npm run build:electron-ts
+
+      # ── 8. Package with electron-builder ───────────────────────────────────
+      - name: Package — AppImage, deb, rpm
+        run: npx electron-builder --linux --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+
+      # ── 9. Upload build artifacts ──────────────────────────────────────────
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EverFern-Linux-${{ github.sha }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+      # ── 10. Attach to GitHub Release (tag pushes or manual trigger) ─────────
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

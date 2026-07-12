@@ -144,7 +144,6 @@ export function registerSystemHandlers() {
         return {
           hasUpdate: true,
           latestVersion: result.updateInfo.version,
-          url: `https://github.com/Everfern-AI/Everfern/releases/tag/v${result.updateInfo.version}`,
           notes: typeof result.updateInfo.releaseNotes === 'string' ? result.updateInfo.releaseNotes : ''
         };
       }

@@ -1,18 +1,22 @@
 /**
  * Navis — Everfern In-House AI Browser Agent
- * 
+ *
  * Autonomous browser automation engine for complex web tasks.
- * Built from scratch with clean architecture:
- *   - BrowserSession: lifecycle management
- *   - ElementCapture: DOM snapshot with NAVIS.md format
- *   - ActionExecutor: typed action dispatching
- *   - Orchestrator: AI-driven main loop with JSON schema
- * 
- * Powered by NAVIS.md system prompt from main/agent/prompts/NAVIS.md
+ * Architecture follows BrowserOS patterns:
+ *   - core/: browser adapter, observer, shared types
+ *   - tools/: defineTool() definitions with Zod schemas
+ *   - agent/: orchestrator loop, prompt builder, step executor, state manager
  */
 
 export { createNavisTool } from './tool';
-export { NAVIS_DECISION_SCHEMA, NavisOrchestrator } from './orchestrator';
+export { NavisOrchestrator } from './agent/orchestrator';
+export { NavisExtensionOrchestrator } from './agent/extension-orchestrator';
 export { NavisLogger } from './logger';
-export type { NavisOptions, NavisResult } from './orchestrator';
+export { NAVIS_DECISION_SCHEMA } from './core/types';
+export type { NavisOptions, NavisResult } from './core/types';
 export type { NavisEvent, NavisEventType } from './logger';
+
+// New architecture exports
+export { NAVIS_TOOLS } from './tools/registry';
+export type { ToolDefinition } from './tools/framework';
+export type { BrowserControlAdapter, BrowserPageState, BrowserActionResult } from './core/types';

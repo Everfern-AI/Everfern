@@ -74,7 +74,7 @@ import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
 import { registerProjectsHandlers } from './ipc/projects';
 import { ensurePlaywrightChromium } from './lib/playwright-setup';
-import { ensureWSLSetup } from './agent/tools/linux-vm-executor';
+import { ensureWSLSetup, ensureDockerContainer } from './agent/tools/linux-vm-executor';
 import { shutdownMCPTools } from './agent/tools/mcp';
 import { backgroundProcessor } from './agent/learning/background-processor';
 import { initializeUpdater } from './updater';
@@ -166,6 +166,13 @@ Your goal is to be the ultimate workplace companion.
   if (process.platform === 'win32') {
     ensureWSLSetup().catch((err: any) =>
       console.error('[Startup] WSL setup failed (non-blocking):', err)
+    );
+  }
+
+  // Fire-and-forget: ensure Docker Ubuntu container is ready on macOS
+  if (process.platform === 'darwin') {
+    ensureDockerContainer().catch((err: any) =>
+      console.warn('[Startup] Docker container pre-warm failed (non-blocking — Docker may not be running):', err)
     );
   }
 

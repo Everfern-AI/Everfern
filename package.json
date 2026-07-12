@@ -1,7 +1,7 @@
 {
   "name": "desktop",
-  "version": "0.1.8",
-  "description": "EverFern — Your autonomous AI workplace agent.",
+  "version": "0.1.9",
+  "description": "EverFern — The AI agent that truly controls your system.",
   "author": "Everfern Community",
   "license": "MIT",
   "main": "dist-electron/main/main.js",
@@ -17,7 +17,7 @@
     "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
     "build:macos": "npm run build:next && npm run build:electron-ts && electron-builder --macos",
     "build": "npm run build:next && npm run build:electron-ts && electron-builder",
-    "rebuild:electron": "cross-env npm_config_runtime=electron npm_config_target=41.0.3 npm_config_disturl=https://electronjs.org/headers npm rebuild better-sqlite3 sqlite-vec uiohook-napi @jitsi/robotjs sharp --build-from-source",
+    "rebuild:electron": "cross-env npm_config_runtime=electron npm_config_target=$(node -e \"process.stdout.write(require('./node_modules/electron/package.json').version)\") npm_config_disturl=https://electronjs.org/headers npm rebuild better-sqlite3 sqlite-vec uiohook-napi @jitsi/robotjs sharp --build-from-source",
     "start": "electron-forge start",
     "lint": "eslint",
     "test": "vitest",
@@ -43,7 +43,6 @@
     "asarUnpack": [
       "**/*.node",
       "**/node_modules/@jitsi/robotjs/**/*",
-      "**/node_modules/screenshot-desktop/**/*",
       "**/node_modules/sharp/**/*",
       "**/node_modules/better-sqlite3/**/*",
       "**/node_modules/sqlite-vec/**/*",
@@ -101,6 +100,13 @@
         "zip"
       ],
       "icon": "public/images/logos/everfern.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/images/logos/everfern.ico",
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "linux": {
       "category": "Productivity",

@@ -154,7 +154,7 @@ export function createAnalyzeImageTool(
               const result = await mainClient.everfernCloudVisionGrounding({
                 screenshot: encoded[0].dataUrl,
                 objective: question,
-                apiBaseUrl: 'http://localhost:5000',
+                apiBaseUrl: 'https://api.everfern.app',
                 token: fullConfig.apiKey,
               });
               return {

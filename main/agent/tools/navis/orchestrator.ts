@@ -17,7 +17,7 @@ import {
   type HtmlDomParserContext,
 } from './element-capture';
 import { executeAction, type ActionName } from './actions';
-import { NAVIS_TOOLS } from './tools-schema';
+import { NAVIS_TOOLS } from './tools/registry';
 import { diffSnapshots } from './diff';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import { NavisLogger } from './logger';
@@ -36,67 +36,11 @@ import {
 import { globalAbortManager } from '../../runner/abort-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON Schema for Navis decision output (strict validation)
+// Re-export from core/types (single source of truth)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const NAVIS_DECISION_SCHEMA = {
-  $name: 'navis_decision',
-  type: 'object',
-  properties: {
-    current_state: {
-      type: 'object',
-      properties: {
-        evaluation_previous_goal: { type: 'string', enum: ['Success', 'Failed', 'Unknown'] },
-        memory: { type: 'string' },
-        next_goal: { type: 'string' },
-        request_vision: { type: 'boolean', description: 'Set to true if you need a visual screenshot to proceed' },
-        is_form_interaction: { type: 'boolean', description: 'Set to true if interacting with complex forms, datepickers, or sliders' }
-      },
-      required: ['evaluation_previous_goal', 'memory', 'next_goal'],
-      additionalProperties: false,
-    },
-    action: {
-      type: 'array',
-      items: {
-        type: 'object',
-        oneOf: [
-          { properties: { go_to_url: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false } }, required: ['go_to_url'], additionalProperties: false },
-          { properties: { go_back: { type: 'object', additionalProperties: false } }, required: ['go_back'], additionalProperties: false },
-          { properties: { click_element: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'], additionalProperties: false } }, required: ['click_element'], additionalProperties: false },
-          { properties: { click_text: { type: 'object', properties: { text: { type: 'string' }, target: { type: 'string' }, role: { type: 'string' }, href: { type: 'string' } }, additionalProperties: false } }, required: ['click_text'], additionalProperties: false },
-          { properties: { smart_click: { type: 'object', properties: { ref: { type: 'string' }, target: { type: 'string' }, text: { type: 'string' }, role: { type: 'string' }, href: { type: 'string' }, url: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } }, additionalProperties: false } }, required: ['smart_click'], additionalProperties: false },
-          { properties: { input_text: { type: 'object', properties: { ref: { type: 'string' }, text: { type: 'string' } }, required: ['ref', 'text'], additionalProperties: false } }, required: ['input_text'], additionalProperties: false },
-          { properties: { smart_type: { type: 'object', properties: { ref: { type: 'string' }, target: { type: 'string' }, text: { type: 'string' }, submit: { type: 'boolean' } }, required: ['text'], additionalProperties: false } }, required: ['smart_type'], additionalProperties: false },
-          { properties: { hold_element: { type: 'object', properties: { ref: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, holdTimeMs: { type: 'number' } }, additionalProperties: false } }, required: ['hold_element'], additionalProperties: false },
-          { properties: { drag_element: { type: 'object', properties: { sourceRef: { type: 'string' }, targetRef: { type: 'string' }, targetX: { type: 'number' }, targetY: { type: 'number' } }, required: ['sourceRef'], additionalProperties: false } }, required: ['drag_element'], additionalProperties: false },
-          { properties: { press_key: { type: 'object', properties: { ref: { type: 'string' }, key: { type: 'string' } }, required: ['key'], additionalProperties: false } }, required: ['press_key'], additionalProperties: false },
-          { properties: { select_option: { type: 'object', properties: { ref: { type: 'string', description: 'The ref of the select/combobox element.' }, value: { type: 'string', description: 'The option value or visible label text to select.' } }, required: ['ref', 'value'], additionalProperties: false } }, required: ['select_option'], additionalProperties: false },
-          { properties: { scroll_down: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_down'], additionalProperties: false },
-          { properties: { scroll_up: { type: 'object', properties: { ref: { type: 'string' } }, additionalProperties: false } }, required: ['scroll_up'], additionalProperties: false },
-          { properties: { wait: { type: 'object', properties: { ms: { type: 'number' } }, additionalProperties: false } }, required: ['wait'], additionalProperties: false },
-          { properties: { extract_content: { type: 'object', properties: { goal: { type: 'string' }, click_target: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract_content'], additionalProperties: false },
-          { properties: { extract: { type: 'object', properties: { goal: { type: 'string' }, click_target: { type: 'string' } }, required: ['goal'], additionalProperties: false } }, required: ['extract'], additionalProperties: false },
-          { properties: { open_tab: { type: 'object', properties: { url: { type: 'string' } }, additionalProperties: false } }, required: ['open_tab'], additionalProperties: false },
-          { properties: { switch_tab: { type: 'object', properties: { index: { type: 'number' }, target: { type: 'string' } }, additionalProperties: false } }, required: ['switch_tab'], additionalProperties: false },
-          { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
-          { properties: { wait_for_navigation: { type: 'object', properties: { timeoutMs: { type: 'number' }, urlContains: { type: 'string' } }, additionalProperties: false } }, required: ['wait_for_navigation'], additionalProperties: false },
-          { properties: { wait_for_dom_change: { type: 'object', properties: { text: { type: 'string', description: 'Wait until this text appears on the page.' }, selector: { type: 'string', description: 'Wait until this CSS selector matches.' }, timeoutMs: { type: 'number' } }, additionalProperties: false } }, required: ['wait_for_dom_change'], additionalProperties: false },
-          { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
-          { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
-          { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },
-          { properties: { browser_double_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_double_click'], additionalProperties: false },
-          { properties: { browser_right_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_right_click'], additionalProperties: false },
-          { properties: { browser_hover: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_hover'], additionalProperties: false },
-          { properties: { browser_type: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }, required: ['browser_type'], additionalProperties: false },
-        ],
-      },
-      minItems: 1,
-      maxItems: 8,
-    },
-  },
-  required: ['current_state', 'action'],
-  additionalProperties: false,
-};
+export { NAVIS_DECISION_SCHEMA, type NavisOptions, type NavisResult } from './core/types';
+import { NAVIS_DECISION_SCHEMA, type NavisOptions, type NavisResult } from './core/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Loading
@@ -298,35 +242,6 @@ function formatExtractionReportsForOutput(
   });
 
   return `\n\nNavis temporary extraction report(s):\n${lines.join('\n')}`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface NavisOptions {
-  task: string;
-  maxSteps?: number;
-  maxActionsPerStep?: number;
-  headless?: boolean;
-  startUrl?: string;
-  onProgress?: (msg: string) => void;
-  useVision?: boolean;
-  onlyVision?: boolean;
-  forceVision?: boolean;
-  useChromeProfile?: boolean;
-  selectedBrowserId?: string;
-  useIsolatedBrowser?: boolean;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NavisResult
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface NavisResult {
-  success: boolean;
-  output: string;
-  steps: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

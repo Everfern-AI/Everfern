@@ -62,7 +62,8 @@ If no new memory should be saved, respond with:
 
       const userPrompt = `Here is the conversation history of the current interaction:\n\n${formattedHistory}`;
 
-      const timeoutMs = 5000;
+      const isLocal = runner.client?.isLocal?.();
+      const timeoutMs = isLocal ? 60000 : 5000;
       const createTimeoutPromise = () => new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Memory operation timed out')), timeoutMs);
       });

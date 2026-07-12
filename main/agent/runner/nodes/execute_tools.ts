@@ -253,7 +253,7 @@ export const createExecuteToolsNode = (
         }
 
         // Record findings immediately for research/browser/file tools
-        const workspaceDir = runner.workspaceDir || process.cwd();
+        const workspaceDir = runner.workspaceDir || path.join(os.homedir(), '.everfern');
         if (rec.result?.success && ['navis', 'web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
           await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir);
         }
@@ -429,6 +429,14 @@ export const createExecuteToolsNode = (
       clearAgentContext();
     } catch (ctxError) {
       console.warn('[ExecuteTools] Failed to clear rollback context:', ctxError);
+    }
+
+    // Sync .everfern/task_plan.md checkboxes & progress
+    try {
+      const { syncTaskPlan } = await import('../task-plan-helper');
+      await syncTaskPlan(runner, missionTracker);
+    } catch (tpErr) {
+      console.warn('[ExecuteTools] Failed to sync task plan:', tpErr);
     }
 
     return result;

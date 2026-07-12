@@ -24,7 +24,7 @@ const itemVariants: Variants = {
 };
 
 // Landing site base URL for the web app UI
-const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
+const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "https://everfern.app";
 // API base URL for authentication endpoints
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
 
@@ -148,6 +148,9 @@ export default function AuthPage() {
     const handleSignOut = () => {
         localStorage.removeItem(STORAGE_KEY);
         setSignedInUser(null);
+        if ((window as any).electronAPI?.saveConfig) {
+            (window as any).electronAPI.saveConfig({});
+        }
     };
 
     const handleContinueAsUser = async () => {

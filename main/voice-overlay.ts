@@ -1,6 +1,24 @@
 import { app, BrowserWindow, screen } from 'electron';
-import { uIOhook, UiohookKey } from 'uiohook-napi';
 import * as path from 'path';
+
+// ── uiohook-napi is a native module that must be rebuilt per Electron ABI. ──
+// Lazy-require with try/catch so a rebuild failure doesn't crash the main process
+// on Linux/macOS (same pattern used for @jitsi/robotjs in computer-use.ts).
+let uIOhook: any = null;
+let UiohookKey: any = null;
+try {
+  const mod = require('uiohook-napi');
+  uIOhook = mod.uIOhook;
+  UiohookKey = mod.UiohookKey;
+  console.log('[VoiceOverlay] uiohook-napi loaded successfully.');
+} catch (e) {
+  const hint = process.platform === 'linux'
+    ? 'On Linux run: npm run rebuild:electron'
+    : process.platform === 'darwin'
+    ? 'On macOS ensure Xcode CLT is installed, then run: npm run rebuild:electron'
+    : 'Run: npm run rebuild:electron';
+  console.warn(`[VoiceOverlay] uiohook-napi unavailable — global hotkey support disabled. ${hint}`);
+}
 
 export class VoiceOverlayManager {
   private overlayWindow: BrowserWindow | null = null;
@@ -58,32 +76,29 @@ export class VoiceOverlayManager {
   }
 
   private setupHook() {
+    if (!uIOhook) {
+      console.warn('[VoiceOverlay] Skipping hook setup — uiohook-napi not available on this platform/build.');
+      return;
+    }
     console.log('[VoiceOverlay] Setting up uIOhook...');
     
     try {
-      uIOhook.on('keydown', (e) => {
-        // Log all keycodes to help debug if Ctrl/Alt are different
-        // console.log(`[VoiceOverlay] Keydown: ${e.keycode}`);
-        
+      uIOhook.on('keydown', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = true;
-          // console.log('[VoiceOverlay] Ctrl Down');
         }
         if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = true;
-          // console.log('[VoiceOverlay] Alt Down');
         }
         this.checkState();
       });
 
-      uIOhook.on('keyup', (e) => {
+      uIOhook.on('keyup', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = false;
-          // console.log('[VoiceOverlay] Ctrl Up');
         }
         if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = false;
-          // console.log('[VoiceOverlay] Alt Up');
         }
         this.checkState();
       });

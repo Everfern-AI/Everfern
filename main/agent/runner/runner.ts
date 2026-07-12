@@ -37,7 +37,7 @@ import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
 import { presentFilesTool } from '../tools/present-files';
-import { NavisOrchestrator } from '../tools/navis/orchestrator';
+import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
 
 // Tool Truncator
 import { truncateTools } from './tool-truncator';

@@ -139,6 +139,18 @@ describe('Preservation Property Tests — Agent Timeout Performance Preservation
       setModel: vi.fn(),
     } as any;
 
+    // Pre-populate intent cache for the previous message (simulating real-world flow where the first request was processed)
+    await classifyIntent('write a function', {
+      chat: vi.fn().mockResolvedValue({
+        content: JSON.stringify({ intent: 'coding', confidence: 0.95, reasoning: 'test' })
+      }),
+      provider: 'test',
+      model: 'test-model',
+      apiKey: 'test-key',
+      baseUrl: 'http://localhost:11434',
+      setModel: vi.fn(),
+    } as any, []);
+
     // Conversation history with previous intent
     const history = [
       { role: 'user', content: 'write a function' },
@@ -163,7 +175,8 @@ describe('Preservation Property Tests — Agent Timeout Performance Preservation
    * Validates: Requirements 3.3
    */
   it('should preserve cache hit behavior', async () => {
-    const { classifyIntent } = await import('../../triage');
+    const { classifyIntent, clearIntentCache } = await import('../../triage');
+    clearIntentCache();
 
     // Create a client that should NOT be called on cache hit
     const client = {

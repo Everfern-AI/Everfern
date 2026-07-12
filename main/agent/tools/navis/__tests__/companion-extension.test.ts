@@ -91,7 +91,7 @@ describe('Navis companion extension', () => {
     const ipcSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'ipc', 'tool-settings-handlers.ts'), 'utf-8');
     const preloadSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', '..', 'preload', 'preload.ts'), 'utf-8');
     const toolSource = fs.readFileSync(path.join(__dirname, '..', 'tool.ts'), 'utf-8');
-    const extensionOrchestratorSource = fs.readFileSync(path.join(__dirname, '..', 'extension-orchestrator.ts'), 'utf-8');
+    const extensionOrchestratorSource = fs.readFileSync(path.join(__dirname, '..', 'agent', 'extension-orchestrator.ts'), 'utf-8');
 
     expect(ipcSource).toContain("ipcMain.handle('navis-extension:prepare-main-profile'");
     expect(ipcSource).toContain("ipcMain.handle('navis-extension:status'");
@@ -102,7 +102,7 @@ describe('Navis companion extension', () => {
     expect(toolSource).toContain('Using extension-first browser control');
     expect(toolSource).toContain('playwright-isolated');
     expect(toolSource).toContain('broadcastNavisCompanionProgress');
-    expect(extensionOrchestratorSource).toContain('Choosing the next browser action from the DOM snapshot');
-    expect(extensionOrchestratorSource).toContain('this.logger.stepComplete');
+    expect(extensionOrchestratorSource).toContain('DOM-FIRST');
+    expect(extensionOrchestratorSource).toContain('NavisExtensionOrchestrator');
   });
 });

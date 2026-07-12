@@ -39,6 +39,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
     const [userPlan, setUserPlan] = useState<string>("free");
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+    const [dailyCostUsd, setDailyCostUsd] = useState<number | null>(null);
     const { theme } = useTheme();
 
     useEffect(() => {
@@ -65,6 +66,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             if (userData.plan) setUserPlan(userData.plan);
                             if (userData.dailyUsed !== undefined) setDailyUsed(userData.dailyUsed);
                             if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
+                            if (userData.dailyCostUsd !== undefined) setDailyCostUsd(userData.dailyCostUsd);
                         }
                     } catch (e) {
                         console.error("Failed to fetch user from API", e);
@@ -203,7 +205,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                     {isOpen && (
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--sidebar-brand-text)", fontFamily: 'var(--font-sans)' }}>EverFern</span>
+                            <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--sidebar-brand-text)", fontFamily: 'var(--font-sans)' }}>EverFern</span>
                         </div>
                     )}
                 </div>
@@ -423,7 +425,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                                         }}></div>
                                     </div>
                                     <div style={{ fontSize: 9, color: "var(--sidebar-limit-text)", textAlign: "right", fontWeight: 500 }}>
-                                        {Math.round((dailyUsed / dailyLimit) * 100)}% used
+                                        {Math.round((dailyUsed / dailyLimit) * 100)}% used{dailyCostUsd !== null ? ` · $${dailyCostUsd.toFixed(2)}` : ''}
                                     </div>
                                 </div>
                             )}

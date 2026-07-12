@@ -491,7 +491,13 @@ function adaptTool(
       parameters.properties.end_line = { type: 'number', description: 'End line to read (1-indexed, inclusive)' };
     }
   } else if (name === 'edit') {
-    description = `[SURGICAL-EDIT] ${description} ALWAYS PREFERRED over 'write' for existing files. Identify exact lines to change and provide minimal targeted diffs.`;
+    description = `[SURGICAL-EDIT] ${description} ALWAYS PREFERRED over 'write' for existing files. Identify exact lines to change and provide minimal targeted diffs. Set revert=true to undo the last edit on a file (restores contentBefore from the tracked snapshot).`;
+    if (parameters.properties) {
+      parameters.properties.revert = {
+        type: 'boolean',
+        description: 'Set to true to revert the last edit on the file specified in path. Restores the file to its content before the most recent edit. When revert=true, oldString and newString are ignored.'
+      };
+    }
   } else if (name === 'write') {
     description = `[DISCIPLINED-WRITE] ${description} Use ONLY for new files or total structural rewrites. NEVER use for minor changes to existing files; use 'edit' instead.`;
   } else if (name === 'grep' || name === 'find') {
@@ -980,6 +986,39 @@ function adaptTool(
 
         if (name === 'edit') {
           const editedPath = editPath || (typeof args.path === 'string' ? path.resolve(args.path) : '');
+          const revert = args.revert === true || args.revert === 'true';
+
+          // Handle revert: restore file from latest tracked snapshot
+          if (revert && editedPath) {
+            try {
+              const rollbackManager = getRollbackManager();
+              await rollbackManager.initialize();
+              const { taskId } = currentAgentContext;
+              if (!taskId) {
+                return { success: false, output: 'Error: revert requires an active agent task context', error: 'no_task_context' };
+              }
+              const snapshots = await rollbackManager.getFileSnapshotsForPath(taskId, editedPath);
+              if (!snapshots.length) {
+                return { success: false, output: `Error: No tracked snapshots found for ${editedPath} to revert`, error: 'no_snapshots' };
+              }
+              // Restore from the latest snapshot's contentBefore
+              const latest = snapshots[snapshots.length - 1];
+              const result = await rollbackManager.restoreFileFromSnapshot(latest.id);
+              if (result.success) {
+                const revertedContent = await fs.promises.readFile(editedPath, 'utf-8').catch(() => '');
+                return {
+                  success: true,
+                  output: stripAnsi(`Success: reverted file\nPath: ${editedPath}\nRestored from snapshot ${latest.id} (step ${latest.stepNumber})`),
+                  data: { path: editedPath, reverted: true, snapshotId: latest.id, contentAfter: revertedContent }
+                };
+              } else {
+                return { success: false, output: `Error: Failed to revert ${editedPath}: ${result.error}`, error: 'revert_failed' };
+              }
+            } catch (revertErr: any) {
+              return { success: false, output: `Error: Revert failed for ${editedPath}: ${revertErr.message}`, error: 'revert_error' };
+            }
+          }
+
           const oldString = typeof args.oldString === 'string' ? args.oldString
             : typeof args.old_string === 'string' ? args.old_string
             : typeof args.TargetContent === 'string' ? args.TargetContent
