@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest]
 
     steps:
       - name: Check out repository
@@ -23,9 +23,6 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Setup Windows Build Environment
-        if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install macOS Dependencies
         if: matrix.os == 'macos-latest'
@@ -66,8 +63,6 @@ jobs:
       # Recompiles heavy binaries safely for the matching host architecture
       - name: Compile Native Modules
         run: npm run rebuild:electron
-        env:
-          GYP_MSVS_VERSION: '2022'
 
       - name: Build and Publish
         run: npm run build -- --publish always
