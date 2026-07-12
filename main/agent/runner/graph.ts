@@ -61,7 +61,7 @@ const getLatestUserText = (state: GraphStateType): string => {
 };
 
 const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
-  return state.currentIntent === 'build';
+  return ['coding', 'build', 'fix'].includes(state.currentIntent);
 };
 
 const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use', 'synthesize_tool', 'synthesize_skill']);

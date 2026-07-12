@@ -165,10 +165,12 @@ Respond with JSON only:
     console.log('[Brain] Original request (first 100 chars):', originalRequest.slice(0, 100));
     const startTime = Date.now();
 
-    // Reduced timeout from 30s to 5s for fast responses
+    // Reduced timeout from 30s to 5s for fast responses (dynamic for local LLMs)
+    const isLocal = runner.client?.isLocal?.();
+    const timeoutMs = isLocal ? 60000 : 5000;
     let timerId: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timerId = setTimeout(() => reject(new Error('completion signal timed out after 5s')), 5000);
+      timerId = setTimeout(() => reject(new Error(`completion signal timed out after ${timeoutMs / 1000}s`)), timeoutMs);
     });
 
     let response: any;
@@ -959,6 +961,14 @@ export const createBrainNode = (
     } else {
       runner.telemetry.warn('Brain completion signal failed');
 
+    }
+
+    // Sync .everfern/task_plan.md checkboxes & progress
+    try {
+      const { syncTaskPlan } = await import('../task-plan-helper');
+      await syncTaskPlan(runner, missionTracker);
+    } catch (tpErr) {
+      console.warn('[Brain] Failed to sync task plan:', tpErr);
     }
 
     return {

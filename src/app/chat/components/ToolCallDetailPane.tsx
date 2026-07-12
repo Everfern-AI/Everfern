@@ -226,6 +226,7 @@ function StatusBadge({ status }: { status: string }) {
 function NavisReportViewer({ report, isRunning }: { report: string; isRunning: boolean }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [displayedReport, setDisplayedReport] = useState(report);
+  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
     setDisplayedReport(report);
@@ -233,6 +234,26 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
     }
   }, [report, isRunning]);
+
+  const themeColors = readerTheme === 'light' ? {
+    bg: '#fcfbfa',
+    text: '#2d312e',
+    textMuted: '#686c69',
+    border: '#e7e5e0',
+    codeBg: '#f5f3ee',
+    headerColor: '#1d211e',
+    accent: '#d97706',
+    accentFaint: '#fef3c7',
+  } : {
+    bg: '#141413',
+    text: '#e2e2dc',
+    textMuted: '#8b8b83',
+    border: '#2c2b29',
+    codeBg: '#1e1e1c',
+    headerColor: '#f5f5f0',
+    accent: '#f59e0b',
+    accentFaint: 'rgba(245, 158, 11, 0.1)',
+  };
 
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n');
@@ -244,20 +265,20 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     const flushCode = (key: number) => {
       elements.push(
         <div key={`code-${key}`} style={{
-          background: T.surface,
-          border: `1px solid ${T.border}`,
+          background: themeColors.codeBg,
+          border: `1px solid ${themeColors.border}`,
           borderRadius: T.r8,
           padding: '12px 16px',
           marginBottom: 10,
           fontFamily: T.mono,
           fontSize: 11.5,
           lineHeight: 1.7,
-          color: T.text,
+          color: themeColors.text,
           overflowX: 'auto',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>
-          {codeLang && <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+          {codeLang && <div style={{ color: themeColors.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{codeLang}</div>}
           {codeLines.join('\n')}
         </div>
       );
@@ -273,15 +294,15 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
       }
       if (inCodeBlock) { codeLines.push(line); return; }
       if (line.startsWith('# ')) {
-        elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 12px', fontFamily: T.sans, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>{line.slice(2)}</h1>);
+        elements.push(<h1 key={idx} style={{ fontSize: 16, fontWeight: 700, color: themeColors.headerColor, margin: '16px 0 12px', fontFamily: T.sans, borderBottom: `1px solid ${themeColors.border}`, paddingBottom: 8 }}>{line.slice(2)}</h1>);
         return;
       }
       if (line.startsWith('## ')) {
-        elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: T.blue, margin: '16px 0 8px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
+        elements.push(<h2 key={idx} style={{ fontSize: 14, fontWeight: 700, color: themeColors.accent, margin: '20px 0 10px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ opacity: 0.5 }}>##</span>{line.slice(3)}</h2>);
         return;
       }
       if (line.startsWith('### ')) {
-        elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: T.blue, margin: '12px 0 6px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}><span style={{ color: T.border }}>◆</span>{line.slice(4)}</h3>);
+        elements.push(<h3 key={idx} style={{ fontSize: 12.5, fontWeight: 600, color: themeColors.accent, margin: '14px 0 8px', fontFamily: T.sans, display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}><span style={{ color: themeColors.border }}>◆</span>{line.slice(4)}</h3>);
         return;
       }
       if (line.startsWith('- ') || line.startsWith('* ')) {
@@ -289,12 +310,12 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
         const parts = content.split(/\*\*(.+?)\*\*/);
         const rendered = parts.map((part, pi) =>
           pi % 2 === 1
-            ? <span key={pi} style={{ color: T.text, fontWeight: 600 }}>{part}</span>
-            : <span key={pi} style={{ color: T.textSecondary }}>{part}</span>
+            ? <span key={pi} style={{ color: themeColors.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: themeColors.textMuted }}>{part}</span>
         );
         elements.push(
-          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}>
-            <span style={{ color: T.blue, flexShrink: 0, marginTop: 1 }}>›</span>
+          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 12, lineHeight: 1.65, fontFamily: T.sans }}>
+            <span style={{ color: themeColors.accent, flexShrink: 0, marginTop: 1 }}>•</span>
             <span>{rendered}</span>
           </div>
         );
@@ -304,14 +325,14 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
         const parts = line.split(/\*\*(.+?)\*\*/);
         const rendered = parts.map((part, pi) =>
           pi % 2 === 1
-            ? <span key={pi} style={{ color: T.text, fontWeight: 600 }}>{part}</span>
-            : <span key={pi} style={{ color: T.textSecondary }}>{part}</span>
+            ? <span key={pi} style={{ color: themeColors.text, fontWeight: 600 }}>{part}</span>
+            : <span key={pi} style={{ color: themeColors.textMuted }}>{part}</span>
         );
-        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: T.mono }}>{rendered}</div>);
+        elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.65, marginBottom: 6, fontFamily: T.sans }}>{rendered}</div>);
         return;
       }
-      if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 6 }} />); return; }
-      elements.push(<div key={idx} style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
+      if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 8 }} />); return; }
+      elements.push(<div key={idx} style={{ fontSize: 12, color: themeColors.textMuted, lineHeight: 1.65, fontFamily: T.sans, marginBottom: 4 }}>{line}</div>);
     });
 
     if (inCodeBlock && codeLines.length > 0) flushCode(lines.length);
@@ -319,34 +340,94 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: themeColors.bg, color: themeColors.text, transition: 'all 0.2s ease' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 16px', borderBottom: `1px solid ${T.border}`,
-        background: T.surface, flexShrink: 0,
+        padding: '10px 16px', borderBottom: `1px solid ${themeColors.border}`,
+        background: themeColors.bg, flexShrink: 0,
       }}>
-        <FileText size={12} color={T.blue} />
-        <span style={{ fontSize: 11, color: T.textSecondary, fontFamily: T.sans, flex: 1 }}>Navis Execution Report</span>
-        {isRunning ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.blueFaint, border: `1px solid rgba(59,130,246,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
-            <Loader2 size={10} color={T.blue} style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={{ fontSize: 10, color: T.blue, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+        <FileText size={12} color={themeColors.accent} />
+        <span style={{ fontSize: 11, color: themeColors.textMuted, fontFamily: T.sans, flex: 1, fontWeight: 600, letterSpacing: '0.02em' }}>
+          findings.md
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            display: 'flex',
+            background: themeColors.codeBg,
+            borderRadius: 6,
+            padding: 2,
+            border: `1px solid ${themeColors.border}`,
+          }}>
+            <button
+              onClick={() => setReaderTheme('light')}
+              style={{
+                padding: '2px 8px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 650,
+                border: 'none',
+                cursor: 'pointer',
+                background: readerTheme === 'light' ? themeColors.bg : 'transparent',
+                color: readerTheme === 'light' ? themeColors.accent : themeColors.textMuted,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Light
+            </button>
+            <button
+              onClick={() => setReaderTheme('dark')}
+              style={{
+                padding: '2px 8px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 650,
+                border: 'none',
+                cursor: 'pointer',
+                background: readerTheme === 'dark' ? themeColors.bg : 'transparent',
+                color: readerTheme === 'dark' ? themeColors.accent : themeColors.textMuted,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Dark
+            </button>
+          </div>
+
+          {isRunning ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: themeColors.accentFaint, border: `1px solid ${themeColors.accent}40`, borderRadius: 20, padding: '2px 8px' }}>
+              <Loader2 size={10} color={themeColors.accent} style={{ animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 10, color: themeColors.accent, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+              <CheckCircle size={10} color={T.green} />
+              <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '24px 28px',
+        scrollBehavior: 'smooth',
+        fontFamily: 'Georgia, serif',
+        lineHeight: 1.8,
+      }}>
+        <style>{`
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        `}</style>
+        {displayedReport ? (
+          <div style={{ maxWidth: 640, margin: '0 auto' }}>
+            {renderMarkdown(displayedReport)}
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: T.greenFaint, border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
-            <CheckCircle size={10} color={T.green} />
-            <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+          <div style={{ color: themeColors.textMuted, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>
+            Waiting for findings...
           </div>
         )}
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px', scrollBehavior: 'smooth' }}>
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }`}</style>
-        {displayedReport
-          ? renderMarkdown(displayedReport)
-          : <div style={{ color: T.textSecondary, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>Waiting for Navis to start...</div>
-        }
         {isRunning && (
-          <span style={{ display: 'inline-block', width: 8, height: 14, background: T.blue, borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
+          <span style={{ display: 'inline-block', width: 8, height: 14, background: themeColors.accent, borderRadius: 1, verticalAlign: 'middle', animation: 'blink 1s step-end infinite', marginLeft: 2 }} />
         )}
         <div ref={bottomRef} />
       </div>
@@ -374,6 +455,73 @@ export function ToolCallDetailPane({
   const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
   const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
   const isCodeOrFileViewer = isWrite || isEdit || isRead;
+
+  const [findingsContent, setFindingsContent] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!isNavis || !toolCall) return;
+
+    const readFindings = async () => {
+      try {
+        const api = (window as any).electronAPI;
+        if (!api?.projects) return;
+
+        // 1. Get candidate paths from toolCall arguments
+        const args = toolCall.arguments || (toolCall as any).args || {};
+        const candidateValues = [
+          args.cwd,
+          args.path,
+          args.filePath,
+          args.file,
+          args.TargetFile,
+          args.DirectoryPath,
+        ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
+
+        // 2. Fetch projects list
+        const projects = await api.projects.list() || [];
+        const normalized = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+        // 3. Find matched project path
+        let projectPath = '';
+        for (const value of candidateValues) {
+          const val = normalized(value);
+          const matched = projects.find((p: any) => p?.path && val.startsWith(normalized(p.path)));
+          if (matched?.path) {
+            projectPath = matched.path;
+            break;
+          }
+        }
+
+        if (!projectPath && projects[0]?.path) {
+          projectPath = projects[0].path;
+        }
+
+        if (projectPath) {
+          const content = await api.projects.readFile(projectPath, 'findings.md');
+          if (isMounted && content !== null) {
+            setFindingsContent(content);
+          }
+        }
+      } catch (err) {
+        console.error('Error reading findings.md in ToolCallDetailPane:', err);
+      }
+    };
+
+    readFindings();
+
+    // Poll for live updates while executing
+    const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
+    let intervalId: any;
+    if (isRunning) {
+      intervalId = setInterval(readFindings, 1000);
+    }
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isNavis, toolCall]);
 
   return (
     <motion.div
@@ -525,7 +673,7 @@ export function ToolCallDetailPane({
                   background: activeTab === tab ? T.bg : 'transparent',
                   border: 'none',
                   cursor: 'pointer',
-                  borderBottom: activeTab === tab ? `2px solid ${T.blue}` : 'none',
+                  borderBottom: activeTab === tab ? `2px solid ${T.green}` : 'none',
                   fontFamily: T.sans,
                   transition: 'all 0.2s',
                   textTransform: 'capitalize',
@@ -546,7 +694,7 @@ export function ToolCallDetailPane({
               {activeTab === 'report' && (
                 <motion.div key="report" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
                   <NavisReportViewer
-                    report={toolCall.navisReport || ''}
+                    report={findingsContent || toolCall.navisReport || ''}
                     isRunning={toolCall.status === 'executing' || toolCall.status === 'pending'}
                   />
                 </motion.div>

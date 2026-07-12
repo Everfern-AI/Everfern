@@ -121,6 +121,14 @@ export const createDecomposerNode = (
         }
       }
 
+      // Initialize .everfern/task_plan.md file
+      try {
+        const { initializeTaskPlan } = await import('../task-plan-helper');
+        await initializeTaskPlan(runner, decomposed, content);
+      } catch (tpErr) {
+        console.warn('[Decomposer] Failed to initialize task plan file:', tpErr);
+      }
+
       const result = {
         decomposedTask: decomposed,
         taskPhase: 'planning' as const,

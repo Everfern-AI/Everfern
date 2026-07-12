@@ -18,7 +18,7 @@ export interface VisionGroundingParams {
   dom?: string;
   /** Previous instructions for context */
   history?: string[];
-  /** API base URL (default: http://localhost:5000) */
+  /** API base URL (default: https://api.everfern.app) */
   apiBaseUrl?: string;
   /** Authentication token */
   token?: string;
@@ -56,7 +56,7 @@ export async function getEverFernCloudInstructionAndActions(
     );
   }
 
-  const apiBaseUrl = params.apiBaseUrl || 'http://localhost:5000';
+  const apiBaseUrl = params.apiBaseUrl || 'https://api.everfern.app';
   
   // Call /api/chat/completions which supports DOM context
   const response = await fetch(`${apiBaseUrl}/api/chat/completions`, {
@@ -126,7 +126,7 @@ export function isEverFernCloudClient(client: AIClient): boolean {
  * Example:
  * ```typescript
  * const pipeline = createVisionGroundingPipeline(client, {
- *   apiBaseUrl: 'http://localhost:5000',
+ *   apiBaseUrl: 'https://api.everfern.app',
  *   token: 'user-token'
  * });
  *

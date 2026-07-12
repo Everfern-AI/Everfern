@@ -431,6 +431,14 @@ export const createExecuteToolsNode = (
       console.warn('[ExecuteTools] Failed to clear rollback context:', ctxError);
     }
 
+    // Sync .everfern/task_plan.md checkboxes & progress
+    try {
+      const { syncTaskPlan } = await import('../task-plan-helper');
+      await syncTaskPlan(runner, missionTracker);
+    } catch (tpErr) {
+      console.warn('[ExecuteTools] Failed to sync task plan:', tpErr);
+    }
+
     return result;
     } catch (error) {
       // Clear rollback context even when execution fails to prevent stale state.

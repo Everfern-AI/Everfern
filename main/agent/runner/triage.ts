@@ -140,6 +140,31 @@ export function classifyIntentFast(userInput: string, history: any[] = []): Inte
 
   // Short affirmatives — inherit from history
   if (isShortAffirmative(normalized) && history.length > 0) {
+    const userMessages = history.filter((msg: any) =>
+      msg.role === 'user' || msg.type === 'human' || msg._getType?.() === 'human'
+    );
+    if (userMessages.length > 0) {
+      const prev = userMessages[userMessages.length - 1];
+      const prevContent = typeof prev.content === 'string'
+        ? prev.content
+        : Array.isArray(prev.content)
+          ? prev.content.filter((item: any) => item.type === 'text' || typeof item === 'string').map((item: any) => typeof item === 'string' ? item : item.text || '').join(' ')
+          : '';
+      
+      // Look up previous message in intentCache
+      for (const [key, value] of intentCache.entries()) {
+        if (key.startsWith(prevContent.trim() + ':')) {
+          return { intent: value.intent, confidence: 0.95, reasoning: 'Context inheritance' };
+        }
+      }
+
+      // If not in cache, fallback to heuristic classification of the previous message
+      const prevHeuristics = classifyIntentHeuristic(prevContent);
+      if (prevHeuristics && prevHeuristics.intent !== 'task' && prevHeuristics.confidence > 0.5) {
+        return { intent: prevHeuristics.intent, confidence: 0.95, reasoning: 'Context inheritance (heuristic fallback)' };
+      }
+    }
+
     const prev = extractPreviousIntent(history);
     if (prev) {
       return { intent: prev, confidence: 0.95, reasoning: 'Context inheritance: short affirmative' };
@@ -210,6 +235,39 @@ export async function classifyIntent(
     return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
   }
 
+  try {
+    const result = await classifyIntentAI(client, targetUserInput, history, workspaceRoot, operatorMode);
+    return cacheAndReturn(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[Triage] AI classification failed: ${msg}. Falling back to default task.`);
+    return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
+  }
+}
+
+export async function classifyIntentAI(
+  client: AIClient,
+  userInput: string,
+  history: any[] = [],
+  workspaceRoot?: string,
+  operatorMode?: boolean
+): Promise<IntentClassification> {
+  const normalized = normalizeMessages(history);
+
+  // Form response handling: extract prior message to preserve intent context
+  let targetUserInput = userInput;
+  if (userInput && userInput.startsWith('[Form Response]')) {
+    const userMsgs = normalized.filter(m => m.role === 'user');
+    const nonFormMsg = [...userMsgs].reverse().find(m => {
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return !content.startsWith('[Form Response]');
+    });
+    if (nonFormMsg) {
+      const contentStr = typeof nonFormMsg.content === 'string' ? nonFormMsg.content : JSON.stringify(nonFormMsg.content);
+      targetUserInput = contentStr;
+    }
+  }
+
   const historySnippet = normalized.slice(-5).map(m => {
     const role = (m.role || 'user').toUpperCase();
     let content = '';
@@ -224,12 +282,20 @@ export async function classifyIntent(
     return `[${role}]: ${content}`;
   }).join('\n');
 
-  try {
-    const soulContent = loadSoul(workspaceRoot);
-    const agentsContent = loadAgents(workspaceRoot);
-    const triageSystemPrompt = `${TRIAGE_SYSTEM_PROMPT}\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}`;
+  const soulContent = loadSoul(workspaceRoot);
+  const agentsContent = loadAgents(workspaceRoot);
+  const triageSystemPrompt = `${TRIAGE_SYSTEM_PROMPT}\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}`;
 
-    const response = await client.chat({
+  const isLocal = client?.isLocal?.();
+  const timeoutMs = isLocal ? 60000 : (process.env.VITEST ? 1500 : 5000);
+
+  let timerId: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error('Triage AI call timed out')), timeoutMs);
+  });
+
+  try {
+    const chatPromise = client.chat({
       messages: process.env.VITEST ? [
         { role: 'user', content: TRIAGE_USER_TEMPLATE(targetUserInput, historySnippet, !!operatorMode) },
         { role: 'system', content: triageSystemPrompt },
@@ -240,22 +306,28 @@ export async function classifyIntent(
       responseFormat: 'json',
       temperature: 0.2,
       maxTokens: 500,
-    }) as any;
+    });
+
+    const response = await Promise.race([chatPromise, timeoutPromise]) as any;
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
     const data = JSON.parse(content);
-    return cacheAndReturn({
+    return {
       intent: (data.intent || 'task') as IntentType,
       confidence: typeof data.confidence === 'number' ? data.confidence : 0.7,
       reasoning: data.reasoning || 'AI classification',
-    });
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[Triage] AI classification failed: ${msg}. Falling back to default task.`);
-    return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
+    console.warn(`[Triage] AI classification failed/timed out: ${msg}. Falling back to default task.`);
+    return classifyIntentFallback(userInput, history);
+  } finally {
+    if (timerId) {
+      clearTimeout(timerId);
+    }
   }
 }
 

@@ -553,6 +553,23 @@ export class AIClient {
     return false;
   }
 
+  isLocal(): boolean {
+    const provider = this.config.provider;
+    if (provider === 'ollama' || provider === 'lmstudio') {
+      return true;
+    }
+    const baseUrl = this.config.baseUrl || '';
+    if (
+      baseUrl.includes('localhost') ||
+      baseUrl.includes('127.0.0.1') ||
+      baseUrl.includes('0.0.0.0') ||
+      baseUrl.includes('::1')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   private assertProviderAuthReady(): void {
     if (this.config.provider === 'minimax' && !this.config.apiKey?.trim()) {
       throw new Error(
@@ -839,7 +856,7 @@ export class AIClient {
               const result = await this.everfernCloudVisionGrounding({
                 screenshot: imageUrl,
                 objective: textContent,
-                apiBaseUrl: 'http://localhost:5000',
+                apiBaseUrl: 'https://api.everfern.app',
                 token: this.config.apiKey
               });
 
@@ -2948,7 +2965,7 @@ export class AIClient {
       throw new Error(`everfernCloudVisionGrounding() only works with provider='everfern', got '${this.config.provider}'`);
     }
 
-    const { screenshot, objective, dom = '', history = [], apiBaseUrl = 'http://localhost:5000', token, onlyVision = false } = params;
+    const { screenshot, objective, dom = '', history = [], apiBaseUrl = 'https://api.everfern.app', token, onlyVision = false } = params;
 
     if (!screenshot) {
       throw new Error('screenshot is required');

@@ -44,8 +44,10 @@ Respond with JSON:
   "reasoning": "brief explanation"
 }`;
 
+    const isLocal = client?.isLocal?.();
+    const timeoutMs = isLocal ? 60000 : (process.env.VITEST ? 3000 : 10000);
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('isReadOnlyIntent timed out')), 10000)
+      setTimeout(() => reject(new Error('isReadOnlyIntent timed out')), timeoutMs)
     );
     const response = await Promise.race([
       client.chat({
