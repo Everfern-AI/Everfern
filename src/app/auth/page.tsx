@@ -24,7 +24,7 @@ const itemVariants: Variants = {
 };
 
 // Landing site base URL for the web app UI
-const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "http://localhost:3002";
+const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "https://everfern.app";
 // API base URL for authentication endpoints
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
 

@@ -1,7 +1,7 @@
 {
   "name": "desktop",
-  "version": "0.1.8",
-  "description": "EverFern — Your autonomous AI workplace agent.",
+  "version": "0.1.9",
+  "description": "EverFern — The AI agent that truly controls your system.",
   "author": "Everfern Community",
   "license": "MIT",
   "main": "dist-electron/main/main.js",
