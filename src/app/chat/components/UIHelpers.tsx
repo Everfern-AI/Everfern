@@ -135,6 +135,8 @@ const ContextTokenRing = ({
         };
     }, [isPinned]);
 
+    const isVisible = isHovered || isPinned;
+
     // Local diagnostics update loop (random walk values for premium live feedback)
     useEffect(() => {
         if (!isLocalModel || !isVisible) return;
@@ -186,7 +188,6 @@ const ContextTokenRing = ({
     const ringColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
     const bgColor = 'rgba(0,0,0,0.06)';
     const formattedMax = formatContextLimit(actualMax);
-    const isVisible = isHovered || isPinned;
 
     return (
         <div 

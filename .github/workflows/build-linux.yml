@@ -1,0 +1,140 @@
+name: Build Linux
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - 'codenrust/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # allow manual trigger from the Actions tab
+
+defaults:
+  run:
+    working-directory: apps/desktop # all steps run inside the desktop package
+
+jobs:
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64] # add arm64 later when ARM runners are available
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed for electron-builder version tag detection
+
+      # ── Node ──────────────────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      # ── System libraries required by native modules ────────────────────────
+      # @jitsi/robotjs   → libx11, libxtst, libpng, libxkbfile, xvfb
+      # uiohook-napi     → libx11, libxtst, libudev
+      # sharp            → libvips
+      # canvas           → libcairo, libpango, libjpeg, libgif
+      # better-sqlite3   → python3, build-essential
+      # electron-builder → rpm, dpkg, fakeroot (for .rpm / .deb targets)
+      - name: Install Linux system dependencies
+        working-directory: . # system packages don't need the sub-dir
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential \
+            python3 \
+            python3-pip \
+            libx11-dev \
+            libxext-dev \
+            libxtst-dev \
+            libxkbfile-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libudev-dev \
+            libpng-dev \
+            libvips-dev \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libjpeg-dev \
+            libgif-dev \
+            librsvg2-dev \
+            libatk1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libnss3-dev \
+            libdbus-1-dev \
+            libgbm-dev \
+            libdrm-dev \
+            xvfb \
+            rpm \
+            dpkg \
+            fakeroot
+
+      # ── Install npm dependencies ───────────────────────────────────────────
+      - name: Install npm dependencies
+        run: npm ci
+
+      # ── Rebuild native modules for the exact Electron ABI ─────────────────
+      # Uses bash so the $(node -e ...) subshell resolves correctly.
+      # @electron/rebuild is more reliable than npm rebuild for CI.
+      - name: Rebuild native modules for Electron
+        shell: bash
+        run: |
+          ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
+          echo "Rebuilding native modules for Electron v${ELECTRON_VERSION}"
+          npx @electron/rebuild \
+            --version "${ELECTRON_VERSION}" \
+            --module-dir . \
+            --types prod,dev \
+            --parallel
+
+      # ── Build Next.js frontend ─────────────────────────────────────────────
+      - name: Build Next.js
+        run: npm run build:next
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      # ── Compile Electron TypeScript ────────────────────────────────────────
+      - name: Compile Electron TypeScript
+        run: npm run build:electron-ts
+
+      # ── Package Linux builds ───────────────────────────────────────────────
+      # Publish to GitHub Releases only on version tags.
+      # Branch pushes and PRs build the artifacts without publishing.
+      - name: Package Linux (AppImage, deb, rpm)
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "Version tag detected — publishing release"
+            npx electron-builder --linux --publish always
+          else
+            echo "Non-tag push — building artifacts without publishing"
+            npx electron-builder --linux --publish never
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Upload artifacts ───────────────────────────────────────────────────
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EverFern-Linux-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm
+            apps/desktop/release/latest-linux*.yml
+          if-no-files-found: error
+          retention-days: 14
