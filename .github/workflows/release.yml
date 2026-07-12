@@ -27,6 +27,35 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: brew install vips
 
+      - name: Install Linux Dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            pkg-config \
+            libvips-dev \
+            libcairo2-dev \
+            libpango1.0-dev \
+            librsvg2-dev \
+            libpixman-1-dev \
+            libgif-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libx11-dev \
+            libxtst-dev \
+            libxkbfile-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxss-dev \
+            build-essential \
+            python3 \
+            python3-is-python \
+            make \
+            g++
+
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+
       - name: Install Node Modules
         run: npm install
 

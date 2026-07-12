@@ -17,7 +17,7 @@
     "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
     "build:macos": "npm run build:next && npm run build:electron-ts && electron-builder --macos",
     "build": "npm run build:next && npm run build:electron-ts && electron-builder",
-    "rebuild:electron": "cross-env npm_config_runtime=electron npm_config_target=$(node -e \"process.stdout.write(require('./node_modules/electron/package.json').version)\") npm_config_disturl=https://electronjs.org/headers npm rebuild better-sqlite3 sqlite-vec uiohook-napi @jitsi/robotjs sharp --build-from-source",
+    "rebuild:electron": "cross-env SHARP_IGNORE_GLOBAL_LIBVIPS=1 electron-rebuild -f",
     "start": "electron-forge start",
     "lint": "eslint",
     "test": "vitest",

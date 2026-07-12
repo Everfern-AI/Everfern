@@ -83,12 +83,7 @@ jobs:
       # libvips (inside @img/sharp-libvips-linux-x64) instead of system libvips.
       # This avoids the -I/glib-2.0 path resolution bug when building from source.
       - name: Rebuild native modules for Electron
-        env:
-          SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
-        run: |
-          ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
-          echo "Rebuilding native modules for Electron v$ELECTRON_VERSION"
-          ./node_modules/.bin/electron-rebuild -f -v "$ELECTRON_VERSION"
+        run: npm run rebuild:electron
 
       # ── 6. Build Next.js frontend ──────────────────────────────────────────
       - name: Build Next.js frontend
