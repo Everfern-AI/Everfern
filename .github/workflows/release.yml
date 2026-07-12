@@ -1,104 +1,47 @@
 name: Build and Release
-
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
-
-defaults:
-  run:
-    working-directory: apps/desktop
 
 jobs:
   release:
-    name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-
     strategy:
-      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Node.js 20
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: 'npm'
-          cache-dependency-path: apps/desktop/package-lock.json
 
-      # macOS: libvips required by sharp
-      - name: Install macOS dependencies
+      - name: Install macOS Dependencies
         if: matrix.os == 'macos-latest'
-        working-directory: .
         run: brew install vips
 
-      # Linux: all native module system libraries
-      - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
-        working-directory: .
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            build-essential python3 \
-            libx11-dev libxext-dev libxtst-dev libxkbfile-dev \
-            libxrandr-dev libxi-dev libudev-dev libpng-dev \
-            libvips-dev libcairo2-dev libpango1.0-dev libjpeg-dev \
-            libgif-dev librsvg2-dev libatk1.0-dev libgdk-pixbuf2.0-dev \
-            libgtk-3-dev libnss3-dev libdbus-1-dev libgbm-dev libdrm-dev \
-            xvfb rpm dpkg fakeroot
+      - name: Install Node Modules
+        run: npm install
 
-      - name: Install npm dependencies
-        run: npm ci
+      # Recompiles heavy binaries safely for the matching host architecture
+      - name: Compile Native Modules
+        run: npm run rebuild:electron
 
-      # bash shell ensures $(node -e ...) subshell works on all platforms
-      # (Windows PowerShell does not support $(...) expansion)
-      - name: Rebuild native modules for Electron
-        shell: bash
-        run: |
-          ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
-          echo "Rebuilding native modules for Electron v${ELECTRON_VERSION}"
-          npx @electron/rebuild \
-            --version "${ELECTRON_VERSION}" \
-            --module-dir . \
-            --types prod,dev \
-            --parallel
-
-      - name: Build Next.js
-        run: npm run build:next
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-
-      - name: Compile Electron TypeScript
-        run: npm run build:electron-ts
-
-      # Only publish to GitHub Releases on version tags
-      - name: Build and publish
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            npx electron-builder --publish always
-          else
-            npx electron-builder --publish never
-          fi
+      - name: Build and Publish
+        run: npm run build -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload build artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EverFern-${{ matrix.os }}
-          path: apps/desktop/release/*
+          name: Everfern-${{ matrix.os }}
+          path: release/*
           if-no-files-found: error
-          retention-days: 14

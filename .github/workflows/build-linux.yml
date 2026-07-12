@@ -1,140 +1,141 @@
 name: Build Linux
 
 on:
+  # Run on pushes to main or feature branches
   push:
-    tags:
-      - 'v*'
     branches:
       - main
       - 'codenrust/**'
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch: # allow manual trigger from the Actions tab
-
-defaults:
-  run:
-    working-directory: apps/desktop # all steps run inside the desktop package
+    # Also run on version tags → attaches artifacts to GitHub Releases
+    tags:
+      - 'v*'
+  # Allow manual triggers from the Actions tab
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload artifacts to GitHub Release'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   build-linux:
-    name: Build Linux (${{ matrix.arch }})
+    name: Build Linux (AppImage · deb · rpm)
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64] # add arm64 later when ARM runners are available
-
     steps:
-      # ── Checkout ──────────────────────────────────────────────────────────
+      # ── 1. Source ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # needed for electron-builder version tag detection
 
-      # ── Node ──────────────────────────────────────────────────────────────
-      - name: Set up Node.js 20
+      # ── 2. Node.js ─────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: 'npm'
-          cache-dependency-path: apps/desktop/package-lock.json
 
-      # ── System libraries required by native modules ────────────────────────
-      # @jitsi/robotjs   → libx11, libxtst, libpng, libxkbfile, xvfb
-      # uiohook-napi     → libx11, libxtst, libudev
-      # sharp            → libvips
-      # canvas           → libcairo, libpango, libjpeg, libgif
-      # better-sqlite3   → python3, build-essential
-      # electron-builder → rpm, dpkg, fakeroot (for .rpm / .deb targets)
+      # ── 3. System dependencies for native modules ──────────────────────────
+      # sharp  → libvips
+      # canvas → cairo, pango, librsvg
+      # uiohook-napi / robotjs → libxtst, libx11 (X11 input hooks)
+      # screenshot-desktop (legacy, still in node_modules) → xwd via xdotool
+      # electron-builder AppImage → fuse
       - name: Install Linux system dependencies
-        working-directory: . # system packages don't need the sub-dir
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
-            build-essential \
-            python3 \
-            python3-pip \
-            libx11-dev \
-            libxext-dev \
-            libxtst-dev \
-            libxkbfile-dev \
-            libxrandr-dev \
-            libxi-dev \
-            libudev-dev \
-            libpng-dev \
             libvips-dev \
             libcairo2-dev \
             libpango1.0-dev \
-            libjpeg-dev \
-            libgif-dev \
             librsvg2-dev \
-            libatk1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libgtk-3-dev \
-            libnss3-dev \
-            libdbus-1-dev \
-            libgbm-dev \
-            libdrm-dev \
-            xvfb \
-            rpm \
-            dpkg \
-            fakeroot
+            libpixman-1-dev \
+            libgif-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libx11-dev \
+            libxtst-dev \
+            libxkbfile-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxss-dev \
+            xdotool \
+            fuse \
+            libfuse2 \
+            python3 \
+            python3-pip \
+            build-essential \
+            gcc \
+            g++ \
+            make
 
-      # ── Install npm dependencies ───────────────────────────────────────────
-      - name: Install npm dependencies
-        run: npm ci
+      # ── 4. Install npm dependencies ────────────────────────────────────────
+      - name: Install Node modules
+        run: npm install
+        working-directory: apps/desktop
 
-      # ── Rebuild native modules for the exact Electron ABI ─────────────────
-      # Uses bash so the $(node -e ...) subshell resolves correctly.
-      # @electron/rebuild is more reliable than npm rebuild for CI.
+      # ── 5. Rebuild native modules against the correct Electron ABI ────────
+      # We resolve the Electron version dynamically so this never drifts.
+      # On Linux we use bash $() subshell — safe since we're always on ubuntu-latest.
       - name: Rebuild native modules for Electron
-        shell: bash
+        working-directory: apps/desktop
+        env:
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_runtime: electron
         run: |
           ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
-          echo "Rebuilding native modules for Electron v${ELECTRON_VERSION}"
-          npx @electron/rebuild \
-            --version "${ELECTRON_VERSION}" \
-            --module-dir . \
-            --types prod,dev \
-            --parallel
+          echo "Rebuilding for Electron $ELECTRON_VERSION"
+          npm_config_target=$ELECTRON_VERSION npm rebuild \
+            better-sqlite3 \
+            sqlite-vec \
+            uiohook-napi \
+            @jitsi/robotjs \
+            sharp \
+            canvas \
+            --build-from-source
 
-      # ── Build Next.js frontend ─────────────────────────────────────────────
-      - name: Build Next.js
+      # ── 6. Build Next.js frontend ──────────────────────────────────────────
+      - name: Build Next.js frontend
+        working-directory: apps/desktop
         run: npm run build:next
         env:
-          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_TELEMETRY_DISABLED: 1
 
-      # ── Compile Electron TypeScript ────────────────────────────────────────
+      # ── 7. Compile Electron TypeScript ─────────────────────────────────────
       - name: Compile Electron TypeScript
+        working-directory: apps/desktop
         run: npm run build:electron-ts
 
-      # ── Package Linux builds ───────────────────────────────────────────────
-      # Publish to GitHub Releases only on version tags.
-      # Branch pushes and PRs build the artifacts without publishing.
-      - name: Package Linux (AppImage, deb, rpm)
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "Version tag detected — publishing release"
-            npx electron-builder --linux --publish always
-          else
-            echo "Non-tag push — building artifacts without publishing"
-            npx electron-builder --linux --publish never
-          fi
+      # ── 8. Package with electron-builder ──────────────────────────────────
+      - name: Package — AppImage, deb, rpm
+        working-directory: apps/desktop
+        run: npx electron-builder --linux --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required for AppImage builds on CI
+          APPIMAGE_EXTRACT_AND_RUN: 1
 
-      # ── Upload artifacts ───────────────────────────────────────────────────
+      # ── 9. Upload build artifacts ──────────────────────────────────────────
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EverFern-Linux-${{ matrix.arch }}
+          name: EverFern-Linux-${{ github.sha }}
           path: |
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.rpm
-            apps/desktop/release/latest-linux*.yml
           if-no-files-found: error
           retention-days: 14
+
+      # ── 10. Attach to GitHub Release (tag pushes only) ─────────────────────
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
