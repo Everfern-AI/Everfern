@@ -32,15 +32,21 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # ── 3. System dependencies for native modules ───────────────────────
-      # sharp        → libvips
-      # canvas       → cairo, pango, librsvg
-      # uiohook-napi / @jitsi/robotjs → libxtst, libx11
-      # electron-builder AppImage → libfuse2
+      # ── 3. System dependencies ─────────────────────────────────────────────
+      # libglib2.0-dev  → glib-object.h (required by sharp / libvips headers)
+      # pkg-config      → resolves correct -I include paths for native builds
+      # libvips-dev     → sharp system libvips (fallback, we use bundled below)
+      # libcairo2-dev / libpango1.0-dev / librsvg2-dev → canvas module
+      # libx11-dev / libxtst-dev → uiohook-napi / @jitsi/robotjs (X11 input)
+      # libxkbfile-dev  → keyboard symbol lookup (robotjs)
+      # libfuse2        → electron-builder AppImage packaging (Ubuntu 22)
+      # libfuse2t64     → same but Ubuntu 24 renames the package
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
+            libglib2.0-dev \
+            pkg-config \
             libvips-dev \
             libcairo2-dev \
             libpango1.0-dev \
@@ -55,36 +61,34 @@ jobs:
             libxinerama-dev \
             libxrandr-dev \
             libxss-dev \
-            fuse \
-            libfuse2 \
-            python3 \
-            python3-pip \
             build-essential \
-            gcc \
-            g++ \
-            make
+            python3 \
+            python3-is-python \
+            make \
+            g++
+
+          # libfuse2 was renamed to libfuse2t64 on Ubuntu 24 — try both
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
-      # The repo root IS apps/desktop (no nested working-directory needed)
       - name: Install Node modules
         run: npm install
 
-      # ── 5. Rebuild native modules against the correct Electron ABI ─────────
+      # ── 5. Rebuild native modules for Electron ─────────────────────────────
+      # @electron/rebuild is in devDependencies and is the correct tool for this.
+      # It automatically discovers all native modules and rebuilds them against
+      # the right Electron ABI headers.
+      #
+      # SHARP_IGNORE_GLOBAL_LIBVIPS=1 → force sharp to use its own bundled
+      # libvips (inside @img/sharp-libvips-linux-x64) instead of system libvips.
+      # This avoids the -I/glib-2.0 path resolution bug when building from source.
       - name: Rebuild native modules for Electron
         env:
-          npm_config_disturl: https://electronjs.org/headers
-          npm_config_runtime: electron
+          SHARP_IGNORE_GLOBAL_LIBVIPS: '1'
         run: |
           ELECTRON_VERSION=$(node -e "process.stdout.write(require('./node_modules/electron/package.json').version)")
-          echo "Rebuilding native modules for Electron $ELECTRON_VERSION"
-          npm_config_target=$ELECTRON_VERSION npm rebuild \
-            better-sqlite3 \
-            sqlite-vec \
-            uiohook-napi \
-            @jitsi/robotjs \
-            sharp \
-            canvas \
-            --build-from-source
+          echo "Rebuilding native modules for Electron v$ELECTRON_VERSION"
+          ./node_modules/.bin/electron-rebuild -f -v "$ELECTRON_VERSION"
 
       # ── 6. Build Next.js frontend ──────────────────────────────────────────
       - name: Build Next.js frontend
@@ -97,14 +101,16 @@ jobs:
         run: npm run build:electron-ts
 
       # ── 8. Package with electron-builder ───────────────────────────────────
+      # APPIMAGE_EXTRACT_AND_RUN=1 is required on CI runners that don't have
+      # FUSE kernel support (GitHub Actions runs inside a container).
       - name: Package — AppImage, deb, rpm
         run: npx electron-builder --linux --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPIMAGE_EXTRACT_AND_RUN: 1
+          APPIMAGE_EXTRACT_AND_RUN: '1'
 
       # ── 9. Upload build artifacts ──────────────────────────────────────────
-      - name: Upload Linux build artifacts
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: EverFern-Linux-${{ github.sha }}
