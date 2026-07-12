@@ -148,6 +148,9 @@ export default function AuthPage() {
     const handleSignOut = () => {
         localStorage.removeItem(STORAGE_KEY);
         setSignedInUser(null);
+        if ((window as any).electronAPI?.saveConfig) {
+            (window as any).electronAPI.saveConfig({});
+        }
     };
 
     const handleContinueAsUser = async () => {

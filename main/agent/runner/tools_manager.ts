@@ -28,6 +28,7 @@ import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { createVisualClassificationSheetTool } from '../tools/visual-classification-sheet';
 import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/memory-graph';
 import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
+import { webFetchTool } from '../tools/webfetch';
 import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
 import * as os from 'os';
 
@@ -118,6 +119,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     memorySaveTool,
     memorySearchTool,
     webSearchTool,
+    webFetchTool,
     todoWriteTool,
     askUserTool,
     createAnalyzeImageTool(runner.client, runner),

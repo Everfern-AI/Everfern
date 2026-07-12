@@ -881,31 +881,16 @@ export default function SettingsPage({
     };
 
     useEffect(() => {
-        try {
-            const sessionStr = localStorage.getItem('everfern_cloud_session');
-            if (sessionStr) {
-                const session = JSON.parse(sessionStr);
-                if (session?.user) {
-                    setIsCloudUser(true);
-                    setCloudEmail(session.user?.email || '');
-                }
-            }
-        } catch (e) {}
-    }, []);
-
-    const handleSignOut = () => {
-        localStorage.removeItem('everfern_cloud_session');
-        localStorage.removeItem('everfern_auth_token');
-        router.push('/auth');
-    };
-
-    useEffect(() => {
-        if (!isCloudUser) return;
-        const fetchUsage = async () => {
+        const fetchCloudData = async () => {
             try {
                 const sessionStr = localStorage.getItem('everfern_cloud_session');
                 if (!sessionStr) return;
                 const session = JSON.parse(sessionStr);
+                if (!session?.user || !session?.accessToken) return;
+                
+                setIsCloudUser(true);
+                setCloudEmail(session.user?.email || '');
+                
                 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app').replace(/\/$/, '');
                 const res = await fetch(`${apiUrl}/api/user/me`, {
                     headers: { 'Authorization': `Bearer ${session.accessToken}` }
@@ -922,11 +907,22 @@ export default function SettingsPage({
                     dailyCostUsd: data.dailyCostUsd ?? 0,
                 });
             } catch (e) {
-                console.error('Failed to fetch cloud usage', e);
+                console.error('Failed to fetch cloud data', e);
             }
         };
-        fetchUsage();
-    }, [isCloudUser]);
+        fetchCloudData();
+        const interval = setInterval(fetchCloudData, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const handleSignOut = () => {
+        localStorage.removeItem('everfern_cloud_session');
+        localStorage.removeItem('everfern_auth_token');
+        if ((window as any).electronAPI?.saveConfig) {
+            (window as any).electronAPI.saveConfig({});
+        }
+        router.push('/auth');
+    };
 
     useEffect(() => {
         const fetchUsername = async () => {

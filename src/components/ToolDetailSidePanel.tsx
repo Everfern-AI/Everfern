@@ -107,6 +107,7 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
+  if (n.includes('web_fetch') || n.includes('fetch_url')) return ToolType.WEB_SEARCH;
   if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
@@ -137,6 +138,7 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n.includes('preview_live_url')) return { Icon: Globe, label: 'Live Preview' };
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return { Icon: Braces, label: 'MCP Registry' };
   if (n.includes('web_search') || n.includes('search')) return { Icon: Search, label: 'Web Search' };
+  if (n.includes('web_fetch') || n.includes('fetch_url')) return { Icon: Globe, label: 'Web Fetch' };
   if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('fern') || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return { Icon: Brain, label: 'Memory' };
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return { Icon: Globe, label: 'Browser' };
   if (n.includes('run_command') || n.includes('bash') || n.includes('terminal')) return { Icon: Terminal, label: 'Terminal' };

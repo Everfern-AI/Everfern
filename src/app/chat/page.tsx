@@ -52,6 +52,7 @@ import PermissionDialog from "../components/PermissionDialog";
 import DirectoryModal from '../components/DirectoryModal';
 import { FileExplorerView } from "../components/FileExplorerView";
 import { LoadingBreadcrumb, Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
+import { useTheme } from "@/components/ThemeProvider";
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import IntegrationSettings from '../../components/IntegrationSettings';
 
@@ -642,6 +643,55 @@ function EverFernCloudLimitNotice() {
     );
 }
 
+function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--color-border)',
+            width: '100%',
+            boxSizing: 'border-box',
+            backgroundColor: isDark ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+        }}>
+            <span style={{
+                fontSize: 14,
+                fontWeight: 400,
+                color: isDark ? '#e3e1d9' : '#4a4846',
+                fontFamily: 'var(--font-sans)',
+                letterSpacing: '-0.01em',
+            }}>
+                You are out of free <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted', cursor: 'default' }}>messages</span> until 12:00 AM
+            </span>
+            <button
+                type="button"
+                onClick={onUpgrade}
+                style={{
+                    backgroundColor: isDark ? '#ffffff' : '#111111',
+                    color: isDark ? '#111111' : '#ffffff',
+                    padding: '7px 18px',
+                    borderRadius: 8,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    flexShrink: 0,
+                    letterSpacing: '-0.01em',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+            >
+                Upgrade
+            </button>
+        </div>
+    );
+}
+
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
@@ -809,6 +859,46 @@ export default function ChatPage() {
     const [projects, setProjects] = useState<any[]>([]);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
     const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+    const { theme } = useTheme();
+    const [dailyUsed, setDailyUsed] = useState<number | null>(null);
+    const [dailyLimit, setDailyLimit] = useState<number | null>(null);
+    const [localLimitReached, setLocalLimitReached] = useState(false);
+
+    // Poll for EverFern Cloud usage
+    useEffect(() => {
+        const fetchUsage = async () => {
+            try {
+                const sessionStr = localStorage.getItem('everfern_cloud_session');
+                if (!sessionStr) return;
+                const session = JSON.parse(sessionStr);
+                if (!session?.accessToken) return;
+                const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
+                const userRes = await fetch(`${API_URL.replace(/\/$/, '')}/api/user/me`, {
+                    headers: { Authorization: `Bearer ${session.accessToken}` }
+                });
+                if (userRes.ok) {
+                    const userData = await userRes.json();
+                    if (userData.dailyUsed !== undefined) {
+                        setDailyUsed(userData.dailyUsed);
+                        if (userData.dailyLimit !== undefined && userData.dailyUsed < userData.dailyLimit) {
+                            setLocalLimitReached(false);
+                        }
+                    }
+                    if (userData.dailyLimit !== undefined) setDailyLimit(userData.dailyLimit);
+                }
+            } catch (e) {
+                console.error("Failed to fetch user cloud usage in ChatPage", e);
+            }
+        };
+        fetchUsage();
+        const interval = setInterval(fetchUsage, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Reset local limit when selected model changes
+    useEffect(() => {
+        setLocalLimitReached(false);
+    }, [selectedModel]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Computer Pane State
@@ -3996,6 +4086,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 const errorMessage = err instanceof Error ? err.message : String(err);
                 api?.removeStreamListeners?.();
                 const isLimitReached = /daily limit|daily_limit_reached|rate_limit_exceeded|used your daily/i.test(errorMessage);
+                if (isLimitReached) {
+                    setLocalLimitReached(true);
+                }
                 const finalToolCalls = persistableToolCalls(
                     liveToolCallsRef.current,
                     t => t.status === 'running' ? 'error' : undefined
@@ -4366,6 +4459,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
     };
 
     const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };
+    const isCloudModel = currentModel.providerType === 'everfern';
+    const isCloudUsageOver = isCloudModel && (
+        (dailyLimit !== null && dailyUsed !== null && dailyUsed >= dailyLimit) ||
+        localLimitReached
+    );
 
     // ── Model Selector ───────────────────────────────────────────────────────
     const renderModelSelector = (minimal = false) => (
@@ -5362,7 +5460,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 )}
 
                                                  {/* Progressive input container */}
-                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative" }}>
+                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "hidden" }}>
+                                                    {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                     {renderSubagentSpawnAttachment()}
                                                     {renderAttachmentStrip()}
                                                     <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
@@ -5382,8 +5481,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
                                                         {renderComposerLeftActions()}
                                                         {renderComposerRightActions(false)}
-                                                    </div>
-                                                </div>
+                                                     </div>
+                                                 </div>
 
                                                  {/* Quick prompt chips — hidden when a project is selected */}
                                                  {folderContexts.length === 0 && (
@@ -6004,7 +6103,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 />
                                             </div>
                                         )}
-                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: showPermissionModal ? "0 0 16px 16px" : 16, position: "relative", zIndex: 2, display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease" }}>
+                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "hidden" }}>
+                                            {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                             {/* Memory Preference Banner */}
                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                 <motion.div
