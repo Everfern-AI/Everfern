@@ -149,7 +149,7 @@ Include:
 - Consider implementation approach
 
 ### Security Issues
-Email security@everfern.app directly — do not open public issues.
+Email everfernsupport@gmail.com directly — do not open public issues.
 
 ## Key Architecture Notes
 
