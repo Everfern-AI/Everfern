@@ -105,3 +105,24 @@ Error: 429 You have used your daily limits. Your usage resets at midnight.
    https://newsdiscordbot.xyz/pricing
    Explore News.gg premium plans and features. Get access to advanced news f...
 ```
+
+## [2026-07-12] Web Search: "best news discord bot"
+* **Search Query**: `best news discord bot`
+* **Results Snippet**:
+```
+🔍 Found 5 result(s) for "best news discord bot" (showing top 5):
+
+1. **News.gg**
+   https://discord.com/discovery/applications/1051878285031788575
+   
+
+2. **MonitoRSS — Free Discord RSS Bot | Auto-Deliver News to Discord — MonitoRSS**
+   https://monitorss.xyz/
+   
+
+3. **Readybot: automatic Discord RSS & news bot**
+   https://readybot.io/
+   Connect news feeds, YouTube, Reddit, X (Twitter), Bluesky, Twitch & more to your Discord server using Readybot. Add Readybot to your community for free!
+
+4....
+```
