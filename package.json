@@ -2,7 +2,7 @@
   "name": "desktop",
   "version": "0.1.9",
   "description": "EverFern — The AI agent that truly controls your system.",
-  "author": "Everfern Community",
+  "author": "Everfern Community <everfernsupport@gmail.com>",
   "license": "MIT",
   "main": "dist-electron/main/main.js",
   "scripts": {
