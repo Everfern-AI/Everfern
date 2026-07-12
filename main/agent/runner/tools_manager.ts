@@ -127,7 +127,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     localPermissionTool,
     skillTool,
     createPresentFilesTool(runner),
-    ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator)] : []),
+    ...(runner.navisOrchestrator ? [createNavisTool(runner.navisOrchestrator, runner)] : []),
     allowFileDeleteTool,
     searchMcpRegistryTool,
     connectMcpServerTool,

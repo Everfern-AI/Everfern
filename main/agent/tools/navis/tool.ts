@@ -56,7 +56,7 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
   }
 }
 
-function writeFindingsFile(task: string, output: string) {
+function writeFindingsFile(task: string, output: string, workspaceDir?: string) {
   try {
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -71,7 +71,8 @@ Agent Status: Completed
 
 ${output}
 `;
-    const findingsPath = path.join(process.cwd(), 'findings.md');
+    const findingsDir = workspaceDir || process.cwd();
+    const findingsPath = path.join(findingsDir, 'findings.md');
     fs.writeFileSync(findingsPath, findingsContent, 'utf8');
     console.log(`[Navis Tool] Successfully wrote findings to ${findingsPath}`);
   } catch (e) {
@@ -79,7 +80,8 @@ ${output}
   }
 }
 
-export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
+export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): AgentTool {
+  const workspaceDir = runner?.workspaceDir;
   return {
     name: 'navis',
     description:
@@ -362,7 +364,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             if (extensionResult.success || !extensionResult.output.includes('[EXTENSION_FALLBACK_REQUIRED]')) {
               const executionTime = Date.now() - toolStartTime;
               console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
-              writeFindingsFile(task, extensionResult.output);
+              writeFindingsFile(task, extensionResult.output, workspaceDir);
               return {
                 success: extensionResult.success,
                 output: extensionResult.output,
@@ -371,7 +373,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
             }
 
             onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
-            writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'));
+            writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir);
             return {
               success: false,
               output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
@@ -416,7 +418,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator): AgentTool {
         console.log(`[Navis Tool] ✅ orchestrator.run() COMPLETED - Total execution time: ${executionTime}ms`);
         console.log(`[Navis Tool] ✅ NAVIS TOOL RETURNING RESULT TO MAIN AGENT - Success: ${result.success}, Steps: ${result.steps}`);
 
-        writeFindingsFile(task, result.output);
+        writeFindingsFile(task, result.output, workspaceDir);
 
         return {
           success: result.success,
