@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
 
+// PERF: Length threshold at which we fall back to hash-based keys to prevent memory bloat
+const MAX_INLINE_KEY_LENGTH = 2048;
+
 export interface CacheEntry {
   result: any;
   timestamp: number;
@@ -23,9 +26,13 @@ export class ToolCache {
   ]);
 
   private getCacheKey(toolName: string, args: any): string {
+    // PERF: Use direct string key instead of SHA-256 for in-memory cache.
+    // Only fall back to hash for very large args to prevent memory bloat.
     const serializedArgs = JSON.stringify(args || {});
-    const hash = createHash('sha256').update(serializedArgs).digest('hex');
-    return `${toolName}:${hash}`;
+    if (serializedArgs.length > MAX_INLINE_KEY_LENGTH) {
+      return `${toolName}:${createHash('md5').update(serializedArgs).digest('hex')}`;
+    }
+    return `${toolName}:${serializedArgs}`;
   }
 
   public get(toolName: string, args: any): any | null {
@@ -56,7 +63,11 @@ export class ToolCache {
     // If it's a modifying action, invalidate cache before proceeding
     if (this.modifyingTools.has(toolName) || toolName.includes('write') || toolName.includes('replace') || toolName.includes('delete') || toolName.includes('create')) {
       this.invalidate();
+      return null; // PERF: Modifying tools are never cached, skip key computation
     }
+    
+    // PERF: Only compute cache key for cacheable (read-only) tools
+    if (!this.readOnlyTools.has(toolName)) return null;
     
     return this.get(toolName, args);
   }

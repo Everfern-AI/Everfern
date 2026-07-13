@@ -1,4 +1,7 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getActiveFilesFromHistory, getWorkspaceProjection } from '../workspace-projection';
 import { SystemMessage, AIMessage } from '@langchain/core/messages';
 import { AIClient, ChatMessage, ChatRequest, ToolDefinition } from '../../../lib/ai-client';
 import { GraphStateType, StreamEvent } from '../state';
@@ -443,6 +446,67 @@ export async function runAgentStep(
       console.log(`[AgentRuntime] 🎭 Injected SOUL.md personality into ${nodeName} step`);
     } catch (soulErr) {
       console.warn('[AgentRuntime] Failed to inject SOUL.md:', soulErr);
+    }
+
+    // Inject recent findings from findings.md for agent consumption across all specialized agent steps
+    try {
+      const workspaceRoot = runner.workspaceDir;
+      const findingsPath = workspaceRoot ? path.join(workspaceRoot, 'findings.md') : null;
+      if (findingsPath && fs.existsSync(findingsPath)) {
+        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
+        if (findingsContent && findingsContent.length > 0) {
+          let systemMsg = normalizedMessages.find(m => m.role === 'system');
+          if (!systemMsg) {
+            systemMsg = { role: 'system', content: '' };
+            normalizedMessages.unshift(systemMsg);
+          }
+          if (typeof systemMsg.content === 'string') {
+            if (!systemMsg.content.includes('RECENT RESEARCH FINDINGS')) {
+              systemMsg.content += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
+              console.log(`[AgentRuntime] 📄 Injected findings.md context into ${nodeName} system prompt`);
+            }
+          }
+        }
+      }
+    } catch (findingsErr) {
+      console.warn('[AgentRuntime] Failed to inject findings:', findingsErr);
+    }
+
+    // Inject Dynamic Workspace State Projection (DWSP) context
+    try {
+      const workspaceRoot = runner.workspaceDir;
+      if (workspaceRoot && fs.existsSync(workspaceRoot)) {
+        const activeFiles = getActiveFilesFromHistory(state.toolCallRecords || state.toolCallHistory || []);
+        const projection = await getWorkspaceProjection(workspaceRoot, activeFiles);
+        
+        let systemMsg = normalizedMessages.find(m => m.role === 'system');
+        if (!systemMsg) {
+          systemMsg = { role: 'system', content: '' };
+          normalizedMessages.unshift(systemMsg);
+        }
+        
+        if (typeof systemMsg.content === 'string') {
+          if (!systemMsg.content.includes('DYNAMIC WORKSPACE PROJECTION')) {
+            const projectionContext = `
+\n## DYNAMIC WORKSPACE PROJECTION (DWSP)
+Below is the real-time state of your active workspace. Use this to maintain situational awareness.
+
+### Workspace Environment
+${projection.environmentInfo}
+
+### Active Git Modifications
+${projection.gitStatus}
+
+### Active File Dependency Graph
+${projection.activeDependencies}
+\n`;
+            systemMsg.content += projectionContext;
+            console.log(`[AgentRuntime] 🧠 Injected DWSP context projection into ${nodeName} system prompt`);
+          }
+        }
+      }
+    } catch (projectionErr) {
+      console.warn('[AgentRuntime] Failed to inject workspace projection:', projectionErr);
     }
 
     let thoughtBuffer = '';

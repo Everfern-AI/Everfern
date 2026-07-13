@@ -135,6 +135,108 @@ export function registerSystemHandlers() {
     return app.getVersion();
   });
 
+  ipcMain.handle('system:detect-hardware', async () => {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    const ramGB = os.totalmem() / (1024 * 1024 * 1024);
+    let gpuName = 'Unknown GPU';
+    let vramGB = 0;
+    let isNvidia = false;
+    let isAppleSilicon = false;
+
+    try {
+      if (process.platform === 'win32') {
+        const { stdout } = await execAsync('wmic path Win32_VideoController get AdapterRAM,Name /format:list');
+        const lines = stdout.split('\n');
+        let currentVram = 0;
+        let currentName = '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('AdapterRAM=')) {
+            const bytes = parseInt(trimmed.substring(11), 10);
+            if (!isNaN(bytes)) {
+              currentVram = Math.max(0, bytes / (1024 * 1024 * 1024));
+            }
+          } else if (trimmed.startsWith('Name=')) {
+            currentName = trimmed.substring(5).trim();
+          }
+          if (currentName) {
+            if (currentVram > vramGB || !gpuName || gpuName === 'Unknown GPU') {
+              vramGB = currentVram;
+              gpuName = currentName;
+              isNvidia = currentName.toLowerCase().includes('nvidia') || currentName.toLowerCase().includes('rtx') || currentName.toLowerCase().includes('gtx');
+            }
+          }
+        }
+      } else if (process.platform === 'darwin') {
+        const { stdout } = await execAsync('system_profiler SPDisplaysDataType');
+        isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
+        
+        const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
+        if (chipsetMatch) {
+          gpuName = chipsetMatch[1].trim();
+        } else {
+          gpuName = isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac';
+        }
+
+        if (isAppleSilicon) {
+          // Unified memory: 75% of total RAM is available as VRAM for Ollama
+          vramGB = ramGB * 0.75;
+        } else {
+          const vramMatch = stdout.match(/VRAM \(Total\):\s*(\d+)\s*(MB|GB)/i) || stdout.match(/VRAM:\s*(\d+)\s*(MB|GB)/i);
+          if (vramMatch) {
+            const val = parseInt(vramMatch[1], 10);
+            const unit = vramMatch[2].toUpperCase();
+            vramGB = unit === 'GB' ? val : val / 1024;
+          }
+        }
+      } else if (process.platform === 'linux') {
+        try {
+          const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits');
+          const parts = stdout.trim().split(',');
+          if (parts.length >= 2) {
+            gpuName = parts[0].trim();
+            const mb = parseInt(parts[1].trim(), 10);
+            vramGB = mb / 1024;
+            isNvidia = true;
+          }
+        } catch {
+          // AMD / Generic DRM info
+          try {
+            const drmDir = '/sys/class/drm';
+            if (fs.existsSync(drmDir)) {
+              const cards = fs.readdirSync(drmDir).filter(f => f.startsWith('card') && !f.includes('-'));
+              for (const card of cards) {
+                const memPath = path.join(drmDir, card, 'device/mem_info_vram_total');
+                if (fs.existsSync(memPath)) {
+                  const bytesStr = fs.readFileSync(memPath, 'utf8').trim();
+                  const bytes = parseInt(bytesStr, 10);
+                  if (!isNaN(bytes)) {
+                    vramGB = bytes / (1024 * 1024 * 1024);
+                    gpuName = 'AMD/Generic GPU';
+                    break;
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      console.error('[HardwareDetection] Failed to detect GPU:', e);
+    }
+
+    return {
+      ramGB: Math.round(ramGB * 10) / 10,
+      gpuName,
+      vramGB: Math.round(vramGB * 10) / 10,
+      isNvidia,
+      isAppleSilicon,
+    };
+  });
+
   ipcMain.handle('system:check-for-updates', async () => {
     try {
       const { autoUpdater } = require('electron-updater');
@@ -398,6 +500,33 @@ export function registerSystemHandlers() {
 
       proc.on('close', (code: number) => resolve({ success: code === 0 || code === null, code }));
     });
+  });
+  ipcMain.handle('system:open-terminal-installer', async (event, action: 'install-all' | 'pull-model') => {
+    const { exec } = require('child_process');
+    const isWin = process.platform === 'win32';
+    if (isWin) {
+      if (action === 'install-all') {
+        exec('start cmd.exe /k "echo ==================================================== && echo DOWNLOADING AND INSTALLING OLLAMA... && echo ==================================================== && powershell -NoProfile -ExecutionPolicy Bypass -Command \\"irm https://ollama.com/install.ps1 | Invoke-Expression\\" && echo ==================================================== && echo PULLING QWEN3-VL:2B VISION MODEL... && echo ==================================================== && ollama pull qwen3-vl:2b && echo ==================================================== && echo Installation completed! You can close this window now. && pause"');
+      } else {
+        exec('start cmd.exe /k "echo ==================================================== && echo PULLING QWEN3-VL:2B VISION MODEL... && echo ==================================================== && ollama pull qwen3-vl:2b && echo ==================================================== && echo Completed! You can close this window now. && pause"');
+      }
+    } else {
+      const isMac = process.platform === 'darwin';
+      if (isMac) {
+        if (action === 'install-all') {
+          exec(`osascript -e 'tell app "Terminal" to do script "curl -fsSL https://ollama.com/install.sh | sh && ollama pull qwen3-vl:2b"'`);
+        } else {
+          exec(`osascript -e 'tell app "Terminal" to do script "ollama pull qwen3-vl:2b"'`);
+        }
+      } else {
+        if (action === 'install-all') {
+          exec(`x-terminal-emulator -e "curl -fsSL https://ollama.com/install.sh | sh && ollama pull qwen3-vl:2b"`);
+        } else {
+          exec(`x-terminal-emulator -e "ollama pull qwen3-vl:2b"`);
+        }
+      }
+    }
+    return { success: true };
   });
 
   ipcMain.handle('memory:save-direct', async (_event, content: string, metadata?: string) => {

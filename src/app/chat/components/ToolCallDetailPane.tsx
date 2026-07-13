@@ -447,8 +447,8 @@ export function ToolCallDetailPane({
   onClose: () => void;
 }) {
   const isNavis = toolCall.toolName === 'navis' || toolCall.toolName?.toLowerCase().includes('navis');
-  const defaultTab = isNavis ? 'report' : 'input';
-  const [activeTab, setActiveTab] = useState<'report' | 'input' | 'output' | 'timeline'>(defaultTab as any);
+  const defaultTab = isNavis ? 'findings' : 'input';
+  const [activeTab, setActiveTab] = useState<'findings' | 'input' | 'output' | 'timeline'>(defaultTab as any);
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
   const toolNameLower = toolCall.toolName.toLowerCase();
   const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
@@ -469,13 +469,18 @@ export function ToolCallDetailPane({
 
         // 1. Get candidate paths from toolCall arguments
         const args = toolCall.arguments || (toolCall as any).args || {};
+        const result = toolCall.result || {};
+        const resultData = result.data || {};
         const candidateValues = [
+          args.Cwd,
           args.cwd,
           args.path,
           args.filePath,
           args.file,
           args.TargetFile,
           args.DirectoryPath,
+          resultData.path,
+          resultData.cwd,
         ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
 
         // 2. Fetch projects list
@@ -493,18 +498,62 @@ export function ToolCallDetailPane({
           }
         }
 
+        // If not matched in registered projects, try using candidate values directly if they are absolute paths
+        if (!projectPath) {
+          for (const value of candidateValues) {
+            if (/^[a-zA-Z]:[\\/]/i.test(value) || value.startsWith('/')) {
+              const normalizedVal = value.replace(/\\/g, '/');
+              const lastSlash = normalizedVal.lastIndexOf('/');
+              const filename = normalizedVal.slice(lastSlash + 1);
+              if (filename.includes('.')) {
+                projectPath = normalizedVal.slice(0, lastSlash);
+              } else {
+                projectPath = normalizedVal;
+              }
+              break;
+            }
+          }
+        }
+
         if (!projectPath && projects[0]?.path) {
           projectPath = projects[0].path;
         }
 
+        let content: string | null = null;
         if (projectPath) {
-          const content = await api.projects.readFile(projectPath, 'findings.md');
-          if (isMounted && content !== null) {
+          content = await api.projects.readFile(projectPath, 'findings.md');
+        }
+
+        // 4. Try default .everfern home directory as last fallback
+        if (content === null) {
+          try {
+            const docPath = await api.projects.getDefaultPath();
+            if (docPath) {
+              const normalizedDoc = docPath.replace(/\\/g, '/');
+              const parts = normalizedDoc.split('/');
+              const docIdx = parts.findIndex((p: string) => p.toLowerCase() === 'documents');
+              if (docIdx !== -1) {
+                const defaultEverfernPath = parts.slice(0, docIdx).join('/') + '/.everfern';
+                content = await api.projects.readFile(defaultEverfernPath, 'findings.md');
+              }
+            }
+          } catch (e) {
+            console.error('Failed to read findings from home directory fallback:', e);
+          }
+        }
+
+        if (isMounted) {
+          if (content !== null) {
             setFindingsContent(content);
+          } else {
+            setFindingsContent('Could not find findings.md for this task.');
           }
         }
       } catch (err) {
         console.error('Error reading findings.md in ToolCallDetailPane:', err);
+        if (isMounted) {
+          setFindingsContent('Could not find findings.md for this task.');
+        }
       }
     };
 
@@ -514,7 +563,7 @@ export function ToolCallDetailPane({
     const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
     let intervalId: any;
     if (isRunning) {
-      intervalId = setInterval(readFindings, 1000);
+      intervalId = setInterval(readFindings, 250);
     }
 
     return () => {
@@ -661,7 +710,7 @@ export function ToolCallDetailPane({
               gap: 0,
             }}
           >
-            {(isNavis ? ['report', 'input', 'output', 'timeline'] : ['input', 'output', 'timeline']).map((tab) => (
+            {(isNavis ? ['findings', 'input', 'output', 'timeline'] : ['input', 'output', 'timeline']).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -682,19 +731,19 @@ export function ToolCallDetailPane({
                   gap: 5,
                 }}
               >
-                {tab === 'report' && <FileText size={11} />}
+                {tab === 'findings' && <FileText size={11} />}
                 {tab}
               </button>
             ))}
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: activeTab === 'report' ? 'hidden' : 'auto', padding: activeTab === 'report' ? 0 : '22px 26px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: activeTab === 'findings' ? 'hidden' : 'auto', padding: activeTab === 'findings' ? 0 : '22px 26px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <AnimatePresence mode="wait">
-              {activeTab === 'report' && (
-                <motion.div key="report" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+              {activeTab === 'findings' && (
+                <motion.div key="findings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
                   <NavisReportViewer
-                    report={findingsContent || toolCall.navisReport || ''}
+                    report={findingsContent}
                     isRunning={toolCall.status === 'executing' || toolCall.status === 'pending'}
                   />
                 </motion.div>

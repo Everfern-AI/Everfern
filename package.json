@@ -99,7 +99,11 @@
         "dmg",
         "zip"
       ],
-      "icon": "public/images/logos/everfern.icns"
+      "icon": "public/images/logos/everfern.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
     "win": {
       "target": [

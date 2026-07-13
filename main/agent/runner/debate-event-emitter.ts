@@ -38,6 +38,10 @@ export class DebateEventEmitter {
    */
   static broadcastDebateEvent(debateEvent: DebateStreamEvent) {
     console.log('[DebateEventEmitter] Broadcasting debate event:', debateEvent.type);
+    if (typeof BrowserWindow === 'undefined' || !BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') {
+      console.warn('[DebateEventEmitter] BrowserWindow is not available (running in non-Electron context). Skipping broadcast.');
+      return;
+    }
     const windows = BrowserWindow.getAllWindows();
     for (const win of windows) {
       try {

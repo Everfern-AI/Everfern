@@ -893,7 +893,7 @@ function NavisView({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
-  const [activeTab, setActiveTab] = useState<'report' | 'screenshots'>('report');
+  const [activeTab, setActiveTab] = useState<'findings' | 'screenshots'>('findings');
 
   const [findingsContent, setFindingsContent] = useState<string>('');
 
@@ -935,12 +935,23 @@ function NavisView({
 
         if (projectPath) {
           const content = await api.projects.readFile(projectPath, 'findings.md');
-          if (isMounted && content !== null) {
-            setFindingsContent(content);
+          if (isMounted) {
+            if (content !== null) {
+              setFindingsContent(content);
+            } else {
+              setFindingsContent('Could not find findings.md for this task.');
+            }
+          }
+        } else {
+          if (isMounted) {
+            setFindingsContent('Could not find findings.md for this task.');
           }
         }
       } catch (err) {
         console.error('Error reading findings.md in NavisView:', err);
+        if (isMounted) {
+          setFindingsContent('Could not find findings.md for this task.');
+        }
       }
     };
 
@@ -1001,21 +1012,21 @@ function NavisView({
       boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
     }}>
       <button
-        onClick={() => setActiveTab('report')}
+        onClick={() => setActiveTab('findings')}
         style={{
           padding: '6px 16px',
           borderRadius: T.r8,
           fontSize: 12,
-          fontWeight: activeTab === 'report' ? 600 : 500,
-          color: activeTab === 'report' ? T.text : T.textSecondary,
-          background: activeTab === 'report' ? T.surface : 'transparent',
+          fontWeight: activeTab === 'findings' ? 600 : 500,
+          color: activeTab === 'findings' ? T.text : T.textSecondary,
+          background: activeTab === 'findings' ? T.surface : 'transparent',
           border: 'none',
-          boxShadow: activeTab === 'report' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          boxShadow: activeTab === 'findings' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
           cursor: 'pointer',
           transition: 'all 0.15s ease',
         }}
       >
-        Live Report
+        Findings
       </button>
       <button
         onClick={() => setActiveTab('screenshots')}
@@ -1037,10 +1048,10 @@ function NavisView({
     </div>
   );
 
-  if (activeTab === 'report') {
+  if (activeTab === 'findings') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <SectionLabel>Live Execution Report</SectionLabel>
+        <SectionLabel>findings.md</SectionLabel>
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
           {renderTabs()}
           <div style={{
@@ -1052,7 +1063,7 @@ function NavisView({
             flex: 1,
           }}>
             <NavisReportViewer
-              report={findingsContent || navisReport || ''}
+              report={findingsContent}
               isRunning={toolCall?.status === 'executing' || toolCall?.status === 'pending'}
             />
           </div>

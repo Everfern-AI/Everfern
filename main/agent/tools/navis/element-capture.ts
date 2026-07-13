@@ -810,6 +810,14 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
                   isObscured = false;
                 }
               }
+              // If they share a common clickable container, they are not obscured
+              if (isObscured) {
+                const clickableEl = el.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea');
+                const clickableTop = topEl.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea');
+                if (clickableEl && clickableTop && (clickableEl === clickableTop || clickableEl.contains(clickableTop) || clickableTop.contains(clickableEl))) {
+                  isObscured = false;
+                }
+              }
               if (isObscured) {
                 continue;
               }

@@ -1357,7 +1357,7 @@ export default function ChatPage() {
     const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
 
     // Voice state
-    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | null>(null);
+    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | "local" | null>(null);
     const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
     const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
 
@@ -1833,6 +1833,8 @@ export default function ChatPage() {
     const audioStreamRef = useRef<MediaStream | null>(null);
     const voiceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
+    const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(15));
+    const animationFrameRef = useRef<number | null>(null);
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
     const isHandlingPlanRef = useRef(false);
@@ -4554,7 +4556,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
           };
         }
         else if (config?.vlm) { updated.vlm = config.vlm; }
-        if (voiceProvider && (voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
+        if (voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
         // Embedding config
         updated.embedding = { provider: embeddingProvider, model: embeddingModel, apiKey: embeddingApiKey };
         setConfig(updated);
@@ -5095,10 +5097,43 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 const audioChunks: BlobPart[] = [];
                 mediaRecorderRef.current = mediaRecorder;
                 audioStreamRef.current = stream;
+                
+                // Web Audio API Analyser setup
+                const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                const audioContext = new AudioContextClass();
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 64;
+                analyser.smoothingTimeConstant = 0.4; // Responsive real-time reactivity!
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const updateLevels = () => {
+                    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+                    analyser.getByteFrequencyData(dataArray);
+                    const levels = Array.from({ length: 20 }, (_, idx) => {
+                        const dataIdx = Math.floor((idx / 20) * dataArray.length);
+                        const val = dataArray[dataIdx] || 0;
+                        // Map 0-255 to a clean bar height between 15px and 90px
+                        return Math.max(15, (val / 255) * 75 + 15);
+                    });
+                    setAudioLevels(levels);
+                    animationFrameRef.current = requestAnimationFrame(updateLevels);
+                };
+                animationFrameRef.current = requestAnimationFrame(updateLevels);
+
                 mediaRecorder.ondataavailable = (event) => { audioChunks.push(event.data); };
                 mediaRecorder.onstop = async () => {
+                    if (animationFrameRef.current) {
+                        cancelAnimationFrame(animationFrameRef.current);
+                        animationFrameRef.current = null;
+                    }
+                    setAudioLevels(new Array(20).fill(15));
+                    audioContext.close().catch(() => {});
+
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const arrayBuffer = await audioBlob.arrayBuffer();
+                    
                     if (voiceProvider === "deepgram" && voiceDeepgramKey) {
                         try {
                             const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', { method: 'POST', headers: { 'Authorization': `Token ${voiceDeepgramKey}`, 'Content-Type': 'audio/webm' }, body: arrayBuffer });
@@ -5113,6 +5148,45 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             }
                             else { setVoiceTranscript("Failed to transcribe audio"); }
                         } catch (error) { setVoiceTranscript("Error transcribing audio"); }
+                    } else if (voiceProvider === "local") {
+                        try {
+                            // Convert arrayBuffer to Base64 in standard way
+                            const uint8Array = new Uint8Array(arrayBuffer);
+                            let binary = '';
+                            const len = uint8Array.byteLength;
+                            for (let i = 0; i < len; i++) {
+                                binary += String.fromCharCode(uint8Array[i]);
+                            }
+                            const base64Audio = window.btoa(binary);
+
+                            const response = await fetch('http://localhost:11434/api/generate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    model: 'dimavz/whisper-tiny',
+                                    prompt: 'transcribe',
+                                    images: [base64Audio],
+                                    stream: false
+                                })
+                            });
+                            if (response.ok) {
+                                const result = await response.json();
+                                const transcript = (result.response || result.message?.content || '').trim();
+                                setVoiceTranscript(transcript);
+                                setInputValue(transcript);
+                                if (transcript.trim()) {
+                                    handleSend(transcript);
+                                }
+                            } else {
+                                if (response.status === 404) {
+                                    setVoiceTranscript("Model dimavz/whisper-tiny not found. Run 'ollama run dimavz/whisper-tiny' in terminal.");
+                                } else {
+                                    setVoiceTranscript("Failed to transcribe audio locally");
+                                }
+                            }
+                        } catch (error) {
+                            setVoiceTranscript("Ollama not running. Make sure to run 'ollama run dimavz/whisper-tiny' in terminal.");
+                        }
                     }
                     stream.getTracks().forEach(track => track.stop());
                     setVoiceLoading(false);
@@ -5128,6 +5202,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
             if (audioStreamRef.current) audioStreamRef.current.getTracks().forEach(track => track.stop());
             if (voiceTimeoutRef.current) { clearTimeout(voiceTimeoutRef.current); voiceTimeoutRef.current = null; }
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+            setAudioLevels(new Array(20).fill(15));
         }
     }, [isRecording, voiceProvider, voiceDeepgramKey, handleSend]);
 
@@ -5191,6 +5270,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     voiceProvider={voiceProvider}
                     voiceDeepgramKey={voiceDeepgramKey}
                     voiceElevenlabsKey={voiceElevenlabsKey}
+                    audioLevels={audioLevels}
                 />
             <Sidebar
                 isOpen={sidebarOpen}
@@ -5460,7 +5540,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 )}
 
                                                  {/* Progressive input container */}
-                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "hidden" }}>
+                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
                                                     {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                     {renderSubagentSpawnAttachment()}
                                                     {renderAttachmentStrip()}
@@ -6103,7 +6183,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 />
                                             </div>
                                         )}
-                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "hidden" }}>
+                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
                                             {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                             {/* Memory Preference Banner */}
                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (

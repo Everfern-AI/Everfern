@@ -32,6 +32,7 @@ interface ConversationSummary {
 }
 
 export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick, titlebarInset = 0 }: SidebarProps) {
+    const [isMac, setIsMac] = useState(false);
     const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
     const [username, setUsername] = useState<string>("User");
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -41,6 +42,20 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
     const [dailyCostUsd, setDailyCostUsd] = useState<number | null>(null);
     const { theme } = useTheme();
+
+    useEffect(() => {
+        const detectPlatform = async () => {
+            if ((window as any).electronAPI?.system?.getPlatform) {
+                const platform = await (window as any).electronAPI.system.getPlatform();
+                if (platform === 'darwin') {
+                    setIsMac(true);
+                }
+            } else if (navigator.userAgent.includes('Mac')) {
+                setIsMac(true);
+            }
+        };
+        detectPlatform();
+    }, []);
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -155,10 +170,12 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
         >
             {/* Top Control Bar - Toggle + Account */}
             <div style={{
-                height: 48 + titlebarInset,
+                height: isMac ? (isOpen ? 48 + titlebarInset : 80 + titlebarInset) : 48 + titlebarInset,
                 display: "flex",
-                alignItems: "center",
-                padding: `${titlebarInset}px 16px 0`,
+                alignItems: isMac && !isOpen ? "flex-end" : "center",
+                padding: isMac 
+                    ? `${titlebarInset}px ${isOpen ? 16 : 16}px ${isMac && !isOpen ? 12 : 0}px ${isOpen ? 76 : 16}px`
+                    : `${titlebarInset}px 16px 0`,
                 justifyContent: isOpen ? "space-between" : "center",
                 flexShrink: 0,
                 WebkitAppRegion: "drag",

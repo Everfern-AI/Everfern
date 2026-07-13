@@ -274,8 +274,13 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
         }
       }, 5000);
 
+      let extensionPath = path.normalize(sqliteVec.getLoadablePath());
+      if (extensionPath.includes('app.asar')) {
+        extensionPath = extensionPath.replace('app.asar', 'app.asar.unpacked');
+      }
+
       try {
-        db.loadExtension(sqliteVec.getLoadablePath(), (extErr) => {
+        db.loadExtension(extensionPath, (extErr) => {
           if (extLoaded) return; // timed out already
           clearTimeout(extTimeout);
           extLoaded = true;
