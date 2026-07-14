@@ -156,11 +156,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Voice Overlay ────────────────────────────────────────────────
   voiceOverlay: {
-    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' }) => void) => {
+    onStateChange: (cb: (data: any) => void) => {
       ipcRenderer.on('voice-overlay:state', (_e, data) => cb(data));
     },
     removeListeners: () => {
       ipcRenderer.removeAllListeners('voice-overlay:state');
+      ipcRenderer.removeAllListeners('voice-overlay:audio-levels');
+      ipcRenderer.removeAllListeners('voice-overlay:answer-submitted');
+    },
+    sendAudioLevels: (levels: number[]) => {
+      ipcRenderer.send('voice-overlay:audio-levels', levels);
+    },
+    onAudioLevels: (cb: (levels: number[]) => void) => {
+      ipcRenderer.on('voice-overlay:audio-levels', (_e, levels) => cb(levels));
+    },
+    sendState: (state: any) => {
+      ipcRenderer.send('voice-overlay:set-state', state);
+    },
+    submitAnswer: (answers: any) => {
+      ipcRenderer.send('voice-overlay:submit-answer', answers);
+    },
+    onSubmitAnswer: (cb: (answers: any) => void) => {
+      ipcRenderer.on('voice-overlay:answer-submitted', (_e, answers) => cb(answers));
     }
   },
 
@@ -659,8 +676,11 @@ export type ElectronAPI = {
   saveConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
   loadConfig: ()            => Promise<{ success: boolean; config: any; error?: string }>;
   voiceOverlay: {
-    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' }) => void) => void;
+    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' | 'completed' }) => void) => void;
     removeListeners: () => void;
+    sendAudioLevels: (levels: number[]) => void;
+    onAudioLevels: (cb: (levels: number[]) => void) => void;
+    sendState: (state: 'idle' | 'listening' | 'executing' | 'completed') => void;
   };
   acp: {
     listProviders:         () => Promise<any[]>;

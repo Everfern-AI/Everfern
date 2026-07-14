@@ -1,12 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import {
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  ClockIcon,
-} from "@heroicons/react/24/outline";
+import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "@/components/ThemeProvider";
 
 export interface HealthCheckItem {
   id: string;
@@ -21,21 +17,24 @@ interface HealthCheckScreenProps {
   autoStart?: boolean;
 }
 
-/**
- * HealthCheckScreen
- *
- * Displays a startup health check screen that verifies:
- * - Database connectivity
- * - Vector store status
- * - Model availability
- * - API connectivity
- *
- * Shows real-time progress to the user with detailed status messages.
- */
+const PRO_TIPS = [
+  "Hold Ctrl+Alt to activate voice mode anywhere",
+  "Use /help in chat to discover all commands",
+  "Pin frequently used tools in Settings for faster access",
+  "Ask Fern to schedule tasks for later",
+  "Right-click any message to edit or retry it",
+  "Drag files directly into the chat to analyze them",
+  "Use @ to mention projects for context-aware assistance",
+  "Fern can browse the web — just ask it to look something up",
+];
+
 export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
   onComplete,
   autoStart = true,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   const [checks, setChecks] = useState<HealthCheckItem[]>([
     { id: "api", label: "API Connectivity", status: "pending" },
     { id: "database", label: "Database Connection", status: "pending" },
@@ -45,6 +44,19 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
 
   const [isComplete, setIsComplete] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * PRO_TIPS.length));
+  const [logoDim, setLogoDim] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  // Cycle tips every 3s
+  useEffect(() => {
+    if (isComplete) return;
+    const interval = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % PRO_TIPS.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isComplete]);
 
   useEffect(() => {
     if (!autoStart) return;
@@ -54,7 +66,7 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
 
       try {
         // 1. Check API connectivity
-        await updateCheck("api", "checking", "Connecting to API...");
+        await updateCheck("api", "checking");
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -67,7 +79,7 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
             clearTimeout(timeoutId);
 
             if (apiResponse.ok) {
-              await updateCheck("api", "success", "API is responsive");
+              await updateCheck("api", "success");
             } else {
               throw new Error(`API returned ${apiResponse.status}`);
             }
@@ -81,38 +93,25 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
         }
 
         // 2. Check database
-        await updateCheck("database", "checking", "Verifying database...");
+        await updateCheck("database", "checking");
         try {
           const dbResponse = await (window as any).electronAPI?.db?.checkConnection?.();
           if (dbResponse && dbResponse.success) {
-            await updateCheck(
-              "database",
-              "success",
-              dbResponse.details || "Database check completed"
-            );
+            await updateCheck("database", "success");
           } else {
             const errorMsg = dbResponse?.error || "Database connection failed";
             newErrors.push(errorMsg);
-            await updateCheck(
-              "database",
-              "error",
-              errorMsg
-            );
+            await updateCheck("database", "error", errorMsg);
           }
         } catch (err) {
           const errorMsg = `Database check failed: ${err instanceof Error ? err.message : String(err)}`;
           newErrors.push(errorMsg);
-          await updateCheck(
-            "database",
-            "error",
-            errorMsg
-          );
+          await updateCheck("database", "error", errorMsg);
         }
 
         // 3. Check vector store + embedding model
-        await updateCheck("vectors", "checking", "Loading embedding configuration...");
+        await updateCheck("vectors", "checking");
         try {
-          // Read saved embedding config
           let embProvider = "everfern";
           let embModel = "qwen/qwen3-embedding-8b";
           try {
@@ -123,20 +122,7 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
             }
           } catch (_) {}
 
-          const providerLabels: Record<string, string> = {
-            everfern: "EverFern Cloud",
-            openai: "OpenAI",
-            gemini: "Google Gemini",
-            minimax: "MiniMax",
-            nvidia: "NVIDIA NIM",
-            openrouter: "OpenRouter",
-            ollama: "Ollama (Local)",
-          };
-          const providerLabel = providerLabels[embProvider] || embProvider;
-
-          // For Ollama local — check if the embedding model is installed
           if (embProvider === "ollama") {
-            await updateCheck("vectors", "checking", `Checking Ollama for ${embModel}...`);
             try {
               const ollamaRes = await fetch("http://localhost:11434/api/tags", {
                 method: "GET",
@@ -154,53 +140,30 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
                 if (isInstalled) {
                   const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
                   if (vectorResponse && vectorResponse.success) {
-                    const vectorCount = vectorResponse.count ?? 0;
-                    await updateCheck(
-                      "vectors",
-                      "success",
-                      `Embedding ready — ${embModel} (Ollama Local) (${vectorCount} vectors stored)`
-                    );
+                    await updateCheck("vectors", "success");
                   } else {
-                    const errStr = vectorResponse?.error || "Failed to check vector store database";
+                    const errStr = vectorResponse?.error || "Failed to check vector store";
                     newErrors.push(errStr);
                     await updateCheck("vectors", "error", errStr);
                   }
                 } else {
-                  await updateCheck(
-                    "vectors",
-                    "error",
-                    `Embedding model not found: ${embModel}. Run: ollama pull ${embModel}`
-                  );
-                  newErrors.push(`Embedding model "${embModel}" not installed in Ollama. Run: ollama pull ${embModel}`);
+                  newErrors.push(`Embedding model "${embModel}" not installed. Run: ollama pull ${embModel}`);
+                  await updateCheck("vectors", "error", `Model not found: ${embModel}`);
                 }
               } else {
-                await updateCheck(
-                  "vectors",
-                  "error",
-                  "Ollama is not running. Start Ollama to use local embeddings."
-                );
-                newErrors.push("Ollama is not running — local embedding unavailable.");
+                newErrors.push("Ollama is not running.");
+                await updateCheck("vectors", "error", "Ollama not running");
               }
-            } catch (ollamaErr) {
-              await updateCheck(
-                "vectors",
-                "error",
-                "Cannot reach Ollama. Start Ollama to enable local embeddings."
-              );
-              newErrors.push("Ollama unreachable — local embedding unavailable.");
+            } catch {
+              newErrors.push("Ollama unreachable.");
+              await updateCheck("vectors", "error", "Ollama unreachable");
             }
           } else {
-            // Cloud providers — verify the config exists and check vector count
             const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
             if (vectorResponse && vectorResponse.success) {
-              const vectorCount = vectorResponse.count ?? 0;
-              await updateCheck(
-                "vectors",
-                "success",
-                `Embedding: ${embModel} via ${providerLabel} (${vectorCount} vectors stored)`
-              );
+              await updateCheck("vectors", "success");
             } else {
-              const errStr = vectorResponse?.error || "Failed to check vector store database";
+              const errStr = vectorResponse?.error || "Failed to check vector store";
               newErrors.push(errStr);
               await updateCheck("vectors", "error", errStr);
             }
@@ -208,25 +171,15 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
         } catch (err) {
           const errorMsg = `Vector store check failed: ${err instanceof Error ? err.message : String(err)}`;
           newErrors.push(errorMsg);
-          await updateCheck(
-            "vectors",
-            "error",
-            errorMsg
-          );
+          await updateCheck("vectors", "error", errorMsg);
         }
 
-
         // 4. Load models
-        await updateCheck("models", "checking", "Loading available models...");
+        await updateCheck("models", "checking");
         try {
           const modelsResponse = await (window as any).electronAPI?.acp?.listModels?.();
           if (modelsResponse?.success) {
-            const modelCount = modelsResponse.models?.length || 0;
-            await updateCheck(
-              "models",
-              "success",
-              `${modelCount} models loaded`
-            );
+            await updateCheck("models", "success");
           } else {
             throw new Error(modelsResponse?.error || "Model loading failed");
           }
@@ -236,275 +189,176 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
           await updateCheck("models", "error", errorMsg);
         }
 
+        setLogoDim(true);
         setIsComplete(true);
         setErrors(newErrors);
-        onComplete(newErrors.length === 0, newErrors);
+
+        // Brief pause after completion before dismissing
+        await new Promise((r) => setTimeout(r, 800));
+        onCompleteRef.current(newErrors.length === 0, newErrors);
       } catch (err) {
         console.error("Health check error:", err);
+        setLogoDim(true);
         setIsComplete(true);
-        onComplete(false, newErrors);
+        await new Promise((r) => setTimeout(r, 800));
+        onCompleteRef.current(false, newErrors);
       }
     };
 
     runHealthChecks();
-  }, [autoStart, onComplete]);
+  }, [autoStart]);
 
   const updateCheck = (
     id: string,
     status: HealthCheckItem["status"],
-    message?: string,
-    details?: string
+    message?: string
   ) => {
     return new Promise<void>((resolve) => {
       setChecks((prev) =>
         prev.map((check) =>
-          check.id === id
-            ? { ...check, status, message, details }
-            : check
+          check.id === id ? { ...check, status, message } : check
         )
       );
-      // Small delay to ensure UI updates are visible
-      setTimeout(resolve, 300);
+      setTimeout(resolve, 250);
     });
-  };
-
-  const getStatusIcon = (status: HealthCheckItem["status"]) => {
-    switch (status) {
-      case "success":
-        return (
-          <CheckCircleIcon className="w-5 h-5 text-green-600" />
-        );
-      case "error":
-        return (
-          <ExclamationCircleIcon className="w-5 h-5 text-red-600" />
-        );
-      case "checking":
-        return (
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          >
-            <ClockIcon className="w-5 h-5 text-amber-600" />
-          </motion.div>
-        );
-      default:
-        return (
-          <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
-        );
-    }
-  };
-
-  const getStatusColor = (status: HealthCheckItem["status"]) => {
-    switch (status) {
-      case "success":
-        return "bg-green-50 border-green-200";
-      case "error":
-        return "bg-red-50 border-red-200";
-      case "checking":
-        return "bg-amber-50 border-amber-200";
-      default:
-        return "bg-gray-50 border-gray-200";
-    }
   };
 
   const successCount = checks.filter((c) => c.status === "success").length;
   const totalChecks = checks.length;
   const progress = (successCount / totalChecks) * 100;
+  const currentError = errors.length > 0 ? errors[errors.length - 1] : null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ width: "100vw", height: "100vh", backgroundColor: "var(--color-bg-base)", fontFamily: "var(--font-sans)" }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "var(--color-bg-base, #0a0a0a)",
+        fontFamily: '"Figtree", -apple-system, BlinkMacSystemFont, sans-serif',
+        overflow: "hidden",
+      }}
     >
+      {/* Logo + Brand */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         style={{
-          width: "100%",
-          maxWidth: 420,
-          backgroundColor: "var(--color-bg-surface)",
-          borderRadius: 24,
-          padding: "36px 32px 32px",
-          border: "1px solid var(--color-border)",
-          boxShadow: "0 4px 32px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 16,
+          marginTop: -60,
         }}
       >
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            style={{ display: "inline-block", marginBottom: 16 }}
-          >
-            <div style={{
-              width: 52,
-              height: 52,
-              borderRadius: "50%",
-              background: "linear-gradient(135deg, #34d399 0%, #059669 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
-            }}>
-              <svg
-                style={{ width: 24, height: 24, color: 'var(--color-bg-surface)' }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.5}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-          </motion.div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
-            Initializing EverFern
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.5 }}>
-            Running system health checks...
-          </p>
-        </div>
+        <motion.img
+          src="/images/logos/black-logo-withoutbg.png"
+          alt="EverFern"
+          animate={{
+            opacity: logoDim ? 0.5 : 1,
+            scale: logoDim ? 0.95 : 1,
+          }}
+          transition={{ duration: 0.5 }}
+          style={{
+            width: 100,
+            height: 100,
+            objectFit: "contain",
+            filter: isDark ? "invert(1) brightness(0.9)" : "none",
+          }}
+        />
+        <h1
+          style={{
+            fontSize: 32,
+            fontWeight: 700,
+            color: "var(--color-text-primary, #ffffff)",
+            margin: 0,
+            letterSpacing: "-0.03em",
+            opacity: logoDim ? 0.5 : 1,
+            transition: "opacity 0.5s ease",
+          }}
+        >
+          EverFern
+        </h1>
+      </motion.div>
 
-        {/* Progress Bar */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)" }}>Progress</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>{successCount}/{totalChecks}</span>
-          </div>
-          <div style={{ width: "100%", height: 5, backgroundColor: "var(--color-border)", borderRadius: 999, overflow: "hidden" }}>
-            <motion.div
-              style={{ height: "100%", background: "linear-gradient(90deg, #34d399, #059669)", borderRadius: 999 }}
-              initial={{ width: 0 }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-            />
-          </div>
-        </div>
-
-        {/* Health Checks */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
-          {checks.map((check, index) => {
-            const getBg = () => {
-              if (check.status === "success") return "var(--color-success-dim)";
-              if (check.status === "error")   return "var(--color-error-dim)";
-              if (check.status === "checking") return "var(--color-warning-dim)";
-              return "var(--color-bg-subtle)";
-            };
-            const getBorder = () => {
-              if (check.status === "success") return "rgba(16, 185, 129, 0.3)";
-              if (check.status === "error")   return "rgba(239, 68, 68, 0.3)";
-              if (check.status === "checking") return "rgba(245, 158, 11, 0.3)";
-              return "var(--color-border)";
-            };
-            return (
-              <motion.div
-                key={check.id}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.08, duration: 0.3 }}
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  border: `1.5px solid ${getBorder()}`,
-                  backgroundColor: getBg(),
-                  transition: "all 0.25s ease",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ marginTop: 1, flexShrink: 0 }}>
-                    {getStatusIcon(check.status)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
-                        {check.label}
-                      </p>
-                      {check.status === "checking" && (
-                        <span style={{ fontSize: 11, color: "var(--color-warning)", fontWeight: 500, whiteSpace: "nowrap" }}>
-                          Checking...
-                        </span>
-                      )}
-                    </div>
-                    {check.message && (
-                      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "4px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {check.message}
-                      </p>
-                    )}
-                    {check.details && (
-                      <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {check.details}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {/* Error Messages */}
-        {errors.length > 0 && (
-          <motion.div
+      {/* Pro Tip */}
+      <div style={{ height: 60, display: "flex", alignItems: "center", marginTop: 28 }}>
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={tipIndex}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            style={{ marginBottom: 16, padding: "12px 14px", backgroundColor: "var(--color-error-dim)", border: "1.5px solid rgba(239, 68, 68, 0.3)", borderRadius: 12 }}
-          >
-            <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-error)", margin: "0 0 6px" }}>
-              Issues detected:
-            </p>
-            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 3 }}>
-              {errors.map((error, idx) => (
-                <li key={idx} style={{ fontSize: 12, color: "var(--color-error)", lineHeight: 1.4 }}>
-                  • {error}
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-        )}
-
-        {/* Completion Message */}
-        {isComplete && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4 }}
             style={{
+              fontSize: 14,
+              color: "var(--color-text-secondary, rgba(255,255,255,0.5))",
+              margin: 0,
               textAlign: "center",
-              padding: "10px 14px",
-              borderRadius: 10,
-              marginBottom: 16,
-              backgroundColor: errors.length === 0 ? "var(--color-success-dim)" : "var(--color-warning-dim)",
-              border: `1.5px solid ${errors.length === 0 ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
+              maxWidth: 380,
+              lineHeight: 1.5,
             }}
           >
-            <p style={{
-              fontSize: 13,
-              fontWeight: 600,
-              margin: 0,
-              color: errors.length === 0 ? "var(--color-success)" : "var(--color-text-secondary)",
-            }}>
-              {errors.length === 0 ? "✓ All systems ready!" : "⚠ Some issues found, but continuing..."}
-            </p>
-          </motion.div>
-        )}
+            <span style={{ fontWeight: 600, color: "var(--color-text-tertiary, rgba(255,255,255,0.35))", textTransform: "uppercase", fontSize: 10, letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
+              Pro Tip
+            </span>
+            {PRO_TIPS[tipIndex]}
+          </motion.p>
+        </AnimatePresence>
+      </div>
 
-        {/* Footer */}
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
-            {isComplete
-              ? "You can now start using EverFern"
-              : "Please wait while we prepare your environment"}
-          </p>
-        </div>
-      </motion.div>
+      {/* Error display */}
+      <div style={{ height: 40, display: "flex", alignItems: "center", marginTop: 4 }}>
+        <AnimatePresence mode="wait">
+          {currentError && (
+            <motion.p
+              key={currentError}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                fontSize: 12,
+                color: "var(--color-error, #ef4444)",
+                margin: 0,
+                textAlign: "center",
+                maxWidth: 400,
+                opacity: 0.8,
+              }}
+            >
+              {currentError}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom progress bar */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 2,
+          backgroundColor: "rgba(255,255,255,0.05)",
+        }}
+      >
+        <motion.div
+          style={{
+            height: "100%",
+            background: "linear-gradient(90deg, #10b981, #059669)",
+          }}
+          initial={{ width: "0%" }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        />
+      </div>
     </div>
   );
 };
 
 export default HealthCheckScreen;
-
-

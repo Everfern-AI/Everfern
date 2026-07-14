@@ -536,41 +536,64 @@ const ContextTokenRing = ({
     );
 };
 
-const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceElevenlabsKey, onClick }: {
+const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceElevenlabsKey, audioLevels, onClick }: {
     isRecording: boolean;
     voiceProvider: string | null;
     voiceDeepgramKey: string;
     voiceElevenlabsKey: string;
+    audioLevels?: number[];
     onClick: () => void;
 }) => {
     const hasVoice = !!(voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey || voiceElevenlabsKey));
+    
     return (
         <button
             type="button"
             onClick={onClick}
             title={isRecording ? "Stop recording" : hasVoice ? "Voice mode" : "Configure voice in settings"}
             style={{
-                width: 32, height: 32, borderRadius: 10,
+                height: 32, borderRadius: 16,
+                padding: isRecording ? "0 12px" : "0",
+                width: isRecording ? "auto" : 32,
                 background: isRecording ? "rgba(239, 68, 68, 0.15)" : "rgba(113, 113, 113, 0.08)",
-                border: isRecording ? "1px solid #ef4444" : hasVoice ? "1px solid #c4c2be" : "1px solid #e8e6d9",
+                border: "none",
+                outline: "none",
                 color: isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", transition: "all 0.2s", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                cursor: "pointer", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", flexShrink: 0,
             }}
             onMouseEnter={e => {
                 if (!isRecording) {
                     e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.07)";
-                    e.currentTarget.style.borderColor = 'var(--color-text-tertiary)';
                     e.currentTarget.style.color = "#333";
                 }
             }}
             onMouseLeave={e => {
                 e.currentTarget.style.backgroundColor = isRecording ? "rgba(239,68,68,0.15)" : "rgba(113,113,113,0.08)";
-                e.currentTarget.style.borderColor = isRecording ? "#ef4444" : hasVoice ? "#c4c2be" : "#e8e6d9";
                 e.currentTarget.style.color = isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa";
             }}
         >
-            <WaveformIcon size={15} style={{ animation: isRecording ? "pulse 1s infinite" : "none" }} />
+            {isRecording ? (
+                <div style={{ display: 'flex', gap: 3, alignItems: 'center', height: 16 }}>
+                    {(audioLevels && audioLevels.length > 0 ? audioLevels : new Array(5).fill(15)).slice(0, 5).map((level, i) => {
+                        const height = Math.max(4, (level / 90) * 16);
+                        return (
+                            <motion.div
+                                key={i}
+                                animate={{ height }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                                style={{
+                                    width: 3,
+                                    backgroundColor: '#ef4444',
+                                    borderRadius: 1.5
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            ) : (
+                <WaveformIcon size={15} style={{ transition: 'all 0.3s' }} />
+            )}
         </button>
     );
 };

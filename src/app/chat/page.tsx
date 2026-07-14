@@ -312,7 +312,7 @@ function escapeControlCharsInStrings(str: string): string {
     let inString = false;
     let result = '';
     let backslashCount = 0;
-    
+
     for (let i = 0; i < str.length; i++) {
         const char = str[i];
         if (char === '\\') {
@@ -360,11 +360,11 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
 
     const cleanContent = content.replace(regex, '').trim();
     let followUps: Array<{ icon: string; text: string }> = [];
-    
+
     // Clean the inner content (strip markdown code blocks if present)
     let innerText = match[1].trim();
     innerText = innerText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-    
+
     // Auto-fix common LLM JSON syntax errors before parsing
     // 1. Missing commas between objects/arrays: } { -> },{
     innerText = innerText.replace(/}\s*([{\[])/g, '},$1');
@@ -388,12 +388,12 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
         }
     } catch (e) {
         console.debug("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
-        
+
         // 1. Try to extract valid JSON objects using brace-matching with reset on new '{'
         // Resetting startIdx on '{' allows us to skip unclosed/truncated JSON objects and capture subsequent valid ones.
         let startIdx = -1;
         const candidates: string[] = [];
-        
+
         for (let i = 0; i < innerText.length; i++) {
             if (innerText[i] === '{') {
                 startIdx = i; // Reset startIdx to the newest '{'
@@ -402,7 +402,7 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
                 startIdx = -1; // Reset after finding a match
             }
         }
-        
+
         for (const candidate of candidates) {
             try {
                 const parsedObj = JSON.parse(candidate.trim());
@@ -416,7 +416,7 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
                 // Ignore parse errors on partial candidates
             }
         }
-        
+
         // 2. Salvage partially truncated/malformed JSON lines (e.g. unclosed quotes in fields)
         const lines = innerText.split('\n');
         for (const line of lines) {
@@ -427,35 +427,35 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
                 let text = hasIconAndText[2].trim();
                 // Clean up any trailing quotes or commas
                 text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
-                
+
                 if (text && !followUps.some(f => f.text.toLowerCase() === text.toLowerCase())) {
                     followUps.push({ icon, text });
                 }
                 continue;
             }
-            
+
             // Match: "text": "Turn up the", "icon": "🔊"
             const hasTextAndIcon = line.match(/["']text["']\s*:\s*["']([^"']+)["']\s*,\s*["']icon["']\s*:\s*["']?([^"'\n}]+)/i);
             if (hasTextAndIcon) {
                 const textVal = hasTextAndIcon[1].trim();
                 let icon = hasTextAndIcon[2].trim();
                 icon = icon.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
-                
+
                 if (textVal && !followUps.some(f => f.text.toLowerCase() === textVal.toLowerCase())) {
                     followUps.push({ icon, text: textVal });
                 }
             }
         }
-        
+
         // 3. Last fallback: line-by-line plain text parsing if we still got nothing
         if (followUps.length === 0) {
             for (const line of lines) {
                 const cleanLine = line.replace(/^[-\s*[\]{},"]+/, '').trim();
-                if (cleanLine && 
-                    !cleanLine.startsWith('"icon"') && 
-                    !cleanLine.startsWith('"text"') && 
-                    cleanLine !== '"' && 
-                    cleanLine !== '"[' && 
+                if (cleanLine &&
+                    !cleanLine.startsWith('"icon"') &&
+                    !cleanLine.startsWith('"text"') &&
+                    cleanLine !== '"' &&
+                    cleanLine !== '"[' &&
                     cleanLine !== '"]'
                 ) {
                     const emojiMatch = cleanLine.match(/^([\u2000-\u32FF\ud800-\udbff\udc00-\udfff\ud83c\ud83d\ud83e\u2600-\u27ff])\s*(.*)$/);
@@ -728,7 +728,7 @@ export default function ChatPage() {
     const [showTasksPanel, setShowTasksPanel] = useState(false);
     const [panelTasks, setPanelTasks] = useState<{ description: string; status: 'pending' | 'in_progress' | 'completed' }[]>([]);
     const [tasksFilePath, setTasksFilePath] = useState<string | undefined>(undefined);
-    
+
     // Poll for task.md to update TasksPanel
     useEffect(() => {
         if (!activeConversationId) {
@@ -1153,32 +1153,32 @@ export default function ChatPage() {
             if (!command?.trim()) return;
 
             if (command.startsWith('[HITL_APPROVED]')) {
-                 handleHitlApproval(true, true);
-                 return;
+                handleHitlApproval(true, true);
+                return;
             }
             if (command.startsWith('[HITL_REJECTED]')) {
-                 handleHitlApproval(false, true);
-                 return;
+                handleHitlApproval(false, true);
+                return;
             }
             if (command.startsWith('[INTERNAL_SYSTEM_RESPONSE_QUESTION_ID_')) {
-                 const idMatch = command.match(/QUESTION_ID_([^_]+)_IDX_(\d+)/);
-                 if (idMatch) {
-                     const questionId = idMatch[1];
-                     const optionIndex = parseInt(idMatch[2], 10);
-                     const qIdx = parseInt(questionId, 10);
-                     const questions = stateForBroadcastRef.current.activeUserQuestions;
-                     const questionObj = questions[qIdx] || questions[0];
-                     if (questionObj) {
-                         const optionObj = questionObj.options[optionIndex];
-                         if (optionObj) {
-                             const answers: Record<string, string[]> = {
-                                 [questionObj.question]: [optionObj.value]
-                             };
-                             handleQuestionSubmit(answers);
-                         }
-                     }
-                 }
-                 return;
+                const idMatch = command.match(/QUESTION_ID_([^_]+)_IDX_(\d+)/);
+                if (idMatch) {
+                    const questionId = idMatch[1];
+                    const optionIndex = parseInt(idMatch[2], 10);
+                    const qIdx = parseInt(questionId, 10);
+                    const questions = stateForBroadcastRef.current.activeUserQuestions;
+                    const questionObj = questions[qIdx] || questions[0];
+                    if (questionObj) {
+                        const optionObj = questionObj.options[optionIndex];
+                        if (optionObj) {
+                            const answers: Record<string, string[]> = {
+                                [questionObj.question]: [optionObj.value]
+                            };
+                            handleQuestionSubmit(answers);
+                        }
+                    }
+                }
+                return;
             }
 
             // If a model override came from the web, apply it
@@ -1193,7 +1193,7 @@ export default function ChatPage() {
                 if (handleSendRef.current) handleSendRef.current(command);
             }, 0);
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
 
@@ -1250,23 +1250,23 @@ export default function ChatPage() {
             };
             setIsDispatchReady(true);
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Re-broadcast desktop_info whenever model selection changes or dispatch becomes ready
     useEffect(() => {
-  if (!dispatchBroadcastRef.current || !isDispatchReady) return;
-  dispatchBroadcastRef.current('desktop_info', {
-    selectedModel,
-    engine: settingsEngine,
-    availableModels: availableModels.map(m => ({
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      providerType: m.providerType,
-    })),
-  });
-}, [selectedModel, availableModels, isDispatchReady, settingsEngine]);
+        if (!dispatchBroadcastRef.current || !isDispatchReady) return;
+        dispatchBroadcastRef.current('desktop_info', {
+            selectedModel,
+            engine: settingsEngine,
+            availableModels: availableModels.map(m => ({
+                id: m.id,
+                name: m.name,
+                provider: m.provider,
+                providerType: m.providerType,
+            })),
+        });
+    }, [selectedModel, availableModels, isDispatchReady, settingsEngine]);
 
     // User question form state
     const [activeUserQuestions, setActiveUserQuestions] = useState<Array<{
@@ -1390,8 +1390,8 @@ export default function ChatPage() {
         options: string[];
     } | null>(null);
 
-    const isInlineFormActive = 
-        (activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions)) || 
+    const isInlineFormActive =
+        (activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions)) ||
         (showHitlApproval && hitlRequest && isNavisHitl(hitlRequest));
 
     // Plan card state
@@ -1468,7 +1468,7 @@ export default function ChatPage() {
         } else if (!broadcastTimerRef.current) {
             broadcastTimerRef.current = setTimeout(doBroadcast, 200 - (now - lastBroadcastTimeRef.current));
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, streamingContent, liveToolCalls, streamingThought, isDispatchReady, isLoading]);
     // Sub-agent progress — stored in a REF so updates never trigger page re-renders.
     // A lightweight version counter is bumped only when the tool detail panel is open,
@@ -1593,7 +1593,7 @@ export default function ChatPage() {
                         ? 'Permission approved. Running local command...'
                         : `Permission denied.\n\n${request.command}`,
                     data: { ...(tc.data || {}), approved, alwaysAllow },
-                  }
+                }
                 : tc
         ));
         liveToolCallsRef.current = updatedToolCalls;
@@ -1642,9 +1642,9 @@ export default function ChatPage() {
                 break;
             }
         }
-    // selectedToolCall is read via ref to avoid infinite re-trigger when setSelectedToolCall creates a new object.
-    // subAgentProgressVersion replaces subAgentProgress in the dep array — it's a counter that
-    // only increments when the tool detail panel is open, preventing spurious re-renders.
+        // selectedToolCall is read via ref to avoid infinite re-trigger when setSelectedToolCall creates a new object.
+        // subAgentProgressVersion replaces subAgentProgress in the dep array — it's a counter that
+        // only increments when the tool detail panel is open, preventing spurious re-renders.
     }, [messages, isToolDetailOpen, subAgentProgressVersion]);
 
     useEffect(() => {
@@ -1662,9 +1662,9 @@ export default function ChatPage() {
         setToolDetailTabs(prev => prev.map(tab => (
             tab.id === mappedToolCall.id ? { ...tab, ...mappedToolCall } : tab
         )));
-    // Keep an open details tab in sync with live tool updates, including result.data
-    // payloads such as visual classification sheets.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Keep an open details tab in sync with live tool updates, including result.data
+        // payloads such as visual classification sheets.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [liveToolCalls, isToolDetailOpen, activeToolDetailTabId]);
 
     useEffect(() => {
@@ -1832,8 +1832,19 @@ export default function ChatPage() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioStreamRef = useRef<MediaStream | null>(null);
     const voiceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const overlayIdleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
-    const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(15));
+    const [recordingSource, _setRecordingSource] = useState<'button' | 'overlay' | null>(null);
+    const recordingSourceRef = useRef<'button' | 'overlay' | null>(null);
+    const setRecordingSource = (src: 'button' | 'overlay' | null) => {
+        recordingSourceRef.current = src;
+        _setRecordingSource(src);
+    };
+    const isRecordingRef = useRef(false);
+    useEffect(() => {
+        isRecordingRef.current = isRecording;
+    }, [isRecording]);
+    const [audioLevels, setAudioLevels] = useState<number[]>(new Array(25).fill(15));
     const animationFrameRef = useRef<number | null>(null);
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
@@ -2348,18 +2359,18 @@ export default function ChatPage() {
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
                 loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
-                loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
-                loadedVlmProvider === "minimax" ? "MiniMax-M3" :
-                loadedVlmProvider === "openai" ? "gpt-5.5" :
-                loadedVlmProvider === "anthropic" ? "claude-opus-4.6" :
-                "qwen3-vl:235b-cloud";
+                    loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
+                        loadedVlmProvider === "minimax" ? "MiniMax-M3" :
+                            loadedVlmProvider === "openai" ? "gpt-5.5" :
+                                loadedVlmProvider === "anthropic" ? "claude-opus-4.6" :
+                                    "qwen3-vl:235b-cloud";
             const defaultLoadedVlmUrl =
                 loadedVlmProvider === "minimax" ? "https://api.minimax.io/v1" :
-                loadedVlmProvider === "openai" ? "https://api.openai.com/v1" :
-                loadedVlmProvider === "anthropic" ? "https://api.anthropic.com" :
-                loadedVlmProvider === "nvidia" ? "https://integrate.api.nvidia.com/v1" :
-                loadedVlmProvider === "ollama" ? "https://ollama.com" :
-                "";
+                    loadedVlmProvider === "openai" ? "https://api.openai.com/v1" :
+                        loadedVlmProvider === "anthropic" ? "https://api.anthropic.com" :
+                            loadedVlmProvider === "nvidia" ? "https://integrate.api.nvidia.com/v1" :
+                                loadedVlmProvider === "ollama" ? "https://ollama.com" :
+                                    "";
             const loadedVlmUrl = config.vlm?.baseUrl || defaultLoadedVlmUrl;
             setSettingsVlmMode(config.vlm?.engine === "cloud" ? "cloud" : "local");
             setSettingsVlmCloudProvider(loadedVlmProvider);
@@ -2494,7 +2505,7 @@ export default function ChatPage() {
                         t => t.status === 'running' ? 'done' : undefined
                     );
                     const durationMs = thinkingDuration?.duration;
-                        if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
+                    if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
                         const assistantMsg: Message = {
                             id: assistantMessageIdRef.current || crypto.randomUUID(),
                             role: "assistant",
@@ -2582,7 +2593,7 @@ export default function ChatPage() {
                     return;
                 }
 
-                    if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
+                if (finalContent || finalThought || finalToolCalls.length > 0 || missionTimelineRef.current) {
                     const assistantMsg: Message = {
                         id: assistantMessageIdRef.current || crypto.randomUUID(),
                         role: "assistant",
@@ -2638,7 +2649,7 @@ export default function ChatPage() {
         return () => {
             acpApi.removeMissionListeners?.();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Cleanup sub-agent progress state and listener on unmount
@@ -3280,7 +3291,7 @@ export default function ChatPage() {
 
     const handleFeedbackSubmit = useCallback(async (type: 'up' | 'down', reason: string, customReason: string, dataToSend: 'current' | 'last_3' | 'all') => {
         if (feedbackTargetIndex === null) return;
-        
+
         let contextMessages = [];
         if (dataToSend === 'all') {
             contextMessages = messages.slice(0, feedbackTargetIndex + 1);
@@ -3298,7 +3309,7 @@ export default function ChatPage() {
                 alert("Please log in to submit feedback.");
                 return;
             }
-            
+
             const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
             const reqRes = await fetch(`${API_URL}/api/feedback`, {
                 method: 'POST',
@@ -3328,7 +3339,7 @@ export default function ChatPage() {
 
         let newMessages: Message[];
         const isProject = folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
-        
+
         if (skipAddUserMessage) {
             // Silent approval/rejection: do NOT add a visible message to the chat or save it to database.
             // We just append a temporary user message containing the approval command for the API stream.
@@ -3942,7 +3953,7 @@ export default function ChatPage() {
                                 const toolName = nameMatch[1];
                                 const existing = liveToolCallsRef.current.find(t => t.id === streamingId);
 
-                                 if (!existing) {
+                                if (!existing) {
                                     const display = resolveToolDisplay(toolName, {});
                                     const newTc: ToolCallDisplay = {
                                         id: streamingId,
@@ -4048,33 +4059,33 @@ export default function ChatPage() {
                     messages: newMessages
                         .filter(m => m.content || (m.attachments && m.attachments.length > 0))
                         .map(m => {
-                        if (m.attachments && m.attachments.length > 0 && m.role === 'user') {
-                            const blocks: any[] = [];
-                            if (m.content) blocks.push({ type: 'text', text: m.content });
-                            const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
-                            m.attachments.forEach(a => {
-                                if (a.mimeType.startsWith('image/') && a.base64) {
-                                    blocks.push({ type: 'image_url', image_url: { url: a.base64 } });
-                                } else {
-                                    const hostPath = a.path || '';
-                                    const wslPath = hostPath ? toLinuxPath(hostPath) : `/everfern/${a.name}`;
-                                    const escapedHost = hostPath.replace(/\\/g, '\\\\');
-                                    blocks.push({
-                                        type: 'text',
-                                        text: `[Attached File: ${a.name}]
+                            if (m.attachments && m.attachments.length > 0 && m.role === 'user') {
+                                const blocks: any[] = [];
+                                if (m.content) blocks.push({ type: 'text', text: m.content });
+                                const toLinuxPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p) ? p.replace(/^([A-Za-z]):[\\/]/, '/mnt/$1/').replace(/\\/g, '/') : p.replace(/\\/g, '/');
+                                m.attachments.forEach(a => {
+                                    if (a.mimeType.startsWith('image/') && a.base64) {
+                                        blocks.push({ type: 'image_url', image_url: { url: a.base64 } });
+                                    } else {
+                                        const hostPath = a.path || '';
+                                        const wslPath = hostPath ? toLinuxPath(hostPath) : `/everfern/${a.name}`;
+                                        const escapedHost = hostPath.replace(/\\/g, '\\\\');
+                                        blocks.push({
+                                            type: 'text',
+                                            text: `[Attached File: ${a.name}]
 [Host Path: ${escapedHost || '(not available)'}]
 [WSL Path: ${wslPath}]
 
 This file is available on the Windows host machine at ${escapedHost || '(path unavailable)'}.
 For file analysis tasks (reading PDFs, parsing CSVs, analyzing images, processing documents), use the local machine tools (PowerShell, python on Windows) via the execute_pwsh tool with local=true.
 Only use the WSL path ${wslPath} as fallback if local execution is not possible.`
-                                    });
-                                }
-                            });
-                            return { role: m.role, content: blocks };
-                        }
-                        return { role: m.role, content: m.content };
-                    }),
+                                        });
+                                    }
+                                });
+                                return { role: m.role, content: blocks };
+                            }
+                            return { role: m.role, content: m.content };
+                        }),
                     model: selectedModel,
                     providerType: currentM?.providerType || 'everfern',
                     conversationId: activeConversationIdRef.current,
@@ -4382,79 +4393,79 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             try {
                 if ((window as any).electronAPI?.history?.load) {
                     const conv = await (window as any).electronAPI.history.load(id);
-                if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
-                    return;
-                }
-                if (conv?.messages) {
-                    // Restore project context
-                    if (conv.projectId) {
-                        // Find project in the current projects list
-                        // Note: projects state is updated every 5s, so it should be there
-                        const project = (projects || []).find((p: any) => p.id === conv.projectId);
-                        if (project) {
-                            setFolderContexts([{ id: project.id, path: project.path, name: project.name }]);
+                    if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
+                        return;
+                    }
+                    if (conv?.messages) {
+                        // Restore project context
+                        if (conv.projectId) {
+                            // Find project in the current projects list
+                            // Note: projects state is updated every 5s, so it should be there
+                            const project = (projects || []).find((p: any) => p.id === conv.projectId);
+                            if (project) {
+                                setFolderContexts([{ id: project.id, path: project.path, name: project.name }]);
+                            } else {
+                                // Fallback if projects list hasn't loaded yet or project was deleted
+                                // We can't easily fetch it by ID here without a new IPC call,
+                                // so we just clear it for now or wait for projects to load.
+                                setFolderContexts([]);
+                            }
                         } else {
-                            // Fallback if projects list hasn't loaded yet or project was deleted
-                            // We can't easily fetch it by ID here without a new IPC call,
-                            // so we just clear it for now or wait for projects to load.
                             setFolderContexts([]);
                         }
-                    } else {
-                        setFolderContexts([]);
-                    }
 
-                    const loadedMessages = conv.messages.map((m: any) => ({
-                        id: m.id || crypto.randomUUID(),
-                        role: m.role,
-                        content: m.content,
-                        thought: m.thought,
-                        reasoning_content: m.reasoning_content,
-                        thinkingDuration: m.thinkingDuration,
-                        missionTimeline: m.missionTimeline,
-                        toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
-                            const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
-                            return {
-                                ...tc,
-                                ...display
-                            };
-                        }) : undefined,
-                        attachments: m.attachments || [],
-                        timestamp: m.createdAt ? new Date(m.createdAt) : new Date(conv.updatedAt),
-                        stopped: !!m.stopped
-                    }));
-                    restoreSubAgentProgressFromMessages(loadedMessages);
-                    messagesRef.current = loadedMessages;
-                    setMessages(loadedMessages);
-                    const savedPlan = localStorage.getItem(`everfern_execution_plan_${id}`);
-                    if (savedPlan) {
+                        const loadedMessages = conv.messages.map((m: any) => ({
+                            id: m.id || crypto.randomUUID(),
+                            role: m.role,
+                            content: m.content,
+                            thought: m.thought,
+                            reasoning_content: m.reasoning_content,
+                            thinkingDuration: m.thinkingDuration,
+                            missionTimeline: m.missionTimeline,
+                            toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
+                                const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
+                                return {
+                                    ...tc,
+                                    ...display
+                                };
+                            }) : undefined,
+                            attachments: m.attachments || [],
+                            timestamp: m.createdAt ? new Date(m.createdAt) : new Date(conv.updatedAt),
+                            stopped: !!m.stopped
+                        }));
+                        restoreSubAgentProgressFromMessages(loadedMessages);
+                        messagesRef.current = loadedMessages;
+                        setMessages(loadedMessages);
+                        const savedPlan = localStorage.getItem(`everfern_execution_plan_${id}`);
+                        if (savedPlan) {
+                            try {
+                                setExecutionPlan(JSON.parse(savedPlan));
+                                const isClosed = localStorage.getItem(`everfern_exec_pane_closed_${id}`);
+                                setIsExecutionPlanPaneOpen(!isClosed);
+                            } catch (e) { }
+                        }
+                        checkForPlan(id);
+                        checkForSites(id);
+
+                        // ── Restore pending HITL form if one was active when app closed ──
                         try {
-                            setExecutionPlan(JSON.parse(savedPlan));
-                            const isClosed = localStorage.getItem(`everfern_exec_pane_closed_${id}`);
-                            setIsExecutionPlanPaneOpen(!isClosed);
-                        } catch (e) { }
-                    }
-                    checkForPlan(id);
-                    checkForSites(id);
-
-                    // ── Restore pending HITL form if one was active when app closed ──
-                    try {
-                        const pendingHitl = await (window as any).electronAPI?.history?.hitl?.getPending?.(id);
-                        if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
-                            return;
+                            const pendingHitl = await (window as any).electronAPI?.history?.hitl?.getPending?.(id);
+                            if (loadSeq !== conversationSwitchSeqRef.current || activeConversationIdRef.current !== id) {
+                                return;
+                            }
+                            if (pendingHitl?.request) {
+                                console.log('[HITL Restore] Found pending HITL request on load:', pendingHitl.request.id);
+                                (window as any).__activeHitl = true;
+                                setHitlRequest(pendingHitl.request);
+                                setShowHitlApproval(true);
+                                setCurrentNode('hitl_approval');
+                            }
+                        } catch (hitlErr) {
+                            console.warn('[HITL Restore] Failed to check for pending HITL:', hitlErr);
                         }
-                        if (pendingHitl?.request) {
-                            console.log('[HITL Restore] Found pending HITL request on load:', pendingHitl.request.id);
-                            (window as any).__activeHitl = true;
-                            setHitlRequest(pendingHitl.request);
-                            setShowHitlApproval(true);
-                            setCurrentNode('hitl_approval');
-                        }
-                    } catch (hitlErr) {
-                        console.warn('[HITL Restore] Failed to check for pending HITL:', hitlErr);
                     }
                 }
-            }
-        } catch (err) { console.error("Failed to load conversation:", err); }
+            } catch (err) { console.error("Failed to load conversation:", err); }
         })();
         loadPromiseRef.current = loadPromise;
         await loadPromise;
@@ -4524,36 +4535,36 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
         const defaultVlmModel =
-          settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
-          settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
-          settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
-          settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :
-          settingsVlmCloudProvider === 'anthropic' ? 'claude-opus-4.6' :
-          'qwen3-vl:235b-cloud';
+            settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
+                settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
+                    settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
+                        settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :
+                            settingsVlmCloudProvider === 'anthropic' ? 'claude-opus-4.6' :
+                                'qwen3-vl:235b-cloud';
         const finalVlmModel = settingsVlmCloudModel.trim() || defaultVlmModel;
         if (settingsVlmMode === "cloud") {
-          // For cloud-only providers like 'everfern' and 'openrouter', don't pass baseUrl/apiKey
-          // to avoid using stale values from previous provider selections
-          const shouldOmitBaseUrl = settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter';
+            // For cloud-only providers like 'everfern' and 'openrouter', don't pass baseUrl/apiKey
+            // to avoid using stale values from previous provider selections
+            const shouldOmitBaseUrl = settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter';
 
-          let finalCloudKey = settingsVlmCloudKey.trim() || undefined;
-          if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
-            try {
-              const sessionStr = localStorage.getItem('everfern_cloud_session');
-              if (sessionStr) {
-                const session = JSON.parse(sessionStr);
-                finalCloudKey = session?.accessToken;
-              }
-            } catch (e) {}
-          }
+            let finalCloudKey = settingsVlmCloudKey.trim() || undefined;
+            if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
+                try {
+                    const sessionStr = localStorage.getItem('everfern_cloud_session');
+                    if (sessionStr) {
+                        const session = JSON.parse(sessionStr);
+                        finalCloudKey = session?.accessToken;
+                    }
+                } catch (e) { }
+            }
 
-          updated.vlm = {
-            engine: "cloud",
-            provider: settingsVlmCloudProvider,
-            model: finalVlmModel,
-            baseUrl: (shouldOmitBaseUrl ? undefined : settingsVlmCloudUrl.trim()) || undefined,
-            apiKey: finalCloudKey
-          };
+            updated.vlm = {
+                engine: "cloud",
+                provider: settingsVlmCloudProvider,
+                model: finalVlmModel,
+                baseUrl: (shouldOmitBaseUrl ? undefined : settingsVlmCloudUrl.trim()) || undefined,
+                apiKey: finalCloudKey
+            };
         }
         else if (config?.vlm) { updated.vlm = config.vlm; }
         if (voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
@@ -4730,7 +4741,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
     const renderComposerRightActions = (showVolumeToggle = false) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* Context Token Ring */}
             <ContextTokenRing
                 used={contextTokens.used + currentTokens}
                 max={contextTokens.max}
@@ -4747,6 +4757,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             />
 
             {renderModelSelector(true)}
+
+            <VoiceButton
+                isRecording={isRecording}
+                voiceProvider={voiceProvider}
+                voiceDeepgramKey={voiceDeepgramKey}
+                voiceElevenlabsKey={voiceElevenlabsKey}
+                audioLevels={audioLevels}
+                onClick={handleVoiceButtonClick}
+            />
 
             {isLoading ? (
                 <button onClick={() => {
@@ -5087,8 +5106,82 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         />
     );
 
+
+    const playVoiceResponse = useCallback(async (text: string) => {
+        return new Promise<void>(async (resolve) => {
+            if (voiceProvider === "elevenlabs" && voiceElevenlabsKey) {
+                try {
+                    setVoicePlayback(true);
+                    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceVoiceId}?optimize_streaming_latency=0`, {
+                        method: 'POST',
+                        headers: {
+                            'xi-api-key': voiceElevenlabsKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            text,
+                            model_id: 'eleven_monolingual_v1',
+                            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+                        })
+                    });
+                    if (response.ok) {
+                        const audioBlob = await response.blob();
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        if (!audioPlaybackRef.current) audioPlaybackRef.current = new Audio();
+                        const audio = audioPlaybackRef.current;
+                        audio.src = audioUrl;
+                        audio.onended = () => {
+                            setVoicePlayback(false);
+                            URL.revokeObjectURL(audioUrl);
+                            resolve();
+                        };
+                        audio.onerror = () => {
+                            setVoicePlayback(false);
+                            URL.revokeObjectURL(audioUrl);
+                            resolve();
+                        };
+                        await audio.play();
+                        return;
+                    }
+                } catch (error) {
+                    console.error('ElevenLabs TTS error:', error);
+                }
+            }
+
+            // Fallback: Web Speech API (window.speechSynthesis)
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                try {
+                    setVoicePlayback(true);
+                    window.speechSynthesis.cancel();
+
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.onend = () => {
+                        setVoicePlayback(false);
+                        resolve();
+                    };
+                    utterance.onerror = () => {
+                        setVoicePlayback(false);
+                        resolve();
+                    };
+                    const voices = window.speechSynthesis.getVoices();
+                    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
+                    if (englishVoice) utterance.voice = englishVoice;
+
+                    window.speechSynthesis.speak(utterance);
+                } catch (e) {
+                    console.error('SpeechSynthesis fallback error:', e);
+                    setVoicePlayback(false);
+                    resolve();
+                }
+            } else {
+                setVoicePlayback(false);
+                resolve();
+            }
+        });
+    }, [voiceProvider, voiceElevenlabsKey, voiceVoiceId]);
+
     const handleRecordToggle = useCallback(async () => {
-        if (!isRecording) {
+        if (!isRecordingRef.current) {
             setVoiceLoading(true);
             setVoiceTranscript("");
             try {
@@ -5097,27 +5190,59 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 const audioChunks: BlobPart[] = [];
                 mediaRecorderRef.current = mediaRecorder;
                 audioStreamRef.current = stream;
-                
+
                 // Web Audio API Analyser setup
                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
                 const audioContext = new AudioContextClass();
                 const source = audioContext.createMediaStreamSource(stream);
                 const analyser = audioContext.createAnalyser();
                 analyser.fftSize = 64;
-                analyser.smoothingTimeConstant = 0.4; // Responsive real-time reactivity!
+                analyser.smoothingTimeConstant = 0.75; // Even smoother reactivity!
                 source.connect(analyser);
 
                 const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                let hasSpoken = false;
+                let silenceStart = 0;
+
                 const updateLevels = () => {
                     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
                     analyser.getByteFrequencyData(dataArray);
-                    const levels = Array.from({ length: 20 }, (_, idx) => {
-                        const dataIdx = Math.floor((idx / 20) * dataArray.length);
+                    const levels = Array.from({ length: 25 }, (_, idx) => {
+                        const dataIdx = Math.floor((idx / 25) * dataArray.length);
                         const val = dataArray[dataIdx] || 0;
-                        // Map 0-255 to a clean bar height between 15px and 90px
                         return Math.max(15, (val / 255) * 75 + 15);
                     });
                     setAudioLevels(levels);
+
+                    // Forward audio levels to overlay
+                    if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
+                        (window as any).electronAPI.voiceOverlay.sendAudioLevels(levels);
+                    }
+
+                    // Silence detection for overlay recording source
+                    if (recordingSourceRef.current === 'overlay') {
+                        const avg = levels.reduce((a, b) => a + b, 0) / levels.length;
+                        if (avg > 20) {
+                            hasSpoken = true;
+                            silenceStart = 0;
+                        } else if (hasSpoken) {
+                            if (silenceStart === 0) {
+                                silenceStart = Date.now();
+                            } else if (Date.now() - silenceStart > 2000) {
+                                console.log('[VoiceOverlay] Silence detected (2s). Stopping recording.');
+                                if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                                    (window as any).electronAPI.voiceOverlay.sendState?.('executing');
+                                }
+                                if (mediaRecorderRef.current && (mediaRecorderRef.current.state as string) !== 'inactive') {
+                                    mediaRecorderRef.current.stop();
+                                    setIsRecording(false);
+                                }
+                                return;
+                            }
+                        }
+                    }
+
                     animationFrameRef.current = requestAnimationFrame(updateLevels);
                 };
                 animationFrameRef.current = requestAnimationFrame(updateLevels);
@@ -5128,29 +5253,31 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         cancelAnimationFrame(animationFrameRef.current);
                         animationFrameRef.current = null;
                     }
-                    setAudioLevels(new Array(20).fill(15));
-                    audioContext.close().catch(() => {});
+                    setAudioLevels(new Array(25).fill(15));
+
+                    // Send final flat levels
+                    if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
+                        (window as any).electronAPI.voiceOverlay.sendAudioLevels(new Array(25).fill(15));
+                    }
+
+                    audioContext.close().catch(() => { });
 
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const arrayBuffer = await audioBlob.arrayBuffer();
-                    
+
+                    let transcript = '';
                     if (voiceProvider === "deepgram" && voiceDeepgramKey) {
                         try {
                             const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', { method: 'POST', headers: { 'Authorization': `Token ${voiceDeepgramKey}`, 'Content-Type': 'audio/webm' }, body: arrayBuffer });
                             if (response.ok) {
                                 const result = await response.json();
-                                const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-                                setVoiceTranscript(transcript);
-                                setInputValue(transcript);
-                                if (transcript.trim()) {
-                                    handleSend(transcript);
-                                }
+                                transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
                             }
-                            else { setVoiceTranscript("Failed to transcribe audio"); }
-                        } catch (error) { setVoiceTranscript("Error transcribing audio"); }
+                        } catch (error) {
+                            console.error('[Voice] Transcription error:', error);
+                        }
                     } else if (voiceProvider === "local") {
                         try {
-                            // Convert arrayBuffer to Base64 in standard way
                             const uint8Array = new Uint8Array(arrayBuffer);
                             let binary = '';
                             const len = uint8Array.byteLength;
@@ -5171,32 +5298,62 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             });
                             if (response.ok) {
                                 const result = await response.json();
-                                const transcript = (result.response || result.message?.content || '').trim();
-                                setVoiceTranscript(transcript);
-                                setInputValue(transcript);
-                                if (transcript.trim()) {
-                                    handleSend(transcript);
-                                }
-                            } else {
-                                if (response.status === 404) {
-                                    setVoiceTranscript("Model dimavz/whisper-tiny not found. Run 'ollama run dimavz/whisper-tiny' in terminal.");
-                                } else {
-                                    setVoiceTranscript("Failed to transcribe audio locally");
-                                }
+                                transcript = (result.response || result.message?.content || '').trim();
                             }
                         } catch (error) {
-                            setVoiceTranscript("Ollama not running. Make sure to run 'ollama run dimavz/whisper-tiny' in terminal.");
+                            console.error('[Voice] Local transcription error:', error);
                         }
                     }
+
+                    console.log('[Voice] Received transcript:', transcript);
+                    setVoiceTranscript(transcript);
+                    setInputValue(transcript);
+
+                    const currentSource = recordingSourceRef.current;
+                    if (transcript.trim()) {
+                        if (currentSource === 'overlay') {
+                            if (activeUserQuestionRef.current || (activeUserQuestions && activeUserQuestions.length > 0)) {
+                                const activeQuestion = activeUserQuestions[0];
+                                (window as any).electronAPI.voiceOverlay.sendState?.({
+                                    state: 'clarification',
+                                    type: 'clarification',
+                                    question: activeQuestion.question,
+                                    options: activeQuestion.options,
+                                    formType: activeQuestion.multiSelect ? 'select' : 'single',
+                                    voiceInputText: transcript
+                                });
+                            } else {
+                                handleSend(transcript);
+                            }
+                        } else {
+                            setRecordingSource(null);
+                        }
+                    } else {
+                        setRecordingSource(null);
+                        if (currentSource === 'overlay') {
+                            (window as any).electronAPI.voiceOverlay.sendState?.('idle');
+                        }
+                    }
+
                     stream.getTracks().forEach(track => track.stop());
                     setVoiceLoading(false);
                     mediaRecorderRef.current = null;
                     audioStreamRef.current = null;
                 };
+
                 mediaRecorder.start();
                 setIsRecording(true);
-                voiceTimeoutRef.current = setTimeout(() => { if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') { mediaRecorderRef.current.stop(); setIsRecording(false); } }, 30000);
-            } catch (error) { setVoiceLoading(false); }
+                voiceTimeoutRef.current = setTimeout(() => {
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                        mediaRecorderRef.current.stop();
+                        setIsRecording(false);
+                    }
+                }, 30000);
+            } catch (error) {
+                console.error('[Voice] Start recording error:', error);
+                setVoiceLoading(false);
+                setRecordingSource(null);
+            }
         } else {
             setIsRecording(false);
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
@@ -5206,22 +5363,113 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
-            setAudioLevels(new Array(20).fill(15));
+            setAudioLevels(new Array(25).fill(15));
+            if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
+                (window as any).electronAPI.voiceOverlay.sendAudioLevels(new Array(25).fill(15));
+            }
         }
-    }, [isRecording, voiceProvider, voiceDeepgramKey, handleSend]);
+    }, [voiceProvider, voiceDeepgramKey, handleSend]);
 
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
             (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
-                    if (!isRecording) handleRecordToggle();
+                    if (!isRecordingRef.current) {
+                        if (overlayIdleTimeoutRef.current) {
+                            clearTimeout(overlayIdleTimeoutRef.current);
+                            overlayIdleTimeoutRef.current = null;
+                        }
+                        setRecordingSource('overlay');
+                        handleRecordToggle();
+                    }
                 } else if (data.state === 'executing') {
-                    if (isRecording) handleRecordToggle();
+                    if (isRecordingRef.current) {
+                        handleRecordToggle();
+                    }
+                } else if (data.state === 'idle') {
+                    setRecordingSource(null);
+                }
+            });
+            (window as any).electronAPI.voiceOverlay.onSubmitAnswer((data: any) => {
+                console.log('[VoiceOverlay] Submission received via overlay:', data);
+                if (data && data.type === 'followup') {
+                    handleSend(data.query);
+                } else {
+                    handleQuestionSubmit(data);
                 }
             });
             return () => (window as any).electronAPI.voiceOverlay.removeListeners();
         }
-    }, [isRecording, handleRecordToggle]);
+    }, [handleRecordToggle, handleQuestionSubmit, handleSend]);
+
+    const prevIsLoadingRef = useRef(false);
+    useEffect(() => {
+        if (prevIsLoadingRef.current && !isLoading) {
+            if (recordingSourceRef.current === 'overlay') {
+                console.log('[VoiceOverlay] Agent completed task. Setting state to completed, then idle.');
+
+                const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+                const rawContent = lastAssistantMsg ? lastAssistantMsg.content : 'Task completed successfully.';
+                const { cleanContent, followUps } = extractSuggestedFollowUps(rawContent);
+
+                if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                    (window as any).electronAPI.voiceOverlay.sendState?.({
+                        state: 'completed',
+                        response: cleanContent || 'Task completed successfully.',
+                        followUps: followUps || []
+                    });
+                    
+                    // After a brief delay to show the completed checkmark, go back to idle.
+                    if (overlayIdleTimeoutRef.current) clearTimeout(overlayIdleTimeoutRef.current);
+                    overlayIdleTimeoutRef.current = setTimeout(() => {
+                        overlayIdleTimeoutRef.current = null;
+                        if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                            (window as any).electronAPI.voiceOverlay.sendState?.('idle');
+                        }
+                    }, 15000);
+                }
+            }
+        }
+        prevIsLoadingRef.current = isLoading;
+    }, [isLoading, messages]);
+
+    // Synchronize voice overlay executing and clarification question states
+    useEffect(() => {
+        if (typeof window === 'undefined' || !(window as any).electronAPI?.voiceOverlay) return;
+
+        if (recordingSourceRef.current === 'overlay') {
+            if (activeUserQuestions && activeUserQuestions.length > 0) {
+                const activeQuestion = activeUserQuestions[0];
+                (window as any).electronAPI.voiceOverlay.sendState?.({
+                    state: 'clarification',
+                    type: 'clarification',
+                    question: activeQuestion.question,
+                    options: activeQuestion.options,
+                    formType: activeQuestion.multiSelect ? 'select' : 'single'
+                });
+            } else if (isLoading) {
+                const runningTool = liveToolCalls.find(t => t.status === 'running');
+                let actionText = 'Executing tasks...';
+                if (runningTool) {
+                    actionText = runningTool.label || `Running ${runningTool.toolName}...`;
+                } else if (streamingThought) {
+                    actionText = streamingThought;
+                }
+                
+                (window as any).electronAPI.voiceOverlay.sendState?.({
+                    state: 'executing',
+                    action: actionText
+                });
+            }
+        }
+    }, [isLoading, liveToolCalls, activeUserQuestions, streamingThought]);
+
+    const handleVoiceButtonClick = useCallback(() => {
+        if (!isRecordingRef.current) {
+            setRecordingSource('button');
+        }
+        handleRecordToggle();
+    }, [handleRecordToggle]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     return (
@@ -5272,22 +5520,22 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     voiceElevenlabsKey={voiceElevenlabsKey}
                     audioLevels={audioLevels}
                 />
-            <Sidebar
-                isOpen={sidebarOpen}
-                onToggle={() => setSidebarOpen(!sidebarOpen)}
-                activeConversationId={activeConversationId}
-                activeTaskIds={activeTaskIds}
-                onSelectConversation={handleSelectConversation}
-                onNewChat={handleNewChat}
-                onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
-                onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
-            />
+                <Sidebar
+                    isOpen={sidebarOpen}
+                    onToggle={() => setSidebarOpen(!sidebarOpen)}
+                    activeConversationId={activeConversationId}
+                    activeTaskIds={activeTaskIds}
+                    onSelectConversation={handleSelectConversation}
+                    onNewChat={handleNewChat}
+                    onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
+                    onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
+                />
 
-            <CompletionToast />
+                <CompletionToast />
 
                 <motion.div
                     initial={false}
@@ -5311,11 +5559,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as any}>
                             <div style={{ position: "relative" }}>
-                                <button 
-                                    type="button" 
+                                <button
+                                    type="button"
                                     onClick={() => setShowNotificationMenu(!showNotificationMenu)}
-                                    style={{ position: "relative", background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }} 
-                                    onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"} 
+                                    style={{ position: "relative", background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", display: "flex", alignItems: "center", padding: 4 }}
+                                    onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
                                     onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
                                 >
                                     <BellIcon width={20} height={20} />
@@ -5325,7 +5573,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         </span>
                                     )}
                                 </button>
-                                
+
                                 {showNotificationMenu && (
                                     <>
                                         <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setShowNotificationMenu(false)} />
@@ -5403,15 +5651,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 />
                             </div>
                         ) : (
-                        <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-                            <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px" }}>
-                                <div style={{ maxWidth: isToolDetailOpen ? 620 : 800, margin: "0 auto", padding: isToolDetailOpen ? "0 22px" : "0 32px" }}>
+                            <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+                                <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px" }}>
+                                    <div style={{ maxWidth: isToolDetailOpen ? 620 : 800, margin: "0 auto", padding: isToolDetailOpen ? "0 22px" : "0 32px" }}>
 
-                                    {/* ── Empty / Home State ── */}
-                                    {isEmpty && (
-                                        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
-                                            style={{ marginTop: "14vh", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", maxWidth: 740 }}>
-                                            {/* {folderContexts.length === 0 && (
+                                        {/* ── Empty / Home State ── */}
+                                        {isEmpty && (
+                                            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
+                                                style={{ marginTop: "14vh", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", maxWidth: 740 }}>
+                                                {/* {folderContexts.length === 0 && (
                                                 <div style={{ marginBottom: 26, textAlign: "center" }}>
                                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 8, backgroundColor: "rgba(0, 0, 0, 0.04)", border: "1px solid rgba(0, 0, 0, 0.08)", color: "#717171", fontSize: 13 }}>
                                                         <span>Free plan</span>
@@ -5420,34 +5668,789 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     </div>
                                                 </div>
                                             )} */}
-                                            {folderContexts.length > 0 ? (
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
-                                                        {folderContexts[0].name}
-                                                    </h1>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="Favorite"
-                                                            onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
-                                                            onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
-                                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                                                        </button>
-                                                        <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="More options"
-                                                            onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
-                                                            onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
-                                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                                                        </button>
+                                                {folderContexts.length > 0 ? (
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+                                                        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
+                                                            {folderContexts[0].name}
+                                                        </h1>
+                                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                            <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="Favorite"
+                                                                onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                                                                onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
+                                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                                                            </button>
+                                                            <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="More options"
+                                                                onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                                                                onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
+                                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                                                            </button>
+                                                        </div>
                                                     </div>
+                                                ) : (
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
+                                                        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
+                                                            {randomGreeting}
+                                                        </h1>
+                                                    </div>
+                                                )}
+
+                                                {/* ── Empty state composer ── */}
+                                                <div style={{ width: "100%", maxWidth: 740 }}>
+                                                    {/* Memory Preference Banner */}
+                                                    {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, y: -8 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -8 }}
+                                                            transition={{ duration: 0.2 }}
+                                                            style={{
+                                                                marginBottom: 10,
+                                                                padding: "12px 14px",
+                                                                backgroundColor: "#faf9f7",
+                                                                border: "1px solid #e8e6d9",
+                                                                borderLeft: "3px solid #6366f1",
+                                                                borderRadius: 10,
+                                                                display: "flex",
+                                                                flexDirection: "column",
+                                                                gap: 8,
+                                                            }}
+                                                        >
+                                                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                                                    <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
+                                                                    <path d="M12 8v4M12 16h.01" />
+                                                                </svg>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                        From your previous preferences
+                                                                    </div>
+                                                                    <div style={{ fontSize: 13, color: "#4a4846", lineHeight: 1.55 }}>
+                                                                        {memoryPreferenceBanner.preference}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                                    style={{ background: "none", border: "none", cursor: "pointer", color: "#b5b2aa", padding: 2, flexShrink: 0 }}
+                                                                >
+                                                                    <XMarkIcon width={14} height={14} />
+                                                                </button>
+                                                            </div>
+                                                            <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                                    style={{
+                                                                        fontSize: 12, fontWeight: 500,
+                                                                        padding: "4px 12px", borderRadius: 6,
+                                                                        backgroundColor: "#6366f1", color: "#fff",
+                                                                        border: "none", cursor: "pointer",
+                                                                    }}
+                                                                >
+                                                                    Continue this way
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
+                                                                        setInputValue("I'd like to do this differently — ");
+                                                                        setTimeout(() => textareaRef.current?.focus(), 50);
+                                                                    }}
+                                                                    style={{
+                                                                        fontSize: 12, fontWeight: 500,
+                                                                        padding: "4px 12px", borderRadius: 6,
+                                                                        backgroundColor: "transparent", color: "#4a4846",
+                                                                        border: "1px solid #e8e6d9", cursor: "pointer",
+                                                                    }}
+                                                                >
+                                                                    Do it differently
+                                                                </button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+
+                                                    {/* User Question Form (single or multiple questions) */}
+                                                    {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
+                                                        <UserQuestionForm
+                                                            questions={activeUserQuestions}
+                                                            onSubmit={handleQuestionSubmit}
+                                                            previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                        />
+                                                    )}
+
+                                                    {/* HITL Approval Form */}
+                                                    {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
+                                                        <HitlApprovalForm
+                                                            request={hitlRequest}
+                                                            onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                            onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                        />
+                                                    )}
+
+                                                    {/* Progressive input container */}
+                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
+                                                        {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
+                                                        {renderSubagentSpawnAttachment()}
+                                                        {renderAttachmentStrip()}
+                                                        {isRecording && recordingSource === 'button' ? (
+                                                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
+                                                                {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        style={{
+                                                                            width: 4,
+                                                                            height: Math.max(6, level * 0.5),
+                                                                            borderRadius: 2,
+                                                                            backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                            transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                                                                        }}
+                                                                        className="waveform-bar"
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                                activeUserQuestions.length > 0
+                                                                    ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                    : showHitlApproval
+                                                                        ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                        : "How can I help you today?"
+                                                            } rows={1}
+                                                                disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                                className="placeholder-[var(--color-text-placeholder)]"
+                                                                style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
+                                                        )}
+
+                                                        {/* Progressive fade at the bottom of the textarea */}
+                                                        <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
+                                                        <div style={{ flex: 1 }} />
+                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
+                                                            {renderComposerLeftActions()}
+                                                            {renderComposerRightActions(false)}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Quick prompt chips — hidden when a project is selected */}
+                                                    {folderContexts.length === 0 && (
+                                                        <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                                                            {[
+                                                                { label: "Code", prompt: "Write a Python script that ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
+                                                                { label: "Write", prompt: "Draft an email to my manager explaining ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
+                                                                { label: "Learn", prompt: "Explain how the following concept works: ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
+                                                                { label: "Life stuff", prompt: "Create a weekly meal planner for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
+                                                                { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
+                                                            ].map(c => (
+                                                                <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
+                                                                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
+                                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                                                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-primary)"; }}>
+                                                                    <span style={{ display: 'flex' }}>{c.icon}</span>
+                                                                    <span style={{ fontWeight: 400 }}>{c.label}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {/* Project mode empty state cue */}
+                                                    {folderContexts.length > 0 && (
+                                                        <div style={{ marginTop: 60, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+                                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                                                <line x1="9" y1="10" x2="15" y2="10" />
+                                                                <line x1="9" y1="14" x2="13" y2="14" />
+                                                            </svg>
+                                                            <p style={{ fontSize: 15, color: "var(--color-text-primary)", margin: 0, fontWeight: 500, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
+                                                                Give EverFern a task and it'll pick up your project context automatically.
+                                                            </p>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            ) : (
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
-                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
-                                                        {randomGreeting}
-                                                    </h1>
+                                            </motion.div>
+                                        )}
+
+                                        {/* Plan Review Card */}
+                                        {activePlan && (
+                                            <div style={{ maxWidth: 800, margin: "0 auto 24px", padding: "0 32px" }}>
+                                                <PlanReviewCard plan={activePlan} onApprove={handleApprovePlan} onEdit={() => setShowArtifacts(true)} />
+                                            </div>
+                                        )}
+
+
+
+                                        {/* Messages */}
+                                        <AnimatePresence mode="popLayout">
+                                            {messages.map((msg, idx) => {
+                                                // Skip assistant messages that are purely noise with no other value
+                                                if (msg.role === 'assistant') {
+                                                    const scrubbed = scrubOrchestratorNoise(msg.content || '').trim();
+                                                    const hasVisibleContent = scrubbed.length > 0;
+                                                    const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+                                                    const hasReasoning = !!msg.reasoning_content;
+                                                    const isLatest = idx === messages.length - 1;
+
+                                                    if (!hasVisibleContent && !hasToolCalls && !hasReasoning && !isLatest) {
+                                                        return null;
+                                                    }
+                                                }
+
+                                                return (
+                                                    <motion.div
+                                                        key={msg.id}
+                                                        initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                                                        transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
+                                                        layout={idx === messages.length - 1}
+                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
+                                                    >
+
+                                                        <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
+                                                            {msg.role === "user" ? (
+                                                                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                                                    {msg.attachments && msg.attachments.length > 0 && (
+                                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                                                            {msg.attachments.map(a => (
+                                                                                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)", maxWidth: '100%' }}>
+                                                                                    {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
+                                                                                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                                                                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={a.path || a.name}>{a.name}</span>
+                                                                                        <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
+                                                                                        {a.path && (
+                                                                                            <span style={{ fontSize: 9, color: "var(--color-text-placeholder)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }} title={a.path}>
+                                                                                                {a.path}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                    {(() => {
+                                                                        if (!msg.content) return null;
+                                                                        const parts = msg.content.split(/\n\n\[Shared folder context\]\n/);
+                                                                        const mainText = parts[0];
+                                                                        const folderContextBlock = parts.length > 1 ? parts[1].split("\n\nNote:")[0] : null;
+                                                                        const folderLines = folderContextBlock ? folderContextBlock.split('\n').filter(l => l.startsWith('- ')).map(l => l.substring(2).trim()) : [];
+                                                                        const isPlanApproved = mainText?.startsWith('[PLAN_APPROVED]');
+                                                                        const planText = isPlanApproved ? mainText.replace('[PLAN_APPROVED]\n', '').trim() : null;
+                                                                        return (
+                                                                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                                                                {isPlanApproved ? (
+                                                                                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                                                                        <PlanApprovalBanner />
+                                                                                        {planText && planText !== 'I have reviewed and approved your execution plan. Please proceed with the execution as planned.' && (
+                                                                                            <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{planText}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    mainText && <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{mainText}</span>
+                                                                                )}
+                                                                                {folderLines.length > 0 && (
+                                                                                    <div style={{ padding: "12px 16px", backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12 }}>
+                                                                                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
+                                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                                                                            Shared context
+                                                                                        </div>
+                                                                                        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
+                                                                                            {folderLines.map((line, idx) => <div key={idx} style={{ wordBreak: "break-all", display: "flex", gap: 6 }}><span style={{ color: "var(--color-text-tertiary)" }}>-</span> {line}</div>)}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <div
+                                                                        className="overflow-y-auto pr-3 custom-scrollbar"
+                                                                        style={{
+                                                                            maxHeight: "calc(100vh - 280px)",
+                                                                            position: "relative",
+                                                                            paddingLeft: "12px"
+                                                                        }}
+                                                                    >
+                                                                        <AgentTimeline
+                                                                            key={`timeline-${msg.id}`}
+                                                                            toolCalls={msg.toolCalls || []}
+                                                                            thought={msg.thought}
+                                                                            reasoningContent={msg.reasoning_content}
+                                                                            isLive={false}
+                                                                            currentPhase={currentPhase}
+                                                                            currentNode={currentNode}
+                                                                            subAgentProgress={subAgentProgress}
+                                                                            generatedTitle={msg.generatedTitle}
+                                                                            missionTimeline={msg.missionTimeline || missionTimeline}
+                                                                            onPillClick={handlePillClick}
+                                                                        />
+                                                                    </div>
+                                                                    {msg.stopped && (
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: 8,
+                                                                            padding: '10px 14px',
+                                                                            marginTop: 12,
+                                                                            backgroundColor: 'var(--color-error-dim)',
+                                                                            border: '1px solid var(--color-error-border)',
+                                                                            borderRadius: 10,
+                                                                            fontSize: 13,
+                                                                            color: 'var(--color-error)',
+                                                                            fontWeight: 500
+                                                                        }}>
+                                                                            <StopIcon width={14} height={14} />
+                                                                            <span>Stopped by user</span>
+                                                                        </div>
+                                                                    )}
+
+
+                                                                    {(() => {
+                                                                        const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
+                                                                        let displayContent = scrubOrchestratorNoise(cleanContent.trim());
+                                                                        if (displayContent === 'Working...' || displayContent === 'Working') {
+                                                                            displayContent = '';
+                                                                        }
+                                                                        const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
+                                                                        const hasContent = finalContent.length > 0;
+                                                                        const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+
+                                                                        return (
+                                                                            <>
+                                                                                {hasContent ? (
+                                                                                    <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
+                                                                                ) : hasToolCalls ? (
+                                                                                    <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
+
+                                                                                    </div>
+                                                                                ) : null}
+                                                                                {msg.limitReached && <EverFernCloudLimitNotice />}
+                                                                                {artifacts.map((art, i) => {
+                                                                                    const ext = art.path.split('.').pop()?.toLowerCase() || '';
+                                                                                    const isPremiumDoc = ext === 'md';
+                                                                                    return (
+                                                                                        <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
+                                                                                            {isPremiumDoc ? (
+                                                                                                <DocumentCard
+                                                                                                    path={art.path}
+                                                                                                    description={art.description}
+                                                                                                    chatId={activeConversationId || ""}
+                                                                                                    onOpenArtifact={(name) => {
+                                                                                                        setViewingFile({ name, path: art.path });
+                                                                                                    }}
+                                                                                                />
+                                                                                            ) : (
+                                                                                                <FileArtifact
+                                                                                                    path={art.path}
+                                                                                                    description={art.description}
+                                                                                                    chatId={activeConversationId || ""}
+                                                                                                    onOpenArtifact={(name) => {
+                                                                                                        setViewingFile({ name, path: art.path });
+                                                                                                    }}
+                                                                                                />
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                                {followUps.length > 0 && (
+                                                                                    <SuggestedFollowUpsComponent
+                                                                                        followUps={followUps}
+                                                                                        onSelect={(text) => handleSend(text)}
+                                                                                    />
+                                                                                )}
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                    <ReportContainer
+                                                                        content={msg.content}
+                                                                        onView={(label, path) => {
+                                                                            const filename = path.split(/[\\/]/).pop() || label;
+                                                                            setViewingFile({ name: filename, path });
+                                                                        }}
+                                                                    />
+                                                                    {msg.role === "assistant" && currentSites.length > 0 && currentSites.some(site => site.chatId === activeConversationId) && (
+                                                                        <div style={{ marginTop: 12 }}>
+                                                                            {currentSites.filter(site => site.chatId === activeConversationId).map(site => <SitePreview key={site.id} chatId={activeConversationId || ""} filename={site.id} />)}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {msg.toolCalls?.filter(tc => tc.toolName === 'visualize').map(tc => (
+                                                                        <InlineVisualization
+                                                                            key={tc.id}
+                                                                            html={tc.args?.html as string || ''}
+                                                                            css={tc.args?.css as string}
+                                                                            js={tc.args?.js as string}
+                                                                            title={tc.args?.title as string}
+                                                                            height={tc.args?.height as number}
+                                                                        />
+                                                                    ))}
+                                                                    <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
+                                                                    {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
+                                                                        <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                            <UserQuestionForm
+                                                                                questions={activeUserQuestions}
+                                                                                onSubmit={handleQuestionSubmit}
+                                                                                previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                                                isInline={true}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                    {idx === messages.length - 1 && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
+                                                                        <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                            <HitlApprovalForm
+                                                                                request={hitlRequest}
+                                                                                onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                                                onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                                                isInline={true}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+
+                                                                    <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 12 }}>
+                                                                        <button
+                                                                            onClick={() => handleUndoTurn(idx)}
+                                                                            title="Undo Turn"
+                                                                            className="hover:text-zinc-600 transition-colors"
+                                                                            style={{
+                                                                                background: 'transparent',
+                                                                                border: 'none',
+                                                                                padding: '4px',
+                                                                                color: 'var(--color-text-tertiary)',
+                                                                                cursor: 'pointer',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center'
+                                                                            }}
+                                                                        >
+                                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                                <path d="M3 7v6h6" />
+                                                                                <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13" />
+                                                                            </svg>
+                                                                        </button>
+
+                                                                        <button
+                                                                            onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('down'); setShowFeedbackModal(true); }}
+                                                                            title="Thumbs Down"
+                                                                            className="hover:text-red-500 transition-colors"
+                                                                            style={{
+                                                                                background: 'transparent',
+                                                                                border: 'none',
+                                                                                padding: '4px',
+                                                                                color: 'var(--color-text-tertiary)',
+                                                                                cursor: 'pointer',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center'
+                                                                            }}
+                                                                        >
+                                                                            <HandThumbDownIcon className="w-4 h-4" />
+                                                                        </button>
+
+                                                                        <button
+                                                                            onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('up'); setShowFeedbackModal(true); }}
+                                                                            title="Thumbs Up"
+                                                                            className="hover:text-green-500 transition-colors"
+                                                                            style={{
+                                                                                background: 'transparent',
+                                                                                border: 'none',
+                                                                                padding: '4px',
+                                                                                color: 'var(--color-text-tertiary)',
+                                                                                cursor: 'pointer',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center'
+                                                                            }}
+                                                                        >
+                                                                            <HandThumbUpIcon className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </motion.div>
+                                                );
+                                            })
+                                            }
+                                        </AnimatePresence>
+
+
+
+                                        {/* Live streaming state - hide if last message already has this content (prevent duplicates).
+                                        Exception: when HITL or user question is active, always show the streaming bubble
+                                        so the previous agent message doesn't disappear while the form is shown. */}
+                                        {(isLoading || (streamingContent && (activeUserQuestions.length > 0 || showHitlApproval))) && (
+                                            (activeUserQuestions.length > 0 || showHitlApproval) ||
+                                            !(messages.length > 0 && messages[messages.length - 1].role === "assistant" && streamingContent && messages[messages.length - 1].content?.trim() === streamingContent?.trim())
+                                        ) && (
+                                                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32, display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+
+                                                    <div style={{ width: "100%" }}>
+                                                        <AgentTimeline
+                                                            key={activeConversationId || 'new'}
+                                                            toolCalls={liveToolCalls}
+                                                            thought={streamingThought}
+                                                            reasoningContent={undefined}
+                                                            isLive={true}
+                                                            currentPhase={currentPhase}
+                                                            currentNode={currentNode}
+                                                            planSteps={activePlanSteps}
+                                                            planTitle={activePlanTitle}
+                                                            subAgentProgress={subAgentProgress}
+                                                            debateData={debateData}
+                                                            isDebating={isDebating}
+                                                            debateId={lastDebateId}
+                                                            onSkipDebate={skipDebate}
+                                                            missionTimeline={missionTimeline}
+                                                            onPillClick={handlePillClick}
+                                                        />
+                                                        {/* Live streaming tool call cards — show tool calls being built in real-time */}
+                                                        {streamingToolCalls.length > 0 && (
+                                                            <div className="mt-2 space-y-1">
+                                                                {streamingToolCalls.map(tc => (
+                                                                    <LiveToolCallCard key={tc.index} {...tc} />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {activeSurface && (
+                                                            <SurfaceCanvas data={activeSurface} />
+                                                        )}
+
+                                                        {(() => {
+                                                            const { cleanContent: artifactCleanContent, artifacts } = extractFileArtifacts(streamingContent || '');
+
+                                                            // Scrub tool calls and orchestrator noise from streaming content
+                                                            let cleanContent = scrubOrchestratorNoise(
+                                                                artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim()
+                                                            );
+                                                            if (cleanContent === 'Working...' || cleanContent === 'Working') {
+                                                                cleanContent = '';
+                                                            }
+
+                                                            const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
+
+                                                            return (
+                                                                <>
+                                                                    {(finalStreamingContent || streamingContent) && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
+                                                                    {artifacts.map((art, i) => {
+                                                                        const ext = art.path.split('.').pop()?.toLowerCase() || '';
+                                                                        const isPremiumDoc = ext === 'md';
+                                                                        return (
+                                                                            <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
+                                                                                {isPremiumDoc ? (
+                                                                                    <DocumentCard
+                                                                                        path={art.path}
+                                                                                        description={art.description}
+                                                                                        chatId={activeConversationId || ""}
+                                                                                        onOpenArtifact={(name) => {
+                                                                                            setViewingFile({ name, path: art.path });
+                                                                                        }}
+                                                                                    />
+                                                                                ) : (
+                                                                                    <FileArtifact
+                                                                                        path={art.path}
+                                                                                        description={art.description}
+                                                                                        chatId={activeConversationId || ""}
+                                                                                        onOpenArtifact={(name) => {
+                                                                                            setViewingFile({ name, path: art.path });
+                                                                                        }}
+                                                                                    />
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                    {liveToolCalls.filter(tc => tc.toolName === 'visualize').map(tc => (
+                                                                        <InlineVisualization
+                                                                            key={tc.id}
+                                                                            html={tc.args?.html as string || ''}
+                                                                            css={tc.args?.css as string}
+                                                                            js={tc.args?.js as string}
+                                                                            title={tc.args?.title as string}
+                                                                            height={tc.args?.height as number}
+                                                                        />
+                                                                    ))}
+                                                                </>
+                                                            );
+                                                        })()}
+
+                                                        {activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
+                                                            <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                <UserQuestionForm
+                                                                    questions={activeUserQuestions}
+                                                                    onSubmit={handleQuestionSubmit}
+                                                                    previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                                    isInline={true}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        {showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
+                                                            <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                                <HitlApprovalForm
+                                                                    request={hitlRequest}
+                                                                    onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                                    onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                                    isInline={true}
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && !isDebating && (
+                                                            <LoadingBreadcrumb text={getNodeDisplayName(currentNode)} />
+                                                        )}
+                                                        {(activeUserQuestions.length > 0 || showHitlApproval) && !isInlineFormActive && (
+                                                            <div style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 8,
+                                                                padding: '16px 20px',
+                                                                backgroundColor: 'var(--color-navis-active-bg)',
+                                                                border: '1px solid var(--color-navis-active-border)',
+                                                                borderRadius: 8,
+                                                                margin: '16px 20px',
+                                                                color: 'var(--color-navis-active-text)',
+                                                                fontSize: 14,
+                                                                fontWeight: 600
+                                                            }}>
+                                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                    <circle cx="12" cy="12" r="10" />
+                                                                    <path d="M9,9h6v6H9z" />
+                                                                </svg>
+                                                                Waiting for your input
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        <div ref={messagesEndRef} />
+                                    </div>
+                                </div>
+
+                                {/* ── Progressive blur + morphing scroll-to-bottom button ── */}
+                                {!isEmpty && (
+                                    <div className="relative pointer-events-none h-0">
+                                        {/* Progressive blur above the composer */}
+                                        <div
+                                            className="absolute bottom-0 left-0 right-0 pointer-events-none h-24 z-10"
+                                            style={{
+                                                background: 'linear-gradient(to bottom, var(--color-bg-surface-transparent), var(--color-bg-surface) 75%)',
+                                            }}
+                                        />
+                                        {/* Morphing scroll-to-bottom button */}
+                                        <AnimatePresence>
+                                            {isScrolledUp && (
+                                                <motion.button
+                                                    key="scroll-to-bottom"
+                                                    type="button"
+                                                    onClick={() => { scrollToBottom(); }}
+                                                    initial={{ opacity: 0, scale: 0.5, y: 20 }}
+                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                    exit={{ opacity: 0, scale: 0.8, y: 10, filter: 'blur(8px)' }}
+                                                    transition={{
+                                                        type: 'spring',
+                                                        stiffness: 400,
+                                                        damping: 25,
+                                                    }}
+                                                    whileHover={{ scale: 1.15, opacity: 0.9 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center cursor-pointer shadow-2xl backdrop-blur-md"
+                                                    style={{
+                                                        bottom: 24,
+                                                        backgroundColor: 'var(--color-text-primary)',
+                                                        border: '1px solid rgba(255,255,255,0.15)',
+                                                        boxShadow: '0 8px 30px rgba(0,0,0,0.28)',
+                                                    }}
+                                                >
+                                                    <svg
+                                                        width={22}
+                                                        height={22}
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="var(--color-bg-surface)"
+                                                        strokeWidth={2.5}
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                    >
+                                                        <path d="M12 5v14M5 12l7 7 7-7" />
+                                                    </svg>
+                                                </motion.button>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
+
+                                {/* ── Non-empty bottom composer ── */}
+                                {!isEmpty && (
+                                    <div style={{ padding: "0 24px 12px", width: "100%", maxWidth: 848, margin: "0 auto", position: "relative", zIndex: 50 }}>
+                                        <AnimatePresence>
+                                            {showPermissionModal && (
+                                                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ duration: 0.2 }} style={{ width: "96%", maxWidth: 840, margin: "0 auto", position: "relative", zIndex: 1 }}>
+                                                    <div style={{ width: "100%", background: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                                                        {/* Header with Title and Controls */}
+                                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                                                            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                                                                <div style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showPermissionModal ? "rgba(251, 191, 36, 0.15)" : "var(--color-bg-subtle)", border: showPermissionModal ? "1px solid rgba(251, 191, 36, 0.3)" : "1px solid transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                                                    {showPermissionModal ? <span style={{ fontSize: 16 }}>🔒</span> : <Loader size={14} strokeWidth={2} className="text-zinc-300" />}
+                                                                </div>
+                                                                <div>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Fern needs permission to access your system files</div>
+                                                                    </div>
+                                                                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        {/* Screenshot Zoom Overlay */}
+                                        <AnimatePresence>
+                                            {zoomedScreenshot && (
+                                                <motion.div
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                    exit={{ opacity: 0 }}
+                                                    onClick={() => setZoomedScreenshot(null)}
+                                                    style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, cursor: 'zoom-out', backdropFilter: 'blur(8px)' }}
+                                                >
+                                                    <motion.div
+                                                        initial={{ scale: 0.9, y: 20 }}
+                                                        animate={{ scale: 1, y: 0 }}
+                                                        style={{ maxWidth: '95%', maxHeight: '95%', position: 'relative' }}
+                                                    >
+                                                        <img src={zoomedScreenshot} style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: 16, boxShadow: '0 30px 60px rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)' }} />
+                                                        <div style={{ position: 'absolute', top: -48, right: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, background: 'rgba(255,255,255,0.1)', padding: '8px 16px', borderRadius: 20, backdropFilter: 'blur(4px)' }}>
+                                                            <XMarkIcon width={18} height={18} strokeWidth={2.5} /> Close Preview
+                                                        </div>
+                                                    </motion.div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+                                            {/* Task 7.4: Local Execution Permission Card — above input */}
+                                            {localExecutionRequest && (
+                                                <div style={{ padding: '0 0 12px' }}>
+                                                    <LocalExecutionPermissionCard
+                                                        command={localExecutionRequest.command}
+                                                        shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
+                                                        reason={localExecutionRequest.reason}
+                                                        agentName="EverFern"
+                                                        onDeny={() => {
+                                                            respondToLocalExecutionRequest(localExecutionRequest, false, false);
+                                                        }}
+                                                        onAlwaysAllow={() => {
+                                                            respondToLocalExecutionRequest(localExecutionRequest, true, true);
+                                                        }}
+                                                        onAllowOnce={() => {
+                                                            respondToLocalExecutionRequest(localExecutionRequest, true, false);
+                                                        }}
+                                                    />
                                                 </div>
                                             )}
-
-                                            {/* ── Empty state composer ── */}
-                                            <div style={{ width: "100%", maxWidth: 740 }}>
+                                            <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
+                                                {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                 {/* Memory Preference Banner */}
                                                 {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                     <motion.div
@@ -5456,11 +6459,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         exit={{ opacity: 0, y: -8 }}
                                                         transition={{ duration: 0.2 }}
                                                         style={{
-                                                            marginBottom: 10,
+                                                            margin: "12px 16px 0",
                                                             padding: "12px 14px",
-                                                            backgroundColor: "#faf9f7",
-                                                            border: "1px solid #e8e6d9",
-                                                            borderLeft: "3px solid #6366f1",
+                                                            backgroundColor: "var(--color-bg-subtle)",
+                                                            border: "1px solid var(--color-border)",
+                                                            borderLeft: "3px solid var(--color-navis-active-border)",
                                                             borderRadius: 10,
                                                             display: "flex",
                                                             flexDirection: "column",
@@ -5468,22 +6471,22 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         }}
                                                     >
                                                         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                                                                <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
-                                                                <path d="M12 8v4M12 16h.01"/>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-active-border)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                                                <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
+                                                                <path d="M12 8v4M12 16h.01" />
                                                             </svg>
                                                             <div style={{ flex: 1 }}>
-                                                                <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
                                                                     From your previous preferences
                                                                 </div>
-                                                                <div style={{ fontSize: 13, color: "#4a4846", lineHeight: 1.55 }}>
+                                                                <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
                                                                     {memoryPreferenceBanner.preference}
                                                                 </div>
                                                             </div>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                                style={{ background: "none", border: "none", cursor: "pointer", color: "#b5b2aa", padding: 2, flexShrink: 0 }}
+                                                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 2, flexShrink: 0 }}
                                                             >
                                                                 <XMarkIcon width={14} height={14} />
                                                             </button>
@@ -5493,9 +6496,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                 type="button"
                                                                 onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
                                                                 style={{
-                                                                    fontSize: 12, fontWeight: 500,
+                                                                    fontSize: 11.5, fontWeight: 500,
                                                                     padding: "4px 12px", borderRadius: 6,
-                                                                    backgroundColor: "#6366f1", color: "#fff",
+                                                                    backgroundColor: "var(--color-navis-active-text)", color: "var(--color-bg-base)",
                                                                     border: "none", cursor: "pointer",
                                                                 }}
                                                             >
@@ -5509,10 +6512,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     setTimeout(() => textareaRef.current?.focus(), 50);
                                                                 }}
                                                                 style={{
-                                                                    fontSize: 12, fontWeight: 500,
+                                                                    fontSize: 11.5, fontWeight: 500,
                                                                     padding: "4px 12px", borderRadius: 6,
-                                                                    backgroundColor: "transparent", color: "#4a4846",
-                                                                    border: "1px solid #e8e6d9", cursor: "pointer",
+                                                                    backgroundColor: "transparent", color: "var(--color-text-secondary)",
+                                                                    border: "1px solid var(--color-border)", cursor: "pointer",
                                                                 }}
                                                             >
                                                                 Do it differently
@@ -5523,801 +6526,64 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                 {/* User Question Form (single or multiple questions) */}
                                                 {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
-                                                    <UserQuestionForm
-                                                        questions={activeUserQuestions}
-                                                        onSubmit={handleQuestionSubmit}
-                                                        previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                    />
-                                                )}
-
-                                                {/* HITL Approval Form */}
-                                                {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
-                                                    <HitlApprovalForm
-                                                        request={hitlRequest}
-                                                        onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                        onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                    />
-                                                )}
-
-                                                 {/* Progressive input container */}
-                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
-                                                    {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
-                                                    {renderSubagentSpawnAttachment()}
-                                                    {renderAttachmentStrip()}
-                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                        activeUserQuestions.length > 0 
-                                                            ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above") 
-                                                            : showHitlApproval 
-                                                                ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above") 
-                                                                : "How can I help you today?"
-                                                    } rows={1}
-                                                        disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                        className="placeholder-[var(--color-text-placeholder)]"
-                                                        style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
-
-                                                    {/* Progressive fade at the bottom of the textarea */}
-                                                    <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
-                                                    <div style={{ flex: 1 }} />
-                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
-                                                        {renderComposerLeftActions()}
-                                                        {renderComposerRightActions(false)}
-                                                     </div>
-                                                 </div>
-
-                                                 {/* Quick prompt chips — hidden when a project is selected */}
-                                                 {folderContexts.length === 0 && (
-                                                     <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                                                         {[
-                                                             { label: "Code", prompt: "Write a Python script that ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
-                                                             { label: "Write", prompt: "Draft an email to my manager explaining ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
-                                                             { label: "Learn", prompt: "Explain how the following concept works: ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
-                                                             { label: "Life stuff", prompt: "Create a weekly meal planner for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
-                                                             { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
-                                                         ].map(c => (
-                                                             <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
-                                                                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
-                                                                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
-                                                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-primary)"; }}>
-                                                                 <span style={{ display: 'flex' }}>{c.icon}</span>
-                                                                 <span style={{ fontWeight: 400 }}>{c.label}</span>
-                                                             </button>
-                                                         ))}
-                                                     </div>
-                                                 )}
-                                                {/* Project mode empty state cue */}
-                                                {folderContexts.length > 0 && (
-                                                    <div style={{ marginTop: 60, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                                                            <line x1="9" y1="10" x2="15" y2="10"/>
-                                                            <line x1="9" y1="14" x2="13" y2="14"/>
-                                                        </svg>
-                                                        <p style={{ fontSize: 15, color: "var(--color-text-primary)", margin: 0, fontWeight: 500, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
-                                                            Give EverFern a task and it'll pick up your project context automatically.
-                                                        </p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </motion.div>
-                                    )}
-
-                                    {/* Plan Review Card */}
-                                    {activePlan && (
-                                        <div style={{ maxWidth: 800, margin: "0 auto 24px", padding: "0 32px" }}>
-                                            <PlanReviewCard plan={activePlan} onApprove={handleApprovePlan} onEdit={() => setShowArtifacts(true)} />
-                                        </div>
-                                    )}
-
-
-
-                                    {/* Messages */}
-                                    <AnimatePresence mode="popLayout">
-                                        {messages.map((msg, idx) => {
-                                            // Skip assistant messages that are purely noise with no other value
-                                            if (msg.role === 'assistant') {
-                                                const scrubbed = scrubOrchestratorNoise(msg.content || '').trim();
-                                                const hasVisibleContent = scrubbed.length > 0;
-                                                const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
-                                                const hasReasoning = !!msg.reasoning_content;
-                                                const isLatest = idx === messages.length - 1;
-
-                                                if (!hasVisibleContent && !hasToolCalls && !hasReasoning && !isLatest) {
-                                                    return null;
-                                                }
-                                            }
-
-                                            return (
-                                                <motion.div
-                                                    key={msg.id}
-                                                    initial={{ opacity: 0, y: 30, scale: 0.95 }}
-                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                                                    transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
-                                                    layout={idx === messages.length - 1}
-                                                    style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
-                                                >
-
-                                                <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
-                                                    {msg.role === "user" ? (
-                                                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                            {msg.attachments && msg.attachments.length > 0 && (
-                                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                                                                    {msg.attachments.map(a => (
-                                                                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)", maxWidth: '100%' }}>
-                                                                            {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
-                                                                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                                                                                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={a.path || a.name}>{a.name}</span>
-                                                                                <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
-                                                                                {a.path && (
-                                                                                    <span style={{ fontSize: 9, color: "var(--color-text-placeholder)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }} title={a.path}>
-                                                                                        {a.path}
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                            {(() => {
-                                                                if (!msg.content) return null;
-                                                                const parts = msg.content.split(/\n\n\[Shared folder context\]\n/);
-                                                                const mainText = parts[0];
-                                                                const folderContextBlock = parts.length > 1 ? parts[1].split("\n\nNote:")[0] : null;
-                                                                const folderLines = folderContextBlock ? folderContextBlock.split('\n').filter(l => l.startsWith('- ')).map(l => l.substring(2).trim()) : [];
-                                                                const isPlanApproved = mainText?.startsWith('[PLAN_APPROVED]');
-                                                                const planText = isPlanApproved ? mainText.replace('[PLAN_APPROVED]\n', '').trim() : null;
-                                                                return (
-                                                                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                                        {isPlanApproved ? (
-                                                                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                                                                <PlanApprovalBanner />
-                                                                                {planText && planText !== 'I have reviewed and approved your execution plan. Please proceed with the execution as planned.' && (
-                                                                                    <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{planText}</span>
-                                                                                )}
-                                                                            </div>
-                                                                        ) : (
-                                                                            mainText && <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{mainText}</span>
-                                                                        )}
-                                                                        {folderLines.length > 0 && (
-                                                                            <div style={{ padding: "12px 16px", backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12 }}>
-                                                                                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
-                                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                                                                    Shared context
-                                                                                </div>
-                                                                                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
-                                                                                    {folderLines.map((line, idx) => <div key={idx} style={{ wordBreak: "break-all", display: "flex", gap: 6 }}><span style={{ color: "var(--color-text-tertiary)" }}>-</span> {line}</div>)}
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                        <div
-                                                            className="overflow-y-auto pr-3 custom-scrollbar"
-                                                            style={{
-                                                                maxHeight: "calc(100vh - 280px)",
-                                                                position: "relative",
-                                                                paddingLeft: "12px"
-                                                            }}
-                                                        >
-                                                            <AgentTimeline
-                                                                key={`timeline-${msg.id}`}
-                                                                toolCalls={msg.toolCalls || []}
-                                                                thought={msg.thought}
-                                                                reasoningContent={msg.reasoning_content}
-                                                                isLive={false}
-                                                                currentPhase={currentPhase}
-                                                                currentNode={currentNode}
-                                                                subAgentProgress={subAgentProgress}
-                                                                generatedTitle={msg.generatedTitle}
-                                                                missionTimeline={msg.missionTimeline || missionTimeline}
-                                                                onPillClick={handlePillClick}
-                                                            />
-                                                        </div>
-                                                            {msg.stopped && (
-                                                                <div style={{
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: 8,
-                                                                    padding: '10px 14px',
-                                                                    marginTop: 12,
-                                                                    backgroundColor: 'var(--color-error-dim)',
-                                                                    border: '1px solid var(--color-error-border)',
-                                                                    borderRadius: 10,
-                                                                    fontSize: 13,
-                                                                    color: 'var(--color-error)',
-                                                                    fontWeight: 500
-                                                                }}>
-                                                                    <StopIcon width={14} height={14} />
-                                                                    <span>Stopped by user</span>
-                                                                </div>
-                                                            )}
-
-
-                                                            {(() => {
-                                                                const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
-                                                                let displayContent = scrubOrchestratorNoise(cleanContent.trim());
-                                                                if (displayContent === 'Working...' || displayContent === 'Working') {
-                                                                    displayContent = '';
-                                                                }
-                                                                const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
-                                                                const hasContent = finalContent.length > 0;
-                                                                const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
-
-                                                                return (
-                                                                    <>
-                                                                        {hasContent ? (
-                                                                            <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
-                                                                        ) : hasToolCalls ? (
-                                                                            <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
-
-                                                                            </div>
-                                                                        ) : null}
-                                                                        {msg.limitReached && <EverFernCloudLimitNotice />}
-                                                                        {artifacts.map((art, i) => {
-                                                                            const ext = art.path.split('.').pop()?.toLowerCase() || '';
-                                                                            const isPremiumDoc = ext === 'md';
-                                                                            return (
-                                                                                <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-                                                                                    {isPremiumDoc ? (
-                                                                                        <DocumentCard
-                                                                                            path={art.path}
-                                                                                            description={art.description}
-                                                                                            chatId={activeConversationId || ""}
-                                                                                            onOpenArtifact={(name) => {
-                                                                                                setViewingFile({ name, path: art.path });
-                                                                                            }}
-                                                                                        />
-                                                                                    ) : (
-                                                                                        <FileArtifact
-                                                                                            path={art.path}
-                                                                                            description={art.description}
-                                                                                            chatId={activeConversationId || ""}
-                                                                                            onOpenArtifact={(name) => {
-                                                                                                setViewingFile({ name, path: art.path });
-                                                                                            }}
-                                                                                        />
-                                                                                    )}
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                        {followUps.length > 0 && (
-                                                                            <SuggestedFollowUpsComponent
-                                                                                followUps={followUps}
-                                                                                onSelect={(text) => handleSend(text)}
-                                                                            />
-                                                                        )}
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                            <ReportContainer
-                                                                content={msg.content}
-                                                                onView={(label, path) => {
-                                                                    const filename = path.split(/[\\/]/).pop() || label;
-                                                                    setViewingFile({ name: filename, path });
-                                                                }}
-                                                            />
-                                                            {msg.role === "assistant" && currentSites.length > 0 && currentSites.some(site => site.chatId === activeConversationId) && (
-                                                                <div style={{ marginTop: 12 }}>
-                                                                    {currentSites.filter(site => site.chatId === activeConversationId).map(site => <SitePreview key={site.id} chatId={activeConversationId || ""} filename={site.id} />)}
-                                                                </div>
-                                                            )}
-
-                                                            {msg.toolCalls?.filter(tc => tc.toolName === 'visualize').map(tc => (
-                                                                <InlineVisualization
-                                                                    key={tc.id}
-                                                                    html={tc.args?.html as string || ''}
-                                                                    css={tc.args?.css as string}
-                                                                    js={tc.args?.js as string}
-                                                                    title={tc.args?.title as string}
-                                                                    height={tc.args?.height as number}
-                                                                />
-                                                            ))}
-                                                            <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
-                                                            {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
-                                                                <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
-                                                                    <UserQuestionForm
-                                                                        questions={activeUserQuestions}
-                                                                        onSubmit={handleQuestionSubmit}
-                                                                        previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                                        isInline={true}
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                            {idx === messages.length - 1 && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
-                                                                <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
-                                                                    <HitlApprovalForm
-                                                                        request={hitlRequest}
-                                                                        onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                                        onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                                        isInline={true}
-                                                                    />
-                                                                </div>
-                                                            )}
-
-                                                            <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 12 }}>
-                                                                <button
-                                                                    onClick={() => handleUndoTurn(idx)}
-                                                                    title="Undo Turn"
-                                                                    className="hover:text-zinc-600 transition-colors"
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        padding: '4px',
-                                                                        color: 'var(--color-text-tertiary)',
-                                                                        cursor: 'pointer',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center'
-                                                                    }}
-                                                                >
-                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                                        <path d="M3 7v6h6" />
-                                                                        <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13" />
-                                                                    </svg>
-                                                                </button>
-                                                                
-                                                                <button
-                                                                    onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('down'); setShowFeedbackModal(true); }}
-                                                                    title="Thumbs Down"
-                                                                    className="hover:text-red-500 transition-colors"
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        padding: '4px',
-                                                                        color: 'var(--color-text-tertiary)',
-                                                                        cursor: 'pointer',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center'
-                                                                    }}
-                                                                >
-                                                                    <HandThumbDownIcon className="w-4 h-4" />
-                                                                </button>
-
-                                                                <button
-                                                                    onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('up'); setShowFeedbackModal(true); }}
-                                                                    title="Thumbs Up"
-                                                                    className="hover:text-green-500 transition-colors"
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        padding: '4px',
-                                                                        color: 'var(--color-text-tertiary)',
-                                                                        cursor: 'pointer',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center'
-                                                                    }}
-                                                                >
-                                                                    <HandThumbUpIcon className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </motion.div>
-                                        );
-                                    })
-                                }
-                                    </AnimatePresence>
-
-
-
-                                    {/* Live streaming state - hide if last message already has this content (prevent duplicates).
-                                        Exception: when HITL or user question is active, always show the streaming bubble
-                                        so the previous agent message doesn't disappear while the form is shown. */}
-                                    {(isLoading || (streamingContent && (activeUserQuestions.length > 0 || showHitlApproval))) && (
-                                        (activeUserQuestions.length > 0 || showHitlApproval) ||
-                                        !(messages.length > 0 && messages[messages.length - 1].role === "assistant" && streamingContent && messages[messages.length - 1].content?.trim() === streamingContent?.trim())
-                                    ) && (
-                                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32, display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-
-                                            <div style={{ width: "100%" }}>
-                                                <AgentTimeline
-                                                    key={activeConversationId || 'new'}
-                                                    toolCalls={liveToolCalls}
-                                                    thought={streamingThought}
-                                                    reasoningContent={undefined}
-                                                    isLive={true}
-                                                    currentPhase={currentPhase}
-                                                    currentNode={currentNode}
-                                                    planSteps={activePlanSteps}
-                                                    planTitle={activePlanTitle}
-                                                    subAgentProgress={subAgentProgress}
-                                                    debateData={debateData}
-                                                    isDebating={isDebating}
-                                                    debateId={lastDebateId}
-                                                    onSkipDebate={skipDebate}
-                                                    missionTimeline={missionTimeline}
-                                                    onPillClick={handlePillClick}
-                                                />
-                                                {/* Live streaming tool call cards — show tool calls being built in real-time */}
-                                                {streamingToolCalls.length > 0 && (
-                                                    <div className="mt-2 space-y-1">
-                                                        {streamingToolCalls.map(tc => (
-                                                            <LiveToolCallCard key={tc.index} {...tc} />
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {activeSurface && (
-                                                    <SurfaceCanvas data={activeSurface} />
-                                                )}
-
-                                                {(() => {
-                                                    const { cleanContent: artifactCleanContent, artifacts } = extractFileArtifacts(streamingContent || '');
-
-                                                    // Scrub tool calls and orchestrator noise from streaming content
-                                                    let cleanContent = scrubOrchestratorNoise(
-                                                        artifactCleanContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim()
-                                                    );
-                                                    if (cleanContent === 'Working...' || cleanContent === 'Working') {
-                                                        cleanContent = '';
-                                                    }
-
-                                                                                  const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
-
-                                                    return (
-                                                        <>
-                                                            {(finalStreamingContent || streamingContent) && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
-                                                            {artifacts.map((art, i) => {
-                                                                const ext = art.path.split('.').pop()?.toLowerCase() || '';
-                                                                const isPremiumDoc = ext === 'md';
-                                                                return (
-                                                                    <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-                                                                        {isPremiumDoc ? (
-                                                                            <DocumentCard
-                                                                                path={art.path}
-                                                                                description={art.description}
-                                                                                chatId={activeConversationId || ""}
-                                                                                onOpenArtifact={(name) => {
-                                                                                    setViewingFile({ name, path: art.path });
-                                                                                }}
-                                                                            />
-                                                                        ) : (
-                                                                            <FileArtifact
-                                                                                path={art.path}
-                                                                                description={art.description}
-                                                                                chatId={activeConversationId || ""}
-                                                                                onOpenArtifact={(name) => {
-                                                                                    setViewingFile({ name, path: art.path });
-                                                                                }}
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                            {liveToolCalls.filter(tc => tc.toolName === 'visualize').map(tc => (
-                                                                <InlineVisualization
-                                                                    key={tc.id}
-                                                                    html={tc.args?.html as string || ''}
-                                                                    css={tc.args?.css as string}
-                                                                    js={tc.args?.js as string}
-                                                                    title={tc.args?.title as string}
-                                                                    height={tc.args?.height as number}
-                                                                />
-                                                            ))}
-                                                        </>
-                                                    );
-                                                })()}
-
-                                                {activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
-                                                    <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+                                                    <div style={{ padding: '16px 20px 0' }}>
                                                         <UserQuestionForm
                                                             questions={activeUserQuestions}
                                                             onSubmit={handleQuestionSubmit}
                                                             previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                            isInline={true}
                                                         />
                                                     </div>
                                                 )}
-                                                {showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && !(messages.length > 0 && messages[messages.length - 1].role === "assistant") && (
-                                                    <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
+
+                                                {/* HITL Approval Form */}
+                                                {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
+                                                    <div style={{ padding: '16px 20px 0' }}>
                                                         <HitlApprovalForm
                                                             request={hitlRequest}
                                                             onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
                                                             onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                            isInline={true}
                                                         />
                                                     </div>
                                                 )}
 
-                                                {!streamingContent && liveToolCalls.length === 0 && !streamingThought && activeUserQuestions.length === 0 && !showHitlApproval && !isDebating && (
-                                                    <LoadingBreadcrumb text={getNodeDisplayName(currentNode)} />
-                                                )}
-                                                {(activeUserQuestions.length > 0 || showHitlApproval) && !isInlineFormActive && (
-                                                    <div style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 8,
-                                                        padding: '16px 20px',
-                                                        backgroundColor: 'var(--color-navis-active-bg)',
-                                                        border: '1px solid var(--color-navis-active-border)',
-                                                        borderRadius: 8,
-                                                        margin: '16px 20px',
-                                                        color: 'var(--color-navis-active-text)',
-                                                        fontSize: 14,
-                                                        fontWeight: 600
-                                                    }}>
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                            <circle cx="12" cy="12" r="10"/>
-                                                            <path d="M9,9h6v6H9z"/>
-                                                        </svg>
-                                                        Waiting for your input
+                                                {renderSubagentSpawnAttachment()}
+                                                {renderAttachmentStrip()}
+                                                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                                    <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
+                                                        <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                            activeUserQuestions.length > 0
+                                                                ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                : showHitlApproval
+                                                                    ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                    : "How can I help you today?"
+                                                        } rows={1}
+                                                            disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                            style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
+                                                    </div>
+
+
+                                                </div>
+                                                {(isRecording || voiceLoading || voiceTranscript) && (
+                                                    <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                                                        {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
+                                                        {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
+                                                        {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
                                                     </div>
                                                 )}
+
+                                                <div style={{ flex: 1 }} />
+                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px" }}>
+                                                    {renderComposerLeftActions()}
+                                                    {renderComposerRightActions(true)}
+                                                </div>
                                             </div>
-                                        </motion.div>
-                                    )}
-                                    <div ref={messagesEndRef} />
-                                </div>
-                            </div>
-
-                            {/* ── Progressive blur + morphing scroll-to-bottom button ── */}
-                            {!isEmpty && (
-                                <div className="relative pointer-events-none h-0">
-                                    {/* Progressive blur above the composer */}
-                                    <div
-                                        className="absolute bottom-0 left-0 right-0 pointer-events-none h-24 z-10"
-                                        style={{
-                                            background: 'linear-gradient(to bottom, var(--color-bg-surface-transparent), var(--color-bg-surface) 75%)',
-                                        }}
-                                    />
-                                    {/* Morphing scroll-to-bottom button */}
-                                    <AnimatePresence>
-                                        {isScrolledUp && (
-                                            <motion.button
-                                                key="scroll-to-bottom"
-                                                type="button"
-                                                onClick={() => { scrollToBottom(); }}
-                                                initial={{ opacity: 0, scale: 0.5, y: 20 }}
-                                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                exit={{ opacity: 0, scale: 0.8, y: 10, filter: 'blur(8px)' }}
-                                                transition={{
-                                                    type: 'spring',
-                                                    stiffness: 400,
-                                                    damping: 25,
-                                                }}
-                                                whileHover={{ scale: 1.15, opacity: 0.9 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center cursor-pointer shadow-2xl backdrop-blur-md"
-                                                style={{
-                                                    bottom: 24,
-                                                    backgroundColor: 'var(--color-text-primary)',
-                                                    border: '1px solid rgba(255,255,255,0.15)',
-                                                    boxShadow: '0 8px 30px rgba(0,0,0,0.28)',
-                                                }}
-                                            >
-                                                <svg
-                                                    width={22}
-                                                    height={22}
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="var(--color-bg-surface)"
-                                                    strokeWidth={2.5}
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                >
-                                                    <path d="M12 5v14M5 12l7 7 7-7" />
-                                                </svg>
-                                            </motion.button>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            )}
-
-                            {/* ── Non-empty bottom composer ── */}
-                            {!isEmpty && (
-                                <div style={{ padding: "0 24px 12px", width: "100%", maxWidth: 848, margin: "0 auto", position: "relative", zIndex: 50 }}>
-                                    <AnimatePresence>
-                                        {showPermissionModal && (
-                                            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ duration: 0.2 }} style={{ width: "96%", maxWidth: 840, margin: "0 auto", position: "relative", zIndex: 1 }}>
-                                                <div style={{ width: "100%", background: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderBottom: "none", borderRadius: "20px 20px 0 0", padding: "12px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-                                                    {/* Header with Title and Controls */}
-                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                                                            <div style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showPermissionModal ? "rgba(251, 191, 36, 0.15)" : "var(--color-bg-subtle)", border: showPermissionModal ? "1px solid rgba(251, 191, 36, 0.3)" : "1px solid transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                                                {showPermissionModal ? <span style={{ fontSize: 16 }}>🔒</span> : <Loader size={14} strokeWidth={2} className="text-zinc-300" />}
-                                                            </div>
-                                                            <div>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Fern needs permission to access your system files</div>
-                                                                </div>
-                                                                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    {/* Screenshot Zoom Overlay */}
-                                    <AnimatePresence>
-                                        {zoomedScreenshot && (
-                                            <motion.div
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }}
-                                                exit={{ opacity: 0 }}
-                                                onClick={() => setZoomedScreenshot(null)}
-                                                style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, cursor: 'zoom-out', backdropFilter: 'blur(8px)' }}
-                                            >
-                                                <motion.div
-                                                    initial={{ scale: 0.9, y: 20 }}
-                                                    animate={{ scale: 1, y: 0 }}
-                                                    style={{ maxWidth: '95%', maxHeight: '95%', position: 'relative' }}
-                                                >
-                                                    <img src={zoomedScreenshot} style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: 16, boxShadow: '0 30px 60px rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)' }} />
-                                                    <div style={{ position: 'absolute', top: -48, right: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, background: 'rgba(255,255,255,0.1)', padding: '8px 16px', borderRadius: 20, backdropFilter: 'blur(4px)' }}>
-                                                        <XMarkIcon width={18} height={18} strokeWidth={2.5} /> Close Preview
-                                                    </div>
-                                                </motion.div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-
-                                    <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
-                                        {/* Task 7.4: Local Execution Permission Card — above input */}
-                                        {localExecutionRequest && (
-                                            <div style={{ padding: '0 0 12px' }}>
-                                                <LocalExecutionPermissionCard
-                                                    command={localExecutionRequest.command}
-                                                    shellType={localExecutionRequest.shellType as "Bash" | "PowerShell"}
-                                                    reason={localExecutionRequest.reason}
-                                                    agentName="EverFern"
-                                                    onDeny={() => {
-                                                        respondToLocalExecutionRequest(localExecutionRequest, false, false);
-                                                    }}
-                                                    onAlwaysAllow={() => {
-                                                        respondToLocalExecutionRequest(localExecutionRequest, true, true);
-                                                    }}
-                                                    onAllowOnce={() => {
-                                                        respondToLocalExecutionRequest(localExecutionRequest, true, false);
-                                                    }}
-                                                />
+                                            <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
+                                                Everfern is an agentic AI and can make mistakes. Please double-check responses.
                                             </div>
-                                        )}
-                                        <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
-                                            {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
-                                            {/* Memory Preference Banner */}
-                                            {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, y: -8 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    exit={{ opacity: 0, y: -8 }}
-                                                    transition={{ duration: 0.2 }}
-                                                    style={{
-                                                        margin: "12px 16px 0",
-                                                        padding: "12px 14px",
-                                                        backgroundColor: "var(--color-bg-subtle)",
-                                                        border: "1px solid var(--color-border)",
-                                                        borderLeft: "3px solid var(--color-navis-active-border)",
-                                                        borderRadius: 10,
-                                                        display: "flex",
-                                                        flexDirection: "column",
-                                                        gap: 8,
-                                                    }}
-                                                >
-                                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-active-border)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                                                            <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
-                                                            <path d="M12 8v4M12 16h.01"/>
-                                                        </svg>
-                                                        <div style={{ flex: 1 }}>
-                                                            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
-                                                                From your previous preferences
-                                                            </div>
-                                                            <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
-                                                                {memoryPreferenceBanner.preference}
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 2, flexShrink: 0 }}
-                                                        >
-                                                            <XMarkIcon width={14} height={14} />
-                                                        </button>
-                                                    </div>
-                                                    <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                            style={{
-                                                                fontSize: 11.5, fontWeight: 500,
-                                                                padding: "4px 12px", borderRadius: 6,
-                                                                backgroundColor: "var(--color-navis-active-text)", color: "var(--color-bg-base)",
-                                                                border: "none", cursor: "pointer",
-                                                            }}
-                                                        >
-                                                            Continue this way
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
-                                                                setInputValue("I'd like to do this differently — ");
-                                                                setTimeout(() => textareaRef.current?.focus(), 50);
-                                                            }}
-                                                            style={{
-                                                                fontSize: 11.5, fontWeight: 500,
-                                                                padding: "4px 12px", borderRadius: 6,
-                                                                backgroundColor: "transparent", color: "var(--color-text-secondary)",
-                                                                border: "1px solid var(--color-border)", cursor: "pointer",
-                                                            }}
-                                                        >
-                                                            Do it differently
-                                                        </button>
-                                                    </div>
-                                                </motion.div>
-                                            )}
-
-                                            {/* User Question Form (single or multiple questions) */}
-                                            {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
-                                                <div style={{ padding: '16px 20px 0' }}>
-                                                    <UserQuestionForm
-                                                        questions={activeUserQuestions}
-                                                        onSubmit={handleQuestionSubmit}
-                                                        previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* HITL Approval Form */}
-                                            {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
-                                                <div style={{ padding: '16px 20px 0' }}>
-                                                    <HitlApprovalForm
-                                                        request={hitlRequest}
-                                                        onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                        onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {renderSubagentSpawnAttachment()}
-                                            {renderAttachmentStrip()}
-                                            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                                                <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
-                                                    <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                        activeUserQuestions.length > 0 
-                                                            ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above") 
-                                                            : showHitlApproval 
-                                                                ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above") 
-                                                                : "How can I help you today?"
-                                                    } rows={1}
-                                                        disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                        style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
-                                                </div>
-
-
-                                            </div>
-                                            {(isRecording || voiceLoading || voiceTranscript) && (
-                                                <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                                                    {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
-                                                    {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
-                                                    {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
-                                                </div>
-                                            )}
-
-                                            <div style={{ flex: 1 }} />
-                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px" }}>
-                                                {renderComposerLeftActions()}
-                                                {renderComposerRightActions(true)}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
-                                            Everfern is an agentic AI and can make mistakes. Please double-check responses.
                                         </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Right Sidebar — panel switcher and content */}
@@ -6389,40 +6655,40 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                             {/* Instructions card */}
                             {!(subagent.isActive && showSubagentPanel) && !selectedSubagentToolCall ? (
-                            <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setInstructionsExpanded(!instructionsExpanded)}
-                                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
-                                >
-                                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Instructions</span>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: instructionsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
-                                    </div>
-                                </button>
-                                <AnimatePresence>
-                                    {instructionsExpanded && (
-                                        <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: "auto", opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            transition={{ duration: 0.2 }}
-                                            style={{ overflow: "hidden" }}
-                                        >
-                                            <div style={{ padding: "0 20px 20px" }}>
-                                                <textarea
-                                                    value={instructions}
-                                                    onChange={(e) => setInstructions(e.target.value)}
-                                                    placeholder="Add tone, formatting, or rules to guide how EverFern works."
-                                                    rows={3}
-                                                    style={{ width: "100%", resize: "none", border: "none", outline: "none", fontSize: 13, color: instructions ? "var(--color-text-secondary)" : "var(--color-text-placeholder)", lineHeight: 1.6, background: "transparent", fontFamily: "var(--font-sans)", fontStyle: instructions ? "normal" : "italic" }}
-                                                />
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
+                                <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setInstructionsExpanded(!instructionsExpanded)}
+                                        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
+                                    >
+                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Instructions</span>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: instructionsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9" /></svg>
+                                        </div>
+                                    </button>
+                                    <AnimatePresence>
+                                        {instructionsExpanded && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: "auto", opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.2 }}
+                                                style={{ overflow: "hidden" }}
+                                            >
+                                                <div style={{ padding: "0 20px 20px" }}>
+                                                    <textarea
+                                                        value={instructions}
+                                                        onChange={(e) => setInstructions(e.target.value)}
+                                                        placeholder="Add tone, formatting, or rules to guide how EverFern works."
+                                                        rows={3}
+                                                        style={{ width: "100%", resize: "none", border: "none", outline: "none", fontSize: 13, color: instructions ? "var(--color-text-secondary)" : "var(--color-text-placeholder)", lineHeight: 1.6, background: "transparent", fontFamily: "var(--font-sans)", fontStyle: instructions ? "normal" : "italic" }}
+                                                    />
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             ) : null}
 
                             {/* Scheduled card */}
@@ -6445,8 +6711,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 >
                                     <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Context</span>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: contextExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: contextExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9" /></svg>
                                     </div>
                                 </button>
                                 <AnimatePresence>
@@ -6464,10 +6730,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     <div>
                                                         <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Project</p>
                                                         <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-text-secondary)" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-text-secondary)" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
                                                             <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderContexts[0].name}</span>
                                                             <button type="button" onClick={() => setFolderContexts([])} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 0, display: "flex" }}>
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
                                                             </button>
                                                         </div>
                                                     </div>
@@ -6479,7 +6745,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 <div>
                                                     <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Memory</p>
                                                     <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z"/></svg>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z" /></svg>
                                                         <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>Memory</span>
                                                     </div>
                                                 </div>
@@ -6488,44 +6754,44 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 <svg viewBox="0 0 540 170" width="100%" height="auto" style={{ marginTop: 4, borderRadius: 10 }}>
                                                     <defs>
                                                         <filter id="shadow">
-                                                            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#00000020"/>
+                                                            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#00000020" />
                                                         </filter>
                                                     </defs>
 
                                                     {/* Background */}
-                                                    <rect width="540" height="170" rx="12" fill="var(--color-border-subtle)"/>
+                                                    <rect width="540" height="170" rx="12" fill="var(--color-border-subtle)" />
 
                                                     {/* Card 1 — placed, left */}
-                                                    <rect x="30" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)"/>
-                                                    <rect x="44" y="50" width="55" height="6" rx="2" fill="var(--color-border-strong)"/>
-                                                    <rect x="44" y="63" width="77" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="44" y="75" width="65" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="44" y="87" width="72" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="44" y="99" width="50" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="44" y="111" width="60" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="30" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)" />
+                                                    <rect x="44" y="50" width="55" height="6" rx="2" fill="var(--color-border-strong)" />
+                                                    <rect x="44" y="63" width="77" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="44" y="75" width="65" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="44" y="87" width="72" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="44" y="99" width="50" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="44" y="111" width="60" height="5" rx="2" fill="var(--color-border)" />
 
                                                     {/* Card 2 — placed, center */}
-                                                    <rect x="165" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)"/>
-                                                    <rect x="245" y="40" width="18" height="18" rx="4" fill="var(--color-bg-subtle)"/>
-                                                    <rect x="249" y="45" width="10" height="3" rx="1" fill="var(--color-text-tertiary)"/>
-                                                    <rect x="249" y="50" width="8"  height="3" rx="1" fill="var(--color-text-tertiary)"/>
-                                                    <rect x="179" y="50" width="55" height="7" rx="2" fill="var(--color-text-tertiary)"/>
-                                                    <rect x="179" y="65" width="88" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="179" y="77" width="80" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="179" y="89" width="88" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="179" y="101" width="70" height="5" rx="2" fill="var(--color-border)"/>
-                                                    <rect x="179" y="113" width="78" height="5" rx="2" fill="var(--color-border)"/>
+                                                    <rect x="165" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)" />
+                                                    <rect x="245" y="40" width="18" height="18" rx="4" fill="var(--color-bg-subtle)" />
+                                                    <rect x="249" y="45" width="10" height="3" rx="1" fill="var(--color-text-tertiary)" />
+                                                    <rect x="249" y="50" width="8" height="3" rx="1" fill="var(--color-text-tertiary)" />
+                                                    <rect x="179" y="50" width="55" height="7" rx="2" fill="var(--color-text-tertiary)" />
+                                                    <rect x="179" y="65" width="88" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="179" y="77" width="80" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="179" y="89" width="88" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="179" y="101" width="70" height="5" rx="2" fill="var(--color-border)" />
+                                                    <rect x="179" y="113" width="78" height="5" rx="2" fill="var(--color-border)" />
 
                                                     {/* Card 3 — being placed */}
-                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" opacity="0.75" filter="url(#shadow)"/>
+                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" opacity="0.75" filter="url(#shadow)" />
                                                     <rect x="300" y="32" width="110" height="108" rx="8" fill="none"
-                                                            stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeDasharray="5,3"/>
-                                                    <rect x="314" y="50" width="55" height="6" rx="2" fill="var(--color-border)" opacity="0.7"/>
-                                                    <rect x="314" y="63" width="77" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
-                                                    <rect x="314" y="75" width="65" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
-                                                    <rect x="314" y="87" width="72" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
-                                                    <rect x="314" y="99" width="50" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
-                                                    <rect x="314" y="111" width="60" height="5" rx="2" fill="var(--color-border)" opacity="0.7"/>
+                                                        stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeDasharray="5,3" />
+                                                    <rect x="314" y="50" width="55" height="6" rx="2" fill="var(--color-border)" opacity="0.7" />
+                                                    <rect x="314" y="63" width="77" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
+                                                    <rect x="314" y="75" width="65" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
+                                                    <rect x="314" y="87" width="72" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
+                                                    <rect x="314" y="99" width="50" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
+                                                    <rect x="314" y="111" width="60" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
                                                 </svg>
                                             </div>
                                         </motion.div>
@@ -6547,9 +6813,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     <div style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                         {isLoading ? (
-                                                            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10" stroke="var(--color-border)" strokeWidth="4"/><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="var(--color-text-primary)" stroke="none"/></svg>
+                                                            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10" stroke="var(--color-border)" strokeWidth="4" /><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="var(--color-text-primary)" stroke="none" /></svg>
                                                         ) : (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                                                         )}
                                                     </div>
                                                     <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Execution Plan</span>
@@ -6593,7 +6859,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             subAgentProgress={subAgentProgress}
                             subAgentProgressVersion={subAgentProgressVersion}
                         />
-                                    </div>
+                    </div>
                 </motion.div>
 
                 {settingsModalNode}
@@ -6618,7 +6884,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     conversationId={revertTarget?.conversationId ?? null}
                     targetTimestamp={revertTarget?.timestamp ?? null}
                 />
-                
+
                 <MessageFeedbackModal
                     isOpen={showFeedbackModal}
                     onClose={() => { setShowFeedbackModal(false); setFeedbackTargetIndex(null); }}

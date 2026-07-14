@@ -75,31 +75,31 @@ export default function UpdateNotification() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 20, scale: 0.95 }}
                     transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-                    className="fixed bottom-6 right-6 z-[9999] w-[350px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-lg backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-900/95"
+                    className="fixed bottom-6 right-6 z-[9999] w-[350px] overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-4 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-[#0A0A0A] text-black dark:text-white"
                 >
                     <div className="flex items-start gap-3">
                         {/* Icon Status */}
-                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-bg-subtle)] dark:bg-neutral-800/60">
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-neutral-100 dark:bg-neutral-900">
                             {status === 'downloading' ? (
-                                <ArrowPathIcon className="h-5 w-5 text-[var(--color-accent)] animate-spin" />
+                                <ArrowPathIcon className="h-5 w-5 text-black dark:text-white animate-spin" />
                             ) : status === 'error' ? (
-                                <ExclamationTriangleIcon className="h-5 w-5 text-red-500" />
+                                <ExclamationTriangleIcon className="h-5 w-5 text-black dark:text-white" />
                             ) : status === 'downloaded' ? (
-                                <ArrowDownTrayIcon className="h-5 w-5 text-[var(--color-success)]" />
+                                <ArrowDownTrayIcon className="h-5 w-5 text-black dark:text-white" />
                             ) : (
-                                <ArrowDownTrayIcon className="h-5 w-5 text-[var(--color-accent)]" />
+                                <ArrowDownTrayIcon className="h-5 w-5 text-black dark:text-white" />
                             )}
                         </div>
 
                         {/* Content */}
                         <div className="flex-1 min-w-0 pr-2">
-                            <h3 className="text-[13px] font-semibold tracking-tight text-[var(--color-text-primary)] dark:text-neutral-100">
+                            <h3 className="text-[13px] font-medium tracking-tight">
                                 {status === 'available' && (version ? `Update Available (v${version})` : 'Update Available')}
                                 {status === 'downloading' && 'Downloading Update...'}
                                 {status === 'downloaded' && 'Update Ready to Install'}
                                 {status === 'error' && 'Update Failed'}
                             </h3>
-                            <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-text-secondary)] dark:text-neutral-400">
+                            <p className="mt-1 text-[12px] leading-relaxed text-neutral-500 dark:text-neutral-400 font-light">
                                 {status === 'available' && 'A new version is downloading in the background.'}
                                 {status === 'downloading' && progress && `EverFern v${version || ''} (${progress.percent.toFixed(0)}% completed)`}
                                 {status === 'downloading' && !progress && `Preparing download...`}
@@ -111,18 +111,18 @@ export default function UpdateNotification() {
                         {/* Close button */}
                         <button 
                             onClick={() => setIsVisible(false)}
-                            className="flex-shrink-0 rounded-lg p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors dark:hover:bg-neutral-800/80"
+                            className="flex-shrink-0 rounded-full p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-black dark:text-neutral-500 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
                         >
-                            <XMarkIcon className="h-4.5 w-4.5" />
+                            <XMarkIcon className="h-4 w-4" />
                         </button>
                     </div>
 
                     {/* Action buttons or custom elements */}
                     {status === 'downloaded' && (
-                        <div className="mt-3 flex justify-end">
+                        <div className="mt-4 flex justify-end">
                             <button
                                 onClick={handleRestart}
-                                className="w-full rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] py-2 text-center text-xs font-semibold text-white shadow-xs transition-all cursor-pointer active:scale-[0.98]"
+                                className="w-full rounded-2xl bg-black dark:bg-white hover:bg-neutral-800 dark:hover:bg-neutral-200 py-2.5 text-center text-[13px] font-normal text-white dark:text-black transition-all cursor-pointer border border-transparent dark:hover:border-neutral-300"
                             >
                                 Restart and Update
                             </button>
@@ -133,7 +133,7 @@ export default function UpdateNotification() {
                     {status === 'downloading' && progress && (
                         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-neutral-100 dark:bg-neutral-800">
                             <div 
-                                className="h-full bg-[var(--color-accent)] transition-all duration-300 ease-out shadow-[0_0_8px_var(--color-accent)]"
+                                className="h-full bg-black dark:bg-white transition-all duration-300 ease-out"
                                 style={{ width: `${progress.percent}%` }}
                             />
                         </div>

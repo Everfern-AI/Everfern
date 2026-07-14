@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 const WaveformIcon = ({ size = 16, style }: { size?: number; style?: React.CSSProperties }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 58 58" style={{ width: size, height: size, ...style }}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 58" style={{ width: size, height: size, ...style }}>
         <rect x="3" y="21" width="10" height="16" rx="5" fill="currentColor" />
         <rect x="16" y="9" width="10" height="40" rx="5" fill="currentColor" />
         <rect x="29" y="3" width="10" height="52" rx="5" fill="currentColor" />
