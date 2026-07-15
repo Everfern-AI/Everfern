@@ -26,6 +26,8 @@ export class VoiceOverlayManager {
   private isAltDown = false;
   private isListening = false;
   private holdTimeout: NodeJS.Timeout | null = null;
+  private otherKeyPressed = false;
+  private startListeningTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('[VoiceOverlay] Initializing manager...');
@@ -78,17 +80,20 @@ export class VoiceOverlayManager {
         if (stateStr === 'listening') {
           this.isListening = true;
           if (this.holdTimeout) clearTimeout(this.holdTimeout);
+        } else {
+          this.isListening = false;
         }
         if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
           const primaryDisplay = screen.getPrimaryDisplay();
           const { width, height } = primaryDisplay.workAreaSize;
 
           if (stateStr === 'clarification' || (typeof payload === 'object' && payload?.type === 'clarification')) {
+            const overlayHeight = 340;
             this.overlayWindow.setBounds({
               width: 600,
-              height: 300,
+              height: overlayHeight,
               x: Math.floor(width / 2 - 300),
-              y: height - 320
+              y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(false);
           } else if (stateStr === 'completed' || (typeof payload === 'object' && payload?.state === 'completed')) {
@@ -101,6 +106,23 @@ export class VoiceOverlayManager {
               y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(false);
+          } else if (stateStr === 'history' || (typeof payload === 'object' && payload?.state === 'history')) {
+            const overlayHeight = 360;
+            this.overlayWindow.setBounds({
+              width: 600,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - 300),
+              y: height - overlayHeight - 20
+            });
+            this.overlayWindow.setIgnoreMouseEvents(false);
+          } else if (stateStr === 'error' || (typeof payload === 'object' && payload?.state === 'error')) {
+            this.overlayWindow.setBounds({
+              width: 500,
+              height: 80,
+              x: Math.floor(width / 2 - 250),
+              y: height - 100
+            });
+            this.overlayWindow.setIgnoreMouseEvents(true);
           } else {
             this.overlayWindow.setBounds({
               width: 600,
@@ -182,9 +204,10 @@ export class VoiceOverlayManager {
       uIOhook.on('keydown', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = true;
-        }
-        if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = true;
+        } else {
+          this.otherKeyPressed = true;
         }
         this.checkState();
       });
@@ -192,9 +215,10 @@ export class VoiceOverlayManager {
       uIOhook.on('keyup', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = false;
-        }
-        if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+          this.otherKeyPressed = false;
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = false;
+          this.otherKeyPressed = false;
         }
         this.checkState();
       });
@@ -221,21 +245,30 @@ export class VoiceOverlayManager {
 
     if (shouldListen && !this.wasCtrlAltDown) {
       this.wasCtrlAltDown = true;
-      if (!this.isListening) {
-        console.log('[VoiceOverlay] Starting listening state...');
-        this.isListening = true;
-        if (this.holdTimeout) clearTimeout(this.holdTimeout);
-        
-        if (this.overlayWindow) {
-          this.overlayWindow.showInactive();
-          broadcastState('listening');
-          console.log('[VoiceOverlay] IPC state sent: listening');
-        } else {
-          console.warn('[VoiceOverlay] Cannot start: overlayWindow is null');
+      if (this.startListeningTimeout) clearTimeout(this.startListeningTimeout);
+      this.startListeningTimeout = setTimeout(() => {
+        if (this.isCtrlDown && this.isAltDown && !this.otherKeyPressed) {
+          if (!this.isListening) {
+            console.log('[VoiceOverlay] Starting listening state...');
+            this.isListening = true;
+            if (this.holdTimeout) clearTimeout(this.holdTimeout);
+            
+            if (this.overlayWindow) {
+              this.overlayWindow.showInactive();
+              broadcastState('listening');
+              console.log('[VoiceOverlay] IPC state sent: listening');
+            } else {
+              console.warn('[VoiceOverlay] Cannot start: overlayWindow is null');
+            }
+          }
         }
-      }
+      }, 150);
     } else if (!shouldListen && this.wasCtrlAltDown) {
       this.wasCtrlAltDown = false;
+      if (this.startListeningTimeout) {
+        clearTimeout(this.startListeningTimeout);
+        this.startListeningTimeout = null;
+      }
       if (this.isListening) {
         console.log('[VoiceOverlay] Stopping listening state, executing...');
         this.isListening = false;

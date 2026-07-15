@@ -38,7 +38,7 @@ interface ClarificationOption {
 }
 
 interface OverlayPayload {
-  state: 'idle' | 'listening' | 'executing' | 'completed' | 'clarification';
+  state: 'idle' | 'listening' | 'executing' | 'completed' | 'clarification' | 'error' | 'history';
   action?: string;
   response?: string;
   question?: string;
@@ -46,6 +46,7 @@ interface OverlayPayload {
   formType?: 'select' | 'input' | 'confirm' | 'single';
   voiceInputText?: string;
   followUps?: Array<{ icon: string; text: string }>;
+  message?: string;
 }
 
 function playBubbleSound() {
@@ -105,7 +106,9 @@ export default function OverlayPage() {
   const [audioLevels, setAudioLevels] = useState<number[]>([]);
   const [textInputValue, setTextInputValue] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const prevStateRef = useRef<'idle' | 'listening' | 'executing' | 'completed' | 'clarification'>('idle');
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [historySearchValue, setHistorySearchValue] = useState('');
+  const prevStateRef = useRef<'idle' | 'listening' | 'executing' | 'completed' | 'clarification' | 'error' | 'history'>('idle');
 
   useEffect(() => {
     // Make body transparent for the overlay window
@@ -116,7 +119,7 @@ export default function OverlayPage() {
     if (typeof window !== 'undefined' && (window as any).electronAPI) {
       (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
         // Reset submission state on payload change
-        if (data.state !== 'clarification') {
+        if (data.state !== 'clarification' && data.state !== 'history') {
           setSubmitted(false);
           setTextInputValue('');
         }
@@ -130,6 +133,24 @@ export default function OverlayPage() {
   }, []);
 
   const state = payload?.state || 'idle';
+
+  // Fetch history list when state becomes 'history'
+  useEffect(() => {
+    if (state === 'history') {
+      const fetchHistory = async () => {
+        try {
+          if (typeof window !== 'undefined' && (window as any).electronAPI?.history?.list) {
+            const list = await (window as any).electronAPI.history.list();
+            setHistoryList(list || []);
+          }
+        } catch (err) {
+          console.error('[VoiceOverlay] Failed to fetch history:', err);
+        }
+      };
+      fetchHistory();
+      setSubmitted(false);
+    }
+  }, [state]);
   const isCompleted = state === 'completed';
   const renderedResponse = useMemo(
     () => renderMarkdown(payload?.response || 'Fern completed the task successfully.'),
@@ -157,9 +178,13 @@ export default function OverlayPage() {
   const intensity = Math.min(1, Math.max(0, (avgVolume - 15) / 75)) || 0;
 
   // Glassmorphic layout values with smoother, darker drop shadows
-  const background = `linear-gradient(135deg, rgba(18, 18, 18, 0.95) 0%, rgba(${18 + Math.floor(intensity * 18)}, ${18 + Math.floor(intensity * 18)}, ${18 + Math.floor(intensity * 18)}, 0.95) 100%)`;
+  const background = state === 'error'
+    ? 'linear-gradient(135deg, rgba(28, 18, 18, 0.96) 0%, rgba(18, 18, 18, 0.96) 100%)'
+    : `linear-gradient(135deg, rgba(18, 18, 18, 0.95) 0%, rgba(${18 + Math.floor(intensity * 18)}, ${18 + Math.floor(intensity * 18)}, ${18 + Math.floor(intensity * 18)}, 0.95) 100%)`;
   const boxShadow = 'none';
-  const border = `1px solid rgba(255, 255, 255, ${0.06 + intensity * 0.2})`;
+  const border = state === 'error'
+    ? '1px solid rgba(239, 68, 68, 0.25)'
+    : `1px solid rgba(255, 255, 255, ${0.06 + intensity * 0.2})`;
   const scale = 1 + intensity * 0.012;
 
   // Submit MCQ option or confirm value
@@ -183,6 +208,9 @@ export default function OverlayPage() {
     }
   };
 
+  const hasOptions = (payload?.options && payload.options.length > 0) || payload?.formType === 'confirm';
+  const clarificationMinHeight = hasOptions ? 320 : 200;
+
   return (
     <div style={{
       width: '100vw',
@@ -200,18 +228,18 @@ export default function OverlayPage() {
             key={state}
             initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale }}
-            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95, transition: { duration: 0.25, ease: 'easeIn' } }}
             transition={{ type: 'spring', damping: 26, stiffness: 240 }}
             style={{
               background,
               borderRadius: 24,
-              padding: isCompleted ? '20px 28px' : state === 'clarification' ? '18px 24px' : '12px 28px',
+              padding: isCompleted ? '20px 28px' : (state === 'clarification' || state === 'history') ? '18px 24px' : state === 'error' ? '14px 20px' : '12px 28px',
               display: 'flex',
-              flexDirection: (isCompleted || state === 'clarification') ? 'column' : 'row',
-              alignItems: (isCompleted || state === 'clarification') ? 'stretch' : 'center',
+              flexDirection: (isCompleted || state === 'clarification' || state === 'history') ? 'column' : 'row',
+              alignItems: (isCompleted || state === 'clarification' || state === 'history') ? 'stretch' : 'center',
               justifyContent: 'space-between',
-              width: isCompleted ? 740 : 500,
-              minHeight: isCompleted ? 260 : state === 'clarification' ? 200 : 64,
+              width: isCompleted ? 740 : (state === 'clarification' || state === 'history') ? 600 : 500,
+              minHeight: isCompleted ? 260 : state === 'clarification' ? clarificationMinHeight : state === 'history' ? 320 : state === 'error' ? 52 : 64,
               boxShadow,
               border,
               backdropFilter: 'blur(18px)',
@@ -219,7 +247,7 @@ export default function OverlayPage() {
             }}
           >
             {/* Standard states: Listening & Executing */}
-            {state !== 'clarification' && !isCompleted && (
+            {state !== 'clarification' && !isCompleted && state !== 'error' && state !== 'history' && (
               <div style={{ display: 'flex', gap: 14, alignItems: 'center', flex: 1, overflow: 'hidden' }}>
                 <img
                   src="/images/logos/everfern-withoutbg.png"
@@ -234,13 +262,19 @@ export default function OverlayPage() {
 
                 {/* State: Listening */}
                 {state === 'listening' && (
-                  <div style={{ color: '#fff', fontSize: 15, fontWeight: 400, fontFamily: '"Figtree", sans-serif', opacity: 0.95 }}>
-                    <motion.div
-                      animate={{ opacity: [0.6, 1, 0.6] }}
-                      transition={{ duration: 1.5, repeat: Infinity }}
-                    >
-                      Listening...
-                    </motion.div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflow: 'hidden' }}>
+                    <div style={{ color: '#fff', fontSize: 15, fontWeight: 400, fontFamily: '"Figtree", sans-serif', opacity: 0.95 }}>
+                      <motion.div
+                        animate={{ opacity: [0.6, 1, 0.6] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
+                        Listening...
+                      </motion.div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'rgba(255, 255, 255, 0.45)', fontFamily: '"Figtree", sans-serif' }}>
+                      <span><kbd style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 3px', fontSize: 8.5 }}>Ctrl+Alt+B</kbd> Resume Chat</span>
+                      <span><kbd style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '1px 3px', fontSize: 8.5 }}>Ctrl+Alt+H</kbd> Chat History</span>
+                    </div>
                   </div>
                 )}
 
@@ -303,6 +337,38 @@ export default function OverlayPage() {
                     borderRadius: '50%'
                   }}
                 />
+              </div>
+            )}
+
+            {/* State: Error */}
+            {state === 'error' && (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, fontFamily: '"Figtree", sans-serif' }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444',
+                  flexShrink: 0
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" x2="12" y1="8" y2="12"/>
+                    <line x1="12" x2="12.01" y1="16" y2="16"/>
+                  </svg>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+                  <span style={{ fontSize: 13, color: '#ef4444', fontWeight: 600 }}>
+                    Voice Mode Disabled
+                  </span>
+                  <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 400, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                    {payload.message || "Voice mode isn't enabled. Please configure a provider in settings."}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -495,141 +561,311 @@ export default function OverlayPage() {
                       />
                       Submitting answer...
                     </div>
-                  ) : payload.formType === 'confirm' ? (
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button
-                        onClick={() => submitChoice('yes')}
-                        style={{
-                          flex: 1,
-                          padding: '8px 16px',
-                          borderRadius: 12,
-                          backgroundColor: 'rgba(255,255,255,0.08)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          transition: 'all 0.2s',
-                          textAlign: 'center'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.25)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.1)';
-                        }}
-                      >
-                        Yes
-                      </button>
-                      <button
-                        onClick={() => submitChoice('no')}
-                        style={{
-                          flex: 1,
-                          padding: '8px 16px',
-                          borderRadius: 12,
-                          backgroundColor: 'rgba(255,255,255,0.08)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          transition: 'all 0.2s',
-                          textAlign: 'center'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.25)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.1)';
-                        }}
-                      >
-                        No
-                      </button>
-                    </div>
-                  ) : payload.formType === 'input' ? (
-                    <form onSubmit={handleTextInputSubmit} style={{ display: 'flex', gap: 10 }}>
-                      <input
-                        type="text"
-                        value={textInputValue}
-                        onChange={(e) => setTextInputValue(e.target.value)}
-                        placeholder="Type or dictate response..."
-                        style={{
-                          flex: 1,
-                          padding: '8px 14px',
-                          borderRadius: 12,
-                          backgroundColor: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          color: '#ffffff',
-                          fontSize: 13,
-                          outline: 'none',
-                          transition: 'border 0.2s'
-                        }}
-                        onFocus={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.3)'}
-                        onBlur={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.1)'}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendState) {
-                            (window as any).electronAPI.voiceOverlay.sendState('listening');
-                          }
-                        }}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 12,
-                          backgroundColor: 'rgba(255,255,255,0.06)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}
-                        title="Speak your answer"
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.2)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
-                          e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)';
-                        }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                          <line x1="12" x2="12" y1="19" y2="22"/>
-                        </svg>
-                      </button>
-                      <button
-                        type="submit"
-                        style={{
-                          padding: '8px 18px',
-                          borderRadius: 12,
-                          backgroundColor: '#ffffff',
-                          border: 'none',
-                          color: '#000000',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                      >
-                        Submit
-                      </button>
-                    </form>
                   ) : (
-                    // MCQ option list
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 110, overflowY: 'auto', paddingRight: 4 }}>
-                      {payload.options?.map((opt, i) => (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Option buttons if confirmation */}
+                      {payload.formType === 'confirm' && (
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <button
+                            onClick={() => submitChoice('yes')}
+                            style={{
+                              flex: 1,
+                              padding: '8px 16px',
+                              borderRadius: 12,
+                              backgroundColor: 'rgba(255,255,255,0.08)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              color: '#ffffff',
+                              cursor: 'pointer',
+                              fontSize: 13,
+                              transition: 'all 0.2s',
+                              textAlign: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.1)';
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={() => submitChoice('no')}
+                            style={{
+                              flex: 1,
+                              padding: '8px 16px',
+                              borderRadius: 12,
+                              backgroundColor: 'rgba(255,255,255,0.08)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              color: '#ffffff',
+                              cursor: 'pointer',
+                              fontSize: 13,
+                              transition: 'all 0.2s',
+                              textAlign: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.1)';
+                            }}
+                          >
+                            No
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Options list if MCQ */}
+                      {payload.formType !== 'confirm' && payload.formType !== 'input' && payload.options && payload.options.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 110, overflowY: 'auto', paddingRight: 4 }}>
+                          {payload.options.map((opt, i) => (
+                            <button
+                              key={i}
+                              onClick={() => submitChoice(opt.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px 14px',
+                                borderRadius: 12,
+                                backgroundColor: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                color: '#ffffff',
+                                cursor: 'pointer',
+                                fontSize: 13,
+                                textAlign: 'left',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+                                e.currentTarget.style.border = '1px solid rgba(255,255,255,0.2)';
+                                e.currentTarget.style.transform = 'translateX(2px)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
+                                e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)';
+                                e.currentTarget.style.transform = 'none';
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Text & Voice dictation form (always shown) */}
+                      <form onSubmit={handleTextInputSubmit} style={{ display: 'flex', gap: 10 }}>
+                        <input
+                          type="text"
+                          value={textInputValue}
+                          onChange={(e) => setTextInputValue(e.target.value)}
+                          placeholder={(payload.options && payload.options.length > 0) || payload.formType === 'confirm' ? "Type or dictate custom response..." : "Type or dictate response..."}
+                          style={{
+                            flex: 1,
+                            padding: '8px 14px',
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            color: '#ffffff',
+                            fontSize: 13,
+                            outline: 'none',
+                            transition: 'border 0.2s'
+                          }}
+                          onFocus={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.3)'}
+                          onBlur={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.1)'}
+                        />
                         <button
-                          key={i}
-                          onClick={() => submitChoice(opt.value)}
+                          type="button"
+                          onClick={() => {
+                            if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendState) {
+                              (window as any).electronAPI.voiceOverlay.sendState('listening');
+                            }
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            color: '#ffffff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s'
+                          }}
+                          title="Speak your answer"
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+                            e.currentTarget.style.border = '1px solid rgba(255,255,255,0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
+                            e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)';
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" x2="12" y1="19" y2="22"/>
+                          </svg>
+                        </button>
+                        <button
+                          type="submit"
+                          style={{
+                            padding: '8px 18px',
+                            borderRadius: 12,
+                            backgroundColor: '#ffffff',
+                            border: 'none',
+                            color: '#000000',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            fontSize: 13,
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                        >
+                          Submit
+                        </button>
+                      </form>
+                      {/* Shortcuts Legend */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: 16,
+                        marginTop: 10,
+                        fontSize: 11,
+                        color: 'rgba(255, 255, 255, 0.45)',
+                        fontFamily: '"Figtree", sans-serif'
+                      }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <kbd style={{
+                            backgroundColor: 'rgba(255,255,255,0.1)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 4,
+                            padding: '1px 4px',
+                            fontSize: 9.5,
+                            fontWeight: 600,
+                            color: '#ffffff'
+                          }}>Ctrl + Alt + B</kbd>
+                          <span>Resume Chat</span>
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <kbd style={{
+                            backgroundColor: 'rgba(255,255,255,0.1)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 4,
+                            padding: '1px 4px',
+                            fontSize: 9.5,
+                            fontWeight: 600,
+                            color: '#ffffff'
+                          }}>Ctrl + Alt + H</kbd>
+                          <span>Chat History</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* State: History Select */}
+            {state === 'history' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', fontFamily: '"Figtree", sans-serif', height: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <img
+                      src="/images/logos/everfern-withoutbg.png"
+                      alt="EverFern Logo"
+                      style={{ width: 30, height: 30, objectFit: 'contain' }}
+                    />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Select Chat History
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendState) {
+                        (window as any).electronAPI.voiceOverlay.sendState('idle');
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'rgba(255,255,255,0.4)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.4)'}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    value={historySearchValue}
+                    onChange={(e) => setHistorySearchValue(e.target.value)}
+                    placeholder="Search recent chats..."
+                    style={{
+                      width: '100%',
+                      padding: '8px 14px',
+                      borderRadius: 12,
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#ffffff',
+                      fontSize: 13,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      transition: 'border 0.2s'
+                    }}
+                    onFocus={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.3)'}
+                    onBlur={(e) => e.target.style.border = '1px solid rgba(255,255,255,0.1)'}
+                  />
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  maxHeight: 180,
+                  overflowY: 'auto',
+                  paddingRight: 4
+                }} className="custom-scrollbar">
+                  {historyList.filter(c => {
+                    const title = c.title || 'Untitled Chat';
+                    return title.toLowerCase().includes(historySearchValue.toLowerCase());
+                  }).length === 0 ? (
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
+                      No recent chats found
+                    </div>
+                  ) : (
+                    historyList
+                      .filter(c => {
+                        const title = c.title || 'Untitled Chat';
+                        return title.toLowerCase().includes(historySearchValue.toLowerCase());
+                      })
+                      .slice(0, 5)
+                      .map((conv) => (
+                        <button
+                          key={conv.id}
+                          onClick={() => {
+                            if (submitted) return;
+                            setSubmitted(true);
+                            if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.submitAnswer) {
+                              (window as any).electronAPI.voiceOverlay.submitAnswer({
+                                type: 'select-history',
+                                conversationId: conv.id
+                              });
+                            }
+                          }}
                           style={{
                             width: '100%',
                             padding: '8px 14px',
@@ -640,7 +876,10 @@ export default function OverlayPage() {
                             cursor: 'pointer',
                             fontSize: 13,
                             textAlign: 'left',
-                            transition: 'all 0.2s'
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            transition: 'all 0.15s ease'
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
@@ -653,10 +892,14 @@ export default function OverlayPage() {
                             e.currentTarget.style.transform = 'none';
                           }}
                         >
-                          {opt.label}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                            {conv.title || 'Untitled Chat'}
+                          </span>
+                          <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+                            {new Date(conv.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
                         </button>
-                      ))}
-                    </div>
+                      ))
                   )}
                 </div>
               </div>

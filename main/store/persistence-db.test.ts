@@ -4,7 +4,7 @@
  * Tests table creation, indexes, schema verification, and cleanup functionality.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import {
   initializePersistenceTables,
   verifyPersistenceSchema,
@@ -20,6 +20,20 @@ describe('Persistence Database Schema', () => {
     await initMemoryDb();
   });
 
+  beforeEach(async () => {
+    try {
+      // Clear tables to ensure test isolation
+      await dbOps.run('DELETE FROM agent_checkpoints');
+      await dbOps.run('DELETE FROM file_snapshots');
+      await dbOps.run('DELETE FROM command_history');
+      await dbOps.run('DELETE FROM task_schedules');
+      await dbOps.run('DELETE FROM navis_sessions');
+      await dbOps.run('DELETE FROM computer_use_actions');
+    } catch {
+      // Tables might not exist yet before the first test
+    }
+  });
+
   afterAll(async () => {
     // Close database connection
     await closeDb();
@@ -32,12 +46,12 @@ describe('Persistence Database Schema', () => {
       const tables = await dbOps.all(`
         SELECT name FROM sqlite_master
         WHERE type='table'
-        AND name IN ('checkpoints', 'file_snapshots', 'command_history', 'task_schedules', 'navis_sessions', 'computer_use_actions')
+        AND name IN ('agent_checkpoints', 'file_snapshots', 'command_history', 'task_schedules', 'navis_sessions', 'computer_use_actions')
       `);
 
       expect(tables).toHaveLength(6);
       const tableNames = tables.map((t: any) => t.name);
-      expect(tableNames).toContain('checkpoints');
+      expect(tableNames).toContain('agent_checkpoints');
       expect(tableNames).toContain('file_snapshots');
       expect(tableNames).toContain('command_history');
       expect(tableNames).toContain('task_schedules');
@@ -45,8 +59,8 @@ describe('Persistence Database Schema', () => {
       expect(tableNames).toContain('computer_use_actions');
     });
 
-    it('should create checkpoints table with correct schema', async () => {
-      const columns = await dbOps.all("PRAGMA table_info(checkpoints)");
+    it('should create agent_checkpoints table with correct schema', async () => {
+      const columns = await dbOps.all("PRAGMA table_info(agent_checkpoints)");
       const columnNames = columns.map((c: any) => c.name);
 
       expect(columnNames).toContain('id');
@@ -150,9 +164,9 @@ describe('Persistence Database Schema', () => {
       const indexNames = indexes.map((i: any) => i.name);
 
       // Checkpoints indexes
-      expect(indexNames).toContain('idx_checkpoints_task_id');
-      expect(indexNames).toContain('idx_checkpoints_step');
-      expect(indexNames).toContain('idx_checkpoints_timestamp');
+      expect(indexNames).toContain('idx_agent_checkpoints_task_id');
+      expect(indexNames).toContain('idx_agent_checkpoints_step');
+      expect(indexNames).toContain('idx_agent_checkpoints_timestamp');
 
       // File snapshots indexes
       expect(indexNames).toContain('idx_file_snapshots_task');
@@ -215,7 +229,7 @@ describe('Persistence Database Schema', () => {
       };
 
       await dbOps.run(`
-        INSERT INTO checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
+        INSERT INTO agent_checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         checkpoint.id,
@@ -229,7 +243,7 @@ describe('Persistence Database Schema', () => {
         checkpoint.compressed,
       ]);
 
-      const retrieved = await dbOps.get('SELECT * FROM checkpoints WHERE id = ?', [checkpoint.id]);
+      const retrieved = await dbOps.get('SELECT * FROM agent_checkpoints WHERE id = ?', [checkpoint.id]);
       expect(retrieved).toBeDefined();
       expect(retrieved.task_id).toBe(checkpoint.task_id);
       expect(retrieved.step_number).toBe(checkpoint.step_number);
@@ -308,6 +322,22 @@ describe('Persistence Database Schema', () => {
 
   describe('Statistics', () => {
     it('should return persistence statistics', async () => {
+      // Insert test data first to ensure we have at least one record of each
+      await dbOps.run(`
+        INSERT INTO agent_checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, ['stat-checkpoint-1', 'task-1', 1, Date.now(), '{}', 'hash', 0, null, 0]);
+
+      await dbOps.run(`
+        INSERT INTO file_snapshots (id, task_id, step_number, file_path, content_before, content_after, operation, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, ['stat-snapshot-1', 'task-1', 1, '/file.ts', null, null, 'create', Date.now()]);
+
+      await dbOps.run(`
+        INSERT INTO task_schedules (id, name, description, schedule_json, completion_criteria_json, initial_prompt, max_steps, notify_on_complete, status, current_step, execution_count, error_count, start_time, last_execution_time, next_execution_time, latest_error, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, ['stat-task-1', 'Task', 'desc', '{}', null, 'prompt', 10, 1, 'scheduled', 0, 0, 0, null, null, Date.now(), null, Date.now(), Date.now()]);
+
       const stats = await getPersistenceStats();
 
       expect(stats).toHaveProperty('checkpoints');
@@ -331,7 +361,7 @@ describe('Persistence Database Schema', () => {
       // Insert 150 checkpoints
       for (let i = 0; i < 150; i++) {
         await dbOps.run(`
-          INSERT INTO checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
+          INSERT INTO agent_checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           `cleanup-checkpoint-${i}`,
@@ -353,7 +383,7 @@ describe('Persistence Database Schema', () => {
       expect(result.checkpointsDeleted).toBe(50);
 
       // Verify only 100 checkpoints remain for this task
-      const remaining = await dbOps.all('SELECT * FROM checkpoints WHERE task_id = ?', [taskId]);
+      const remaining = await dbOps.all('SELECT * FROM agent_checkpoints WHERE task_id = ?', [taskId]);
       expect(remaining).toHaveLength(100);
     });
   });
@@ -374,7 +404,7 @@ describe('Persistence Database Schema', () => {
 
       await expect(
         dbOps.run(`
-          INSERT INTO checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
+          INSERT INTO agent_checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           checkpoint.id,
@@ -405,7 +435,7 @@ describe('Persistence Database Schema', () => {
 
       await expect(
         dbOps.run(`
-          INSERT INTO checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
+          INSERT INTO agent_checkpoints (id, task_id, step_number, timestamp, state_json, state_hash, delta_only, previous_checkpoint_id, compressed)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           checkpoint2.id,

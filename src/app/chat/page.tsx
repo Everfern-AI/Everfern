@@ -652,11 +652,13 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '10px 16px',
-            borderBottom: '1px solid var(--color-border)',
+            padding: '12px 18px',
+            borderRadius: 16,
+            border: '1px solid var(--color-border)',
             width: '100%',
             boxSizing: 'border-box',
             backgroundColor: isDark ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+            marginBottom: 12,
         }}>
             <span style={{
                 fontSize: 14,
@@ -1291,6 +1293,7 @@ export default function ChatPage() {
         multiSelect?: boolean;
     }>>([]);
     const [isUserQuestionsOpen, setIsUserQuestionsOpen] = useState(false);
+    const [showSearch, setShowSearch] = useState(false);
 
     // Current node tracking for better status display
     const [currentNode, setCurrentNode] = useState<string>("");
@@ -4739,6 +4742,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         </div>
     );
 
+    const renderShortcutsLegend = () => null;
+
     const renderComposerRightActions = (showVolumeToggle = false) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ContextTokenRing
@@ -5278,30 +5283,43 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         }
                     } else if (voiceProvider === "local") {
                         try {
-                            const uint8Array = new Uint8Array(arrayBuffer);
-                            let binary = '';
-                            const len = uint8Array.byteLength;
-                            for (let i = 0; i < len; i++) {
-                                binary += String.fromCharCode(uint8Array[i]);
-                            }
-                            const base64Audio = window.btoa(binary);
+                            const sys = (window as any).electronAPI?.system;
+                            if (sys?.transcribeLocal) {
+                                // Decode WebM and resample to 16kHz mono in the browser
+                                const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                                const tempCtx = new AudioContextClass();
+                                const decodedBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+                                tempCtx.close().catch(() => {});
 
-                            const response = await fetch('http://localhost:11434/api/generate', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    model: 'dimavz/whisper-tiny',
-                                    prompt: 'transcribe',
-                                    images: [base64Audio],
-                                    stream: false
-                                })
-                            });
-                            if (response.ok) {
-                                const result = await response.json();
-                                transcript = (result.response || result.message?.content || '').trim();
+                                const targetSampleRate = 16000;
+                                const offlineCtx = new OfflineAudioContext(
+                                    1,
+                                    Math.round(decodedBuffer.duration * targetSampleRate),
+                                    targetSampleRate
+                                );
+
+                                const source = offlineCtx.createBufferSource();
+                                source.buffer = decodedBuffer;
+                                source.connect(offlineCtx.destination);
+                                source.start();
+
+                                const resampledBuffer = await offlineCtx.startRendering();
+                                const float32Data = resampledBuffer.getChannelData(0);
+
+                                // Get Float32Array's underlying ArrayBuffer
+                                const pcmBuffer = float32Data.buffer;
+
+                                const res = await sys.transcribeLocal(pcmBuffer);
+                                if (res && res.success) {
+                                    transcript = (res.transcription || '').trim();
+                                } else {
+                                    console.error('[Voice] Local transcription failed:', res?.error);
+                                }
+                            } else {
+                                console.error('[Voice] Local transcription preload API not available.');
                             }
                         } catch (error) {
-                            console.error('[Voice] Local transcription error:', error);
+                            console.error('[Voice] Local RealtimeSTT transcription error:', error);
                         }
                     }
 
@@ -5319,7 +5337,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                     type: 'clarification',
                                     question: activeQuestion.question,
                                     options: activeQuestion.options,
-                                    formType: activeQuestion.multiSelect ? 'select' : 'single',
+                                    formType: (!activeQuestion.options || activeQuestion.options.length === 0)
+                                        ? 'input'
+                                        : (activeQuestion.multiSelect ? 'select' : 'single'),
                                     voiceInputText: transcript
                                 });
                             } else {
@@ -5374,6 +5394,23 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
             (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
+                    const isVoiceEnabled = !!voiceProvider && (
+                        voiceProvider === 'local' || 
+                        (voiceProvider === 'deepgram' && !!voiceDeepgramKey?.trim())
+                    );
+                    if (!isVoiceEnabled) {
+                        console.log('[VoiceOverlay] Voice mode is disabled/unconfigured. Broadcasting error.');
+                        (window as any).electronAPI.voiceOverlay.sendState?.({
+                            state: 'error',
+                            message: "Voice mode isn't enabled. Please configure a provider in settings."
+                        });
+                        setTimeout(() => {
+                            if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                                (window as any).electronAPI.voiceOverlay.sendState?.('idle');
+                            }
+                        }, 5000);
+                        return;
+                    }
                     if (!isRecordingRef.current) {
                         if (overlayIdleTimeoutRef.current) {
                             clearTimeout(overlayIdleTimeoutRef.current);
@@ -5392,20 +5429,58 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             });
             (window as any).electronAPI.voiceOverlay.onSubmitAnswer((data: any) => {
                 console.log('[VoiceOverlay] Submission received via overlay:', data);
-                if (data && data.type === 'followup') {
+                if (data && data.type === 'select-history') {
+                    console.log('[VoiceOverlay] Loading conversation selected via voice overlay:', data.conversationId);
+                    handleSelectConversation(data.conversationId);
+                    // Automatically transition to listening state after a brief timeout
+                    setTimeout(() => {
+                        if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                            (window as any).electronAPI.voiceOverlay.sendState?.('listening');
+                        }
+                    }, 500);
+                } else if (data && data.type === 'followup') {
                     handleSend(data.query);
                 } else {
                     handleQuestionSubmit(data);
                 }
             });
-            return () => (window as any).electronAPI.voiceOverlay.removeListeners();
+
+            // Register global shortcut listeners
+            const handleResumeShortcut = () => {
+                console.log('[Shortcut] Received resume-chat shortcut');
+                if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                    (window as any).electronAPI.voiceOverlay.sendState?.({
+                        state: 'executing',
+                        action: 'Continuing execution...'
+                    });
+                }
+                handleSend("continue");
+            };
+            const handleShowHistoryShortcut = () => {
+                console.log('[Shortcut] Received show-history shortcut, opening history in overlay');
+                if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
+                    (window as any).electronAPI.voiceOverlay.sendState?.({
+                        state: 'history'
+                    });
+                }
+            };
+
+            (window as any).electronAPI.on('shortcut:resume-chat', handleResumeShortcut);
+            (window as any).electronAPI.on('shortcut:show-history', handleShowHistoryShortcut);
+
+            return () => {
+                (window as any).electronAPI.voiceOverlay.removeListeners();
+                (window as any).electronAPI.off('shortcut:resume-chat', handleResumeShortcut);
+                (window as any).electronAPI.off('shortcut:show-history', handleShowHistoryShortcut);
+            };
         }
-    }, [handleRecordToggle, handleQuestionSubmit, handleSend]);
+    }, [handleRecordToggle, handleQuestionSubmit, handleSend, setShowSearch, voiceProvider, voiceDeepgramKey, handleSelectConversation]);
 
     const prevIsLoadingRef = useRef(false);
     useEffect(() => {
         if (prevIsLoadingRef.current && !isLoading) {
-            if (recordingSourceRef.current === 'overlay') {
+            const hasQuestions = activeUserQuestions && activeUserQuestions.length > 0;
+            if (recordingSourceRef.current === 'overlay' && !hasQuestions) {
                 console.log('[VoiceOverlay] Agent completed task. Setting state to completed, then idle.');
 
                 const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
@@ -5431,7 +5506,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             }
         }
         prevIsLoadingRef.current = isLoading;
-    }, [isLoading, messages]);
+    }, [isLoading, messages, activeUserQuestions]);
 
     // Synchronize voice overlay executing and clarification question states
     useEffect(() => {
@@ -5445,7 +5520,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     type: 'clarification',
                     question: activeQuestion.question,
                     options: activeQuestion.options,
-                    formType: activeQuestion.multiSelect ? 'select' : 'single'
+                    formType: (!activeQuestion.options || activeQuestion.options.length === 0)
+                        ? 'input'
+                        : (activeQuestion.multiSelect ? 'select' : 'single')
                 });
             } else if (isLoading) {
                 const runningTool = liveToolCalls.find(t => t.status === 'running');
@@ -5533,6 +5610,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
                     onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
                     onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
+                    showSearch={showSearch}
+                    onSearchOpen={() => setShowSearch(true)}
+                    onSearchClose={() => setShowSearch(false)}
                 />
 
                 <CompletionToast />
@@ -5787,9 +5867,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         />
                                                     )}
 
+                                                    {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                     {/* Progressive input container */}
                                                     <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
-                                                        {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                         {renderSubagentSpawnAttachment()}
                                                         {renderAttachmentStrip()}
                                                         {isRecording && recordingSource === 'button' ? (
@@ -5829,6 +5909,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             {renderComposerRightActions(false)}
                                                         </div>
                                                     </div>
+                                                    {renderShortcutsLegend()}
 
                                                     {/* Quick prompt chips — hidden when a project is selected */}
                                                     {folderContexts.length === 0 && (
@@ -6428,7 +6509,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             )}
                                         </AnimatePresence>
 
-                                        <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+<div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                                             {/* Task 7.4: Local Execution Permission Card — above input */}
                                             {localExecutionRequest && (
                                                 <div style={{ padding: '0 0 12px' }}>
@@ -6577,6 +6658,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     {renderComposerRightActions(true)}
                                                 </div>
                                             </div>
+                                            {renderShortcutsLegend()}
                                             <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
                                                 Everfern is an agentic AI and can make mistakes. Please double-check responses.
                                             </div>

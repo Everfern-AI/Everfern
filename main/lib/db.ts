@@ -9,163 +9,177 @@ import { initializePersistenceTables, migratePersistenceSchema } from '../store/
 let instance: sqlite3.Database | null = null;
 let currentVectorDims: number | null = null;
 
-function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database) => void, reject: (err: Error) => void): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS memory_chunks (
-      id TEXT PRIMARY KEY,
-      text_content TEXT NOT NULL,
-      metadata TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+function dbRunPromise(db: sqlite3.Database, sql: string, params: any[] = []): Promise<void> {
+  return new Promise((res, rej) => {
+    db.run(sql, params, (err) => err ? rej(err) : res());
+  });
+}
 
-    -- FTS5 table for full-text search
-    CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_fts USING fts5(
-      text_content,
-      content='memory_chunks',
-      content_rowid='id'
-    );
+function dbAllPromise(db: sqlite3.Database, sql: string, params: any[] = []): Promise<any[]> {
+  return new Promise((res, rej) => {
+    db.all(sql, params, (err, rows) => err ? rej(err) : res(rows));
+  });
+}
 
-    -- Triggers to keep FTS5 up to date
-    CREATE TRIGGER IF NOT EXISTS memory_chunks_ai AFTER INSERT ON memory_chunks BEGIN
-      INSERT INTO memory_chunks_fts(rowid, text_content) VALUES (new.id, new.text_content);
-    END;
-    CREATE TRIGGER IF NOT EXISTS memory_chunks_ad AFTER DELETE ON memory_chunks BEGIN
-      INSERT INTO memory_chunks_fts(memory_chunks_fts, rowid, text_content) VALUES('delete', old.id, old.text_content);
-    END;
-    CREATE TRIGGER IF NOT EXISTS memory_chunks_au AFTER UPDATE ON memory_chunks BEGIN
-      INSERT INTO memory_chunks_fts(memory_chunks_fts, rowid, text_content) VALUES('delete', old.id, old.text_content);
-      INSERT INTO memory_chunks_fts(rowid, text_content) VALUES (new.id, new.text_content);
-    END;
+function dbExecPromise(db: sqlite3.Database, sql: string): Promise<void> {
+  return new Promise((res, rej) => {
+    db.exec(sql, (err) => err ? rej(err) : res());
+  });
+}
 
-    -- Semantic Caching tables
-    CREATE TABLE IF NOT EXISTS semantic_cache (
-      id TEXT PRIMARY KEY,
-      prompt_text TEXT NOT NULL,
-      response_json TEXT NOT NULL,
-      provider TEXT,
-      model TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database) => void, reject: (err: Error) => void): Promise<void> {
+  try {
+    await dbExecPromise(db, `
+      CREATE TABLE IF NOT EXISTS memory_chunks (
+        id TEXT PRIMARY KEY,
+        text_content TEXT NOT NULL,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Conversation History tables
-    CREATE TABLE IF NOT EXISTS conversations (
-      id TEXT PRIMARY KEY,
-      title TEXT,
-      provider TEXT,
-      model TEXT,
-      project_id TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      -- FTS5 table for full-text search
+      CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_fts USING fts5(
+        text_content,
+        content='memory_chunks',
+        content_rowid='id'
+      );
 
-    -- Ensure project_id exists in case table was already created
-    -- We use a simple attempt to add it, wrapped in a try/catch in JS if needed,
-    -- but here we can just add it to the exec block.
-    -- SQLite ALTER TABLE ADD COLUMN is safe if the column doesn't exist in most cases
-    -- but will throw if it does.
-    -- Better to handle this in JS.
+      -- Triggers to keep FTS5 up to date
+      CREATE TRIGGER IF NOT EXISTS memory_chunks_ai AFTER INSERT ON memory_chunks BEGIN
+        INSERT INTO memory_chunks_fts(rowid, text_content) VALUES (new.id, new.text_content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memory_chunks_ad AFTER DELETE ON memory_chunks BEGIN
+        INSERT INTO memory_chunks_fts(memory_chunks_fts, rowid, text_content) VALUES('delete', old.id, old.text_content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memory_chunks_au AFTER UPDATE ON memory_chunks BEGIN
+        INSERT INTO memory_chunks_fts(memory_chunks_fts, rowid, text_content) VALUES('delete', old.id, old.text_content);
+        INSERT INTO memory_chunks_fts(rowid, text_content) VALUES (new.id, new.text_content);
+      END;
 
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      conversation_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT,
-      thought TEXT,
-      reasoning_content TEXT,
-      tool_calls TEXT, -- JSON string
-      mission_timeline TEXT, -- JSON string
-      has_timeline BOOLEAN DEFAULT 0,
-      order_index INTEGER DEFAULT 0,
-      thinking_duration INTEGER,
-      stopped BOOLEAN DEFAULT 0,
-      attachments TEXT, -- JSON string
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-    );
+      -- Semantic Caching tables
+      CREATE TABLE IF NOT EXISTS semantic_cache (
+        id TEXT PRIMARY KEY,
+        prompt_text TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Scheduled Tasks table
-    CREATE TABLE IF NOT EXISTS scheduled_tasks (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      description TEXT NOT NULL,
-      cron TEXT NOT NULL,
-      pattern TEXT,
-      prompt TEXT NOT NULL,
-      project_id TEXT,
-      starts_at DATETIME,
-      last_run DATETIME,
-      next_run DATETIME,
-      ends_at DATETIME,
-      enabled BOOLEAN DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      -- Conversation History tables
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        provider TEXT,
+        model TEXT,
+        project_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Projects table
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      instructions TEXT,
-      path TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT,
+        thought TEXT,
+        reasoning_content TEXT,
+        tool_calls TEXT, -- JSON string
+        mission_timeline TEXT, -- JSON string
+        has_timeline BOOLEAN DEFAULT 0,
+        order_index INTEGER DEFAULT 0,
+        thinking_duration INTEGER,
+        stopped BOOLEAN DEFAULT 0,
+        attachments TEXT, -- JSON string
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
-    CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
+      -- Scheduled Tasks table
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        description TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        pattern TEXT,
+        prompt TEXT NOT NULL,
+        project_id TEXT,
+        starts_at DATETIME,
+        last_run DATETIME,
+        next_run DATETIME,
+        ends_at DATETIME,
+        enabled BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- LangGraph Checkpoints table
-    CREATE TABLE IF NOT EXISTS checkpoints (
-      thread_id TEXT,
-      checkpoint_id TEXT,
-      parent_id TEXT,
-      checkpoint_json TEXT,
-      metadata_json TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (thread_id, checkpoint_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_checkpoints_thread_id ON checkpoints(thread_id);
+      -- Projects table
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        instructions TEXT,
+        path TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Analytics: schema_migrations tracking
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version TEXT PRIMARY KEY,
-      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
 
-    -- Analytics: usage events — one row per AI request/response
-    CREATE TABLE IF NOT EXISTS usage_events (
-      id TEXT PRIMARY KEY,
-      conversation_id TEXT,
-      model TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      prompt_tokens INTEGER NOT NULL DEFAULT 0,
-      completion_tokens INTEGER NOT NULL DEFAULT 0,
-      total_tokens INTEGER NOT NULL DEFAULT 0,
-      input_cost_usd REAL NOT NULL DEFAULT 0,
-      output_cost_usd REAL NOT NULL DEFAULT 0,
-      total_cost_usd REAL NOT NULL DEFAULT 0,
-      context_window INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_events_conversation_id ON usage_events(conversation_id);
-    CREATE INDEX IF NOT EXISTS idx_usage_events_model ON usage_events(model);
-    CREATE INDEX IF NOT EXISTS idx_usage_events_provider ON usage_events(provider);
-    CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at);
+      -- LangGraph Checkpoints table
+      CREATE TABLE IF NOT EXISTS checkpoints (
+        thread_id TEXT,
+        checkpoint_id TEXT,
+        parent_id TEXT,
+        checkpoint_json TEXT,
+        metadata_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (thread_id, checkpoint_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_checkpoints_thread_id ON checkpoints(thread_id);
 
-    -- Analytics: model pricing cache
-    CREATE TABLE IF NOT EXISTS model_pricing_cache (
-      model_id TEXT PRIMARY KEY,
-      provider TEXT NOT NULL,
-      display_name TEXT,
-      input_cost_per_1m REAL NOT NULL DEFAULT 0,
-      output_cost_per_1m REAL NOT NULL DEFAULT 0,
-      context_window INTEGER DEFAULT 150000,
-      last_fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `, (execErr) => {
+      -- Analytics: schema_migrations tracking
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version TEXT PRIMARY KEY,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Analytics: usage events — one row per AI request/response
+      CREATE TABLE IF NOT EXISTS usage_events (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT,
+        model TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        input_cost_usd REAL NOT NULL DEFAULT 0,
+        output_cost_usd REAL NOT NULL DEFAULT 0,
+        total_cost_usd REAL NOT NULL DEFAULT 0,
+        context_window INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_usage_events_conversation_id ON usage_events(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_usage_events_model ON usage_events(model);
+      CREATE INDEX IF NOT EXISTS idx_usage_events_provider ON usage_events(provider);
+      CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at);
+
+      -- Analytics: model pricing cache
+      CREATE TABLE IF NOT EXISTS model_pricing_cache (
+        model_id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        display_name TEXT,
+        input_cost_per_1m REAL NOT NULL DEFAULT 0,
+        output_cost_per_1m REAL NOT NULL DEFAULT 0,
+        context_window INTEGER DEFAULT 150000,
+        last_fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Safety: Add missing columns to conversations (migration support)
-    db.all("PRAGMA table_info(conversations)", (err, columns: any[]) => {
-      if (!err && columns) {
+    try {
+      const columns = await dbAllPromise(db, "PRAGMA table_info(conversations)");
+      if (columns) {
         const requiredColumns = [
           { name: 'project_id', type: 'TEXT' },
           { name: 'provider', type: 'TEXT' },
@@ -174,15 +188,18 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
 
         for (const col of requiredColumns) {
           if (!columns.some(c => c.name === col.name)) {
-            db.run(`ALTER TABLE conversations ADD COLUMN ${col.name} ${col.type}`);
+            await dbRunPromise(db, `ALTER TABLE conversations ADD COLUMN ${col.name} ${col.type}`);
           }
         }
       }
-    });
+    } catch (err: any) {
+      console.warn('[DB] Migration safety check failed for conversations:', err.message);
+    }
 
     // Safety: Add missing columns to messages (migration support)
-    db.all("PRAGMA table_info(messages)", (err, columns: any[]) => {
-      if (!err && columns) {
+    try {
+      const columns = await dbAllPromise(db, "PRAGMA table_info(messages)");
+      if (columns) {
         const requiredColumns = [
           { name: 'thought', type: 'TEXT' },
           { name: 'reasoning_content', type: 'TEXT' },
@@ -197,15 +214,18 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
 
         for (const col of requiredColumns) {
           if (!columns.some(c => c.name === col.name)) {
-            db.run(`ALTER TABLE messages ADD COLUMN ${col.name} ${col.type}`);
+            await dbRunPromise(db, `ALTER TABLE messages ADD COLUMN ${col.name} ${col.type}`);
           }
         }
       }
-    });
+    } catch (err: any) {
+      console.warn('[DB] Migration safety check failed for messages:', err.message);
+    }
 
     // Safety: Add missing columns to scheduled_tasks (migration support)
-    db.all("PRAGMA table_info(scheduled_tasks)", (err, columns: any[]) => {
-      if (!err && columns) {
+    try {
+      const columns = await dbAllPromise(db, "PRAGMA table_info(scheduled_tasks)");
+      if (columns) {
         const requiredColumns = [
           { name: 'name', type: 'TEXT' },
           { name: 'pattern', type: 'TEXT' },
@@ -217,31 +237,31 @@ function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database)
 
         for (const col of requiredColumns) {
           if (!columns.some(c => c.name === col.name)) {
-            db.run(`ALTER TABLE scheduled_tasks ADD COLUMN ${col.name} ${col.type}`);
+            await dbRunPromise(db, `ALTER TABLE scheduled_tasks ADD COLUMN ${col.name} ${col.type}`);
           }
         }
       }
-    });
+    } catch (err: any) {
+      console.warn('[DB] Migration safety check failed for scheduled_tasks:', err.message);
+    }
 
     // Set instance before running migrations so dbOps can use it
     instance = db;
 
     // Run database migrations
-    runMigrations()
-      .then(async () => {
-        console.log('[DB] Running persistence table initialization...');
-        // Initialize persistence tables for long-running agentic tasks
-        await initializePersistenceTables();
-        // Run persistence schema migrations (idempotent)
-        await migratePersistenceSchema();
-        console.log('[DB] Database initialization complete');
-        resolve(db);
-      })
-      .catch((migrationErr) => {
-        console.error('[DB] Migration failed:', migrationErr);
-        reject(migrationErr instanceof Error ? migrationErr : new Error(String(migrationErr)));
-      });
-  });
+    await runMigrations();
+
+    console.log('[DB] Running persistence table initialization...');
+    // Initialize persistence tables for long-running agentic tasks
+    await initializePersistenceTables();
+    // Run persistence schema migrations (idempotent)
+    await migratePersistenceSchema();
+    console.log('[DB] Database initialization complete');
+    resolve(db);
+  } catch (err: any) {
+    console.error('[DB] Setup error:', err);
+    reject(err instanceof Error ? err : new Error(String(err)));
+  }
 }
 
 export async function initMemoryDb(): Promise<sqlite3.Database> {
@@ -252,7 +272,8 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const dbPath = path.join(dbDir, 'memory.sqlite');
+  const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  const dbPath = isTest ? ':memory:' : path.join(dbDir, 'memory.sqlite');
 
   return new Promise((resolve, reject) => {
     const db = new sqlite3.Database(dbPath, (err) => {

@@ -156,7 +156,7 @@ export async function ensureWSLSetup(): Promise<void> {
       '    python3 -m venv ~/.everfern/venv',
       '  fi',
       '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
-      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx -q',
+      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy openai-whisper -q',
       'fi'
     ].join('\n');
     await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 60000 });
@@ -391,7 +391,7 @@ export async function ensureDockerContainer(): Promise<void> {
       await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm pandoc poppler-utils');
 
       // Create ~/.everfern/ directory and Python venv
-      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab -q"');
+      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab fastapi uvicorn numpy openai-whisper -q"');
     } else {
       // Check if container is running
       const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');

@@ -1661,18 +1661,62 @@ export default function SettingsPage({
                     {voiceProvider === 'local' && (
                         <motion.div key="local" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)' }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🤖 Local Whisper ASR</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🤖 Local RealtimeSTT ASR</span>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
-                                    Transcribes your voice locally on your computer. EverFern will query your local Ollama instance running the <strong style={{ color: 'var(--color-text-primary)' }}>dimavz/whisper-tiny</strong> model.
+                                    Transcribes your voice locally on your computer. EverFern will automatically start your local <strong style={{ color: 'var(--color-text-primary)' }}>RealtimeSTT</strong> FastAPI server on a dynamically allocated port.
                                 </span>
                                 <span style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>
-                                    Make sure Ollama is installed, then hit the button below to pull the model.
+                                    No manual server setup or port configuration required.
                                 </span>
-                                <WhisperInstallButton />
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
+            </Card>
+
+            <Card>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 12px' }}>Voice Mode Shortcuts</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Hold to Speak (Voice Mode)</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt</kbd>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Resume Chat in Voice Overlay</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt + B</kbd>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Select Chat History in Voice Overlay</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt + H</kbd>
+                    </div>
+                </div>
             </Card>
 
             <Card>

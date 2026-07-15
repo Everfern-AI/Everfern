@@ -10,6 +10,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
 const sentLocalExecutionResponses = new Set<string>();
+const listenersMap = new Map<any, any>();
 
 // ── Type Definitions for Providers ────────────────────────────────
 
@@ -82,6 +83,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ollamaStatus:  () => ipcRenderer.invoke('system:ollama-status'),
     ollamaInstall: () => ipcRenderer.invoke('system:ollama-install'),
     ollamaPull:    (modelName: string) => ipcRenderer.invoke('system:ollama-pull', modelName),
+    transcribeLocal: (audioBuffer: ArrayBuffer) => ipcRenderer.invoke('system:transcribe-local', audioBuffer),
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => ipcRenderer.invoke('system:open-terminal-installer', action),
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => {
       ipcRenderer.on('system:ollama-install-line', (_e, data) => cb(data));
@@ -537,11 +539,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Generic Event Listeners ────────────────────────────────────────
   on: (channel: string, cb: (data: any) => void) => {
-    ipcRenderer.on(channel, (_e, data) => cb(data));
+    const wrapper = (_e: any, data: any) => cb(data);
+    listenersMap.set(cb, wrapper);
+    ipcRenderer.on(channel, wrapper);
   },
   off: (channel: string, cb?: (data: any) => void) => {
     if (cb) {
-      ipcRenderer.removeListener(channel, cb as any);
+      const wrapper = listenersMap.get(cb);
+      if (wrapper) {
+        ipcRenderer.removeListener(channel, wrapper);
+        listenersMap.delete(cb);
+      }
     } else {
       ipcRenderer.removeAllListeners(channel);
     }
@@ -631,6 +639,7 @@ export type ElectronAPI = {
     ollamaStatus:        () => Promise<{ installed: boolean; modelInstalled: boolean }>;
     ollamaInstall:       () => Promise<{ success: boolean; code: number }>;
     ollamaPull:          (modelName: string) => Promise<{ success: boolean; code: number }>;
+    transcribeLocal:     (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; transcription?: string; error?: string }>;
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => Promise<{ success: boolean }>;
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => void;
     removeOllamaListeners: () => void;
