@@ -2050,32 +2050,137 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
 /* ============================================================
    NAVIS VIEW
    ============================================================ */
-function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisReport, status }: { screenshots: any[]; toolName: string; thinkingEvents?: any[]; navisReport?: string; status?: string }) {
+function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisReport, status, toolCall }: { screenshots: any[]; toolName: string; thinkingEvents?: any[]; navisReport?: string; status?: string; toolCall?: any }) {
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
-  // Default to 'report' tab when there's a report available, else 'screenshots'
-  const [viewTab, setViewTab] = useState<'screenshots' | 'report'>(navisReport ? 'report' : 'screenshots');
-  // Track when navisReport first appears to switch to it automatically
-  const hadReportRef = useRef(!!navisReport);
+  const [viewTab, setViewTab] = useState<'screenshots' | 'findings'>('findings');
+
+  const [findingsContent, setFindingsContent] = useState<string>('');
+
+  const isRunning = toolCall?.status
+    ? (toolCall.status === 'executing' || toolCall.status === 'pending')
+    : (status === 'running' || !status);
+
   useEffect(() => {
-    if (navisReport && !hadReportRef.current) {
-      hadReportRef.current = true;
-      setViewTab('report');
+    let isMounted = true;
+    if (!toolCall) return;
+
+    const readFindings = async () => {
+      try {
+        const api = (window as any).electronAPI;
+        if (!api?.projects) return;
+
+        const args = toolCall.arguments || toolCall.args || {};
+        const result = toolCall.result || {};
+        const resultData = result.data || {};
+        const candidateValues = [
+          args.Cwd,
+          args.cwd,
+          args.path,
+          args.filePath,
+          args.file,
+          args.TargetFile,
+          args.DirectoryPath,
+          resultData.path,
+          resultData.cwd,
+        ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
+
+        const projects = await api.projects.list() || [];
+        const normalized = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+        let projectPath = '';
+        for (const value of candidateValues) {
+          const val = normalized(value);
+          const matched = projects.find((p: any) => p?.path && val.startsWith(normalized(p.path)));
+          if (matched?.path) {
+            projectPath = matched.path;
+            break;
+          }
+        }
+
+        // If not matched in registered projects, try using candidate values directly if they are absolute paths
+        if (!projectPath) {
+          for (const value of candidateValues) {
+            if (/^[a-zA-Z]:[\\/]/i.test(value) || value.startsWith('/')) {
+              const normalizedVal = value.replace(/\\/g, '/');
+              const lastSlash = normalizedVal.lastIndexOf('/');
+              const filename = normalizedVal.slice(lastSlash + 1);
+              if (filename.includes('.')) {
+                projectPath = normalizedVal.slice(0, lastSlash);
+              } else {
+                projectPath = normalizedVal;
+              }
+              break;
+            }
+          }
+        }
+
+        if (!projectPath && projects[0]?.path) {
+          projectPath = projects[0].path;
+        }
+
+        let content: string | null = null;
+        if (projectPath) {
+          content = await api.projects.readFile(projectPath, 'findings.md');
+        }
+
+        // 4. Try default .everfern home directory as last fallback
+        if (content === null) {
+          try {
+            const docPath = await api.projects.getDefaultPath();
+            if (docPath) {
+              const normalizedDoc = docPath.replace(/\\/g, '/');
+              const parts = normalizedDoc.split('/');
+              const docIdx = parts.findIndex((p: string) => p.toLowerCase() === 'documents');
+              if (docIdx !== -1) {
+                const defaultEverfernPath = parts.slice(0, docIdx).join('/') + '/.everfern';
+                content = await api.projects.readFile(defaultEverfernPath, 'findings.md');
+              }
+            }
+          } catch (e) {
+            console.error('Failed to read findings from home directory fallback:', e);
+          }
+        }
+
+        if (isMounted) {
+          if (content !== null) {
+            setFindingsContent(content);
+          } else {
+            setFindingsContent('Could not find findings.md for this task.');
+          }
+        }
+      } catch (err) {
+        console.error('Error reading findings.md in NavisView:', err);
+        if (isMounted) {
+          setFindingsContent('Could not find findings.md for this task.');
+        }
+      }
+    };
+
+    readFindings();
+
+    let intervalId: any;
+    if (isRunning) {
+      intervalId = setInterval(readFindings, 250);
     }
-  }, [navisReport]);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [toolCall, isRunning]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
-  const isRunning = status === 'running' || !status;
   const reportBottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll report to bottom when content updates
   useEffect(() => {
-    if (viewTab === 'report' && navisReport && isRunning) {
+    if (viewTab === 'findings' && findingsContent && isRunning) {
       setTimeout(() => reportBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
     }
-  }, [navisReport, viewTab, isRunning]);
+  }, [findingsContent, viewTab, isRunning]);
 
   useEffect(() => {
     let interval: any;
@@ -2140,37 +2245,35 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
       padding: '0 20px',
       flexShrink: 0,
     }}>
-      {navisReport && (
-        <button
-          onClick={() => setViewTab('report')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 12,
-            fontWeight: 600,
-            color: viewTab === 'report' ? T.text : T.textMuted,
-            background: 'transparent',
-            border: 'none',
-            borderBottom: viewTab === 'report' ? `2px solid ${T.blue}` : '2px solid transparent',
-            cursor: 'pointer',
-            fontFamily: T.sans,
-            transition: 'all 0.15s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          Report
-          {isRunning && navisReport && (
-            <span style={{
-              display: 'inline-block', width: 6, height: 6,
-              borderRadius: '50%', background: '#58a6ff',
-              animation: 'pulse 2s infinite',
-              boxShadow: '0 0 0 0 rgba(88,166,255,0.4)',
-            }} />
-          )}
-        </button>
-      )}
+      <button
+        onClick={() => setViewTab('findings')}
+        style={{
+          padding: '10px 16px',
+          fontSize: 12,
+          fontWeight: 600,
+          color: viewTab === 'findings' ? T.text : T.textMuted,
+          background: viewTab === 'findings' ? T.bg : 'transparent',
+          border: 'none',
+          borderBottom: viewTab === 'findings' ? `2px solid ${T.green}` : '2px solid transparent',
+          cursor: 'pointer',
+          fontFamily: T.sans,
+          transition: 'all 0.15s',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Findings
+        {isRunning && (
+          <span style={{
+            display: 'inline-block', width: 6, height: 6,
+            borderRadius: '50%', background: T.green,
+            animation: 'pulse 2s infinite',
+            boxShadow: `0 0 0 0 ${T.green}66`,
+          }} />
+        )}
+      </button>
       {safe.length > 0 && (
         <button
           onClick={() => setViewTab('screenshots')}
@@ -2179,28 +2282,28 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
             fontSize: 12,
             fontWeight: 600,
             color: viewTab === 'screenshots' ? T.text : T.textMuted,
-            background: 'transparent',
+            background: viewTab === 'screenshots' ? T.bg : 'transparent',
             border: 'none',
-            borderBottom: viewTab === 'screenshots' ? `2px solid ${T.blue}` : '2px solid transparent',
+            borderBottom: viewTab === 'screenshots' ? `2px solid ${T.green}` : '2px solid transparent',
             cursor: 'pointer',
             fontFamily: T.sans,
             transition: 'all 0.15s',
             display: 'flex',
             alignItems: 'center',
             gap: 5,
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Screenshots
-          <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>({safe.length})</span>
-        </button>
-      )}
-    </div>
-  );
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Screenshots
+        <span style={{ fontSize: 10, color: T.textMuted, fontFamily: T.mono }}>({safe.length})</span>
+      </button>
+    )}
+  </div>
+);
 
-  // ── Report tab ────────────────────────────────────────────────────────────
-  if (viewTab === 'report' && navisReport) {
-    // Simple inline markdown renderer for the report
+  // ── Findings tab ──────────────────────────────────────────────────────────
+  if (viewTab === 'findings') {
+    // Simple inline markdown renderer for the findings
     const renderNavisMarkdown = (text: string) => {
       const MAX_LINES = 1000;
       const allLines = text.split('\n');
@@ -2212,12 +2315,12 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
       const flush = (key: number) => {
         elements.push(
           <div key={`code-${key}`} style={{
-            background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r8,
+            background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: T.r8,
             padding: '12px 16px', marginBottom: 10,
             fontFamily: T.mono, fontSize: 11.5, lineHeight: 1.7, color: T.text,
             overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>
-            {codeLang && <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
+            {codeLang && <div style={{ color: T.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{codeLang}</div>}
             {codeLines.join('\n')}
           </div>
         );
@@ -2226,56 +2329,56 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
       lines.forEach((line, idx) => {
         if (line.startsWith('```')) { inCode ? (flush(idx), inCode = false) : (inCode = true, codeLang = line.slice(3).trim()); return; }
         if (inCode) { codeLines.push(line); return; }
-        if (line.startsWith('# ')) { elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: '#e6edf3', margin: '0 0 12px', fontFamily: T.sans, borderBottom: '1px solid #21262d', paddingBottom: 8 }}>{line.slice(2)}</h1>); return; }
-        if (line.startsWith('## ')) { elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: '#58a6ff', margin: '16px 0 8px', fontFamily: T.sans }}><span style={{ opacity: 0.4, marginRight: 5 }}>##</span>{line.slice(3)}</h2>); return; }
-        if (line.startsWith('### ')) { elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: '#79c0ff', margin: '12px 0 6px', fontFamily: T.sans }}><span style={{ color: '#30363d', marginRight: 5 }}>◆</span>{line.slice(4)}</h3>); return; }
+        if (line.startsWith('# ')) { elements.push(<h1 key={idx} style={{ fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 12px', fontFamily: T.sans, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>{line.slice(2)}</h1>); return; }
+        if (line.startsWith('## ')) { elements.push(<h2 key={idx} style={{ fontSize: 13, fontWeight: 700, color: T.textSecondary, margin: '16px 0 8px', fontFamily: T.sans }}><span style={{ opacity: 0.4, marginRight: 5 }}>##</span>{line.slice(3)}</h2>); return; }
+        if (line.startsWith('### ')) { elements.push(<h3 key={idx} style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, margin: '12px 0 6px', fontFamily: T.sans }}><span style={{ color: T.border, marginRight: 5 }}>◆</span>{line.slice(4)}</h3>); return; }
         if (line.startsWith('- ') || line.startsWith('* ')) {
           const parts = line.slice(2).split(/\*\*(.+?)\*\*/);
-          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
-          elements.push(<div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}><span style={{ color: '#58a6ff', flexShrink: 0 }}>›</span><span>{rendered}</span></div>);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: T.text }}>{p}</strong> : <span key={pi} style={{ color: T.textSecondary }}>{p}</span>);
+          elements.push(<div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 12, lineHeight: 1.6, fontFamily: T.mono }}><span style={{ color: T.textMuted, flexShrink: 0 }}>›</span><span>{rendered}</span></div>);
           return;
         }
         if (line.includes('**')) {
           const parts = line.split(/\*\*(.+?)\*\*/);
-          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: '#e6edf3' }}>{p}</strong> : <span key={pi} style={{ color: '#8b949e' }}>{p}</span>);
+          const rendered = parts.map((p, pi) => pi % 2 === 1 ? <strong key={pi} style={{ color: T.text }}>{p}</strong> : <span key={pi} style={{ color: T.textSecondary }}>{p}</span>);
           elements.push(<div key={idx} style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 4, fontFamily: T.mono }}>{rendered}</div>);
           return;
         }
         if (line.trim() === '') { elements.push(<div key={idx} style={{ height: 6 }} />); return; }
-        elements.push(<div key={idx} style={{ fontSize: 12, color: '#8b949e', lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
+        elements.push(<div key={idx} style={{ fontSize: 12, color: T.textSecondary, lineHeight: 1.6, fontFamily: T.mono, marginBottom: 2 }}>{line}</div>);
       });
       if (inCode && codeLines.length > 0) flush(lines.length);
       if (allLines.length > MAX_LINES) {
-        elements.push(<div key="trunc" style={{ fontSize: 11, color: '#484f58', fontStyle: 'italic', marginTop: 8 }}>... [{allLines.length - MAX_LINES} more lines]</div>);
+        elements.push(<div key="trunc" style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', marginTop: 8 }}>... [{allLines.length - MAX_LINES} more lines]</div>);
       }
       return elements;
     };
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#010409' }}>
-        <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(88,166,255,0.6); } 70% { box-shadow: 0 0 0 6px rgba(88,166,255,0); } 100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: T.bg }}>
+        <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(128,128,128,0.4); } 70% { box-shadow: 0 0 0 6px rgba(128,128,128,0); } 100% { box-shadow: 0 0 0 0 rgba(128,128,128,0); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
         {tabBar}
         {/* Status row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 20px', background: '#0d1117', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span style={{ fontSize: 11, color: '#8b949e', fontFamily: T.sans, flex: 1 }}>Navis Execution Report</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 20px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span style={{ fontSize: 11, color: T.textMuted, fontFamily: T.sans, flex: 1 }}>findings.md</span>
           {isRunning ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(56,139,253,0.1)', border: '1px solid rgba(56,139,253,0.3)', borderRadius: 20, padding: '2px 8px' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#58a6ff', animation: 'pulse 2s infinite' }} />
-              <span style={{ fontSize: 10, color: '#58a6ff', fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(128,128,128,0.1)', border: `1px solid ${T.border}`, borderRadius: 20, padding: '2px 8px' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.textMuted, animation: 'pulse 2s infinite' }} />
+              <span style={{ fontSize: 10, color: T.textSecondary, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(46,160,67,0.1)', border: '1px solid rgba(46,160,67,0.3)', borderRadius: 20, padding: '2px 8px' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              <span style={{ fontSize: 10, color: '#3fb950', fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(128,128,128,0.1)', border: `1px solid ${T.border}`, borderRadius: 20, padding: '2px 8px' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span style={{ fontSize: 10, color: T.textSecondary, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
             </div>
           )}
         </div>
         {/* Report content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', scrollBehavior: 'smooth' }}>
-          {renderNavisMarkdown(navisReport)}
+          {renderNavisMarkdown(findingsContent)}
           {isRunning && (
-            <span style={{ display: 'inline-block', width: 8, height: 14, background: '#58a6ff', borderRadius: 1, verticalAlign: 'middle', animation: 'blink-cursor 1s step-end infinite', marginLeft: 2 }} />
+            <span style={{ display: 'inline-block', width: 8, height: 14, background: T.textSecondary, borderRadius: 1, verticalAlign: 'middle', animation: 'blink-cursor 1s step-end infinite', marginLeft: 2 }} />
           )}
           <div ref={reportBottomRef} />
         </div>
@@ -2369,7 +2472,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
             </div>
             <div style={{
               position: 'absolute', bottom: 12, left: 12,
-              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
+              background: 'rgba(0,0,0,0.6)', color: '#ffffff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 400,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -2378,7 +2481,7 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
             </div>
             <div style={{
               position: 'absolute', bottom: 12, right: 12,
-              background: 'rgba(0,0,0,0.6)', color: 'var(--color-bg-surface)',
+              background: 'rgba(0,0,0,0.6)', color: '#ffffff',
               padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 400,
               backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
               zIndex: 10
@@ -6508,7 +6611,7 @@ export default function ToolDetailSidePanel({
     if (toolType === ToolType.LIVE_PREVIEW) return <LivePreviewView {...toolData} />;
     if (toolType === ToolType.MCP_REGISTRY) return <McpRegistryView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
-    if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} />;
+    if (toolType === ToolType.FERN) return <NavisView {...toolData} toolCall={toolCall} toolName={toolCall?.toolName || 'Fern'} />;
     if (toolType === ToolType.TERMINAL) return <TerminalView {...toolData} />;
     if (toolType === ToolType.SKILL) return <SkillView {...toolData} />;
     if (toolType === ToolType.PLAN) return <PlanView {...toolData} />;

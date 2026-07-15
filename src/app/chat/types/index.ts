@@ -64,6 +64,8 @@ export interface ModelOption {
     provider: string;
     providerType: string;
     logo: any;
+    size?: number;
+    parameterSize?: string;
 }
 
 // Sub-agent progress streaming types

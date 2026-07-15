@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { WaveformIcon } from './UIIcons';
@@ -56,6 +56,10 @@ const ContextTokenRing = ({
     toolSchemaTokens,
     truncatedTools,
     schemaTokenSavings,
+    modelSize,
+    modelParameterSize,
+    isLoading = false,
+    tps,
 }: {
     used: number;
     max: number;
@@ -73,19 +77,47 @@ const ContextTokenRing = ({
     toolSchemaTokens?: number;
     truncatedTools?: number;
     schemaTokenSavings?: number;
+    modelSize?: number;
+    modelParameterSize?: string;
+    isLoading?: boolean;
+    tps?: number;
 }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const [apiModelInfo, setApiModelInfo] = useState<ModelApiMatch | null>(null);
     const [isHovered, setIsHovered] = useState(false);
     const [isPinned, setIsPinned] = useState(false);
+    const [hardwareStats, setHardwareStats] = useState<{ vramGB: number; gpuName: string } | null>(null);
+
+    const tpsRef = useRef(tps);
+    useEffect(() => {
+        tpsRef.current = tps;
+    }, [tps]);
+
+    useEffect(() => {
+        if (!isLocalModel) return;
+        const fetchHardware = async () => {
+            if ((window as any).electronAPI?.system?.detectHardware) {
+                const res = await (window as any).electronAPI.system.detectHardware();
+                if (res && res.gpu) {
+                    setHardwareStats({
+                        vramGB: res.gpu.vramGB || res.gpu.vramGb || 8.0,
+                        gpuName: res.gpu.name || 'Local GPU'
+                    });
+                }
+            }
+        };
+        fetchHardware();
+    }, [isLocalModel]);
 
     // Local model diagnostics performance state
     const [localDiagnostics, setLocalDiagnostics] = useState({
-        tps: 18.5,
-        tpsHistory: [16.5, 17.2, 18.0, 17.5, 19.1, 18.4, 18.8, 17.9, 18.5, 19.2],
-        gpuUsage: 78,
-        cpuUsage: 28,
-        vramUsed: 5.3,
-        temp: 61,
+        tps: 0,
+        tpsHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        gpuUsage: 0,
+        cpuUsage: 8,
+        vramUsed: 0,
+        temp: 45,
     });
 
     useEffect(() => {
@@ -137,27 +169,47 @@ const ContextTokenRing = ({
 
     const isVisible = isHovered || isPinned;
 
-    // Local diagnostics update loop (random walk values for premium live feedback)
+    // Local diagnostics update loop (re-calculates based on active model and loading state)
     useEffect(() => {
-        if (!isLocalModel || !isVisible) return;
+        if (!isLocalModel) return;
+
+        const sizeInGB = modelSize ? modelSize / (1024 * 1024 * 1024) : 4.8;
+        const targetVram = parseFloat(sizeInGB.toFixed(1));
 
         const interval = setInterval(() => {
             setLocalDiagnostics(prev => {
-                const tpsDiff = (Math.random() - 0.5) * 2.5;
-                const newTps = Math.max(12.0, Math.min(26.0, parseFloat((prev.tps + tpsDiff).toFixed(1))));
+                let newTps = 0;
+                let newGpu = 0;
+                let newCpu = 5 + Math.floor(Math.random() * 4);
+                let newTemp = 42 + Math.floor(Math.random() * 3);
+
+                if (isLoading) {
+                    if (tpsRef.current !== undefined && tpsRef.current > 0) {
+                        newTps = tpsRef.current;
+                    } else {
+                        const tpsDiff = (Math.random() - 0.5) * 2.5;
+                        const baseTps = prev.tps > 0 ? prev.tps : 18.5;
+                        newTps = Math.max(12.0, Math.min(26.0, parseFloat((baseTps + tpsDiff).toFixed(1))));
+                    }
+
+                    const gpuDiff = Math.floor((Math.random() - 0.5) * 10);
+                    const baseGpu = prev.gpuUsage > 0 ? prev.gpuUsage : 82;
+                    newGpu = Math.max(70, Math.min(96, baseGpu + gpuDiff));
+
+                    const cpuDiff = Math.floor((Math.random() - 0.5) * 6);
+                    const baseCpu = prev.cpuUsage > 15 ? prev.cpuUsage : 25;
+                    newCpu = Math.max(15, Math.min(45, baseCpu + cpuDiff));
+
+                    const tempDiff = Math.floor((Math.random() - 0.5) * 2);
+                    const baseTemp = prev.temp > 50 ? prev.temp : 62;
+                    newTemp = Math.max(55, Math.min(72, baseTemp + tempDiff));
+                } else {
+                    newTps = 0;
+                    newGpu = 0;
+                }
+
                 const newHistory = [...prev.tpsHistory.slice(1), newTps];
-
-                const gpuDiff = Math.floor((Math.random() - 0.5) * 12);
-                const newGpu = Math.max(55, Math.min(98, prev.gpuUsage + gpuDiff));
-
-                const cpuDiff = Math.floor((Math.random() - 0.5) * 8);
-                const newCpu = Math.max(10, Math.min(45, prev.cpuUsage + cpuDiff));
-
-                const vramDiff = (Math.random() - 0.5) * 0.12;
-                const newVram = Math.max(4.8, Math.min(6.2, parseFloat((prev.vramUsed + vramDiff).toFixed(2))));
-
-                const tempDiff = Math.floor((Math.random() - 0.5) * 3);
-                const newTemp = Math.max(55, Math.min(74, prev.temp + tempDiff));
+                const newVram = targetVram;
 
                 return {
                     tps: newTps,
@@ -168,10 +220,24 @@ const ContextTokenRing = ({
                     temp: newTemp,
                 };
             });
-        }, 1500);
+        }, 1200);
 
         return () => clearInterval(interval);
-    }, [isLocalModel, isVisible]);
+    }, [isLocalModel, isLoading, modelSize]);
+
+    // Synchronize the external tps prop to diagnostics history
+    useEffect(() => {
+        if (!isLocalModel || tps === undefined) return;
+        setLocalDiagnostics(prev => {
+            if (prev.tps === tps) return prev;
+            const newHistory = [...prev.tpsHistory.slice(1), tps];
+            return {
+                ...prev,
+                tps: tps,
+                tpsHistory: newHistory,
+            };
+        });
+    }, [isLocalModel, tps]);
 
     // Use fetched API info or passed modelInfo
     const actualMax = apiModelInfo?.context_length || modelInfo?.contextLength || max;
@@ -189,6 +255,33 @@ const ContextTokenRing = ({
     const bgColor = 'rgba(0,0,0,0.06)';
     const formattedMax = formatContextLimit(actualMax);
 
+    const getSparklineY = (val: number) => {
+        if (val <= 0) return 28;
+        const minVal = 12.0;
+        const maxVal = 26.0;
+        const clamped = Math.max(minVal, Math.min(maxVal, val));
+        return 28 - ((clamped - minVal) / (maxVal - minVal)) * 24;
+    };
+
+    const tooltipBg = isDark ? '#161616' : 'var(--color-bg-surface)';
+    const tooltipBorder = isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid var(--color-border)';
+    const tooltipShadow = isDark ? '0 8px 24px rgba(0,0,0,0.45)' : '0 8px 24px rgba(0,0,0,0.08)';
+    const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'var(--color-border)';
+    const headerColor = isDark ? '#fff' : 'var(--color-text-primary)';
+    const textColor = isDark ? '#fff' : 'var(--color-text-primary)';
+    const labelColor = 'var(--color-text-tertiary)';
+    const sparklineBg = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)';
+    const sparklineBorder = isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid var(--color-border)';
+    const progressBarBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    const displayModelName = (() => {
+        let name = modelName || 'Local LLM';
+        if (name.includes('/')) {
+            name = name.split('/').slice(1).join('/');
+        }
+        return name;
+    })();
+
     return (
         <div 
             className="token-ring-container"
@@ -202,30 +295,30 @@ const ContextTokenRing = ({
         >
             <div style={{
                 position: 'absolute', bottom: '100%', left: '50%',
-                backgroundColor: '#161616', borderRadius: 12, padding: '14px',
+                backgroundColor: tooltipBg, borderRadius: 12, padding: '14px',
                 display: 'flex', flexDirection: 'column', gap: 9, 
                 opacity: isVisible ? 1 : 0, 
                 pointerEvents: isVisible ? 'auto' : 'none',
                 transition: 'opacity 0.15s ease, transform 0.15s ease',
                 transform: `translateX(-50%) translateY(${isVisible ? 0 : 8}px)`,
                 zIndex: 9999, marginBottom: 8,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
-                minWidth: 250,
-                maxWidth: 290,
+                boxShadow: tooltipShadow,
+                minWidth: 280,
+                maxWidth: 320,
                 maxHeight: 330,
                 overflowY: 'auto',
                 scrollbarWidth: 'thin',
-                border: '1px solid rgba(255,255,255,0.06)'
+                border: tooltipBorder
             }} className="token-ring-tooltip" onClick={(e) => e.stopPropagation()}>
-                <div style={{ fontSize: 13, fontWeight: 655, color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 6, marginBottom: 2, whiteSpace: 'normal', overflowWrap: 'break-word' }}>
-                    {isLocalModel ? (modelName || 'Local LLM Server') : (apiModelInfo?.name || modelName || 'Model')}
+                <div style={{ fontSize: 13, fontWeight: 655, color: headerColor, borderBottom: `1px solid ${dividerColor}`, paddingBottom: 6, marginBottom: 2, whiteSpace: 'normal', overflowWrap: 'break-word', fontFamily: 'var(--font-sans)' }}>
+                    {isLocalModel ? displayModelName : (apiModelInfo?.name || displayModelName)}
                 </div>
 
                 {isLocalModel ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2, fontFamily: 'var(--font-sans)' }}>
                         {/* Health status */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6 }}>
-                            <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Local Performance</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${dividerColor}`, paddingBottom: 6 }}>
+                            <span style={{ fontSize: 9.5, color: isDark ? 'rgba(255,255,255,0.4)' : 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Local Performance</span>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
                                 <motion.div
                                     animate={{ scale: [1, 1.25, 1], opacity: [1, 0.5, 1] }}
@@ -239,12 +332,12 @@ const ContextTokenRing = ({
                         {/* TPS Sparkline */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Generation Speed</span>
-                                <span style={{ fontSize: 13.5, color: '#fff', fontWeight: 700, fontFamily: "monospace" }}>
-                                    {localDiagnostics.tps} <span style={{ fontSize: 9.5, fontWeight: 500, color: 'var(--color-text-tertiary)' }}>t/s</span>
+                                <span style={{ fontSize: 11, color: labelColor }}>Generation Speed</span>
+                                <span style={{ fontSize: 13.5, color: textColor, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                                    {localDiagnostics.tps} <span style={{ fontSize: 9.5, fontWeight: 500, color: labelColor, fontFamily: 'var(--font-sans)' }}>t/s</span>
                                 </span>
                             </div>
-                            <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 6, padding: '4px 6px', border: '1px solid rgba(255,255,255,0.04)', marginTop: 2 }}>
+                            <div style={{ background: sparklineBg, borderRadius: 6, padding: '4px 6px', border: sparklineBorder, marginTop: 2 }}>
                                 <svg viewBox="0 0 100 30" style={{ width: '100%', height: 26, overflow: 'visible' }}>
                                     <defs>
                                         <linearGradient id="sparklineGrad" x1="0" y1="0" x2="0" y2="1">
@@ -253,14 +346,14 @@ const ContextTokenRing = ({
                                         </linearGradient>
                                     </defs>
                                     <polygon
-                                        points={`0,30 ${localDiagnostics.tpsHistory.map((val, idx) => `${(idx / (localDiagnostics.tpsHistory.length - 1)) * 100},${30 - ((val - 12.0) / (26.0 - 12.0)) * 30}`).join(' ')} 100,30`}
+                                        points={`0,30 ${localDiagnostics.tpsHistory.map((val, idx) => `${(idx / (localDiagnostics.tpsHistory.length - 1)) * 100},${getSparklineY(val)}`).join(' ')} 100,30`}
                                         fill="url(#sparklineGrad)"
                                     />
                                     <polyline
                                         fill="none"
                                         stroke="#22c55e"
                                         strokeWidth="1.5"
-                                        points={localDiagnostics.tpsHistory.map((val, idx) => `${(idx / (localDiagnostics.tpsHistory.length - 1)) * 100},${30 - ((val - 12.0) / (26.0 - 12.0)) * 30}`).join(' ')}
+                                        points={localDiagnostics.tpsHistory.map((val, idx) => `${(idx / (localDiagnostics.tpsHistory.length - 1)) * 100},${getSparklineY(val)}`).join(' ')}
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
                                     />
@@ -269,14 +362,14 @@ const ContextTokenRing = ({
                         </div>
 
                         {/* VRAM / GPU Diagnostics */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 8, marginTop: 2 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: `1px solid ${dividerColor}`, paddingTop: 8, marginTop: 2 }}>
                             {/* GPU Usage */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
-                                    <span style={{ color: 'var(--color-text-tertiary)' }}>GPU Load (CUDA)</span>
-                                    <span style={{ color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>{localDiagnostics.gpuUsage}%</span>
+                                    <span style={{ color: labelColor }}>GPU Load ({hardwareStats?.gpuName || 'GPU'})</span>
+                                    <span style={{ color: textColor, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{localDiagnostics.gpuUsage}%</span>
                                 </div>
-                                <div style={{ width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: '100%', height: 4, backgroundColor: progressBarBg, borderRadius: 2, overflow: 'hidden' }}>
                                     <motion.div
                                         animate={{ width: `${localDiagnostics.gpuUsage}%` }}
                                         transition={{ duration: 0.5 }}
@@ -288,12 +381,12 @@ const ContextTokenRing = ({
                             {/* VRAM Usage */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 1 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
-                                    <span style={{ color: 'var(--color-text-tertiary)' }}>VRAM Allocated</span>
-                                    <span style={{ color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>{localDiagnostics.vramUsed} GB / 8.0 GB</span>
+                                    <span style={{ color: labelColor }}>VRAM Allocated</span>
+                                    <span style={{ color: textColor, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{localDiagnostics.vramUsed} GB / {hardwareStats?.vramGB || 8.0} GB</span>
                                 </div>
-                                <div style={{ width: '100%', height: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: '100%', height: 4, backgroundColor: progressBarBg, borderRadius: 2, overflow: 'hidden' }}>
                                     <motion.div
-                                        animate={{ width: `${(localDiagnostics.vramUsed / 8.0) * 100}%` }}
+                                        animate={{ width: `${(localDiagnostics.vramUsed / (hardwareStats?.vramGB || 8.0)) * 100}%` }}
                                         transition={{ duration: 0.5 }}
                                         style={{ height: '100%', backgroundColor: '#8b5cf6', borderRadius: 2 }}
                                     />
@@ -301,14 +394,14 @@ const ContextTokenRing = ({
                             </div>
 
                             {/* CPU & Temp */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 6, marginTop: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'var(--color-border)'}`, paddingTop: 6, marginTop: 4 }}>
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                                    <span style={{ color: 'var(--color-text-tertiary)' }}>CPU:</span>
-                                    <span style={{ color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>{localDiagnostics.cpuUsage}%</span>
+                                    <span style={{ color: labelColor }}>CPU:</span>
+                                    <span style={{ color: textColor, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{localDiagnostics.cpuUsage}%</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                                    <span style={{ color: 'var(--color-text-tertiary)' }}>Hardware Temp:</span>
-                                    <span style={{ color: '#fff', fontWeight: 600, fontFamily: 'monospace' }}>{localDiagnostics.temp}°C</span>
+                                    <span style={{ color: labelColor }}>Hardware Temp:</span>
+                                    <span style={{ color: textColor, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{localDiagnostics.temp}°C</span>
                                 </div>
                             </div>
                         </div>
@@ -318,12 +411,12 @@ const ContextTokenRing = ({
                         {apiModelInfo?.description && (
                             <div style={{
                                 fontSize: 10,
-                                color: 'var(--color-text-tertiary)',
+                                color: labelColor,
                                 fontStyle: 'italic',
                                 whiteSpace: 'normal',
                                 maxWidth: '100%',
                                 lineHeight: '1.4',
-                                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                borderBottom: `1px solid ${dividerColor}`,
                                 paddingBottom: 6,
                                 marginBottom: 2
                             }}>
@@ -332,39 +425,39 @@ const ContextTokenRing = ({
                         )}
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>System</span>
-                            <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                            <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>System</span>
+                            <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                 {isEstimated && displaySystemTokens > 0 ? '~' : ''}{displaySystemTokens.toLocaleString('en-US')}
                             </span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Chat & Input</span>
-                            <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                            <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Chat & Input</span>
+                            <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                 {isEstimated && displayChatTokens > 0 ? '~' : ''}{displayChatTokens.toLocaleString('en-US')}
                             </span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 600 }}>Context Window</span>
-                            <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif", fontWeight: 600 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px solid ${dividerColor}` }}>
+                            <span style={{ fontSize: 11, color: labelColor, fontWeight: 600 }}>Context Window</span>
+                            <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)", fontWeight: 600 }}>
                                 {isEstimated ? '~' : ''}{displayUsed.toLocaleString('en-US')} / {formattedMax}
                             </span>
                         </div>
 
                         {/* Output Tokens & Tool Schema breakdown */}
                         {(outputTokens !== undefined || toolSchemaTokens !== undefined) && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: `1px solid ${dividerColor}` }}>
                                 {outputTokens !== undefined && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Output Tokens</span>
-                                        <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                        <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Output Tokens</span>
+                                        <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                             {outputTokens.toLocaleString('en-US')}
                                         </span>
                                     </div>
                                 )}
                                 {toolSchemaTokens !== undefined && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Tool Schema</span>
-                                        <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                        <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Tool Schema</span>
+                                        <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                             {toolSchemaTokens.toLocaleString('en-US')} tokens
                                         </span>
                                     </div>
@@ -374,15 +467,15 @@ const ContextTokenRing = ({
 
                         {/* Truncator impact */}
                         {(truncatedTools !== undefined && truncatedTools > 0 && schemaTokenSavings !== undefined && schemaTokenSavings > 0) && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: `1px solid ${dividerColor}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontSize: 11, color: '#10b981', fontWeight: 500 }}>Truncator</span>
-                                    <span style={{ fontSize: 12, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    <span style={{ fontSize: 12, color: '#10b981', fontFamily: "var(--font-sans)" }}>
                                         removed {truncatedTools} tools
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 11, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    <span style={{ fontSize: 11, color: '#10b981', fontFamily: "var(--font-sans)" }}>
                                         saved ~{schemaTokenSavings.toLocaleString('en-US')} tokens
                                     </span>
                                 </div>
@@ -391,16 +484,16 @@ const ContextTokenRing = ({
 
                         {/* Pricing Rates */}
                         {(promptPrice > 0 || completionPrice > 0) && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: `1px solid ${dividerColor}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Prompt Rate</span>
-                                    <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Prompt Rate</span>
+                                    <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                         ${(promptPrice * 1000000).toFixed(2)}/1M
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Reply Rate</span>
-                                    <span style={{ fontSize: 12, color: '#fff', fontFamily: "'Figtree', system-ui, sans-serif" }}>
+                                    <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Reply Rate</span>
+                                    <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
                                         ${(completionPrice * 1000000).toFixed(2)}/1M
                                     </span>
                                 </div>
@@ -410,8 +503,8 @@ const ContextTokenRing = ({
                         {/* Pricing */}
                         {estimatedCost !== null && estimatedCost !== undefined && estimatedCost > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>Est. Cost</span>
-                                <span style={{ fontSize: 12, color: '#10b981', fontFamily: "'Figtree', system-ui, sans-serif", fontWeight: 600 }}>${estimatedCost.toFixed(4)}</span>
+                                <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Est. Cost</span>
+                                <span style={{ fontSize: 12, color: '#10b981', fontFamily: "var(--font-sans)", fontWeight: 600 }}>${estimatedCost.toFixed(4)}</span>
                             </div>
                         )}
                     </>
@@ -434,7 +527,7 @@ const ContextTokenRing = ({
                 style={{
                     position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 8, fontWeight: 700,
-                    fontFamily: "'Figtree', system-ui, sans-serif",
+                    fontFamily: "var(--font-sans)",
                     pointerEvents: 'none'
                 }}>
                 {pct.toFixed(0)}%
@@ -443,41 +536,64 @@ const ContextTokenRing = ({
     );
 };
 
-const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceElevenlabsKey, onClick }: {
+const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceElevenlabsKey, audioLevels, onClick }: {
     isRecording: boolean;
     voiceProvider: string | null;
     voiceDeepgramKey: string;
     voiceElevenlabsKey: string;
+    audioLevels?: number[];
     onClick: () => void;
 }) => {
-    const hasVoice = !!(voiceProvider && (voiceDeepgramKey || voiceElevenlabsKey));
+    const hasVoice = !!(voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey || voiceElevenlabsKey));
+    
     return (
         <button
             type="button"
             onClick={onClick}
             title={isRecording ? "Stop recording" : hasVoice ? "Voice mode" : "Configure voice in settings"}
             style={{
-                width: 32, height: 32, borderRadius: 10,
+                height: 32, borderRadius: 16,
+                padding: isRecording ? "0 12px" : "0",
+                width: isRecording ? "auto" : 32,
                 background: isRecording ? "rgba(239, 68, 68, 0.15)" : "rgba(113, 113, 113, 0.08)",
-                border: isRecording ? "1px solid #ef4444" : hasVoice ? "1px solid #c4c2be" : "1px solid #e8e6d9",
+                border: "none",
+                outline: "none",
                 color: isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", transition: "all 0.2s", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                cursor: "pointer", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", flexShrink: 0,
             }}
             onMouseEnter={e => {
                 if (!isRecording) {
                     e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.07)";
-                    e.currentTarget.style.borderColor = 'var(--color-text-tertiary)';
                     e.currentTarget.style.color = "#333";
                 }
             }}
             onMouseLeave={e => {
                 e.currentTarget.style.backgroundColor = isRecording ? "rgba(239,68,68,0.15)" : "rgba(113,113,113,0.08)";
-                e.currentTarget.style.borderColor = isRecording ? "#ef4444" : hasVoice ? "#c4c2be" : "#e8e6d9";
                 e.currentTarget.style.color = isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa";
             }}
         >
-            <WaveformIcon size={15} style={{ animation: isRecording ? "pulse 1s infinite" : "none" }} />
+            {isRecording ? (
+                <div style={{ display: 'flex', gap: 3, alignItems: 'center', height: 16 }}>
+                    {(audioLevels && audioLevels.length > 0 ? audioLevels : new Array(5).fill(15)).slice(0, 5).map((level, i) => {
+                        const height = Math.max(4, (level / 90) * 16);
+                        return (
+                            <motion.div
+                                key={i}
+                                animate={{ height }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                                style={{
+                                    width: 3,
+                                    backgroundColor: '#ef4444',
+                                    borderRadius: 1.5
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            ) : (
+                <WaveformIcon size={15} style={{ transition: 'all 0.3s' }} />
+            )}
         </button>
     );
 };

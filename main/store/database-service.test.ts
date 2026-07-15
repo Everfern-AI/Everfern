@@ -23,7 +23,7 @@ function createTestConversation(id: string = 'test-conv-1'): Conversation {
     projectId: 'proj-1',
     messages: [
       {
-        id: 'msg-1',
+        id: `${id}-msg-1`,
         role: 'user',
         content: 'Hello, how are you?',
         orderIndex: 0,
@@ -32,7 +32,7 @@ function createTestConversation(id: string = 'test-conv-1'): Conversation {
         createdAt: '2025-01-15T10:00:00.000Z',
       },
       {
-        id: 'msg-2',
+        id: `${id}-msg-2`,
         role: 'assistant',
         content: 'I am doing well, thank you for asking!',
         thought: 'User is greeting me',

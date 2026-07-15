@@ -14,6 +14,7 @@ import { NavisExtensionOrchestrator } from './agent/extension-orchestrator';
 import { NavisEvent } from './logger';
 import { toolSettingsStore } from '../../../store/tool-settings';
 import { broadcastNavisCompanionProgress, getNavisCompanionStatus, prepareNavisMainProfileExtension } from './companion-extension';
+import { bridgeServer } from '../../../lib/extension-server';
 
 type SubAgentProgressEventType = 'step' | 'reasoning' | 'action' | 'screenshot' | 'complete' | 'abort';
 
@@ -311,6 +312,9 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               : navisSettings.automationMode);
 
       try {
+        // Set the active session in the bridge server so the companion extension knows a task is running
+        bridgeServer.setSession(toolCallId || 'navis', safeArgs.startUrl || '', 'Navis Active');
+
         const shouldUseExtensionFirst =
           automationMode === 'extension-first';
 
@@ -432,6 +436,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
 
         throw toolErr;
       } finally {
+        bridgeServer.setSession(null);
         unsubscribe();
       }
     },

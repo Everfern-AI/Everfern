@@ -15,7 +15,7 @@ import { dbOps } from '../lib/db';
  * Initialize persistence tables for long-running agentic tasks system
  *
  * Creates the following tables:
- * - checkpoints: Agent state snapshots
+ * - agent_checkpoints: Agent state snapshots
  * - file_snapshots: File modifications for rollback
  * - command_history: Command executions for rollback
  * - task_schedules: Scheduled task definitions
@@ -27,9 +27,9 @@ import { dbOps } from '../lib/db';
 export async function initializePersistenceTables(): Promise<void> {
   try {
     await dbOps.exec(`
-      -- Checkpoints table: stores agent state snapshots
+      -- Agent Checkpoints table: stores agent state snapshots
       -- Validates: Requirements 2.1, 2.3, 2.4
-      CREATE TABLE IF NOT EXISTS checkpoints (
+      CREATE TABLE IF NOT EXISTS agent_checkpoints (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL,
         step_number INTEGER NOT NULL,
@@ -39,7 +39,7 @@ export async function initializePersistenceTables(): Promise<void> {
         delta_only BOOLEAN DEFAULT 0,
         previous_checkpoint_id TEXT,
         compressed BOOLEAN DEFAULT 0,
-        FOREIGN KEY (previous_checkpoint_id) REFERENCES checkpoints(id) ON DELETE SET NULL
+        FOREIGN KEY (previous_checkpoint_id) REFERENCES agent_checkpoints(id) ON DELETE SET NULL
       );
 
       -- File snapshots table: tracks file modifications for rollback
@@ -142,8 +142,8 @@ export async function initializePersistenceTables(): Promise<void> {
  *
  * Indexes are created for common query patterns:
  * - task_id lookups (all tables)
- * - step_number queries (checkpoints, file_snapshots, command_history, computer_use_actions)
- * - timestamp-based queries (checkpoints, task_schedules)
+ * - step_number queries (agent_checkpoints, file_snapshots, command_history, computer_use_actions)
+ * - timestamp-based queries (agent_checkpoints, task_schedules)
  * - file_path lookups (file_snapshots)
  * - status filtering (task_schedules)
  * - next_execution_time for scheduler (task_schedules)
@@ -153,8 +153,9 @@ export async function initializePersistenceTables(): Promise<void> {
 async function createPersistenceIndexes(): Promise<void> {
   // Create each index individually so one failure doesn't abort the rest
   const indexes: [string, string][] = [
-    ['idx_checkpoints_task_id', 'CREATE INDEX IF NOT EXISTS idx_checkpoints_task_id ON checkpoints(task_id)'],
-    ['idx_checkpoints_step', 'CREATE INDEX IF NOT EXISTS idx_checkpoints_step ON checkpoints(task_id, step_number)'],
+    ['idx_agent_checkpoints_task_id', 'CREATE INDEX IF NOT EXISTS idx_agent_checkpoints_task_id ON agent_checkpoints(task_id)'],
+    ['idx_agent_checkpoints_step', 'CREATE INDEX IF NOT EXISTS idx_agent_checkpoints_step ON agent_checkpoints(task_id, step_number)'],
+    ['idx_agent_checkpoints_timestamp', 'CREATE INDEX IF NOT EXISTS idx_agent_checkpoints_timestamp ON agent_checkpoints(timestamp)'],
     ['idx_file_snapshots_task', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_task ON file_snapshots(task_id, step_number)'],
     ['idx_file_snapshots_path', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_path ON file_snapshots(file_path)'],
     ['idx_file_snapshots_timestamp', 'CREATE INDEX IF NOT EXISTS idx_file_snapshots_timestamp ON file_snapshots(timestamp)'],
@@ -194,7 +195,7 @@ export async function migratePersistenceSchema(): Promise<void> {
     const tables = await dbOps.all(`
       SELECT name FROM sqlite_master
       WHERE type='table'
-      AND name IN ('checkpoints', 'file_snapshots', 'command_history', 'task_schedules', 'navis_sessions', 'computer_use_actions')
+      AND name IN ('agent_checkpoints', 'file_snapshots', 'command_history', 'task_schedules', 'navis_sessions', 'computer_use_actions')
     `);
 
     if (tables.length === 0) {
@@ -202,19 +203,19 @@ export async function migratePersistenceSchema(): Promise<void> {
       return;
     }
 
-    // Check and add missing columns to checkpoints table
-    const checkpointColumns = await dbOps.all("PRAGMA table_info(checkpoints)");
+    // Check and add missing columns to agent_checkpoints table
+    const checkpointColumns = await dbOps.all("PRAGMA table_info(agent_checkpoints)");
     if (checkpointColumns && checkpointColumns.length > 0) {
       const columnNames = checkpointColumns.map((c: any) => c.name);
 
       if (!columnNames.includes('step_number')) {
-        await dbOps.run('ALTER TABLE checkpoints ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
-        console.log('[PersistenceDB] Added step_number column to checkpoints table');
+        await dbOps.run('ALTER TABLE agent_checkpoints ADD COLUMN step_number INTEGER NOT NULL DEFAULT 0');
+        console.log('[PersistenceDB] Added step_number column to agent_checkpoints table');
       }
 
       if (!columnNames.includes('compressed')) {
-        await dbOps.run('ALTER TABLE checkpoints ADD COLUMN compressed BOOLEAN DEFAULT 0');
-        console.log('[PersistenceDB] Added compressed column to checkpoints table');
+        await dbOps.run('ALTER TABLE agent_checkpoints ADD COLUMN compressed BOOLEAN DEFAULT 0');
+        console.log('[PersistenceDB] Added compressed column to agent_checkpoints table');
       }
     }
 
@@ -249,7 +250,7 @@ export async function migratePersistenceSchema(): Promise<void> {
     }
 
     // Add task_id to tables that need it
-    const tablesWithTaskId = ['checkpoints', 'file_snapshots', 'command_history', 'navis_sessions', 'computer_use_actions'];
+    const tablesWithTaskId = ['agent_checkpoints', 'file_snapshots', 'command_history', 'navis_sessions', 'computer_use_actions'];
     for (const tableName of tablesWithTaskId) {
       const tableColumns = await dbOps.all(`PRAGMA table_info(${tableName})`);
       if (tableColumns && tableColumns.length > 0) {
@@ -310,7 +311,7 @@ export async function verifyPersistenceSchema(): Promise<{
   };
 
   const requiredTables = [
-    'checkpoints',
+    'agent_checkpoints',
     'file_snapshots',
     'command_history',
     'task_schedules',
@@ -319,9 +320,9 @@ export async function verifyPersistenceSchema(): Promise<{
   ];
 
   const requiredIndexes = [
-    'idx_checkpoints_task_id',
-    'idx_checkpoints_step',
-    'idx_checkpoints_timestamp',
+    'idx_agent_checkpoints_task_id',
+    'idx_agent_checkpoints_step',
+    'idx_agent_checkpoints_timestamp',
     'idx_file_snapshots_task',
     'idx_file_snapshots_path',
     'idx_command_history_task',
@@ -399,14 +400,14 @@ export async function cleanupOldPersistenceData(options?: {
 
   try {
     // Clean up old checkpoints (keep last N per task)
-    const tasks = await dbOps.all('SELECT DISTINCT task_id FROM checkpoints');
+    const tasks = await dbOps.all('SELECT DISTINCT task_id FROM agent_checkpoints');
 
     for (const task of tasks) {
       const taskId = task.task_id;
 
       // Get checkpoint IDs to delete (all except last N)
       const oldCheckpoints = await dbOps.all(`
-        SELECT id FROM checkpoints
+        SELECT id FROM agent_checkpoints
         WHERE task_id = ?
         ORDER BY step_number DESC
         LIMIT -1 OFFSET ?
@@ -415,7 +416,7 @@ export async function cleanupOldPersistenceData(options?: {
       if (oldCheckpoints.length > 0) {
         const idsToDelete = oldCheckpoints.map((c: any) => c.id);
         await dbOps.run(`
-          DELETE FROM checkpoints
+          DELETE FROM agent_checkpoints
           WHERE id IN (${idsToDelete.map(() => '?').join(',')})
         `, idsToDelete);
 
@@ -467,7 +468,7 @@ export async function getPersistenceStats(): Promise<{
 }> {
   try {
     const stats = await Promise.all([
-      dbOps.get('SELECT COUNT(*) as count FROM checkpoints'),
+      dbOps.get('SELECT COUNT(*) as count FROM agent_checkpoints'),
       dbOps.get('SELECT COUNT(*) as count FROM file_snapshots'),
       dbOps.get('SELECT COUNT(*) as count FROM command_history'),
       dbOps.get('SELECT COUNT(*) as count FROM task_schedules'),

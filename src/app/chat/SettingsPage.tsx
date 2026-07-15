@@ -19,35 +19,41 @@ import {
     WrenchScrewdriverIcon,
     CircleStackIcon,
     ComputerDesktopIcon,
+    MicrophoneIcon,
+    LightBulbIcon,
+    BoltIcon,
+    BookOpenIcon,
+    CommandLineIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
+import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
 import Image from 'next/image';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 
 // ── No inline logos — using Image imports instead ─────────────────────────────────────────
 
 const MORE_PROVIDERS = [
-    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} className="dark:invert" /> },
     { id: 'minimax', name: 'MiniMax', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
     { id: 'huggingface', name: 'Hugging Face', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="Hugging Face" width={size} height={size} /> }
 ];
 
 const navSections = [
     { id: 'general', label: 'General', icon: Cog6ToothIcon },
-    { id: 'openclaw', label: 'Personality & Routing (EverFern)', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎭</span> },
+    { id: 'openclaw', label: 'Personality & Routing (EverFern)', icon: CommandLineIcon },
     { id: 'profile', label: 'Profile', icon: UserCircleIcon },
     { id: 'models', label: 'Models & Providers', icon: CpuChipIcon },
-    { id: 'voice', label: 'Voice Mode', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🎤</span> },
+    { id: 'voice', label: 'Voice Mode', icon: MicrophoneIcon },
     { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon },
     { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon },
-    { id: 'memory', label: 'Memory Graph', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧠</span> },
-    { id: 'skills', label: 'Custom Skills', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>🧩</span> },
+    { id: 'memory', label: 'Memory Graph', icon: LightBulbIcon },
+    { id: 'skills', label: 'Custom Skills', icon: BoltIcon },
     { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
     { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
     { id: 'privacy', label: 'Privacy & Data', icon: ShieldCheckIcon },
-    { id: 'dispatch', label: 'EverFern Dispatch', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>📡</span> },
+    { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon },
     { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon },
-    { id: 'help', label: 'Help & Architecture', icon: () => <span style={{ fontSize: 14, fontWeight: 700 }}>❓</span> },
+    { id: 'help', label: 'Help & Architecture', icon: BookOpenIcon },
 ];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -263,6 +269,7 @@ const RegisteredToolsList = () => {
 const LinuxVMSection = () => {
     const { theme } = useTheme();
     const [wslStatus, setWslStatus] = useState<{ installed: boolean | null; healthy: boolean | null; osName?: string; uptime?: string }>({ installed: null, healthy: null });
+    const [platform, setPlatform] = useState<string | null>(null);
     const [isInstalling, setIsInstalling] = useState(false);
     const [installError, setInstallError] = useState('');
     const [installWarning, setInstallWarning] = useState('');
@@ -270,15 +277,29 @@ const LinuxVMSection = () => {
     useEffect(() => {
         const check = async () => {
             try {
-                const isInstalled = await (window as any).electronAPI?.system?.checkWSL?.();
-                if (isInstalled) {
-                    const info = await (window as any).electronAPI?.system?.getWSLInfo?.();
-                    setWslStatus({ installed: true, healthy: info?.healthy, osName: info?.osName, uptime: info?.uptime });
+                const plat = await (window as any).electronAPI?.system?.getPlatform?.();
+                setPlatform(plat || 'win32');
+
+                if (plat === 'darwin') {
+                    const isInstalled = await (window as any).electronAPI?.system?.checkDocker?.();
+                    if (isInstalled) {
+                        setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Running' });
+                    } else {
+                        setWslStatus({ installed: false, healthy: null });
+                    }
+                } else if (plat === 'linux') {
+                    setWslStatus({ installed: true, healthy: true, osName: 'Native Linux', uptime: 'Running' });
                 } else {
-                    setWslStatus({ installed: false, healthy: null });
+                    const isInstalled = await (window as any).electronAPI?.system?.checkWSL?.();
+                    if (isInstalled) {
+                        const info = await (window as any).electronAPI?.system?.getWSLInfo?.();
+                        setWslStatus({ installed: true, healthy: info?.healthy, osName: info?.osName, uptime: info?.uptime });
+                    } else {
+                        setWslStatus({ installed: false, healthy: null });
+                    }
                 }
             } catch (e) {
-                console.error('Failed to check WSL', e);
+                console.error('Failed to check WSL/Docker', e);
                 setWslStatus({ installed: false, healthy: null });
             }
         };
@@ -290,12 +311,28 @@ const LinuxVMSection = () => {
         setInstallError('');
         setInstallWarning('');
         try {
-            const res = await (window as any).electronAPI?.system?.installWSL?.();
-            if (res?.success) {
-                setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Just now' });
-                if (res.warning) setInstallWarning(res.warning);
+            const plat = platform || await (window as any).electronAPI?.system?.getPlatform?.();
+            if (plat === 'darwin') {
+                const dockerAvailable = await (window as any).electronAPI?.system?.checkDocker?.();
+                if (!dockerAvailable) {
+                    window.open("https://www.docker.com/products/docker-desktop", "_blank");
+                    setInstallError("Docker Desktop is not running or not installed. We have opened the Docker Desktop download page in your browser. Please install, start Docker Desktop, and try installing again.");
+                    return;
+                }
+                const res = await (window as any).electronAPI?.system?.setupDockerUbuntu?.();
+                if (res?.success) {
+                    setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Just now' });
+                } else {
+                    setInstallError(res?.error || 'Failed to set up Docker Ubuntu container.');
+                }
             } else {
-                setInstallError(res?.error || 'Failed to install Linux VM.');
+                const res = await (window as any).electronAPI?.system?.installWSL?.();
+                if (res?.success) {
+                    setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Just now' });
+                    if (res.warning) setInstallWarning(res.warning);
+                } else {
+                    setInstallError(res?.error || 'Failed to install Linux VM.');
+                }
             }
         } catch (e: any) {
             setInstallError(e.message || 'Unknown error occurred.');
@@ -307,14 +344,22 @@ const LinuxVMSection = () => {
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
             <SectionTitle>Linux VM Settings</SectionTitle>
-            <SectionSubtitle>Manage the local Linux virtual machine (WSL) used by EverFern for advanced tasks and code execution.</SectionSubtitle>
+            <SectionSubtitle>
+                {platform === 'darwin'
+                    ? 'Manage the local Linux virtual machine (Docker) used by EverFern for advanced tasks and code execution.'
+                    : platform === 'linux'
+                    ? 'Manage the local Linux environment used by EverFern for advanced tasks and code execution.'
+                    : 'Manage the local Linux virtual machine (WSL) used by EverFern for advanced tasks and code execution.'}
+            </SectionSubtitle>
 
             <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                             <ComputerDesktopIcon width={20} height={20} style={{ color: 'var(--color-text-secondary)' }} />
-                            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Linux Subsystem</h3>
+                            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+                                {platform === 'darwin' ? 'Docker Container' : platform === 'linux' ? 'Linux Environment' : 'Linux Subsystem'}
+                            </h3>
                             {wslStatus.installed === null ? (
                                 <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Checking...</span>
                             ) : wslStatus.installed ? (
@@ -322,12 +367,18 @@ const LinuxVMSection = () => {
                                     {wslStatus.healthy ? 'Healthy' : 'Unresponsive'}
                                 </span>
                             ) : (
-                                <span style={{ fontSize: 12, fontWeight: 600, color: '#ef4444', padding: '2px 8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 12 }}>Not Installed</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#ef4444', padding: '2px 8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 12 }}>
+                                    {platform === 'darwin' ? 'Docker Not Ready' : 'Not Installed'}
+                                </span>
                             )}
                         </div>
                         <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: 0 }}>
                             {wslStatus.installed === false 
-                                ? 'A Linux VM is required for many tools to function properly on Windows.'
+                                ? (platform === 'darwin' 
+                                    ? 'Docker is required to run the Linux VM on macOS.'
+                                    : platform === 'linux'
+                                    ? 'A Linux environment is required for many tools to function properly.'
+                                    : 'A Linux VM (WSL) is required for many tools to function properly on Windows.')
                                 : wslStatus.osName ? `OS: ${wslStatus.osName}` : 'Virtual machine environment'}
                         </p>
                         {wslStatus.uptime && (
@@ -344,13 +395,13 @@ const LinuxVMSection = () => {
                             style={{
                                 padding: '8px 16px',
                                 backgroundColor: theme === 'dark' ? '#000000' : 'var(--color-text-primary)',
-                                color: theme === 'dark' ? '#ffffff' : 'var(--color-bg-primary)',
+                                color: theme === 'dark' ? '#ffffff' : 'var(--color-text-inverse)',
                                 border: theme === 'dark' ? '1px solid var(--color-border)' : 'none',
                                 borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: isInstalling ? 'not-allowed' : 'pointer',
                                 opacity: isInstalling ? 0.7 : 1, transition: 'opacity 0.2s'
                             }}
                         >
-                            {isInstalling ? 'Installing...' : 'Install Linux VM'}
+                            {isInstalling ? 'Installing...' : (platform === 'darwin' ? 'Set up Linux VM' : 'Install Linux VM')}
                         </button>
                     )}
                 </div>
@@ -680,8 +731,8 @@ interface SettingsPageProps {
     modelInstalled: boolean | null;
 
     // Voice Mode
-    voiceProvider: 'deepgram' | 'elevenlabs' | null;
-    setVoiceProvider: (v: 'deepgram' | 'elevenlabs' | null) => void;
+    voiceProvider: 'deepgram' | 'elevenlabs' | 'local' | null;
+    setVoiceProvider: (v: 'deepgram' | 'elevenlabs' | 'local' | null) => void;
     voiceDeepgramKey: string;
     setVoiceDeepgramKey: (v: string) => void;
     voiceElevenlabsKey: string;
@@ -695,29 +746,29 @@ interface SettingsPageProps {
     embeddingApiKey: string;
     setEmbeddingApiKey: (v: string) => void;
 
-    handleSaveSettings: () => void;
+    handleSaveSettings: (profileName?: string, displayName?: string, preferences?: string, workFunction?: string) => void;
     onOpenVlmOnboarding: () => void;
 }
 
 const settingsPrimaryProviders = [
-    { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
+    { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} className="dark:invert" /> },
     { id: 'anthropic', name: 'Anthropic', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} /> },
     { id: 'gemini', name: 'Google Gemini', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} /> },
     { id: 'deepseek', name: 'DeepSeek', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/deepseek.svg" alt="DeepSeek" width={size} height={size} /> },
     { id: 'nvidia', name: 'NVIDIA NIM', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} /> },
-    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} className="dark:invert" /> },
     { id: 'minimax', name: 'MiniMax', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
     { id: 'ollama-cloud', name: 'Ollama Cloud', Logo: ({ size = 18 }: any) => <svg fill="currentColor" fillRule="evenodd" height={size} width={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7.905 1.09c.216.085.411.225.588.41.295.306.544.744.734 1.263.191.522.315 1.1.362 1.68a5.054 5.054 0 012.049-.636l.051-.004c.87-.07 1.73.087 2.48.474.101.053.2.11.297.17.05-.569.172-1.134.36-1.644.19-.52.439-.957.733-1.264a1.67 1.67 0 01.589-.41c.257-.1.53-.118.796-.042.401.114.745.368 1.016.737.248.337.434.769.561 1.287.23.934.27 2.163.115 3.645l.053.04.026.019c.757.576 1.284 1.397 1.563 2.35.435 1.487.216 3.155-.534 4.088l-.018.021.002.003c.417.762.67 1.567.724 2.4l.002.03c.064 1.065-.2 2.137-.814 3.19l-.007.01.01.024c.472 1.157.62 2.322.438 3.486l-.006.039a.651.651 0 01-.747.536.648.648 0 01-.54-.742c.167-1.033.01-2.069-.48-3.123a.643.643 0 01.04-.617l.004-.006c.604-.924.854-1.83.8-2.72-.046-.779-.325-1.544-.8-2.273a.644.644 0 01.18-.886l.009-.006c.243-.159.467-.565.58-1.12a4.229 4.229 0 00-.095-1.974c-.205-.7-.58-1.284-1.105-1.683-.595-.454-1.383-.673-2.38-.61a.653.653 0 01-.632-.371c-.314-.665-.772-1.141-1.343-1.436a3.288 3.288 0 00-1.772-.332c-1.245.099-2.343.801-2.67 1.686a.652.652 0 01-.61.425c-1.067.002-1.893.252-2.497.703-.522.39-.878.935-1.066 1.588a4.07 4.07 0 00-.068 1.886c.112.558.331 1.02.582 1.269l.008.007c.212.207.257.53.109.785-.36.622-.629 1.549-.673 2.44-.05 1.018.186 1.902.719 2.536l.016.019a.643.643 0 01.095.69c-.576 1.236-.753 2.252-.562 3.052a.652.652 0 01-1.269.298c-.243-1.018-.078-2.184.473-3.498l.014-.035-.008-.012a4.339 4.339 0 01-.598-1.309l-.005-.019a5.764 5.764 0 01-.177-1.785c.044-.91.278-1.842.622-2.59l.012-.026-.002-.002c-.293-.418-.51-.953-.63-1.545l-.005-.024a5.352 5.352 0 01.093-2.49c.262-.915.777-1.701 1.536-2.269.06-.045.123-.09.186-.132-.159-1.493-.119-2.73.112-3.67.127-.518.314-.95.562-1.287.27-.368.614-.622 1.015-.737.266-.076.54-.059.797.042zm4.116 9.09c.936 0 1.8.313 2.446.855.63.527 1.005 1.235 1.005 1.94 0 .888-.406 1.58-1.133 2.022-.62.375-1.451.557-2.403.557-1.009 0-1.871-.259-2.493-.734-.617-.47-.963-1.13-.963-1.845 0-.707.398-1.417 1.056-1.946.668-.537 1.55-.849 2.485-.849zm0 .896a3.07 3.07 0 00-1.916.65c-.461.37-.722.835-.722 1.25 0 .428.21.829.61 1.134.455.347 1.124.548 1.943.548.799 0 1.473-.147 1.932-.426.463-.28.7-.686.7-1.257 0-.423-.246-.89-.683-1.256-.484-.405-1.14-.643-1.864-.643zm.662 1.21l.004.004c.12.151.095.37-.056.49l-.292.23v.446a.375.375 0 01-.376.373.375.375 0 01-.376-.373v-.46l-.271-.218a.347.347 0 01-.052-.49.353.353 0 01.494-.051l.215.172.22-.174a.353.353 0 01.49.051zm-5.04-1.919c.478 0 .867.39.867.871a.87.87 0 01-.868.871.87.87 0 01-.867-.87.87.87 0 01.867-.872zm8.706 0c.48 0 .868.39.868.871a.87.87 0 01-.868.871.87.87 0 01-.867-.87.87.87 0 01.867-.872zM7.44 2.3l-.003.002a.659.659 0 00-.285.238l-.005.006c-.138.189-.258.467-.348.832-.17.692-.216 1.631-.124 2.782.43-.128.899-.208 1.404-.237l.01-.001.019-.034c.046-.082.095-.161.148-.239.123-.771.022-1.692-.253-2.444-.364-.297-.65-.453-.813a.628.628 0 00-.107-.09L7.44 2.3zm9.174.04l-.002.001a.628.628 0 00-.107.09c-.156.163-.32.45-.453.814-.29.794-.387 1.776-.23 2.572l.058.097.008.014h.03a5.184 5.184 0 011.466.212c.086-1.124.038-2.043-.128-2.722-.09-.365-.21-.643-.349-.832l-.004-.006a.659.659 0 00-.285-.239h-.004z" /></svg> },
     { id: 'huggingface', name: 'Hugging Face', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="Hugging Face" width={size} height={size} /> },
 ];
 
 const visionProviders = [
-    { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} /> },
-    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} /> },
+    { id: 'everfern', name: 'EverFern Cloud', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} className="dark:invert" /> },
+    { id: 'openrouter', name: 'OpenRouter', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} className="dark:invert" /> },
     { id: 'gemini', name: 'Google Gemini', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} /> },
     { id: 'minimax', name: 'MiniMax API', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} /> },
-    { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} /> },
-    { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} /> },
+    { id: 'ollama', name: 'Ollama Compatible', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} className="dark:invert" /> },
+    { id: 'openai', name: 'OpenAI', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} className="dark:invert" /> },
     { id: 'anthropic', name: 'Anthropic', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} /> },
     { id: 'nvidia', name: 'NVIDIA NIM', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} /> },
 ];
@@ -771,6 +822,33 @@ export default function SettingsPage({
 }: SettingsPageProps) {
     const { theme, setTheme } = useTheme();
     const [activeSection, setActiveSection] = useState('general');
+    const [showStarPopup, setShowStarPopup] = useState(false);
+
+    const handleVisionLocalSetup = async () => {
+        let isInstalled = ollamaInstalled;
+        let isModelInstalled = modelInstalled;
+
+        if ((window as any).electronAPI?.system?.ollamaStatus) {
+            const status = await (window as any).electronAPI.system.ollamaStatus();
+            isInstalled = status.installed;
+            isModelInstalled = status.modelInstalled;
+        }
+
+        if (!isInstalled) {
+            if ((window as any).electronAPI?.system?.openTerminalInstaller) {
+                await (window as any).electronAPI.system.openTerminalInstaller('install-all');
+            } else {
+                alert("Ollama is not installed. Please install it first.");
+            }
+        } else if (!isModelInstalled) {
+            alert("Ollama is installed, but the vision model (qwen3-vl:2b) is missing.\n\nPlease open your Command Prompt (cmd) or terminal and run:\n\nollama pull qwen3-vl:2b");
+            if ((window as any).electronAPI?.system?.openTerminalInstaller) {
+                await (window as any).electronAPI.system.openTerminalInstaller('pull-model');
+            }
+        } else {
+            onOpenVlmOnboarding();
+        }
+    };
     const [soul, setSoul] = useState('');
     const [agents, setAgents] = useState('');
     const [isSavingOpenClaw, setIsSavingOpenClaw] = useState(false);
@@ -816,6 +894,7 @@ export default function SettingsPage({
     const [profileName, setProfileName] = useState(username || 'User');
     const [displayName, setDisplayName] = useState(username || 'User');
     const [preferences, setPreferences] = useState('');
+    const [workFunction, setWorkFunction] = useState('');
     const [isCloudUser, setIsCloudUser] = useState(false);
     const [cloudEmail, setCloudEmail] = useState('');
     const [cloudUsage, setCloudUsage] = useState<{
@@ -850,6 +929,20 @@ export default function SettingsPage({
         const api = (window as any).electronAPI?.system;
         if (!api) return;
 
+        // Query initial status on mount
+        api.getUpdateStatus?.().then((res: any) => {
+            if (res) {
+                if (res.status === 'available') {
+                    setAutoUpdateAvailable(true);
+                } else if (res.status === 'downloading') {
+                    setAutoUpdateAvailable(true);
+                    setAutoUpdateProgress(res.progress?.percent ?? null);
+                } else if (res.status === 'downloaded') {
+                    setAutoUpdateDownloaded(true);
+                }
+            }
+        });
+
         const onAvailable = () => setAutoUpdateAvailable(true);
         const onDownloaded = () => { setAutoUpdateDownloaded(true); setAutoUpdateProgress(null); };
         const onProgress = (p: any) => setAutoUpdateProgress(p?.percent ?? null);
@@ -873,6 +966,9 @@ export default function SettingsPage({
         try {
             const result = await (window as any).electronAPI?.system?.checkForUpdates?.();
             setUpdateInfo(result);
+            if (result && result.hasUpdate) {
+                setAutoUpdateAvailable(true);
+            }
         } catch (err) {
             console.error('Failed to check for updates:', err);
         } finally {
@@ -925,23 +1021,34 @@ export default function SettingsPage({
     };
 
     useEffect(() => {
-        const fetchUsername = async () => {
+        const fetchProfileData = async () => {
             try {
                 let name = "User";
+                let dispName = "User";
+                let prefs = "";
+                let work = "";
                 if ((window as any).electronAPI?.loadConfig) {
                     const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success && res.config?.userName) {
-                        name = res.config.userName;
-                    } else if ((window as any).electronAPI?.system?.getUsername) {
-                        name = await (window as any).electronAPI?.system.getUsername();
+                    if (res.success) {
+                        if (res.config?.userName) name = res.config.userName;
+                        if (res.config?.displayName) dispName = res.config.displayName;
+                        if (res.config?.preferences) prefs = res.config.preferences;
+                        if (res.config?.workFunction) work = res.config.workFunction;
                     }
                 }
+                if (name === "User" && (window as any).electronAPI?.system?.getUsername) {
+                    name = await (window as any).electronAPI?.system.getUsername();
+                    dispName = name;
+                }
                 const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+                const formattedDispName = dispName.charAt(0).toUpperCase() + dispName.slice(1);
                 setProfileName(formattedName);
-                setDisplayName(formattedName);
+                setDisplayName(formattedDispName);
+                setPreferences(prefs);
+                setWorkFunction(work);
             } catch { }
         };
-        fetchUsername();
+        fetchProfileData();
     }, []);
 
     // ── General ───────────────────────────────────────────────────────────────
@@ -1152,7 +1259,7 @@ export default function SettingsPage({
 
                 <div style={{ marginBottom: 20 }}>
                     <Label>What best describes your work?</Label>
-                    <Select defaultValue="">
+                    <Select value={workFunction} onChange={e => setWorkFunction(e.target.value)}>
                         <option value="" disabled>Select your work function</option>
                         <option value="developer">Software Developer</option>
                         <option value="designer">Designer</option>
@@ -1260,9 +1367,9 @@ export default function SettingsPage({
             {/* Engine Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
                 {[
-                    { id: 'local', label: 'Local Engine', desc: 'On-device via Ollama or LMStudio.', icon: <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={24} height={24} style={{ filter: settingsEngine !== 'local' ? 'grayscale(1) opacity(0.6)' : 'none', transition: 'all 0.3s' }} /> },
+                    { id: 'local', label: 'Local Engine', desc: 'On-device via Ollama or LMStudio.', icon: <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={24} height={24} style={{ filter: `${theme === 'dark' ? 'invert(1)' : ''} ${settingsEngine !== 'local' ? 'grayscale(1) opacity(0.6)' : ''}`.trim() || undefined, transition: 'all 0.3s' }} /> },
                     { id: 'online', label: 'Web API', desc: 'OpenAI, Anthropic, or NVIDIA NIM.', icon: <GlobeAltIcon width={22} height={22} style={{ color: 'var(--color-text-tertiary)' }} /> },
-                    { id: 'everfern', label: 'EverFern Cloud', desc: 'Uses front tier models', icon: <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={24} height={24} style={{ filter: settingsEngine !== 'everfern' ? 'grayscale(1) opacity(0.6)' : 'none', transition: 'all 0.3s' }} /> },
+                    { id: 'everfern', label: 'EverFern Cloud', desc: 'Uses front tier models', icon: <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={24} height={24} style={{ filter: `${theme === 'dark' ? 'invert(1)' : ''} ${settingsEngine !== 'everfern' ? 'grayscale(1) opacity(0.6)' : ''}`.trim() || undefined, transition: 'all 0.3s' }} /> },
                 ].map(({ id, label, desc, icon }) => {
                     const sel = settingsEngine === id;
                     return (
@@ -1436,6 +1543,58 @@ export default function SettingsPage({
         </div>
     );
 
+    const WhisperInstallButton = () => {
+        const [pulling, setPulling] = useState(false);
+        const [done, setDone] = useState(false);
+        const [error, setError] = useState('');
+
+        const handlePull = async () => {
+            setPulling(true);
+            setError('');
+            setDone(false);
+            try {
+                const res = await (window as any).electronAPI?.system?.ollamaPull?.('dimavz/whisper-tiny');
+                if (res?.success) {
+                    setDone(true);
+                } else {
+                    setError('Pull failed. Is Ollama running?');
+                }
+            } catch {
+                setError('Could not reach Ollama. Make sure it is installed and running.');
+            } finally {
+                setPulling(false);
+            }
+        };
+
+        if (done) {
+            return (
+                <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', fontSize: 12, color: '#22c55e', fontWeight: 500 }}>
+                    Model installed successfully!
+                </div>
+            );
+        }
+
+        return (
+            <div style={{ marginTop: 4 }}>
+                <button
+                    type="button"
+                    onClick={handlePull}
+                    disabled={pulling}
+                    style={{
+                        padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                        backgroundColor: pulling ? 'var(--color-bg-subtle)' : 'var(--color-text-primary)',
+                        color: pulling ? 'var(--color-text-secondary)' : 'var(--color-bg-base)',
+                        border: 'none', cursor: pulling ? 'default' : 'pointer',
+                        transition: 'all 0.15s',
+                    }}
+                >
+                    {pulling ? 'Pulling model…' : 'Install whisper model'}
+                </button>
+                {error && <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--color-error)' }}>{error}</span>}
+            </div>
+        );
+    };
+
     // ── Voice Mode ────────────────────────────────────────────────────────────
     const VoiceSection = () => (
         <div>
@@ -1444,16 +1603,17 @@ export default function SettingsPage({
 
             <Card>
                 <Label>Voice Provider</Label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
                     {[
                         { id: 'deepgram', name: 'Deepgram', icon: '/images/ai-providers/Deepgram.svg' },
                         { id: 'elevenlabs', name: 'ElevenLabs', icon: '/images/ai-providers/elevenlabs.svg' },
+                        { id: 'local', name: 'Local (Ollama)', icon: '/images/ai-providers/ollama.svg' },
                     ].map(({ id, name, icon }) => {
                         const isSel = voiceProvider === id;
                         return (
                             <div
                                 key={id}
-                                onClick={() => setVoiceProvider(id as 'deepgram' | 'elevenlabs')}
+                                onClick={() => setVoiceProvider(id as 'deepgram' | 'elevenlabs' | 'local')}
                                 style={{
                                     padding: '16px 14px',
                                     borderRadius: 12,
@@ -1469,7 +1629,7 @@ export default function SettingsPage({
                                     userSelect: 'none',
                                 }}
                             >
-                                <Image unoptimized src={icon} alt={name} width={24} height={24} />
+                                <Image unoptimized src={icon} alt={name} width={24} height={24} className="dark:invert" />
                                 <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center' }}>{name}</span>
                                 {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                             </div>
@@ -1498,7 +1658,65 @@ export default function SettingsPage({
                             <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Get your API key from <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>ElevenLabs Settings</a></p>
                         </motion.div>
                     )}
+                    {voiceProvider === 'local' && (
+                        <motion.div key="local" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)' }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🤖 Local RealtimeSTT ASR</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
+                                    Transcribes your voice locally on your computer. EverFern will automatically start your local <strong style={{ color: 'var(--color-text-primary)' }}>RealtimeSTT</strong> FastAPI server on a dynamically allocated port.
+                                </span>
+                                <span style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>
+                                    No manual server setup or port configuration required.
+                                </span>
+                            </div>
+                        </motion.div>
+                    )}
                 </AnimatePresence>
+            </Card>
+
+            <Card>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 12px' }}>Voice Mode Shortcuts</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Hold to Speak (Voice Mode)</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt</kbd>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Resume Chat in Voice Overlay</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt + B</kbd>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Select Chat History in Voice Overlay</span>
+                        <kbd style={{
+                            backgroundColor: "var(--color-bg-surface)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                            boxShadow: "0 1px 1px rgba(0,0,0,0.05)"
+                        }}>Ctrl + Alt + H</kbd>
+                    </div>
+                </div>
             </Card>
 
             <Card>
@@ -1547,7 +1765,7 @@ export default function SettingsPage({
                             <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Requires Ollama to run on-device.</p>
                         </div>
                         <button
-                            onClick={onOpenVlmOnboarding}
+                            onClick={handleVisionLocalSetup}
                             style={{ padding: '10px 18px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
                         >
                             Install & Setup
@@ -1661,16 +1879,16 @@ export default function SettingsPage({
     // ── Embeddings ────────────────────────────────────────────────────────
     // Embedding model options per provider
     const EMBEDDING_PROVIDERS = [
-        { id: 'everfern',   name: 'EverFern Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} />, models: ['qwen/qwen3-embedding-8b'], supportsEmbed: true },
-        { id: 'openai',     name: 'OpenAI',          Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} />, models: ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'], supportsEmbed: true },
+        { id: 'everfern',   name: 'EverFern Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={size * 1.6} height={size * 1.6} className="dark:invert" />, models: ['qwen/qwen3-embedding-8b'], supportsEmbed: true },
+        { id: 'openai',     name: 'OpenAI',          Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI" width={size} height={size} className="dark:invert" />, models: ['text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'], supportsEmbed: true },
         { id: 'gemini',     name: 'Google Gemini',   Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Google" width={size} height={size} />, models: ['gemini-embedding-2', 'gemini-embedding-001'], supportsEmbed: true },
         { id: 'minimax',    name: 'MiniMax',         Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax" width={size} height={size} />, models: ['embo-01'], supportsEmbed: true },
         { id: 'nvidia',     name: 'NVIDIA NIM',      Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="NVIDIA" width={size} height={size} />, models: ['nv-embedqa-e5-v5', 'llama-3.2-nv-embedqa-1b-v2'], supportsEmbed: true },
-        { id: 'openrouter', name: 'OpenRouter',      Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} />, models: ['qwen/qwen3-embedding-8b', 'openai/text-embedding-3-large'], supportsEmbed: true },
-        { id: 'ollama',     name: 'Ollama (Local)',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} />, models: ['qwen3-embedding:latest', 'qwen3-embedding:8b', 'qwen3-embedding:4b', 'qwen3-embedding:0.6b'], supportsEmbed: true },
+        { id: 'openrouter', name: 'OpenRouter',      Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter" width={size} height={size} className="dark:invert" />, models: ['qwen/qwen3-embedding-8b', 'openai/text-embedding-3-large'], supportsEmbed: true },
+        { id: 'ollama',     name: 'Ollama (Local)',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} className="dark:invert" />, models: ['qwen3-embedding:latest', 'qwen3-embedding:8b', 'qwen3-embedding:4b', 'qwen3-embedding:0.6b'], supportsEmbed: true },
         { id: 'anthropic',  name: 'Anthropic',       Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic" width={size} height={size} />, models: [], supportsEmbed: false },
         { id: 'deepseek',   name: 'DeepSeek',        Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/deepseek.svg" alt="DeepSeek" width={size} height={size} />, models: [], supportsEmbed: false },
-        { id: 'ollama-cloud', name: 'Ollama Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} />, models: [], supportsEmbed: false },
+        { id: 'ollama-cloud', name: 'Ollama Cloud',  Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama" width={size} height={size} className="dark:invert" />, models: [], supportsEmbed: false },
     ];
 
     const EmbeddingsSection = () => {
@@ -3803,6 +4021,25 @@ export default function SettingsPage({
                                 )}
                             </div>
                         )}
+                        <button
+                            onClick={() => {
+                                (window as any).electronAPI?.system?.openExternal?.(GITHUB_REPO_URL) ||
+                                    window.open(GITHUB_REPO_URL, '_blank');
+                            }}
+                            style={{
+                                marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                padding: '8px 12px', borderRadius: 8,
+                                border: '1px solid var(--color-border)',
+                                backgroundColor: 'transparent', color: 'var(--color-text-secondary)',
+                                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                            GitHub
+                        </button>
                     </div>
                 </div>
 
@@ -3848,7 +4085,7 @@ export default function SettingsPage({
                         setToastState('saving');
                         setTimeout(() => setToastState('saved'), 600);
                         setTimeout(() => setToastState('idle'), 4200);
-                        handleSaveSettings();
+                        handleSaveSettings(profileName, displayName, preferences, workFunction);
                     }}
                     disabled={settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)}
                     style={{
@@ -3897,6 +4134,20 @@ export default function SettingsPage({
                             </>
                         )}
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Star Repo Popup */}
+            <AnimatePresence>
+                {showStarPopup && (
+                    <StarRepoPopup
+                        onClose={() => setShowStarPopup(false)}
+                        onStar={() => {
+                            setShowStarPopup(false);
+                            (window as any).electronAPI?.system?.openExternal?.(GITHUB_REPO_URL) ||
+                                window.open(GITHUB_REPO_URL, '_blank');
+                        }}
+                    />
                 )}
             </AnimatePresence>
         </motion.div>

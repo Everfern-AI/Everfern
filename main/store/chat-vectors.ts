@@ -97,6 +97,12 @@ export async function initChatVectorDb(): Promise<sqlite3.Database> {
 
         log('Database opened successfully');
 
+        // Configure WAL mode and busy timeout to handle concurrent writes safely
+        db.serialize(() => {
+          db.run('PRAGMA journal_mode = WAL');
+          db.run('PRAGMA busy_timeout = 5000');
+        });
+
         db.exec(`
           CREATE TABLE IF NOT EXISTS chat_messages (
             id TEXT PRIMARY KEY,

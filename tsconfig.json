@@ -51,6 +51,11 @@
     "src/app/chat/__tests__",
     "src/app/chat/hooks/usePillNarrativeTimeline.ts",
     "test-navis-cursor.test.ts",
-    "test-navis-nvidia.ts"
+    "test-navis-nvidia.ts",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**",
+    "src/components/TaskDecomposer/__tests__",
+    "src/components/__tests__"
   ]
 }

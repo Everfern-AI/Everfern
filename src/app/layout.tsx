@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import UpdateNotification from "@/components/UpdateNotification";
+import { AnnouncementPopup } from "@/components/AnnouncementPopup";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -63,6 +64,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <UpdateNotification />
+          <AnnouncementPopup />
         </ThemeProvider>
       </body>
     </html>

@@ -182,16 +182,16 @@ export function validateAndCorrectToolArgs(
         }
       }
 
-      if (!fs.existsSync(pathValue.replace(/\\/g, '/'))) {
-        const uuidRegex = /[0-9a-f]{8}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{12}/i;
-        const brokenUuidMatch = pathNorm.match(uuidRegex);
-        if (brokenUuidMatch) {
-          const broken = brokenUuidMatch[0];
-          const fixed = `${broken.slice(0, 8)}-${broken.slice(8, 12)}-${broken.slice(12, 16)}-${broken.slice(16, 20)}-${broken.slice(20)}`;
-          const repairedPath = pathValue.replace(broken, fixed);
-          if (fs.existsSync(repairedPath.replace(/\\/g, '/'))) {
-            pathValue = repairedPath;
-          }
+      // PERF: Only call fs.existsSync when a UUID-like pattern is found (rare edge case).
+      // Previously this ran on every path argument of every tool call.
+      const uuidRegex = /[0-9a-f]{8}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{12}/i;
+      const brokenUuidMatch = pathNorm.match(uuidRegex);
+      if (brokenUuidMatch && !fs.existsSync(pathValue.replace(/\\/g, '/'))) {
+        const broken = brokenUuidMatch[0];
+        const fixed = `${broken.slice(0, 8)}-${broken.slice(8, 12)}-${broken.slice(12, 16)}-${broken.slice(16, 20)}-${broken.slice(20)}`;
+        const repairedPath = pathValue.replace(broken, fixed);
+        if (fs.existsSync(repairedPath.replace(/\\/g, '/'))) {
+          pathValue = repairedPath;
         }
       }
 

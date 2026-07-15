@@ -59,6 +59,14 @@ const OllamaLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="dark:invert opacity-90" />
 );
 
+const DeepgramLogo = ({ size = 20 }: { size?: number }) => (
+    <Image src="/images/ai-providers/Deepgram.svg" alt="Deepgram Logo" width={size} height={size} className="dark:invert opacity-90" />
+);
+
+const ElevenLabsLogo = ({ size = 20 }: { size?: number }) => (
+    <Image src="/images/ai-providers/elevenlabs.svg" alt="ElevenLabs Logo" width={size} height={size} className="grayscale opacity-80" />
+);
+
 const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/ai-providers/lm-studio.png" alt="LM Studio Logo" width={size} height={size} className="grayscale opacity-80" />
 );
@@ -433,6 +441,9 @@ export default function SetupPage() {
     }, []);
 
     const [engine, setEngine] = useState<"local" | "online" | "everfern" | null>(null);
+    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | "local" | null>(null);
+    const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
+    const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
     const [provider, setProvider] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState("");
     const [vlmMode, setVlmMode] = useState<"local" | "cloud" | "everfern">("local");
@@ -487,7 +498,7 @@ export default function SetupPage() {
             setModelInstalled(res.modelInstalled);
             // If both are installed, and we are on step 4, we can finish early
             if (res.installed && res.modelInstalled && step === 4) {
-                setStep(5);
+                setStep(11);
             }
         }
     };
@@ -572,6 +583,13 @@ export default function SetupPage() {
             showuiUrl: useShowUI ? showuiUrl : undefined,
             timestamp: new Date().toISOString(),
         };
+        if (voiceProvider) {
+            config.voice = {
+                provider: voiceProvider,
+                deepgramKey: voiceDeepgramKey.trim() || undefined,
+                elevenlabsKey: voiceElevenlabsKey.trim() || undefined
+            };
+        }
         // Add specialized VLM engine if Ollama is available OR cloud mode is selected
         if (vlmMode === "cloud" && vlmCloudModel.trim()) {
             let finalCloudKey = vlmCloudKey.trim() || undefined;
@@ -728,7 +746,7 @@ export default function SetupPage() {
                 setPullPct(100);
                 setModelInstalled(true);
                 // Go to final step (save) directly since we use an Omni model
-                setTimeout(() => setStep(5), 1500);
+                setTimeout(() => setStep(11), 1500);
             } else {
                 setOllamaLogs(prev => [...prev, `✗ Model pull failed with code ${res.code}`]);
             }
@@ -757,18 +775,31 @@ export default function SetupPage() {
                 </div>
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(s => (
-                    <div
-                        key={s}
-                        style={{
-                            width: s === step ? 20 : 6,
-                            height: 4,
-                            borderRadius: 999,
-                            background: s === step ? 'var(--color-text-primary)' : s < step ? 'var(--color-text-secondary)' : 'var(--color-border)',
-                            transition: "all 0.3s ease",
-                        }}
-                    />
-                ))}
+                {(() => {
+                    const getActiveDotIndex = () => {
+                        if (step <= 4) return step;
+                        if (step === 5) return 5;
+                        if (step === 11) return 6;
+                        if (step === 6) return 7;
+                        if (step === 7) return 8;
+                        if (step === 8) return 9;
+                        if (step === 9) return 10;
+                        return 10;
+                    };
+                    const activeIndex = getActiveDotIndex();
+                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => (
+                        <div
+                            key={s}
+                            style={{
+                                width: s === activeIndex ? 20 : 6,
+                                height: 4,
+                                borderRadius: 999,
+                                background: s === activeIndex ? 'var(--color-text-primary)' : s < activeIndex ? 'var(--color-text-secondary)' : 'var(--color-border)',
+                                transition: "all 0.3s ease",
+                            }}
+                        />
+                    ));
+                })()}
             </div>
             <main className="flex-1 flex flex-col items-center justify-center p-8">
                 <AnimatePresence mode="wait">
@@ -1316,7 +1347,7 @@ export default function SetupPage() {
                                                 </div>
                                             </div>
                                         )}
-                                        <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+                                        <button onClick={() => setStep(11)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                             {isSaving ? "Saving..." : "Save & Continue"}
                                         </button>
                                     </div>
@@ -1324,7 +1355,7 @@ export default function SetupPage() {
 
                                 {vlmMode === "everfern" && (
                                     <button
-                                        onClick={() => setStep(5)}
+                                        onClick={() => setStep(11)}
                                         style={{
                                             width: "100%", height: 52,
                                             background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
@@ -1339,8 +1370,151 @@ export default function SetupPage() {
                                 )}
                             </div>
 
-                            <button onClick={() => setStep(5)} style={{ marginTop: 24, fontSize: 13, color: 'var(--color-text-tertiary)', background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                            <button onClick={() => setStep(11)} style={{ marginTop: 24, fontSize: 13, color: 'var(--color-text-tertiary)', background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                 Skip local AI setup & Continue
+                            </button>
+                        </motion.div>
+                    )}
+
+
+                    {/* ── Step 11: Voice Setup ── */}
+                    {step === 11 && (
+                        <motion.div
+                            key="step11"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(vlmMode === "local" ? 5 : 4)} />
+                            </div>
+
+                            <div style={{ marginBottom: 36 }}>
+                                <div style={{
+                                    width: 56, height: 56, borderRadius: 16,
+                                    background: "rgba(32,30,36,0.04)",
+                                    border: "1px solid rgba(32,30,36,0.1)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    color: "#60a5fa", margin: "40px auto 32px auto",
+                                }}>
+                                    <Sparkles size={24} strokeWidth={1.5} />
+                                </div>
+                                <h2 style={{ fontSize: 28, fontWeight: 500, letterSpacing: "-0.02em", color: 'var(--color-text-primary)', marginBottom: 12, lineHeight: 1.1 }}>
+                                    Voice AI Setup
+                                </h2>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6, maxWidth: 360, margin: "0 auto" }}>
+                                    Configure how EverFern listens and talks to you, using local or cloud-hosted voice APIs.
+                                </p>
+                            </div>
+
+                            {/* Toggle Cards */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, width: "100%", marginBottom: 32 }}>
+                                {[
+                                    { id: "none", name: "Disabled", logo: () => <X size={20} />, desc: "Disable Voice Mode features." },
+                                    { id: "local", name: "Local ASR", logo: () => <OllamaLogo size={20} />, desc: "Auto-managed local STT." },
+                                    { id: "deepgram", name: "Deepgram", logo: () => <DeepgramLogo size={20} />, desc: "Online speech-to-text API." },
+                                    { id: "elevenlabs", name: "ElevenLabs", logo: () => <ElevenLabsLogo size={20} />, desc: "Online speech & voice API." }
+                                ].map(opt => {
+                                    const isSel = (opt.id === "none" && voiceProvider === null) || voiceProvider === opt.id;
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => setVoiceProvider(opt.id === "none" ? null : opt.id as any)}
+                                            style={{
+                                                background: isSel ? "rgba(32,30,36,0.06)" : "rgba(255,255,255,0.02)",
+                                                border: `1px solid ${isSel ? 'var(--color-text-tertiary)' : 'var(--color-border)'}`,
+                                                borderRadius: 16,
+                                                padding: "20px 16px",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                gap: 12,
+                                                cursor: "pointer",
+                                                transition: "all 0.18s ease",
+                                                opacity: 1,
+                                                position: "relative"
+                                            }}
+                                            onMouseEnter={e => {
+                                                if (isSel) return;
+                                                (e.currentTarget as HTMLElement).style.background = "rgba(32,30,36,0.02)";
+                                                (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-text-tertiary)';
+                                                (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+                                            }}
+                                            onMouseLeave={e => {
+                                                if (isSel) return;
+                                                (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
+                                                (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)';
+                                                (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: 44, height: 44, borderRadius: 12,
+                                                background: "rgba(255,255,255,0.04)",
+                                                border: "1px solid rgba(255,255,255,0.07)",
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                color: isSel ? "var(--color-text-primary)" : "#71717a",
+                                            }}>
+                                                <opt.logo />
+                                            </div>
+                                            <div style={{ textAlign: "center" }}>
+                                                <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'var(--color-text-primary)' }}>
+                                                    {opt.name}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.35 }}>
+                                                    {opt.desc}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Inputs for keys */}
+                            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16, marginBottom: 32 }}>
+                                {voiceProvider === "deepgram" && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Deepgram API Key</label>
+                                        <div style={{ position: "relative" }}>
+                                            <input type="password" placeholder="sk-..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
+                                                style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
+                                                onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
+                                            <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
+                                        </div>
+                                    </div>
+                                )}
+                                {voiceProvider === "elevenlabs" && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>ElevenLabs API Key</label>
+                                        <div style={{ position: "relative" }}>
+                                            <input type="password" placeholder="sk_..." value={voiceElevenlabsKey} onChange={(e) => setVoiceElevenlabsKey(e.target.value)}
+                                                style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
+                                                onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
+                                            <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => setStep(5)}
+                                disabled={(voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())}
+                                style={{
+                                    width: "100%", height: 52,
+                                    background: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? "rgba(32,30,36,0.1)" : 'var(--color-text-primary)',
+                                    color: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? 'var(--color-text-tertiary)' : 'var(--color-bg-base)',
+                                    borderRadius: 12, fontWeight: 600, fontSize: 14,
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    gap: 8, cursor: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? "not-allowed" : "pointer", border: "none",
+                                    transition: "all 0.2s", letterSpacing: "0.01em"
+                                }}
+                            >
+                                Continue <ArrowRight size={16} strokeWidth={2.5} />
                             </button>
                         </motion.div>
                     )}
@@ -1357,7 +1531,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(4)} />
+                                <BackButton onClick={() => setStep(11)} />
                             </div>
                             <LinuxVMSetupStep
                                 onComplete={() => setStep(6)}

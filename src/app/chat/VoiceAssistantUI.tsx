@@ -18,6 +18,7 @@ interface VoiceAssistantUIProps {
     voiceProvider: 'deepgram' | 'elevenlabs' | null | string;
     voiceDeepgramKey: string;
     voiceElevenlabsKey: string;
+    audioLevels?: number[];
 }
 
 export default function VoiceAssistantUI({
@@ -33,8 +34,9 @@ export default function VoiceAssistantUI({
     voiceProvider,
     voiceDeepgramKey,
     voiceElevenlabsKey,
+    audioLevels,
 }: VoiceAssistantUIProps) {
-    const isConfigured = voiceProvider && (voiceDeepgramKey || voiceElevenlabsKey);
+    const isConfigured = voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey || voiceElevenlabsKey);
 
     return (
         <AnimatePresence>
@@ -132,27 +134,20 @@ export default function VoiceAssistantUI({
                                     {/* Waveform Visualization */}
                                     <div style={{
                                         display: 'flex',
-                                        alignItems: 'flex-end',
+                                        alignItems: 'center',
                                         justifyContent: 'center',
-                                        gap: 6,
+                                        gap: 4,
                                         height: 100,
                                     }}>
-                                        {[1, 2, 3, 4, 5].map((i) => (
-                                            <motion.div
+                                        {(audioLevels && audioLevels.length > 0 ? audioLevels : new Array(20).fill(15)).map((level, i) => (
+                                            <div
                                                 key={i}
-                                                animate={{
-                                                    height: isRecording || voicePlayback ? [20, 60, 40, 50, 35, 55, 30, 60, 45][i - 1] : 20,
-                                                    backgroundColor: isRecording ? '#ef4444' : voicePlayback ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                                                }}
-                                                transition={{
-                                                    duration: 0.4,
-                                                    delay: i * 0.05,
-                                                    repeat: isRecording || voicePlayback ? Infinity : 0,
-                                                }}
                                                 style={{
-                                                    width: 8,
-                                                    borderRadius: 4,
-                                                    background: 'var(--color-text-tertiary)',
+                                                    width: 6,
+                                                    height: isRecording ? level : 15,
+                                                    borderRadius: 3,
+                                                    backgroundColor: isRecording ? '#ef4444' : voicePlayback ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                                                    transition: 'none',
                                                 }}
                                             />
                                         ))}

@@ -5,7 +5,7 @@ import { interrupt, Command } from '@langchain/langgraph';
 
 vi.mock('./nodes/triage', () => ({
   createTriageNode: vi.fn(() => async (state: any) => {
-    return { currentIntent: 'question' };
+    return { currentIntent: 'task' };
   })
 }));
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, screen, ipcMain } from 'electron';
 import * as path from 'path';
 
 // ── uiohook-napi is a native module that must be rebuilt per Electron ABI. ──
@@ -26,11 +26,129 @@ export class VoiceOverlayManager {
   private isAltDown = false;
   private isListening = false;
   private holdTimeout: NodeJS.Timeout | null = null;
+  private otherKeyPressed = false;
+  private startListeningTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('[VoiceOverlay] Initializing manager...');
     this.initOverlayWindow();
     this.setupHook();
+    this.setupIpc();
+  }
+
+  private setupIpc() {
+    ipcMain.on('voice-overlay:audio-levels', (event, levels) => {
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed() && win !== this.overlayWindow) {
+          // You might not want to send audio levels to ALL windows, but for now it's fine, 
+          // actually the main window generates it, so let's only send to overlay.
+          if (win === this.overlayWindow && win.isVisible()) {
+             win.webContents.send('voice-overlay:audio-levels', levels);
+          }
+        } else if (win === this.overlayWindow && !win.isDestroyed() && win.isVisible()) {
+           win.webContents.send('voice-overlay:audio-levels', levels);
+        }
+      });
+    });
+
+    ipcMain.on('voice-overlay:set-state', (event, payload) => {
+      console.log(`[VoiceOverlay] Set state IPC:`, payload);
+      const stateStr = typeof payload === 'string' ? payload : (payload?.state || 'idle');
+      
+      const broadcastState = (p: any) => {
+        const payloadObj = typeof p === 'string' ? { state: p } : p;
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+             win.webContents.send('voice-overlay:state', payloadObj);
+          }
+        });
+      };
+
+      if (stateStr === 'idle') {
+        this.isListening = false;
+        if (this.holdTimeout) clearTimeout(this.holdTimeout);
+        broadcastState('idle');
+        if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+          this.overlayWindow.setIgnoreMouseEvents(true);
+          setTimeout(() => {
+            if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+              this.overlayWindow.hide();
+            }
+          }, 500);
+        }
+      } else {
+        if (stateStr === 'listening') {
+          this.isListening = true;
+          if (this.holdTimeout) clearTimeout(this.holdTimeout);
+        } else {
+          this.isListening = false;
+        }
+        if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+          const primaryDisplay = screen.getPrimaryDisplay();
+          const { width, height } = primaryDisplay.workAreaSize;
+
+          if (stateStr === 'clarification' || (typeof payload === 'object' && payload?.type === 'clarification')) {
+            const overlayHeight = 340;
+            this.overlayWindow.setBounds({
+              width: 600,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - 300),
+              y: height - overlayHeight - 20
+            });
+            this.overlayWindow.setIgnoreMouseEvents(false);
+          } else if (stateStr === 'completed' || (typeof payload === 'object' && payload?.state === 'completed')) {
+            const hasFollowUps = typeof payload === 'object' && payload?.followUps && payload.followUps.length > 0;
+            const overlayHeight = hasFollowUps ? 420 : 340;
+            this.overlayWindow.setBounds({
+              width: 800,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - 400),
+              y: height - overlayHeight - 20
+            });
+            this.overlayWindow.setIgnoreMouseEvents(false);
+          } else if (stateStr === 'history' || (typeof payload === 'object' && payload?.state === 'history')) {
+            const overlayHeight = 360;
+            this.overlayWindow.setBounds({
+              width: 600,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - 300),
+              y: height - overlayHeight - 20
+            });
+            this.overlayWindow.setIgnoreMouseEvents(false);
+          } else if (stateStr === 'error' || (typeof payload === 'object' && payload?.state === 'error')) {
+            this.overlayWindow.setBounds({
+              width: 500,
+              height: 80,
+              x: Math.floor(width / 2 - 250),
+              y: height - 100
+            });
+            this.overlayWindow.setIgnoreMouseEvents(true);
+          } else {
+            this.overlayWindow.setBounds({
+              width: 600,
+              height: 120,
+              x: Math.floor(width / 2 - 300),
+              y: height - 140
+            });
+            this.overlayWindow.setIgnoreMouseEvents(true);
+          }
+
+          if (!this.overlayWindow.isVisible()) {
+            this.overlayWindow.showInactive();
+          }
+        }
+        broadcastState(payload);
+      }
+    });
+
+    ipcMain.on('voice-overlay:submit-answer', (event, answers) => {
+      console.log(`[VoiceOverlay] Answer submitted IPC:`, answers);
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+           win.webContents.send('voice-overlay:answer-submitted', answers);
+        }
+      });
+    });
   }
 
   private initOverlayWindow() {
@@ -86,9 +204,10 @@ export class VoiceOverlayManager {
       uIOhook.on('keydown', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = true;
-        }
-        if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = true;
+        } else {
+          this.otherKeyPressed = true;
         }
         this.checkState();
       });
@@ -96,9 +215,10 @@ export class VoiceOverlayManager {
       uIOhook.on('keyup', (e: any) => {
         if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
           this.isCtrlDown = false;
-        }
-        if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+          this.otherKeyPressed = false;
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
           this.isAltDown = false;
+          this.otherKeyPressed = false;
         }
         this.checkState();
       });
@@ -110,37 +230,52 @@ export class VoiceOverlayManager {
     }
   }
 
+  private wasCtrlAltDown = false;
+
   private checkState() {
     const shouldListen = this.isCtrlDown && this.isAltDown;
     
-    if (shouldListen && !this.isListening) {
-      console.log('[VoiceOverlay] Starting listening state...');
-      this.isListening = true;
-      if (this.holdTimeout) clearTimeout(this.holdTimeout);
-      
-      if (this.overlayWindow) {
-        this.overlayWindow.showInactive();
-        this.overlayWindow.webContents.send('voice-overlay:state', { state: 'listening' });
-        console.log('[VoiceOverlay] IPC state sent: listening');
-      } else {
-        console.warn('[VoiceOverlay] Cannot start: overlayWindow is null');
+    const broadcastState = (st: string) => {
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+           win.webContents.send('voice-overlay:state', { state: st });
+        }
+      });
+    };
+
+    if (shouldListen && !this.wasCtrlAltDown) {
+      this.wasCtrlAltDown = true;
+      if (this.startListeningTimeout) clearTimeout(this.startListeningTimeout);
+      this.startListeningTimeout = setTimeout(() => {
+        if (this.isCtrlDown && this.isAltDown && !this.otherKeyPressed) {
+          if (!this.isListening) {
+            console.log('[VoiceOverlay] Starting listening state...');
+            this.isListening = true;
+            if (this.holdTimeout) clearTimeout(this.holdTimeout);
+            
+            if (this.overlayWindow) {
+              this.overlayWindow.showInactive();
+              broadcastState('listening');
+              console.log('[VoiceOverlay] IPC state sent: listening');
+            } else {
+              console.warn('[VoiceOverlay] Cannot start: overlayWindow is null');
+            }
+          }
+        }
+      }, 150);
+    } else if (!shouldListen && this.wasCtrlAltDown) {
+      this.wasCtrlAltDown = false;
+      if (this.startListeningTimeout) {
+        clearTimeout(this.startListeningTimeout);
+        this.startListeningTimeout = null;
       }
-    } else if (!shouldListen && this.isListening) {
-      console.log('[VoiceOverlay] Stopping listening state, executing...');
-      this.isListening = false;
-      
-      if (this.overlayWindow) {
-        this.overlayWindow.webContents.send('voice-overlay:state', { state: 'executing' });
+      if (this.isListening) {
+        console.log('[VoiceOverlay] Stopping listening state, executing...');
+        this.isListening = false;
         
-        if (this.holdTimeout) clearTimeout(this.holdTimeout);
-        this.holdTimeout = setTimeout(() => {
-          console.log('[VoiceOverlay] Returning to idle...');
-          this.overlayWindow?.webContents.send('voice-overlay:state', { state: 'idle' });
-          setTimeout(() => {
-            this.overlayWindow?.hide();
-            console.log('[VoiceOverlay] Window hidden.');
-          }, 500);
-        }, 3000);
+        if (this.overlayWindow) {
+          broadcastState('executing');
+        }
       }
     }
   }

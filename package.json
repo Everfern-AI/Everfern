@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.9",
+  "version": "1.1.1",
   "description": "EverFern — The AI agent that truly controls your system.",
   "author": "Everfern Community <everfernsupport@gmail.com>",
   "license": "MIT",
@@ -99,7 +99,11 @@
         "dmg",
         "zip"
       ],
-      "icon": "public/images/logos/everfern.icns"
+      "icon": "public/images/logos/everfern.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
     "win": {
       "target": [

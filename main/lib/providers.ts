@@ -278,6 +278,8 @@ export interface FlatModelEntry {
   name: string;     // human-readable display name
   provider: string; // display name of provider
   providerType: ProviderType;
+  size?: number;
+  parameterSize?: string;
 }
 
 /**

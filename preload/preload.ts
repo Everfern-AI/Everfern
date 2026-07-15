@@ -10,6 +10,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
 const sentLocalExecutionResponses = new Set<string>();
+const listenersMap = new Map<any, any>();
 
 // ── Type Definitions for Providers ────────────────────────────────
 
@@ -50,6 +51,8 @@ export interface FlatModelEntry {
   name: string;         // human-readable display name
   provider: string;     // display name of provider
   providerType: ProviderType;
+  size?: number;
+  parameterSize?: string;
 }
 
 // Re-export event types for frontend use
@@ -80,6 +83,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ollamaStatus:  () => ipcRenderer.invoke('system:ollama-status'),
     ollamaInstall: () => ipcRenderer.invoke('system:ollama-install'),
     ollamaPull:    (modelName: string) => ipcRenderer.invoke('system:ollama-pull', modelName),
+    transcribeLocal: (audioBuffer: ArrayBuffer) => ipcRenderer.invoke('system:transcribe-local', audioBuffer),
+    openTerminalInstaller: (action: 'install-all' | 'pull-model') => ipcRenderer.invoke('system:open-terminal-installer', action),
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => {
       ipcRenderer.on('system:ollama-install-line', (_e, data) => cb(data));
       ipcRenderer.on('system:ollama-pull-line', (_e, data) => cb(data));
@@ -97,12 +102,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
     getVersion:     () => ipcRenderer.invoke('system:get-version'),
+    detectHardware: () => ipcRenderer.invoke('system:detect-hardware'),
     checkForUpdates: () => ipcRenderer.invoke('system:check-for-updates'),
     onUpdateAvailable: (cb: (info: any) => void) => ipcRenderer.on('update-available', (_e, info) => cb(info)),
     onUpdateDownloaded: (cb: (info: any) => void) => ipcRenderer.on('update-downloaded', (_e, info) => cb(info)),
     onUpdateProgress: (cb: (progress: any) => void) => ipcRenderer.on('download-progress', (_e, progress) => cb(progress)),
     onUpdateError: (cb: (error: string) => void) => ipcRenderer.on('update-error', (_e, error) => cb(error)),
     restartAndUpdate: () => ipcRenderer.invoke('restart-and-update'),
+    getUpdateStatus: () => ipcRenderer.invoke('system:get-update-status'),
     startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => ipcRenderer.invoke('system:start-dispatch', config),
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => ipcRenderer.invoke('system:restore-dispatch', config),
     stopDispatch:   () => ipcRenderer.invoke('system:stop-dispatch'),
@@ -151,11 +158,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Voice Overlay ────────────────────────────────────────────────
   voiceOverlay: {
-    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' }) => void) => {
+    onStateChange: (cb: (data: any) => void) => {
       ipcRenderer.on('voice-overlay:state', (_e, data) => cb(data));
     },
     removeListeners: () => {
       ipcRenderer.removeAllListeners('voice-overlay:state');
+      ipcRenderer.removeAllListeners('voice-overlay:audio-levels');
+      ipcRenderer.removeAllListeners('voice-overlay:answer-submitted');
+    },
+    sendAudioLevels: (levels: number[]) => {
+      ipcRenderer.send('voice-overlay:audio-levels', levels);
+    },
+    onAudioLevels: (cb: (levels: number[]) => void) => {
+      ipcRenderer.on('voice-overlay:audio-levels', (_e, levels) => cb(levels));
+    },
+    sendState: (state: any) => {
+      ipcRenderer.send('voice-overlay:set-state', state);
+    },
+    submitAnswer: (answers: any) => {
+      ipcRenderer.send('voice-overlay:submit-answer', answers);
+    },
+    onSubmitAnswer: (cb: (answers: any) => void) => {
+      ipcRenderer.on('voice-overlay:answer-submitted', (_e, answers) => cb(answers));
     }
   },
 
@@ -515,11 +539,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Generic Event Listeners ────────────────────────────────────────
   on: (channel: string, cb: (data: any) => void) => {
-    ipcRenderer.on(channel, (_e, data) => cb(data));
+    const wrapper = (_e: any, data: any) => cb(data);
+    listenersMap.set(cb, wrapper);
+    ipcRenderer.on(channel, wrapper);
   },
   off: (channel: string, cb?: (data: any) => void) => {
     if (cb) {
-      ipcRenderer.removeListener(channel, cb as any);
+      const wrapper = listenersMap.get(cb);
+      if (wrapper) {
+        ipcRenderer.removeListener(channel, wrapper);
+        listenersMap.delete(cb);
+      }
     } else {
       ipcRenderer.removeAllListeners(channel);
     }
@@ -609,6 +639,8 @@ export type ElectronAPI = {
     ollamaStatus:        () => Promise<{ installed: boolean; modelInstalled: boolean }>;
     ollamaInstall:       () => Promise<{ success: boolean; code: number }>;
     ollamaPull:          (modelName: string) => Promise<{ success: boolean; code: number }>;
+    transcribeLocal:     (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; transcription?: string; error?: string }>;
+    openTerminalInstaller: (action: 'install-all' | 'pull-model') => Promise<{ success: boolean }>;
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => void;
     removeOllamaListeners: () => void;
     openExternal: (url: string) => Promise<void>;
@@ -653,8 +685,11 @@ export type ElectronAPI = {
   saveConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
   loadConfig: ()            => Promise<{ success: boolean; config: any; error?: string }>;
   voiceOverlay: {
-    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' }) => void) => void;
+    onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' | 'completed' }) => void) => void;
     removeListeners: () => void;
+    sendAudioLevels: (levels: number[]) => void;
+    onAudioLevels: (cb: (levels: number[]) => void) => void;
+    sendState: (state: 'idle' | 'listening' | 'executing' | 'completed') => void;
   };
   acp: {
     listProviders:         () => Promise<any[]>;

@@ -21,6 +21,9 @@ interface SidebarProps {
     onProjectsClick?: () => void;
     onAnalyticsClick?: () => void;
     titlebarInset?: number;
+    showSearch?: boolean;
+    onSearchClose?: () => void;
+    onSearchOpen?: () => void;
 }
 
 interface ConversationSummary {
@@ -31,16 +34,34 @@ interface ConversationSummary {
     projectName?: string;
 }
 
-export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick, titlebarInset = 0 }: SidebarProps) {
+export default function Sidebar({ isOpen, onToggle, activeConversationId, activeTaskIds = [], onSelectConversation, onNewChat, onSettingsClick, onArtifactsClick, onCustomizeClick, onIntegrationClick, onProjectsClick, onAnalyticsClick, titlebarInset = 0, showSearch, onSearchClose, onSearchOpen }: SidebarProps) {
+    const [isMac, setIsMac] = useState(false);
     const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
     const [username, setUsername] = useState<string>("User");
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [showSearch, setShowSearch] = useState<boolean>(false);
+    const [localShowSearch, setLocalShowSearch] = useState<boolean>(false);
+    const isSearchOpen = showSearch !== undefined ? showSearch : localShowSearch;
+    const triggerSearchOpen = onSearchOpen || (() => setLocalShowSearch(true));
+    const triggerSearchClose = onSearchClose || (() => setLocalShowSearch(false));
     const [userPlan, setUserPlan] = useState<string>("free");
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
     const [dailyCostUsd, setDailyCostUsd] = useState<number | null>(null);
     const { theme } = useTheme();
+
+    useEffect(() => {
+        const detectPlatform = async () => {
+            if ((window as any).electronAPI?.system?.getPlatform) {
+                const platform = await (window as any).electronAPI.system.getPlatform();
+                if (platform === 'darwin') {
+                    setIsMac(true);
+                }
+            } else if (navigator.userAgent.includes('Mac')) {
+                setIsMac(true);
+            }
+        };
+        detectPlatform();
+    }, []);
 
     useEffect(() => {
         const fetchUsername = async () => {
@@ -155,10 +176,12 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
         >
             {/* Top Control Bar - Toggle + Account */}
             <div style={{
-                height: 48 + titlebarInset,
+                height: isMac ? (isOpen ? 48 + titlebarInset : 80 + titlebarInset) : 48 + titlebarInset,
                 display: "flex",
-                alignItems: "center",
-                padding: `${titlebarInset}px 16px 0`,
+                alignItems: isMac && !isOpen ? "flex-end" : "center",
+                padding: isMac 
+                    ? `${titlebarInset}px ${isOpen ? 16 : 16}px ${isMac && !isOpen ? 12 : 0}px ${isOpen ? 76 : 16}px`
+                    : `${titlebarInset}px 16px 0`,
                 justifyContent: isOpen ? "space-between" : "center",
                 flexShrink: 0,
                 WebkitAppRegion: "drag",
@@ -280,7 +303,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)"; e.currentTarget.style.color = "var(--sidebar-text-primary)"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--sidebar-text-secondary)"; }}
                             onClick={() => {
-                                if (item.label === "Search") setShowSearch(true);
+                                if (item.label === "Search") triggerSearchOpen();
                                 else if (item.label === "Artifacts" && onArtifactsClick) onArtifactsClick();
                                 else if (item.label === "Customize" && onCustomizeClick) onCustomizeClick();
                                 else if (item.label === "Integrations" && onIntegrationClick) onIntegrationClick();
@@ -451,8 +474,8 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
 
             {/* Search Popup */}
             <SearchPopup
-                isOpen={showSearch}
-                onClose={() => setShowSearch(false)}
+                isOpen={isSearchOpen}
+                onClose={triggerSearchClose}
                 history={history}
                 onSelectConversation={onSelectConversation}
                 activeConversationId={activeConversationId}

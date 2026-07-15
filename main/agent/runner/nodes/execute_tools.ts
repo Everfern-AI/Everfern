@@ -1,10 +1,11 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import { GraphStateType, StreamEvent } from '../state';
 import { ToolCallRecord, AgentTool, AgentRunnerConfig } from '../types';
 import { analyzeTask } from '../task-decomposer';
-import { analyzeToolDependencies, groupParallelTools } from '../parallel-executor';
+import { analyzeToolDependencies, groupParallelTools, executeSynchronizedParallelGroup } from '../parallel-executor';
 import { validateAndCorrectToolArgs } from '../utils';
 import { getAgentEvents } from '../../infra/agent-events';
 import { getDefaultToolPolicyPipeline } from '../tool-policy';
@@ -16,6 +17,7 @@ import { createMissionIntegrator } from '../mission-integrator';
 import type { AIClient } from '../../../lib/ai-client';
 import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
 import { redirectComputerUseCallsToNavis } from '../tool-routing';
+import { syncTaskPlan } from '../task-plan-helper';
 import {
   createHarnessConfig,
   preExecutionCheck,
@@ -24,7 +26,19 @@ import {
   getPhasePrompt,
   workflowEngine,
   handleFailedStep,
+  rollbackOrchestrator,
 } from '../harness';
+
+/**
+ * Read-only tools that don't need harness pre/post execution checks.
+ * These tools cannot cause state corruption or file system changes.
+ */
+const READ_ONLY_TOOLS = new Set([
+  'read_file', 'read', 'list_dir', 'list_directory', 'ls',
+  'grep_search', 'grep', 'find', 'glob',
+  'web_search', 'memory_search', 'recall_fact',
+  'view_file', 'analyze_image'
+]);
 
 /**
  * Determine if an error should trigger automatic retry with correction
@@ -82,9 +96,9 @@ async function recordFinding(toolName: string, args: any, result: any, workspace
     const findingsPath = path.join(workspaceDir, 'findings.md');
     let findingsContent = '';
     
-    if (fs.existsSync(findingsPath)) {
-      findingsContent = fs.readFileSync(findingsPath, 'utf-8');
-    } else {
+    try {
+      findingsContent = await fsPromises.readFile(findingsPath, 'utf-8');
+    } catch {
       findingsContent = `# Project Research Findings\n\n`;
     }
 
@@ -114,7 +128,7 @@ async function recordFinding(toolName: string, args: any, result: any, workspace
 
     if (sectionHeader) {
       findingsContent += `\n${sectionHeader}\n${sectionBody}\n`;
-      fs.writeFileSync(findingsPath, findingsContent, 'utf-8');
+      await fsPromises.writeFile(findingsPath, findingsContent, 'utf-8');
       console.log(`[Findings] Updated findings.md with entry for ${toolName}`);
     }
   } catch (err) {
@@ -180,7 +194,7 @@ export const createExecuteToolsNode = (
     })));
 
     const parallelGroups = groupParallelTools(analysis);
-    const { executeSynchronizedParallelGroup } = await import('../parallel-executor');
+    // PERF: executeSynchronizedParallelGroup is now a static import (was dynamic await import)
 
     // Set agent context for rollback tracking before executing tools.
     // Requirements 4.1, 4.2, 4.3, 5.1, 5.2: Tool execution context needed for RollbackManager.
@@ -201,10 +215,16 @@ export const createExecuteToolsNode = (
     let harnessRecoveryActions: any[] = [];
 
     // Pre-execution validation: check recovery enforcer before each tool
+    // PERF: Skip harness checks for read-only tools that cannot cause state corruption
     const validatedGroups: any[][] = [];
     for (const group of parallelGroups) {
       const validatedGroup: any[] = [];
       for (const tool of group) {
+        // Read-only tools bypass harness pre-checks entirely
+        if (READ_ONLY_TOOLS.has(tool.name)) {
+          validatedGroup.push(tool);
+          continue;
+        }
         const stepId = `${rollbackTaskId}:${tool.name}:${tool.id}`;
         const preCheck = preExecutionCheck(stepId, tool.name, tool.args);
         if (!preCheck.shouldProceed && preCheck.recoveryAction) {
@@ -252,23 +272,46 @@ export const createExecuteToolsNode = (
           runner.telemetry.info(`[ExecuteTools] 🎯 NAVIS TOOL RESULT RECEIVED - Success: ${rec.result?.success}`);
         }
 
-        // Record findings immediately for research/browser/file tools
+        // Record findings for research/browser/file tools (awaited to ensure availability to the agent and prevent data loss)
         const workspaceDir = runner.workspaceDir || path.join(os.homedir(), '.everfern');
         if (rec.result?.success && ['navis', 'web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
           await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir);
         }
 
         // ── Harness Post-Execution ────────────────────────────────────
-        const stepId = `${rollbackTaskId}:${rec.toolName}:${rec.id || Date.now()}`;
-        const errorStr = rec.result?.error || (rec.result?.success === false ? rec.result?.output : undefined);
-        recordExecution(stepId, rec.toolName, rec.args || {}, rec.result, errorStr);
+        // PERF: Skip harness recording and post-checks for read-only tools
+        if (!READ_ONLY_TOOLS.has(rec.toolName)) {
+          const stepId = `${rollbackTaskId}:${rec.toolName}:${rec.id || Date.now()}`;
+          const errorStr = rec.result?.error || (rec.result?.success === false ? rec.result?.output : undefined);
+          recordExecution(stepId, rec.toolName, rec.args || {}, rec.result, errorStr);
 
-        if (errorStr && ['terminal_execute', 'executePwsh', 'write', 'edit'].includes(rec.toolName)) {
-          // Dynamic Self-Healing: Check if harness detects a failure and has a recovery action
-          try {
-            const recoveryAction = await handleFailedStep(harnessConfig, stepId, rec.toolName, errorStr);
+          if (errorStr && ['terminal_execute', 'executePwsh', 'write', 'edit'].includes(rec.toolName)) {
+            // Dynamic Self-Healing: Check if harness detects a failure and has a recovery action
+            try {
+              const recoveryAction = await handleFailedStep(harnessConfig, stepId, rec.toolName, errorStr);
+              if (recoveryAction) {
+                console.warn(`[Harness Self-Healing] ⚠️ Detected failure in ${rec.toolName}. Recovery action: ${recoveryAction.message}`);
+                harnessRecoveryActions.push({
+                  toolName: rec.toolName,
+                  stepId,
+                  recoveryAction,
+                  blocked: false
+                });
+              }
+            } catch (healingErr) {
+              console.error('[Harness Self-Healing] Error handling failed step:', healingErr);
+            }
+          }
+
+          const postCheck = postExecutionCheck(stepId, rec.toolName, rec.result);
+          if (!postCheck.valid) {
+            const recoveryAction = postCheck.recoveryAction;
+            const harnessMsg = recoveryAction
+              ? `[Harness] ⚠️ ${rec.toolName}: ${recoveryAction.message}`
+              : `[Harness] ⚠️ ${rec.toolName}: validation warnings: ${postCheck.validationErrors.join(', ')}`;
+            console.warn(harnessMsg);
+
             if (recoveryAction) {
-              console.warn(`[Harness Self-Healing] ⚠️ Detected failure in ${rec.toolName}. Recovery action: ${recoveryAction.message}`);
               harnessRecoveryActions.push({
                 toolName: rec.toolName,
                 stepId,
@@ -276,26 +319,6 @@ export const createExecuteToolsNode = (
                 blocked: false
               });
             }
-          } catch (healingErr) {
-            console.error('[Harness Self-Healing] Error handling failed step:', healingErr);
-          }
-        }
-
-        const postCheck = postExecutionCheck(stepId, rec.toolName, rec.result);
-        if (!postCheck.valid) {
-          const recoveryAction = postCheck.recoveryAction;
-          const harnessMsg = recoveryAction
-            ? `[Harness] ⚠️ ${rec.toolName}: ${recoveryAction.message}`
-            : `[Harness] ⚠️ ${rec.toolName}: validation warnings: ${postCheck.validationErrors.join(', ')}`;
-          console.warn(harnessMsg);
-
-          if (recoveryAction) {
-            harnessRecoveryActions.push({
-              toolName: rec.toolName,
-              stepId,
-              recoveryAction,
-              blocked: false
-            });
           }
         }
 
@@ -316,7 +339,7 @@ export const createExecuteToolsNode = (
       );
       for (const ra of rollbackActions) {
         try {
-          const { rollbackOrchestrator } = await import('../harness');
+          // PERF: rollbackOrchestrator is now a static import (was dynamic await import)
           const sessionId = ra.stepId?.split(':')[0] || rollbackTaskId;
           const targetPhase = ra.recoveryAction.rollbackTarget as string | undefined;
           if (targetPhase) {
@@ -432,12 +455,10 @@ export const createExecuteToolsNode = (
     }
 
     // Sync .everfern/task_plan.md checkboxes & progress
-    try {
-      const { syncTaskPlan } = await import('../task-plan-helper');
-      await syncTaskPlan(runner, missionTracker);
-    } catch (tpErr) {
+    // PERF: Fire-and-forget — task plan sync is cosmetic bookkeeping, don't block return to brain
+    syncTaskPlan(runner, missionTracker).catch(tpErr => {
       console.warn('[ExecuteTools] Failed to sync task plan:', tpErr);
-    }
+    });
 
     return result;
     } catch (error) {

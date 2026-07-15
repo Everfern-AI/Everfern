@@ -838,6 +838,40 @@ Your goal is to be the ultimate workplace companion.
     console.error('[Shortcut] ❌ Error registering Ctrl+Shift+P:', error);
   }
 
+  // Register Ctrl+Alt+B global shortcut to resume the chat
+  try {
+    const success = globalShortcut.register('Alt+CommandOrControl+B', () => {
+      console.log('[Shortcut] Ctrl+Alt+B triggered, sending resume event...');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('shortcut:resume-chat');
+      }
+    });
+    if (!success) {
+      console.error('[Shortcut] ❌ Failed to register Ctrl+Alt+B shortcut');
+    } else {
+      console.log('[Shortcut] ✅ Ctrl+Alt+B registered successfully');
+    }
+  } catch (error) {
+    console.error('[Shortcut] ❌ Error registering Ctrl+Alt+B:', error);
+  }
+
+  // Register Ctrl+Alt+H global shortcut to show history
+  try {
+    const success = globalShortcut.register('Alt+CommandOrControl+H', () => {
+      console.log('[Shortcut] Ctrl+Alt+H triggered, sending show history event...');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('shortcut:show-history');
+      }
+    });
+    if (!success) {
+      console.error('[Shortcut] ❌ Failed to register Ctrl+Alt+H shortcut');
+    } else {
+      console.log('[Shortcut] ✅ Ctrl+Alt+H registered successfully');
+    }
+  } catch (error) {
+    console.error('[Shortcut] ❌ Error registering Ctrl+Alt+H:', error);
+  }
+
   // ── Initialize Integration Services ─────────────────────────────────
   try {
     console.log('[App] Initializing integration services...');
