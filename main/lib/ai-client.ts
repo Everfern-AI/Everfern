@@ -563,8 +563,15 @@ export class AIClient {
       baseUrl.includes('localhost') ||
       baseUrl.includes('127.0.0.1') ||
       baseUrl.includes('0.0.0.0') ||
-      baseUrl.includes('::1')
+      baseUrl.includes('::1') ||
+      baseUrl.includes('.local') ||
+      baseUrl.includes('.lan')
     ) {
+      return true;
+    }
+    // Match private IP subnets: 192.168.x.x, 10.x.x.x, 172.16.x.x-172.31.x.x
+    const privateIpRegex = /^(https?:\/\/)?(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?(\/.*)?$/;
+    if (privateIpRegex.test(baseUrl)) {
       return true;
     }
     return false;
@@ -1626,8 +1633,11 @@ export class AIClient {
         }
 
         // Create a new AbortController for each attempt with timeout
+        // Increase timeout to 5 minutes (300000ms) for local providers to prevent cold-start failures
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout per request
+        const isLocal = this.isLocal() || url.includes('localhost') || url.includes('127.0.0.1');
+        const timeoutMs = isLocal ? 300000 : 60000;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         const enhancedOptions: RequestInit = {
           ...options,

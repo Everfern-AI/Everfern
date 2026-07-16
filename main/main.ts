@@ -676,10 +676,10 @@ Your goal is to be the ultimate workplace companion.
 
   // Ensure system prompt exists (fallback for prompt sync)
   ensureSystemPromptExists();
-  voiceOverlayManager = new VoiceOverlayManager();
 
-  // Initialize and preload the computer-use cursor overlay at startup to trigger Next.js compilation early and avoid HMR refresh mid-chat
-  getComputerOverlayManager();
+  // NOTE: VoiceOverlayManager and ComputerOverlayManager are initialized AFTER
+  // the protocol handlers below — their constructors call loadURL('everfern-app://...')
+  // which requires the custom protocol to be registered first.
   // ── Protocol Handlers ──────────────────────────────────────────────
 
   // Custom protocol for the main application (Next.js out folder)
@@ -806,6 +806,12 @@ Your goal is to be the ultimate workplace companion.
 
     return net.fetch(`file://${absPath.replace(/\\/g, '/')}`);
   });
+
+  // ── Overlay Managers (must come AFTER protocol handlers) ──────────
+  // Their constructors call loadURL('everfern-app://...') which requires
+  // the custom protocol to already be registered.
+  voiceOverlayManager = new VoiceOverlayManager();
+  getComputerOverlayManager();
 
   // ── Create Main Window ─────────────────────────────────────────────
   createWindow();
