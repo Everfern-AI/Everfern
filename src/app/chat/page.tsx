@@ -5429,6 +5429,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             });
             (window as any).electronAPI.voiceOverlay.onSubmitAnswer((data: any) => {
                 console.log('[VoiceOverlay] Submission received via overlay:', data);
+                if (overlayIdleTimeoutRef.current) {
+                    clearTimeout(overlayIdleTimeoutRef.current);
+                    overlayIdleTimeoutRef.current = null;
+                }
                 if (data && data.type === 'select-history') {
                     console.log('[VoiceOverlay] Loading conversation selected via voice overlay:', data.conversationId);
                     handleSelectConversation(data.conversationId);
@@ -5514,6 +5518,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         if (recordingSourceRef.current === 'overlay') {
             if (activeUserQuestions && activeUserQuestions.length > 0) {
+                if (overlayIdleTimeoutRef.current) {
+                    clearTimeout(overlayIdleTimeoutRef.current);
+                    overlayIdleTimeoutRef.current = null;
+                }
                 const activeQuestion = activeUserQuestions[0];
                 (window as any).electronAPI.voiceOverlay.sendState?.({
                     state: 'clarification',
@@ -5525,6 +5533,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         : (activeQuestion.multiSelect ? 'select' : 'single')
                 });
             } else if (isLoading) {
+                if (overlayIdleTimeoutRef.current) {
+                    clearTimeout(overlayIdleTimeoutRef.current);
+                    overlayIdleTimeoutRef.current = null;
+                }
                 const runningTool = liveToolCalls.find(t => t.status === 'running');
                 let actionText = 'Executing tasks...';
                 if (runningTool) {
