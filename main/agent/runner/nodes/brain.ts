@@ -12,6 +12,7 @@ import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../
 import { loadSoul, loadAgents } from '../../personality-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
@@ -149,8 +150,8 @@ USER REQUEST: "${originalRequest.slice(0, 300)}"
 YOUR RESPONSE: "${responseContent.slice(0, 500)}"
 
 Choose exactly one reason:
-- "task_complete"        — You fully completed the requested task with substantive output
-- "waiting_for_user_input" — You need the user to provide information, make a selection, or upload a file before you can proceed
+- "task_complete"        — You fully completed the requested task with substantive output. Choose this if you have answered the user's question or provided the requested data, even if you ask a polite follow-up or ask if they want to choose one of the options next.
+- "waiting_for_user_input" — You are blocked and cannot proceed with the requested action without the user providing critical details (e.g. traveler details, payment info, file path) or choosing from a menu. Do NOT use this for informative queries where you have already listed options or answered the request and are just offering optional next steps or follow-ups.
 - "needs_hitl"           — A high-risk or irreversible action requires explicit human approval before execution. Use this for: file organizing/moving/renaming, bulk operations, deleting user files, installing system packages, or any local execution on the host system.
 - "cannot_proceed"       — You are blocked and cannot make progress (missing permissions, unsupported request, etc.)
 
@@ -280,150 +281,17 @@ async function determineRouting(
     return null;
   }
 
-  // Detect if this brain is running as a sub-agent
-  const isSubAgent = !!runner.currentAgentSessionKey;
-
   try {
-    // Extract user request from the last user message
-    const lastUserMsg = state.messages?.filter((m: any) => {
-      const role = m.role || m._getType?.();
-      return role === 'user' || role === 'human';
-    }).pop();
-    const userRequest = lastUserMsg
-      ? (typeof (lastUserMsg as any).content === 'string'
-          ? (lastUserMsg as any).content
-          : JSON.stringify((lastUserMsg as any).content))
-      : '';
-    const conversationHistory = state.messages?.slice(-3) || []; // Last 3 messages for context
-
-    // Emit analysis phase
-
-
-    const intentConstraint = state.currentIntent
-      ? `\nTRIAGE INTENT (HARD CONSTRAINT): "${state.currentIntent}"\n` +
-        (state.currentIntent === 'research'
-          ? `Because the triage intent is "research", the ONLY valid routing decisions are: "route_web_explorer", "continue_brain", or "complete_task". You MUST NOT route to "route_computer_use".\n`
-          : '')
-      : '';
-
-    const subAgentConstraint = isSubAgent
-      ? `\nSUB-AGENT CONSTRAINT (HARD): You are a SUB-AGENT. You MUST NOT route to "route_web_explorer", "route_coding", "route_data_analyst", or "route_computer_use". You are already a delegated agent — use the tools you have directly. Route to "continue_brain" to keep working with your available tools, or "complete_task" if done.\n`
-      : '';
-
-    const prompt = `You are the EverFern Brain - the central orchestrator. Analyze the user request and determine the best routing decision.
-
-${intentConstraint}${subAgentConstraint}
-USER REQUEST: "${userRequest.slice(0, 400)}"
-YOUR CURRENT RESPONSE: "${responseContent.slice(0, 300)}"
-CONVERSATION CONTEXT: ${JSON.stringify(conversationHistory).slice(0, 200)}
-
-Available routing options:
-- "continue_brain"     — Continue handling this yourself with general capabilities (conversation, simple tasks, IMAGE/FILE ORGANIZATION, web_search + navis for detailed extraction, or desktop automation/computer_use)
-- "route_coding"       — Route to Coding Specialist for software development, code writing, debugging, PROJECT CREATION
-- "route_data_analyst" — Route to Data Analyst for data processing, CSV/Excel analysis, charts
-- "route_web_explorer" — Route to Web Explorer for complex multi-step web research (multiple page visits, form filling, login workflows). For simple web lookups or single-page research, use your available web_search/navis tools directly.
-- "complete_task"      — Task is complete, no further routing needed
-
-CRITICAL ROUTING RULES:
-1. If user asks to "write code", "fix a bug", "implement a feature", "create a project", "build an app", "scaffold a website", "make a React app", "create a Next.js app", or perform ANY software development task → ALWAYS use "route_coding"
-2. For SIMPLE web research tasks (searching, finding information online, looking up websites, comparing services), prefer "continue_brain" to use web_search + navis directly. For booking, purchasing, or any transactional web task, ALWAYS use "route_web_explorer".
-3. CRITICAL WEB RESEARCH STRATEGY: For tasks like "find pricing", "get discount codes", "compare services", "find contact info", "download software" → Use "continue_brain" and follow the two-phase approach: (1) web_search to find candidate sites, (2) navis to extract specific details, pricing, coupons, or interact with forms.
-4. CRITICAL: If the user asks to "find", "search for", "investigate", "get pricing for", "find coupons for", "compare costs of" — these are SIMPLE web research tasks. Use "continue_brain" with web_search + navis.
-5. You have web_search and navis available directly — use them for most web research tasks. The two-phase approach (search then extract) handles 90% of web research needs without routing to specialists.
-6. NEVER use terminal_execute with curl for web research. Use web_search or navis which you have available.
-7. CRITICAL — PICK ONE: Do NOT both route to a specialist AND call spawn_agent/tools for the same task. If you use "continue_brain", handle the complete task with your tools. If you route to "route_web_explorer", let the specialist handle it completely.
-8. POST-SEARCH NAVIS USAGE: After web_search finds relevant sites, ALWAYS use navis to extract specific details like pricing, features, contact info, discount codes, or to interact with forms/downloads.
-9. IMAGE/FILE ORGANIZATION: For tasks like "organize my images/pictures/photos", "sort files by content", "classify images", "move anime pictures into anime folder" → ALWAYS use "continue_brain". Use system_files to list image files. For 20+ images, use visual_classification_sheet to create numbered contact sheets and a manifest, analyze the sheet(s) with vision, then map IDs back to original file paths. For smaller folders, use analyze_image to classify by actual visual content in batches of 10-20. Use system_files to move files after approval. Never classify anime/photos from filenames or metadata. For large folders, continue_brain may spawn generic sub-agents to classify independent sheet batches and aggregate their JSON results. Read the image-viewer skill (SKILL.md) and follow its workflows.
-10. BOOKING/TRANSACTIONAL TASKS: For tasks like "book a flight", "reserve a hotel", "buy tickets", "purchase", "order food", "make a reservation", or any task requiring interactive web form-filling and transactions → ALWAYS use "route_web_explorer". These are multi-step interactive workflows requiring form filling, option selection, and confirmation flows. NEVER use "continue_brain" for booking tasks.
-11. DESKTOP AUTOMATION: For automate/computer-use tasks (such as "open Spotify", "open VS Code", "play music", "click on UI", or native desktop GUI automation), ALWAYS use "continue_brain" to execute the computer_use tool directly. The brain has the computer_use tool available.
-
-Respond with JSON only:
-{
-  "decision": "continue_brain" | "route_coding" | "route_data_analyst" | "route_web_explorer" | "complete_task",
-  "explanation": "one sentence explaining the routing decision"
-}`;
-
-    console.log('[Brain] Determining routing decision...');
-    const startTime = Date.now();
-
-    const response = await runner.client.chat({
-      messages: [{ role: 'user', content: prompt }],
-      responseFormat: 'json',
-      temperature: 0.3,
-      maxTokens: 1500,
-      abortSignal: globalAbortManager.abortController.signal,
-    }) as any;
-
-    const duration = Date.now() - startTime;
-    console.log(`[Brain] Routing decision response received in ${duration}ms`);
-
-    if (response.usage) {
-      try {
-        const { recordUsage } = await import('../../../store/analytics');
-        const cfg = (runner as any).config;
-        recordUsage({
-          conversationId: state.missionId ?? undefined, // Route tracking
-          model: runner.client.model ?? cfg?.model ?? 'unknown',
-          provider: runner.client.provider ?? cfg?.provider ?? cfg?.engine ?? 'unknown',
-          promptTokens: response.usage.promptTokens ?? 0,
-          completionTokens: response.usage.completionTokens ?? 0,
-          promptTokensCost: response.usage.promptTokensCost,
-          completionTokensCost: response.usage.completionTokensCost,
-          imageInputCost: response.usage.imageInputCost,
-          imageOutputCost: response.usage.imageOutputCost,
-          totalCost: response.usage.totalCost,
-        }).catch(() => { /* never throw */ });
-      } catch { /* ignore */ }
-    }
-
-    // Emit decision analysis
-
-
-    let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    console.log('[Brain] Raw routing response (first 500 chars):', content.slice(0, 500));
-
-    content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
-    content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-    // Robust JSON extraction: find first '{' and last '}'
-    const firstBrace = content.indexOf('{');
-    const lastBrace = content.lastIndexOf('}');
-
-    if (firstBrace === -1 || lastBrace <= firstBrace) {
-      console.warn('[Brain] No valid JSON braces found in routing response');
-      console.warn('[Brain] Response was:', content.slice(0, 300));
-      return null;
-    }
-
-    const jsonStr = content.substring(firstBrace, lastBrace + 1);
-    console.log('[Brain] Extracted JSON string:', jsonStr);
-
-    let routing;
-    try {
-      routing = JSON.parse(jsonStr);
-      console.log('[Brain] Successfully parsed routing JSON:', routing);
-    } catch (parseError) {
-      const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
-      console.warn('[Brain] Failed to parse routing decision JSON:', errorMsg);
-      console.warn('[Brain] Attempted to parse:', jsonStr);
-      return null;
-    }
-
-    const validDecisions: RoutingDecision[] = [
-      'continue_brain', 'route_coding', 'route_data_analyst',
-      'route_web_explorer', 'complete_task'
-    ];
-
-    if (!validDecisions.includes(routing.decision)) {
-      console.warn('[Brain] Invalid routing decision:', routing.decision);
-      return null;
-    }
-
-    console.log(`[Brain] Routing decision made in ${duration}ms: ${routing.decision}`);
-    return { decision: routing.decision as RoutingDecision, explanation: String(routing.explanation || '') };
+    const { CognitiveRouter } = await import('../cognitive-router');
+    const router = new CognitiveRouter(runner, eventQueue);
+    const result = await router.route(state);
+    return {
+      decision: result.decision,
+      explanation: result.explanation
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn('[Brain] Routing decision failed:', errorMessage);
+    console.warn('[Brain] Cognitive Router routing decision failed:', errorMessage);
     return null;
   }
 }
@@ -612,8 +480,8 @@ export const createBrainNode = (
 
     // Inject recent findings from findings.md so the brain doesn't repeat navis/web_search work
     try {
-      const findingsPath = runner.workspaceDir ? path.join(runner.workspaceDir, 'findings.md') : null;
-      if (findingsPath && fs.existsSync(findingsPath)) {
+      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
+      if (fs.existsSync(findingsPath)) {
         const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
         if (findingsContent && findingsContent.length > 0) {
           systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;

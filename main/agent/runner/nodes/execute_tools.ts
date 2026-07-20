@@ -93,7 +93,11 @@ function isCommandComplete(output: string): boolean {
 
 async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string) {
   try {
-    const findingsPath = path.join(workspaceDir, 'findings.md');
+    const findingsDir = path.join(os.homedir(), '.everfern');
+    try {
+      await fsPromises.mkdir(findingsDir, { recursive: true });
+    } catch {}
+    const findingsPath = path.join(findingsDir, 'findings.md');
     let findingsContent = '';
     
     try {
@@ -274,7 +278,7 @@ export const createExecuteToolsNode = (
 
         // Record findings for research/browser/file tools (awaited to ensure availability to the agent and prevent data loss)
         const workspaceDir = runner.workspaceDir || path.join(os.homedir(), '.everfern');
-        if (rec.result?.success && ['navis', 'web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
+        if (rec.result?.success && ['web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
           await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir);
         }
 

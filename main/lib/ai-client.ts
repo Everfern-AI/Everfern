@@ -188,6 +188,7 @@ export interface ChatRequest {
   /** Gemini native: user response to a safety_decision or confirmation prompt */
   userConfirmation?: 'ACT' | 'STAY_ON_NOMINAL';
   abortSignal?: AbortSignal;
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'ultra' | 'ultra-delegate';
 }
 
 export interface ChatResponse {
@@ -1252,6 +1253,14 @@ export class AIClient {
 
     this._maybeInjectComputerUseTools(options, req);
 
+    if (req.reasoningEffort) {
+      if (req.reasoningEffort === 'ultra' || req.reasoningEffort === 'ultra-delegate') {
+        options.reasoning_effort = 'high';
+      } else {
+        options.reasoning_effort = req.reasoningEffort;
+      }
+    }
+
     // Helper function for retrying with exponential backoff
     const retryWithBackoff = async <T>(
       fn: () => Promise<T>,
@@ -1518,6 +1527,14 @@ export class AIClient {
     };
 
     this._maybeInjectComputerUseTools(options, req);
+
+    if (req.reasoningEffort) {
+      if (req.reasoningEffort === 'ultra' || req.reasoningEffort === 'ultra-delegate') {
+        options.reasoning_effort = 'high';
+      } else {
+        options.reasoning_effort = req.reasoningEffort;
+      }
+    }
 
     if (req.tools?.length) {
       options.tools = req.tools.map(t => {
@@ -2022,6 +2039,14 @@ export class AIClient {
     };
 
     this._maybeInjectComputerUseTools(streamBody, req);
+
+    if (req.reasoningEffort) {
+      if (req.reasoningEffort === 'ultra' || req.reasoningEffort === 'ultra-delegate') {
+        streamBody['reasoning_effort'] = 'high';
+      } else {
+        streamBody['reasoning_effort'] = req.reasoningEffort;
+      }
+    }
 
     if (this.config.provider === 'nvidia') {
       const modelName = req.model ?? this.config.model;

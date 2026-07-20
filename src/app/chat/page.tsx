@@ -652,16 +652,12 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 18px',
-            borderRadius: 16,
-            border: '1px solid var(--color-border)',
+            padding: '10px 16px',
             width: '100%',
             boxSizing: 'border-box',
-            backgroundColor: isDark ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
-            marginBottom: 12,
         }}>
             <span style={{
-                fontSize: 14,
+                fontSize: 13.5,
                 fontWeight: 400,
                 color: isDark ? '#e3e1d9' : '#4a4846',
                 fontFamily: 'var(--font-sans)',
@@ -675,9 +671,9 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
                 style={{
                     backgroundColor: isDark ? '#ffffff' : '#111111',
                     color: isDark ? '#111111' : '#ffffff',
-                    padding: '7px 18px',
+                    padding: '5px 14px',
                     borderRadius: 8,
-                    fontSize: 13.5,
+                    fontSize: 13,
                     fontWeight: 600,
                     border: 'none',
                     cursor: 'pointer',
@@ -690,6 +686,41 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             >
                 Upgrade
             </button>
+        </div>
+    );
+}
+
+function PromptWrapper({
+    isCloudUsageOver,
+    onUpgrade,
+    children,
+}: {
+    isCloudUsageOver: boolean;
+    onUpgrade: () => void;
+    children: React.ReactNode;
+}) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    if (!isCloudUsageOver) {
+        return <>{children}</>;
+    }
+
+    return (
+        <div style={{
+            width: "100%",
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 20,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+        }}>
+            <EverFernCloudUsageBanner onUpgrade={onUpgrade} />
+            <div style={{ width: "100%" }}>
+                {children}
+            </div>
         </div>
     );
 }
@@ -5879,7 +5910,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         />
                                                     )}
 
-                                                    {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
+                                                    <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
                                                     {/* Progressive input container */}
                                                     <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
                                                         {renderSubagentSpawnAttachment()}
@@ -5921,6 +5952,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             {renderComposerRightActions(false)}
                                                         </div>
                                                     </div>
+                                                    </PromptWrapper>
                                                     {renderShortcutsLegend()}
 
                                                     {/* Quick prompt chips — hidden when a project is selected */}
@@ -6542,8 +6574,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     />
                                                 </div>
                                             )}
+                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
                                             <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
-                                                {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                 {/* Memory Preference Banner */}
                                                 {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                     <motion.div
@@ -6669,7 +6701,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     {renderComposerLeftActions()}
                                                     {renderComposerRightActions(true)}
                                                 </div>
-                                            </div>
+                                             </div>
+                                             </PromptWrapper>
                                             {renderShortcutsLegend()}
                                             <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
                                                 Everfern is an agentic AI and can make mistakes. Please double-check responses.

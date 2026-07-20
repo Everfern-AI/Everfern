@@ -2120,25 +2120,32 @@ function NavisView({ screenshots = [], toolName, thinkingEvents = [], navisRepor
         }
 
         let content: string | null = null;
-        if (projectPath) {
-          content = await api.projects.readFile(projectPath, 'findings.md');
+        const filename = toolCall?.id ? `findings_${toolCall.id}.md` : 'findings.md';
+        try {
+          const everfernPath = await api.projects.getEverfernPath();
+          if (everfernPath) {
+            content = await api.projects.readFile(everfernPath, filename);
+          }
+        } catch (e) {
+          console.error(`Failed to read ${filename} from everfern path:`, e);
         }
 
-        // 4. Try default .everfern home directory as last fallback
-        if (content === null) {
+        if (content === null && projectPath) {
+          content = await api.projects.readFile(projectPath, filename);
+        }
+
+        // Fallback to global findings.md if tool-call-specific file was not found
+        if (content === null && toolCall?.id) {
           try {
-            const docPath = await api.projects.getDefaultPath();
-            if (docPath) {
-              const normalizedDoc = docPath.replace(/\\/g, '/');
-              const parts = normalizedDoc.split('/');
-              const docIdx = parts.findIndex((p: string) => p.toLowerCase() === 'documents');
-              if (docIdx !== -1) {
-                const defaultEverfernPath = parts.slice(0, docIdx).join('/') + '/.everfern';
-                content = await api.projects.readFile(defaultEverfernPath, 'findings.md');
-              }
+            const everfernPath = await api.projects.getEverfernPath();
+            if (everfernPath) {
+              content = await api.projects.readFile(everfernPath, 'findings.md');
             }
-          } catch (e) {
-            console.error('Failed to read findings from home directory fallback:', e);
+          } catch (e) {}
+          if (content === null && projectPath) {
+            try {
+              content = await api.projects.readFile(projectPath, 'findings.md');
+            } catch (e) {}
           }
         }
 

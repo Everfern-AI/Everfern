@@ -43,6 +43,12 @@ export function registerProjectsHandlers() {
     return path.join(app.getPath('documents'), 'Everfern', 'Projects');
   });
 
+  ipcMain.handle('projects:getEverfernPath', async () => {
+    const os = require('os');
+    const path = require('path');
+    return path.join(os.homedir(), '.everfern');
+  });
+
   ipcMain.handle('projects:selectFolder', async () => {
     const { dialog } = require('electron');
     const result = await dialog.showOpenDialog({

@@ -929,21 +929,40 @@ function NavisView({
           }
         }
 
-        if (!projectPath && projects[0]?.path) {
-          projectPath = projects[0].path;
+        let content: string | null = null;
+        const filename = toolCall?.id ? `findings_${toolCall.id}.md` : 'findings.md';
+        try {
+          const everfernPath = await api.projects.getEverfernPath();
+          if (everfernPath) {
+            content = await api.projects.readFile(everfernPath, filename);
+          }
+        } catch (e) {
+          console.error(`Failed to read ${filename} from everfern path:`, e);
         }
 
-        if (projectPath) {
-          const content = await api.projects.readFile(projectPath, 'findings.md');
-          if (isMounted) {
-            if (content !== null) {
-              setFindingsContent(content);
-            } else {
-              setFindingsContent('Could not find findings.md for this task.');
+        if (content === null && projectPath) {
+          content = await api.projects.readFile(projectPath, filename);
+        }
+
+        // Fallback to global findings.md if tool-call-specific file was not found
+        if (content === null && toolCall?.id) {
+          try {
+            const everfernPath = await api.projects.getEverfernPath();
+            if (everfernPath) {
+              content = await api.projects.readFile(everfernPath, 'findings.md');
             }
+          } catch (e) {}
+          if (content === null && projectPath) {
+            try {
+              content = await api.projects.readFile(projectPath, 'findings.md');
+            } catch (e) {}
           }
-        } else {
-          if (isMounted) {
+        }
+
+        if (isMounted) {
+          if (content !== null) {
+            setFindingsContent(content);
+          } else {
             setFindingsContent('Could not find findings.md for this task.');
           }
         }

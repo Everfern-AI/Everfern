@@ -490,7 +490,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
+      ['navis', 'browser_subagent', 'read_url_content', 'search_web', 'ask_user_question', 'spawn_agent'].includes(t.name)
     );
     const node = createWebExplorerNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -502,7 +502,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
+      ['navis', 'browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
     );
     const node = createDeepResearchNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -742,7 +742,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     return 'coding_specialist';
                 case 'route_data_analyst': return 'data_analyst';
                 case 'route_web_explorer': return 'web_explorer';
-                case 'route_deep_research': return 'deep_research';
+                case 'route_deep_research': return 'web_explorer';
             }
         }
         return 'memory_consolidator';
@@ -751,7 +751,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
         web_explorer: 'web_explorer',
-        deep_research: 'deep_research',
         memory_consolidator: 'memory_consolidator'
     })
 
@@ -784,6 +783,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
                 case 'route_data_analyst':
                     return 'data_analyst';
                 case 'route_web_explorer':
+                case 'route_deep_research':
                     // Always use web_explorer for web research tasks to ensure navis is used
                     return 'web_explorer';
                 case 'complete_task':

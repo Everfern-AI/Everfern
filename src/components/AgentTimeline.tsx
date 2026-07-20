@@ -441,7 +441,7 @@ const SubAgentProgressTimeline = ({
                                 boxShadow: "0 1px 3px var(--color-border)",
                             }}>
                                 <img
-                                    src={`data:image/png;base64,${event.screenshot.base64}`}
+                                    src={event.screenshot.base64.startsWith('data:image/') ? event.screenshot.base64 : `data:image/png;base64,${event.screenshot.base64}`}
                                     alt="Sub-agent screenshot"
                                     style={{ width: "100%", height: "auto", display: "block" }}
                                 />

@@ -98,6 +98,10 @@ export interface SubagentRunner {
         systemPromptOverride?: string,
         projectId?: string,
         isSubagent?: boolean,
+        assistantMessageId?: string,
+        isBackground?: boolean,
+        operatorMode?: boolean,
+        reasoningEffort?: string,
     ): AsyncGenerator<any, void, unknown>;
 }
 
@@ -350,7 +354,19 @@ class SubagentSpawner {
                     if (runner?.runStream) {
                         console.log(`[SubagentSpawner] ⚡ Attempt ${retries + 1}: Using runStream for ${agent.agentId} to enable real-time piping`);
                         const entry = registry.get(agent.agentId);
-                        const stream = runner.runStream(finalTask, cappedHistory, model, agent.parentSessionId, systemPrompt, entry?.projectId, true);
+                        const stream = runner.runStream(
+                            finalTask,
+                            cappedHistory,
+                            model,
+                            agent.parentSessionId,
+                            systemPrompt,
+                            entry?.projectId,
+                            true,
+                            undefined,
+                            false,
+                            false,
+                            (runner as any).reasoningEffort
+                        );
 
                         let reasoningBuffer = '';
                         let reasoningTimer: ReturnType<typeof setTimeout> | null = null;
