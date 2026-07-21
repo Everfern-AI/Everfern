@@ -51,6 +51,7 @@ const ContextTokenRing = ({
     isLocalModel,
     systemTokens = 0,
     chatTokens = 0,
+    inputTokens,
     modelName,
     outputTokens,
     toolSchemaTokens,
@@ -72,6 +73,7 @@ const ContextTokenRing = ({
     isLocalModel?: boolean;
     systemTokens?: number;
     chatTokens?: number;
+    inputTokens?: number;
     modelName?: string;
     outputTokens?: number;
     toolSchemaTokens?: number;
@@ -249,6 +251,9 @@ const ContextTokenRing = ({
     const displayChatTokens = chatTokens > 0 ? chatTokens : 0;
     const isEstimated = used === 0;
     const displayUsed = used > 0 ? used : (displaySystemTokens + displayChatTokens);
+    const displayInputTokens = inputTokens !== undefined
+        ? inputTokens
+        : (used > 0 ? Math.max(0, used - (outputTokens || 0)) : (displaySystemTokens + displayChatTokens));
 
     const pct = Math.min((displayUsed / actualMax) * 100, 100);
     const ringColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
@@ -404,6 +409,26 @@ const ContextTokenRing = ({
                                     <span style={{ color: textColor, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{localDiagnostics.temp}°C</span>
                                 </div>
                             </div>
+
+                            {/* Token breakdown for Local Models */}
+                            {(displayInputTokens > 0 || outputTokens !== undefined) && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: `1px solid ${dividerColor}`, paddingTop: 6, marginTop: 4 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Input Tokens</span>
+                                        <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
+                                            {displayInputTokens.toLocaleString('en-US')}
+                                        </span>
+                                    </div>
+                                    {outputTokens !== undefined && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Output Tokens</span>
+                                            <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
+                                                {outputTokens.toLocaleString('en-US')}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (
@@ -443,9 +468,15 @@ const ContextTokenRing = ({
                             </span>
                         </div>
 
-                        {/* Output Tokens & Tool Schema breakdown */}
-                        {(outputTokens !== undefined || toolSchemaTokens !== undefined) && (
+                        {/* Input Tokens, Output Tokens & Tool Schema breakdown */}
+                        {(displayInputTokens > 0 || outputTokens !== undefined || toolSchemaTokens !== undefined) && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2, paddingTop: 6, borderTop: `1px solid ${dividerColor}` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Input Tokens</span>
+                                    <span style={{ fontSize: 12, color: textColor, fontFamily: "var(--font-sans)" }}>
+                                        {isEstimated ? '~' : ''}{displayInputTokens.toLocaleString('en-US')}
+                                    </span>
+                                </div>
                                 {outputTokens !== undefined && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{ fontSize: 11, color: labelColor, fontWeight: 500 }}>Output Tokens</span>

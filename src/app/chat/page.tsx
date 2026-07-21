@@ -647,6 +647,18 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
+    const handleUpgradeClick = () => {
+        const pricingUrl = 'https://everfern.app/pricing';
+        if ((window as any).electronAPI?.system?.openExternal) {
+            (window as any).electronAPI.system.openExternal(pricingUrl);
+        } else if ((window as any).electronAPI?.shell?.openExternal) {
+            (window as any).electronAPI.shell.openExternal(pricingUrl);
+        } else {
+            window.open(pricingUrl, '_blank');
+        }
+        onUpgrade();
+    };
+
     return (
         <div style={{
             display: 'flex',
@@ -667,7 +679,7 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             </span>
             <button
                 type="button"
-                onClick={onUpgrade}
+                onClick={handleUpgradeClick}
                 style={{
                     backgroundColor: isDark ? '#ffffff' : '#111111',
                     color: isDark ? '#111111' : '#ffffff',
@@ -1435,7 +1447,7 @@ export default function ChatPage() {
     const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
     const [lastEventJson, setLastEventJson] = useState<string>("");
     const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; inputTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
@@ -2068,7 +2080,7 @@ export default function ChatPage() {
     // Update context tokens based on messages (fallback when no real usage data)
     useEffect(() => {
         if (messages.length === 0) {
-            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
+            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0, inputTokens: 0 });
             return;
         }
 
@@ -2105,7 +2117,7 @@ export default function ChatPage() {
         // Add overhead for message format (~10% overhead)
         const totalTokens = Math.ceil(totalChars * 1.1);
 
-        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens });
+        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens, inputTokens: totalTokens });
     }, [messages, inputValue]);
 
 
@@ -3109,7 +3121,8 @@ export default function ChatPage() {
                     max: 128000,
                     systemTokens: sysTokens,
                     chatTokens: chatHistTokens + completionTokens,
-                    outputTokens: outputTokens ?? undefined,
+                    inputTokens: promptTokens ?? (sysTokens + chatHistTokens),
+                    outputTokens: outputTokens ?? completionTokens ?? undefined,
                     toolSchemaTokens: toolSchemaTokens ?? undefined,
                     truncatedTools: truncatedTools ?? undefined,
                     schemaTokenSavings: schemaTokenSavings ?? undefined,
@@ -3766,7 +3779,8 @@ export default function ChatPage() {
                         max: 128000,
                         systemTokens: sysTokens,
                         chatTokens: chatHistTokens + completionTokens,
-                        outputTokens: outputTokens ?? undefined,
+                        inputTokens: promptTokens ?? (sysTokens + chatHistTokens),
+                        outputTokens: outputTokens ?? completionTokens ?? undefined,
                         toolSchemaTokens: toolSchemaTokens ?? undefined,
                         truncatedTools: truncatedTools ?? undefined,
                         schemaTokenSavings: schemaTokenSavings ?? undefined,
@@ -4785,6 +4799,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
                 systemTokens={contextTokens.systemTokens}
                 chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
+                inputTokens={contextTokens.inputTokens !== undefined ? contextTokens.inputTokens + currentTokens : undefined}
                 modelName={selectedModel || currentModel.id || currentModel.name}
                 outputTokens={contextTokens.outputTokens}
                 toolSchemaTokens={contextTokens.toolSchemaTokens}
