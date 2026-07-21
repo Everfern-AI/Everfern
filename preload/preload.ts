@@ -445,6 +445,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     create: (data: { name: string; instructions?: string; path: string, files?: string[] }) => ipcRenderer.invoke('projects:create', data),
     delete: (id: string) => ipcRenderer.invoke('projects:delete', id),
     getDefaultPath: () => ipcRenderer.invoke('projects:getDefaultPath'),
+    getEverfernPath: () => ipcRenderer.invoke('projects:getEverfernPath'),
     selectFolder: () => ipcRenderer.invoke('projects:selectFolder'),
     selectFiles: () => ipcRenderer.invoke('projects:selectFiles'),
     listFiles: (projectPath: string) => ipcRenderer.invoke('projects:listFiles', projectPath),
@@ -812,6 +813,7 @@ export type ElectronAPI = {
     create: (data: { name: string; instructions?: string; path: string, files?: string[] }) => Promise<{ success: boolean; project?: any; error?: string }>;
     delete: (id: string) => Promise<{ success: boolean; error?: string }>;
     getDefaultPath: () => Promise<string>;
+    getEverfernPath: () => Promise<string>;
     selectFolder: () => Promise<string | null>;
     selectFiles: () => Promise<string[]>;
     listFiles: (projectPath: string) => Promise<{ files: string[] }>;

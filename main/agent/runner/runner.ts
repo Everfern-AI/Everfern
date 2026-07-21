@@ -66,6 +66,7 @@ export class AgentRunner {
   public projectId?: string;
   public telemetry: TelemetryLogger;
   public navisOrchestrator?: NavisOrchestrator;
+  public reasoningEffort?: string;
 
   /** Session lock map to prevent concurrent execution on the same conversation */
   private static sessionLocks: Map<string, Promise<void>> = new Map();
@@ -702,7 +703,9 @@ export class AgentRunner {
     assistantMessageId?: string,
     isBackground?: boolean,
     operatorMode?: boolean,
+    reasoningEffort?: string,
   ): AsyncGenerator<StreamEvent, void, unknown> {
+    this.reasoningEffort = reasoningEffort;
     // Reset abort state for new execution
     globalAbortManager.reset();
 
@@ -1149,7 +1152,11 @@ export class AgentRunner {
               // RESUMING invocations already have history in GraphState
               this.telemetry.updateSpinner('Compiling system messages...');
               const preloadedPrompt = await getSlimSystemPromptAsync(platform, convId, [], this.skills, projectId);
-              const { messages: initialMessages } = await buildSystemMessages(history, userInput, platform, convId, [], systemPromptOverride || preloadedPrompt, projectId);
+              let promptText = systemPromptOverride || preloadedPrompt;
+              if (this.reasoningEffort === 'ultra-delegate') {
+                promptText += "\n\nCRITICAL SYSTEM INSTRUCTION: You are in ULTRA DELEGATION MODE. You must aggressively delegate sub-tasks to independent specialized sub-agents by calling the `spawn_agent` tool. Break down any complex task into components and spawn sub-agents for them immediately. Do not attempt to execute multi-file edits, complex searches, or large terminal sequences yourself; instead, spawn dedicated sub-agents to handle these tasks in parallel and coordinate their results.";
+              }
+              const { messages: initialMessages } = await buildSystemMessages(history, userInput, platform, convId, [], promptText, projectId);
 
               // Reconstruction logic
               const chatHistoryStore = new ChatHistoryStore();

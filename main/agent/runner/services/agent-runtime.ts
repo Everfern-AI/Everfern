@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { getActiveFilesFromHistory, getWorkspaceProjection } from '../workspace-projection';
 import { SystemMessage, AIMessage } from '@langchain/core/messages';
 import { AIClient, ChatMessage, ChatRequest, ToolDefinition } from '../../../lib/ai-client';
@@ -450,9 +451,8 @@ export async function runAgentStep(
 
     // Inject recent findings from findings.md for agent consumption across all specialized agent steps
     try {
-      const workspaceRoot = runner.workspaceDir;
-      const findingsPath = workspaceRoot ? path.join(workspaceRoot, 'findings.md') : null;
-      if (findingsPath && fs.existsSync(findingsPath)) {
+      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
+      if (fs.existsSync(findingsPath)) {
         const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
         if (findingsContent && findingsContent.length > 0) {
           let systemMsg = normalizedMessages.find(m => m.role === 'system');

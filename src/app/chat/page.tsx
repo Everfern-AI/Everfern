@@ -647,21 +647,29 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
+    const handleUpgradeClick = () => {
+        const pricingUrl = 'https://everfern.app/pricing';
+        if ((window as any).electronAPI?.system?.openExternal) {
+            (window as any).electronAPI.system.openExternal(pricingUrl);
+        } else if ((window as any).electronAPI?.shell?.openExternal) {
+            (window as any).electronAPI.shell.openExternal(pricingUrl);
+        } else {
+            window.open(pricingUrl, '_blank');
+        }
+        onUpgrade();
+    };
+
     return (
         <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 18px',
-            borderRadius: 16,
-            border: '1px solid var(--color-border)',
+            padding: '10px 16px',
             width: '100%',
             boxSizing: 'border-box',
-            backgroundColor: isDark ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
-            marginBottom: 12,
         }}>
             <span style={{
-                fontSize: 14,
+                fontSize: 13.5,
                 fontWeight: 400,
                 color: isDark ? '#e3e1d9' : '#4a4846',
                 fontFamily: 'var(--font-sans)',
@@ -671,13 +679,13 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             </span>
             <button
                 type="button"
-                onClick={onUpgrade}
+                onClick={handleUpgradeClick}
                 style={{
                     backgroundColor: isDark ? '#ffffff' : '#111111',
                     color: isDark ? '#111111' : '#ffffff',
-                    padding: '7px 18px',
+                    padding: '5px 14px',
                     borderRadius: 8,
-                    fontSize: 13.5,
+                    fontSize: 13,
                     fontWeight: 600,
                     border: 'none',
                     cursor: 'pointer',
@@ -690,6 +698,41 @@ function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
             >
                 Upgrade
             </button>
+        </div>
+    );
+}
+
+function PromptWrapper({
+    isCloudUsageOver,
+    onUpgrade,
+    children,
+}: {
+    isCloudUsageOver: boolean;
+    onUpgrade: () => void;
+    children: React.ReactNode;
+}) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    if (!isCloudUsageOver) {
+        return <>{children}</>;
+    }
+
+    return (
+        <div style={{
+            width: "100%",
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 20,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+        }}>
+            <EverFernCloudUsageBanner onUpgrade={onUpgrade} />
+            <div style={{ width: "100%" }}>
+                {children}
+            </div>
         </div>
     );
 }
@@ -1404,7 +1447,7 @@ export default function ChatPage() {
     const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
     const [lastEventJson, setLastEventJson] = useState<string>("");
     const [lastEventType, setLastEventType] = useState<string>("");
-    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
+    const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; inputTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
     const missionTimelineRef = useRef<MissionTimelineType | null>(null);
@@ -2037,7 +2080,7 @@ export default function ChatPage() {
     // Update context tokens based on messages (fallback when no real usage data)
     useEffect(() => {
         if (messages.length === 0) {
-            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
+            setContextTokens({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0, inputTokens: 0 });
             return;
         }
 
@@ -2074,7 +2117,7 @@ export default function ChatPage() {
         // Add overhead for message format (~10% overhead)
         const totalTokens = Math.ceil(totalChars * 1.1);
 
-        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens });
+        setContextTokens({ used: totalTokens, max: 128000, systemTokens: 0, chatTokens: totalTokens, inputTokens: totalTokens });
     }, [messages, inputValue]);
 
 
@@ -3078,7 +3121,8 @@ export default function ChatPage() {
                     max: 128000,
                     systemTokens: sysTokens,
                     chatTokens: chatHistTokens + completionTokens,
-                    outputTokens: outputTokens ?? undefined,
+                    inputTokens: promptTokens ?? (sysTokens + chatHistTokens),
+                    outputTokens: outputTokens ?? completionTokens ?? undefined,
                     toolSchemaTokens: toolSchemaTokens ?? undefined,
                     truncatedTools: truncatedTools ?? undefined,
                     schemaTokenSavings: schemaTokenSavings ?? undefined,
@@ -3735,7 +3779,8 @@ export default function ChatPage() {
                         max: 128000,
                         systemTokens: sysTokens,
                         chatTokens: chatHistTokens + completionTokens,
-                        outputTokens: outputTokens ?? undefined,
+                        inputTokens: promptTokens ?? (sysTokens + chatHistTokens),
+                        outputTokens: outputTokens ?? completionTokens ?? undefined,
                         toolSchemaTokens: toolSchemaTokens ?? undefined,
                         truncatedTools: truncatedTools ?? undefined,
                         schemaTokenSavings: schemaTokenSavings ?? undefined,
@@ -4754,6 +4799,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
                 systemTokens={contextTokens.systemTokens}
                 chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
+                inputTokens={contextTokens.inputTokens !== undefined ? contextTokens.inputTokens + currentTokens : undefined}
                 modelName={selectedModel || currentModel.id || currentModel.name}
                 outputTokens={contextTokens.outputTokens}
                 toolSchemaTokens={contextTokens.toolSchemaTokens}
@@ -5879,7 +5925,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         />
                                                     )}
 
-                                                    {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
+                                                    <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
                                                     {/* Progressive input container */}
                                                     <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
                                                         {renderSubagentSpawnAttachment()}
@@ -5921,6 +5967,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             {renderComposerRightActions(false)}
                                                         </div>
                                                     </div>
+                                                    </PromptWrapper>
                                                     {renderShortcutsLegend()}
 
                                                     {/* Quick prompt chips — hidden when a project is selected */}
@@ -6542,8 +6589,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     />
                                                 </div>
                                             )}
+                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
                                             <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
-                                                {isCloudUsageOver && <EverFernCloudUsageBanner onUpgrade={() => setShowSettings(true)} />}
                                                 {/* Memory Preference Banner */}
                                                 {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                     <motion.div
@@ -6669,7 +6716,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     {renderComposerLeftActions()}
                                                     {renderComposerRightActions(true)}
                                                 </div>
-                                            </div>
+                                             </div>
+                                             </PromptWrapper>
                                             {renderShortcutsLegend()}
                                             <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
                                                 Everfern is an agentic AI and can make mistakes. Please double-check responses.

@@ -88,47 +88,54 @@ export class VoiceOverlayManager {
           const { width, height } = primaryDisplay.workAreaSize;
 
           if (stateStr === 'clarification' || (typeof payload === 'object' && payload?.type === 'clarification')) {
-            const overlayHeight = 340;
+            const overlayHeight = 440; // Increased from 340 to prevent clipping
+            const overlayWidth = 680;  // Increased from 600 to prevent shadow clipping
             this.overlayWindow.setBounds({
-              width: 600,
+              width: overlayWidth,
               height: overlayHeight,
-              x: Math.floor(width / 2 - 300),
+              x: Math.floor(width / 2 - Math.floor(overlayWidth / 2)),
               y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(false);
           } else if (stateStr === 'completed' || (typeof payload === 'object' && payload?.state === 'completed')) {
             const hasFollowUps = typeof payload === 'object' && payload?.followUps && payload.followUps.length > 0;
-            const overlayHeight = hasFollowUps ? 420 : 340;
+            const overlayHeight = hasFollowUps ? 520 : 440; // Increased from 420 / 340 to prevent clipping
+            const overlayWidth = 840;  // Increased from 800 to prevent shadow clipping
             this.overlayWindow.setBounds({
-              width: 800,
+              width: overlayWidth,
               height: overlayHeight,
-              x: Math.floor(width / 2 - 400),
+              x: Math.floor(width / 2 - Math.floor(overlayWidth / 2)),
               y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(false);
           } else if (stateStr === 'history' || (typeof payload === 'object' && payload?.state === 'history')) {
-            const overlayHeight = 360;
+            const overlayHeight = 460; // Increased from 360 to prevent clipping
+            const overlayWidth = 680;  // Increased from 600 to prevent shadow clipping
             this.overlayWindow.setBounds({
-              width: 600,
+              width: overlayWidth,
               height: overlayHeight,
-              x: Math.floor(width / 2 - 300),
+              x: Math.floor(width / 2 - Math.floor(overlayWidth / 2)),
               y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(false);
           } else if (stateStr === 'error' || (typeof payload === 'object' && payload?.state === 'error')) {
+            const overlayHeight = 160; // Increased from 80 to prevent clipping
+            const overlayWidth = 560;  // Increased from 500 to prevent shadow clipping
             this.overlayWindow.setBounds({
-              width: 500,
-              height: 80,
-              x: Math.floor(width / 2 - 250),
-              y: height - 100
+              width: overlayWidth,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - Math.floor(overlayWidth / 2)),
+              y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(true);
           } else {
+            const overlayHeight = 160; // Increased from 120 to prevent clipping
+            const overlayWidth = 660;  // Increased from 600 to prevent shadow clipping
             this.overlayWindow.setBounds({
-              width: 600,
-              height: 120,
-              x: Math.floor(width / 2 - 300),
-              y: height - 140
+              width: overlayWidth,
+              height: overlayHeight,
+              x: Math.floor(width / 2 - Math.floor(overlayWidth / 2)),
+              y: height - overlayHeight - 20
             });
             this.overlayWindow.setIgnoreMouseEvents(true);
           }
@@ -158,11 +165,13 @@ export class VoiceOverlayManager {
       
       console.log(`[VoiceOverlay] Screen size: ${width}x${height}`);
 
+      const initialWidth = 660;
+      const initialHeight = 160;
       this.overlayWindow = new BrowserWindow({
-        width: 600,
-        height: 120,
-        x: Math.floor(width / 2 - 300),
-        y: height - 140, // Above taskbar
+        width: initialWidth,
+        height: initialHeight,
+        x: Math.floor(width / 2 - Math.floor(initialWidth / 2)),
+        y: height - initialHeight - 20, // Above taskbar
         transparent: true,
         frame: false,
         alwaysOnTop: true,

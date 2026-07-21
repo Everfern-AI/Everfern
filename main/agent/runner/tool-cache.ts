@@ -22,7 +22,8 @@ export class ToolCache {
     'run_command',
     'terminal_execute',
     'spawn_agent',
-    'browser_subagent'
+    'browser_subagent',
+    'navis'
   ]);
 
   private getCacheKey(toolName: string, args: any): string {

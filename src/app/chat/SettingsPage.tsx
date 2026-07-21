@@ -999,8 +999,10 @@ export default function SettingsPage({
                     inputTokensUsed: data.inputTokensUsed ?? 0,
                     inputTokenLimit: data.inputTokenLimit ?? 0,
                     outputTokensUsed: data.outputTokensUsed ?? 0,
-                    outputTokenLimit: data.outputTokenLimit ?? 0,
+                    outputTokenLimit: data.outputTokenLimit ?? data.tierDailyTokenLimit ?? 10000,
                     dailyCostUsd: data.dailyCostUsd ?? 0,
+                    plan: (data.plan || data.tier || "free").toLowerCase(),
+                    tier: (data.tier || data.plan || "free").toLowerCase(),
                 });
             } catch (e) {
                 console.error('Failed to fetch cloud data', e);
@@ -1283,31 +1285,77 @@ export default function SettingsPage({
 
                 {isCloudUser ? (
                     <div style={{ marginTop: 24, padding: 20, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                             <div>
-                                <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>EverFern Cloud Session</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>EverFern Cloud Session</h3>
+                                    <span style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        padding: '2px 8px',
+                                        borderRadius: 6,
+                                        backgroundColor: cloudUsage?.plan === 'max' ? 'rgba(168, 85, 247, 0.15)' : cloudUsage?.plan === 'pro' ? 'rgba(16, 185, 129, 0.15)' : 'var(--color-bg-surface)',
+                                        color: cloudUsage?.plan === 'max' ? '#a855f7' : cloudUsage?.plan === 'pro' ? '#10b981' : 'var(--color-text-tertiary)',
+                                        border: cloudUsage?.plan === 'max' ? '1px solid rgba(168, 85, 247, 0.3)' : cloudUsage?.plan === 'pro' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--color-border)'
+                                    }}>
+                                        {cloudUsage?.plan ? `${cloudUsage.plan} TIER` : 'FREE TIER'}
+                                    </span>
+                                </div>
                                 <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Logged in as {cloudEmail}</p>
                             </div>
-                            <button
-                                onClick={handleSignOut}
-                                style={{ padding: '8px 16px', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
-                            >
-                                Sign Out
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                    onClick={() => {
+                                        const targetUrl = cloudUsage?.plan && cloudUsage.plan !== 'free'
+                                            ? 'https://everfern.app/customer-portal'
+                                            : 'https://everfern.app/pricing';
+                                        if ((window as any).electronAPI?.system?.openExternal) {
+                                            (window as any).electronAPI.system.openExternal(targetUrl);
+                                        } else if ((window as any).electronAPI?.shell?.openExternal) {
+                                            (window as any).electronAPI.shell.openExternal(targetUrl);
+                                        } else {
+                                            window.open(targetUrl, '_blank');
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '8px 16px',
+                                        backgroundColor: '#10b981',
+                                        color: '#000000',
+                                        borderRadius: 10,
+                                        fontWeight: 700,
+                                        fontSize: 13,
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                >
+                                    {cloudUsage?.plan && cloudUsage.plan !== 'free' ? 'Manage Subscription' : 'Upgrade ($5/mo)'}
+                                </button>
+                                <button
+                                    onClick={handleSignOut}
+                                    style={{ padding: '8px 16px', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
+                                >
+                                    Sign Out
+                                </button>
+                            </div>
                         </div>
                         {cloudUsage && (
                             <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--color-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Daily usage</span>
-                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{cloudUsage.dailyUsed} / {cloudUsage.dailyLimit} credits</span>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Daily usage ({(cloudUsage.plan || 'free').toUpperCase()} Tier)</span>
+                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{cloudUsage.outputTokensUsed.toLocaleString()} / {cloudUsage.outputTokenLimit.toLocaleString()} output tokens</span>
                                 </div>
                                 <div style={{ width: '100%', height: 6, backgroundColor: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
                                     <div style={{
-                                        width: `${cloudUsage.dailyLimit ? Math.min(100, (cloudUsage.dailyUsed / cloudUsage.dailyLimit) * 100) : 0}%`,
+                                        width: `${cloudUsage.outputTokenLimit ? Math.min(100, (cloudUsage.outputTokensUsed / cloudUsage.outputTokenLimit) * 100) : 0}%`,
                                         height: '100%',
-                                        backgroundColor: (cloudUsage.dailyLimit && cloudUsage.dailyUsed / cloudUsage.dailyLimit >= 1) ? '#ef4444' : '#10b981',
+                                        backgroundColor: (cloudUsage.outputTokenLimit && cloudUsage.outputTokensUsed >= cloudUsage.outputTokenLimit) ? '#ef4444' : '#10b981',
                                         borderRadius: 3,
                                         transition: 'width 0.3s ease'
                                     }} />

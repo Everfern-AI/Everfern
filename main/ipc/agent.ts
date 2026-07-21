@@ -367,7 +367,8 @@ export function registerAgentHandlers() {
     providerType?: string,
     apiKey?: string,
     assistantMessageId?: string,
-    operatorMode?: boolean
+    operatorMode?: boolean,
+    reasoningEffort?: string
   }) => {
     (globalThis as any).lastChatMessages = request.messages;
     const streamSender = event.sender;
@@ -588,7 +589,7 @@ export function registerAgentHandlers() {
       // ── End draft setup ──────────────────────────────────────────────────
 
       let fullResponse = '';
-      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode)) {
+      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
         (globalThis as any).lastStreamEvent = streamEvent;
         if (globalAbortManager.streamAborted) {
           flushBuffers();

@@ -116,6 +116,9 @@ const ALWAYS_INCLUDE = new Set<string>([
   'web_search',
   // Vision
   'analyze_image',
+  // Subagent
+  'spawn_agent',
+  'spawn_swarm',
 ]);
 
 function scoreTaskText(text: string, signals: string[]): number {
