@@ -905,6 +905,8 @@ export default function SettingsPage({
         outputTokensUsed: number;
         outputTokenLimit: number;
         dailyCostUsd: number;
+        plan?: string;
+        tier?: string;
     } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
