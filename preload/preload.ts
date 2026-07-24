@@ -197,61 +197,92 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRollbackChanges: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-changes', conversationId, timestamp),
     getRollbackPreview: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-preview', conversationId, timestamp),
     getSnapshotContent: (snapshotId: string) => ipcRenderer.invoke('agent:get-snapshot-content', snapshotId),
+    getInterruptedState: (conversationId: string) => ipcRenderer.invoke('acp:get-interrupted-state', conversationId),
 
     onStreamChunk: (cb: (chunk: { delta: string; done: boolean }) => void) => {
-      ipcRenderer.on('acp:stream-chunk', (_e, chunk) => cb(chunk));
+      const handler = (_e: any, chunk: any) => cb(chunk);
+      ipcRenderer.on('acp:stream-chunk', handler);
+      return () => { ipcRenderer.removeListener('acp:stream-chunk', handler); };
     },
     onThought: (cb: (data: { content: string }) => void) => {
-      ipcRenderer.on('acp:thought', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:thought', handler);
+      return () => { ipcRenderer.removeListener('acp:thought', handler); };
     },
     onModelCallInfo: (cb: (data: { model: string; toolsCount: number }) => void) => {
-      ipcRenderer.on('acp:model-call-info', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:model-call-info', handler);
+      return () => { ipcRenderer.removeListener('acp:model-call-info', handler); };
     },
     onToolStart: (cb: (record: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string }) => void) => {
-      ipcRenderer.on('acp:tool-start', (_e, record) => {
+      const handler = (_e: any, record: any) => {
         if (record.toolName === 'ask_user_question') {
           console.log('[Preload] Received ask_user_question tool-start:', JSON.stringify(record, null, 2));
         }
         cb(record);
-      });
+      };
+      ipcRenderer.on('acp:tool-start', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-start', handler); };
     },
     onToolCall: (cb: (record: any) => void) => {
-      ipcRenderer.on('acp:tool-call', (_e, record) => {
+      const handler = (_e: any, record: any) => {
         if (record.toolName === 'ask_user_question') {
           console.log('[Preload] Received ask_user_question tool-call:', JSON.stringify(record, null, 2));
         }
         cb(record);
-      });
+      };
+      ipcRenderer.on('acp:tool-call', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-call', handler); };
     },
     onToolUpdate: (cb: (data: { toolName: string; toolCallId?: string; update: string }) => void) => {
-      ipcRenderer.on('acp:tool-update', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:tool-update', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-update', handler); };
     },
     onOptima: (cb: (data: { event: string; details: string }) => void) => {
-      ipcRenderer.on('acp:optima', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:optima', handler);
+      return () => { ipcRenderer.removeListener('acp:optima', handler); };
     },
     onShowArtifact: (cb: (data: { name: string }) => void) => {
-      ipcRenderer.on('acp:show-artifact', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:show-artifact', handler);
+      return () => { ipcRenderer.removeListener('acp:show-artifact', handler); };
     },
     onShowPlan: (cb: (data: { chatId: string; content: string }) => void) => {
-      ipcRenderer.on('acp:show-plan', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:show-plan', handler);
+      return () => { ipcRenderer.removeListener('acp:show-plan', handler); };
     },
     onViewSkill: (cb: (data: { name: string }) => void) => {
-      ipcRenderer.on('acp:view-skill', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:view-skill', handler);
+      return () => { ipcRenderer.removeListener('acp:view-skill', handler); };
     },
     onSkillDetected: (cb: (data: { skillName: string; skillDescription: string; reason: string }) => void) => {
-      ipcRenderer.on('acp:skill-detected', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:skill-detected', handler);
+      return () => { ipcRenderer.removeListener('acp:skill-detected', handler); };
     },
     onSurfaceAction: (cb: (data: any) => void) => {
-      ipcRenderer.on('acp:surface-action', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:surface-action', handler);
+      return () => { ipcRenderer.removeListener('acp:surface-action', handler); };
     },
     onProtocolLink: (cb: (url: string) => void) => {
-      ipcRenderer.on('acp:protocol-link', (_e, url) => cb(url));
+      const handler = (_e: any, url: any) => cb(url);
+      ipcRenderer.on('acp:protocol-link', handler);
+      return () => { ipcRenderer.removeListener('acp:protocol-link', handler); };
     },
     onUsage: (cb: (data: { promptTokens: number; completionTokens: number; totalTokens: number; systemPromptTokens?: number }) => void) => {
-      ipcRenderer.on('acp:usage', (_e, data) => cb(data));
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:usage', handler);
+      return () => { ipcRenderer.removeListener('acp:usage', handler); };
     },
     onAgentPermissionRequest: (cb: () => void) => {
-      ipcRenderer.on('agent:permission-request', () => cb());
+      const handler = () => cb();
+      ipcRenderer.on('agent:permission-request', handler);
+      return () => { ipcRenderer.removeListener('agent:permission-request', handler); };
     },
     agentPermissionResponse: (granted: boolean) => ipcRenderer.invoke('agent:permission-response', granted),
     getPermissionSoundUrl: () => '/sounds/permission.mp3',
@@ -564,6 +595,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openclaw: {
     getConfigs: (workspaceRoot?: string) => ipcRenderer.invoke('openclaw:get-configs', workspaceRoot),
     saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => ipcRenderer.invoke('openclaw:save-configs', configs),
+  },
+
+  toolApprovals: {
+    getPolicies: () => ipcRenderer.invoke('tool-approvals:get-all'),
+    addPolicy: (policy: { type: 'exact' | 'prefix'; toolName: string; pattern: string }) => ipcRenderer.invoke('tool-approvals:add', policy),
+    updatePolicy: (id: string, updates: { type?: 'exact' | 'prefix'; toolName?: string; pattern?: string }) => ipcRenderer.invoke('tool-approvals:update', { id, updates }),
+    deletePolicy: (id: string) => ipcRenderer.invoke('tool-approvals:delete', id),
+    clearAll: () => ipcRenderer.invoke('tool-approvals:clear-all'),
   },
 
   // ── Analytics ──────────────────────────────────────────────────────
@@ -925,6 +964,13 @@ export type ElectronAPI = {
   openclaw: {
     getConfigs: (workspaceRoot?: string) => Promise<{ soul: string; agents: string }>;
     saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => Promise<{ success: boolean; error?: string }>;
+  };
+  toolApprovals: {
+    getPolicies: () => Promise<Array<{ id: string; type: 'exact' | 'prefix'; toolName: string; pattern: string; createdAt: string }>>;
+    addPolicy: (policy: { type: 'exact' | 'prefix'; toolName: string; pattern: string }) => Promise<any>;
+    updatePolicy: (id: string, updates: { type?: 'exact' | 'prefix'; toolName?: string; pattern?: string }) => Promise<any>;
+    deletePolicy: (id: string) => Promise<{ success: boolean }>;
+    clearAll: () => Promise<{ success: boolean }>;
   };
   analytics: {
     getSummary: () => Promise<{ success: boolean; data?: any; error?: string }>;

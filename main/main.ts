@@ -78,6 +78,7 @@ import { ensureWSLSetup, ensureDockerContainer } from './agent/tools/linux-vm-ex
 import { shutdownMCPTools } from './agent/tools/mcp';
 import { backgroundProcessor } from './agent/learning/background-processor';
 import { initializeUpdater } from './updater';
+import { toolApprovalStore } from './store/tool-approvals';
 
 // ── GPU / Cache Startup Fixes (must run before app.whenReady) ───────────────
 // Disable GPU shader disk cache — prevents "Access is denied (0x5)" on Windows
@@ -829,11 +830,14 @@ Your goal is to be the ultimate workplace companion.
     app.setAsDefaultProtocolClient('everfern-app');
   }
 
-  // Register Ctrl+Shift+P global shortcut for Debug Window
+  // Register Ctrl+Shift+P global shortcut for Debug Window & Command Palette
   try {
     const success = globalShortcut.register('CommandOrControl+Shift+P', () => {
-      console.log('[Shortcut] Ctrl+Shift+P triggered, toggling Debug Window...');
+      console.log('[Shortcut] Ctrl+Shift+P triggered — toggling Debug Window & Command Palette...');
       toggleDebugWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('shortcut:command-palette');
+      }
     });
     if (!success) {
       console.error('[Shortcut] ❌ Failed to register Ctrl+Shift+P shortcut');
@@ -1503,6 +1507,30 @@ ipcMain.handle('skills:delete-custom', async (_event, name: string) => {
 
 ipcMain.handle('skills:get-custom-path', async () => {
   return getCustomSkillsPath();
+});
+
+// ── Tool Approvals / Permissions IPC Handlers ─────────────────────────────────────
+
+ipcMain.handle('tool-approvals:get-all', async () => {
+  return toolApprovalStore.getPolicies();
+});
+
+ipcMain.handle('tool-approvals:add', async (_event, policy: { type: 'exact' | 'prefix'; toolName: string; pattern: string }) => {
+  return toolApprovalStore.addPolicy(policy);
+});
+
+ipcMain.handle('tool-approvals:update', async (_event, { id, updates }: { id: string; updates: any }) => {
+  return toolApprovalStore.updatePolicy(id, updates);
+});
+
+ipcMain.handle('tool-approvals:delete', async (_event, id: string) => {
+  toolApprovalStore.deletePolicy(id);
+  return { success: true };
+});
+
+ipcMain.handle('tool-approvals:clear-all', async () => {
+  toolApprovalStore.clearAllPolicies();
+  return { success: true };
 });
 
 // ── IPC: Integration Management ─────────────────────────────────────────────

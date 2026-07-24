@@ -556,11 +556,33 @@ ${projection.activeDependencies}
       limitedMessages = prunedMessages;
     }
 
+    // Enrich tool definitions so every tool schema includes the _narrative parameter
+    const enrichedToolDefs = toolDefs?.map(t => {
+      if (!t || !t.parameters || typeof t.parameters !== 'object') return t;
+      const props = (t.parameters.properties as Record<string, any>) || {};
+      if (props._narrative || props.narrative) return t;
+
+      return {
+        ...t,
+        parameters: {
+          ...t.parameters,
+          properties: {
+            _narrative: {
+              type: 'string',
+              description: 'A single, clear sentence explaining what you are doing in this tool action (e.g., "Checking package.json for installed dependencies")'
+            },
+            ...props
+          }
+        }
+      };
+    });
+
     const startedToolCallIndices = new Set<number>();
 
     const request: ChatRequest = {
       messages: limitedMessages,
-      tools: toolDefs,
+      tools: enrichedToolDefs || toolDefs,
+      agent: nodeName,
       onToolCallChunk: (index: number, toolName: string, argumentsDelta: string) => {
         try {
           if (!startedToolCallIndices.has(index)) {
@@ -654,38 +676,43 @@ ${projection.activeDependencies}
 
     let response = await client.chat(request);
 
-    // 5. Tool Call Nudge (Specialized Agents)
-    // If a specialized agent (like computer_use) fails to call a tool, nudge it once.
+    // 5. Canned Refusal Interception & Natural Text Response Completion
+    // If model emits a canned LLM refusal about web browsing, override it once.
+    // If a specialized agent outputs plain text without tool calls, treat it as a valid completion response.
+    const responseText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
+    const isCannedRefusal = /cannot.*(open.*website|browse.*web|access.*external|interact.*external|language\s+model|have\s+access\s+to\s+a\s+web\s+browser)/i.test(responseText);
     const isSpecializedAgent = ['computer_use_agent', 'coding_specialist', 'data_analyst', 'web_explorer'].includes(nodeName);
-    if (isSpecializedAgent && (!response.toolCalls || response.toolCalls.length === 0) && verifyIntentRetries === 0) {
+
+    if (isCannedRefusal && verifyIntentRetries === 0) {
         verifyIntentRetries++;
-        runner.telemetry.warn(`[AgentRuntime] ${nodeName} failed to call a tool. Nudging...`);
+        runner.telemetry.warn(`[AgentRuntime] ${nodeName} emitted canned web access refusal. Overriding...`);
 
         const agentToolHint =
           nodeName === 'web_explorer' ? `'web_search' or 'navis'` :
-          nodeName === 'coding_specialist' ? `your PI coding tools (read, write, edit, grep, find, ls, executePwsh, spawn_agent when coordinating independent coding lanes)` :
-          nodeName === 'data_analyst' ? `your data analysis tools (python_executor, read_file, etc.)` :
-          `'computer_use'`;
+          `'web_search' or 'navis' or 'computer_use'`;
 
         const nudgeMsg: ChatMessage = {
           role: 'system',
-          content: `SYSTEM REMINDER: You are the ${nodeName}. You are specifically designed to use your specialized tools. YOU HAVE ALL NECESSARY PERMISSIONS. Do not explain why you cannot do something. Use ${agentToolHint} NOW to execute the next step of the plan. First emit one short user-visible activity sentence about the immediate action, then output the tool call. Do not reveal hidden reasoning, raw JSON, or tool call IDs.`
+          content: `SYSTEM OVERRIDE: You are an autonomous desktop AI equipped with native web research tools ('web_search', 'navis'). YOU CAN ACCESS WEBSITES AND SEARCH THE WEB. NEVER claim you are a language model without web access. Use ${agentToolHint} NOW to execute the request.`
         };
 
         const nudgeMessages = [...limitedMessages, nudgeMsg];
         response = await client.chat({ ...request, messages: nudgeMessages });
+    }
 
-        // Graceful fallback: if web_explorer nudge retry also produced no tool calls, signal completion to break the loop
-        if (isSpecializedAgent && nodeName === 'web_explorer' && (!response.toolCalls || response.toolCalls.length === 0)) {
-          runner.telemetry.warn(`[AgentRuntime] web_explorer nudge retry also produced no tool calls. Signaling completion to break loop.`);
-          return {
-            messages: [],
-            pendingToolCalls: [],
-            webExplorerComplete: true,
-            finalResponse: 'Web research could not be completed — the agent did not produce a tool call after retry.',
-            iterations: iterations + 1,
-          };
-        }
+    // Natural Completion: When a specialized agent produces text without tool calls, signal completion cleanly
+    if (isSpecializedAgent && (!response.toolCalls || response.toolCalls.length === 0)) {
+      runner.telemetry.info(`[AgentRuntime] ${nodeName} produced text output without tool calls — completing step naturally.`);
+      return {
+        messages: responseText ? [new AIMessage(responseText)] : [],
+        pendingToolCalls: [],
+        codingComplete: nodeName === 'coding_specialist' ? true : undefined,
+        dataAnalysisComplete: nodeName === 'data_analyst' ? true : undefined,
+        webExplorerComplete: nodeName === 'web_explorer' ? true : undefined,
+        computerUseComplete: nodeName === 'computer_use_agent' ? true : undefined,
+        finalResponse: responseText || `${nodeName} step completed.`,
+        iterations: iterations + 1,
+      };
     }
 
     // Flush any remaining content in thoughtBuffer after streaming completes

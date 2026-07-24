@@ -267,7 +267,7 @@ export function registerAgentHandlers() {
   // NOTE: Must use ipcMain.on (not ipcMain.handle) here because the renderer preload
   // uses ipcRenderer.send (one-way fire-and-forget), not ipcRenderer.invoke.
   // ipcMain.handle only receives messages from ipcRenderer.invoke.
-  ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+  ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => {
     console.log('[local-execution-response] Received IPC response:', JSON.stringify(response));
     if (!response?.requestId) {
       console.warn('[local-execution-response] Missing requestId');
@@ -291,7 +291,7 @@ export function registerAgentHandlers() {
       handledLocalExecutionResponses.add(response.requestId);
       setTimeout(() => handledLocalExecutionResponses.delete(response.requestId), 10 * 60 * 1000);
       resolvers.delete(response.requestId);
-      resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow });
+      resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow, allowPrefix: response.allowPrefix ?? false });
     } else {
       console.warn('[local-execution-response] ❌ No resolver found for requestId:', response?.requestId);
     }
@@ -318,6 +318,26 @@ export function registerAgentHandlers() {
     const info = registry.listCommands().find((c: any) => c.id === id);
     if (!info) return { success: false, error: 'Command not found' };
     return { success: true, status: info.status, output: info.output, exitCode: info.exitCode, cwd: info.cwd };
+  });
+
+  ipcMain.handle('acp:get-interrupted-state', async (_event, conversationId: string) => {
+    if (!conversationId) return { interrupted: false };
+    try {
+      const { stateManager } = require('../agent/runner/state-manager');
+      const isInterrupted = stateManager.isInterrupted(conversationId);
+      const interruptData = stateManager.getInterruptData(conversationId);
+
+      if (isInterrupted && interruptData) {
+        console.log(`[acp:get-interrupted-state] Found interrupted state for conversation ${conversationId}:`, JSON.stringify(interruptData, null, 2));
+        return {
+          interrupted: true,
+          interruptData,
+        };
+      }
+    } catch (err: any) {
+      console.warn('[acp:get-interrupted-state] Failed to query interrupted state:', err);
+    }
+    return { interrupted: false };
   });
 
   // ACP Chat Handler (Non-streaming)
@@ -617,18 +637,52 @@ export function registerAgentHandlers() {
           thoughtBuffer += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
         } else if (streamEvent.type === 'tool_start') {
+          const rawThought = thoughtBuffer;
+          const explicitNarrative = (streamEvent.toolArgs as any)?._narrative ||
+                                    (streamEvent.toolArgs as any)?.narrative ||
+                                    (streamEvent.toolArgs as any)?.thought ||
+                                    (streamEvent.toolArgs as any)?.reason;
+          const cleanThought = rawThought
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/```[\s\S]*?```/gi, '')
+            .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System)\][^\n]*/gim, '')
+            .trim();
+          const aiNarrative = explicitNarrative || (cleanThought ? cleanThought.split('\n').filter(Boolean).pop()?.slice(0, 120) : undefined);
+          const toolArgs = {
+            ...(streamEvent.toolArgs || {}),
+            ...(aiNarrative ? { _narrative: aiNarrative } : {})
+          };
+
           safeSend('acp:tool-start', { 
             toolName: streamEvent.toolName, 
-            toolArgs: streamEvent.toolArgs,
-            toolCallId: (streamEvent as any).toolCallId
+            toolArgs,
+            toolCallId: (streamEvent as any).toolCallId,
+            narrative: aiNarrative
           });
         } else if (streamEvent.type === 'tool_call') {
-          safeSend('acp:tool-call', streamEvent.toolCall);
+          const tcPayload = streamEvent.toolCall || {};
+          const explicitNarrative = tcPayload?._narrative || tcPayload?.narrative || tcPayload?.thought || tcPayload?.args?._narrative;
+          const cleanThought = thoughtBuffer
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/```[\s\S]*?```/gi, '')
+            .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System)\][^\n]*/gim, '')
+            .trim();
+          const aiNarrative = explicitNarrative || (cleanThought ? cleanThought.split('\n').filter(Boolean).pop()?.slice(0, 120) : undefined);
+          const enrichedToolCall = {
+            ...tcPayload,
+            ...(aiNarrative ? { _narrative: aiNarrative } : {}),
+            args: {
+              ...(tcPayload.args || tcPayload.toolArgs || {}),
+              ...(aiNarrative ? { _narrative: aiNarrative } : {})
+            }
+          };
+
+          safeSend('acp:tool-call', enrichedToolCall);
           // Track tool call in draft for persistence
           if (streamEvent.toolCall) {
             const tc = attachDraftProgress({
-              ...streamEvent.toolCall,
-              id: streamEvent.toolCall.id || streamEvent.toolCall.toolCallId || streamEvent.toolCall.tool_call_id,
+              ...enrichedToolCall,
+              id: enrichedToolCall.id || enrichedToolCall.toolCallId || enrichedToolCall.tool_call_id,
             });
             const existingIdx = draftToolCalls.findIndex(t => t.id === tc.id);
             if (existingIdx >= 0) {
@@ -745,7 +799,8 @@ export function registerAgentHandlers() {
             command: (streamEvent as any).command,
             shellType: (streamEvent as any).shellType,
             reason: (streamEvent as any).reason,
-            conversationId: (streamEvent as any).conversationId
+            conversationId: (streamEvent as any).conversationId,
+            isHitlApproval: (streamEvent as any).isHitlApproval,
           });
         } else if (streamEvent.type === 'debate_event' && (streamEvent as any).debateEvent) {
           const de = (streamEvent as any).debateEvent;

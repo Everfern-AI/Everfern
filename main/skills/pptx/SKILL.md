@@ -1,185 +1,138 @@
 ---
 name: pptx
-description: "Use this skill any time a .pptx file (PowerPoint presentation) is involved — as input, output, or both. This includes creating slide decks, reading or extracting text from a .pptx file, editing or modifying existing presentations, or combining slides. If a .pptx file needs to be opened, created, or touched, use this skill."
+description: "Use this skill any time a .pptx file (PowerPoint presentation) is involved — creating slide decks, reading or extracting text from a .pptx file, editing or modifying existing presentations, or combining slides."
 ---
 
-# PPTX Skill for EverFern
+# PPTX Presentation Generation & Editing (Claude & Kimi Style Pipeline)
 
-## ⚠️ Design-First Workflow (MANDATORY)
-
-**You MUST follow this exact sequence. Do not generate content first and style it after. Plan the visual system first.**
-
-### Phase 1 — Plan the Visual System (before writing any slide content)
-
-Choose and lock these **before** filling in slide text:
-
-1. **Typography** — Pick fonts from PptxGenJS-compatible list (Aptos, Calibri, Georgia, etc.). Use 1 heading + 1 body font. For custom fonts, write a Node.js script and run it in the Linux VM.
-
-2. **Color palette** (4-6 hex values: primary, secondary, accent, background, text, muted).
-
-3. **Visual metaphor / design direction** — One sentence describing the artistic treatment.
-
-4. **Slide master archetype** — Choose one that fits (startup/tech, luxury, data/analytics, playful/creative, executive/board, climate/science, anime/gaming, or invent your own).
-
-**Only then proceed to Phase 2.**
-
-### Phase 2 — Generate slide content within the locked visual system
-
-Now that fonts, colors, metaphor, and archetype are locked:
-
-- Use `pptx_generator` with `designMode: "adaptive"`
-- Pass the chosen `visualDirection`, `brand`, and `slides` with unique `intent` values
-- Every slide gets a `visualIdea` that respects the locked visual metaphor
-- Dense detail goes in `speakerNotes`, concise text on slides
-
-### Phase 3 — If the built-in tool can't achieve the design
-
-Write a standalone Node.js PptxGenJS script and run it in the Linux VM. The script owns the full visual system.
-
-## Design Philosophy
-
-**Freedom over templates.** The tool has many intent types (`hero`, `sectionBreak`, `bigNumber`, `timeline`, `map`, `diagram`, `quote`, `comparison`, `storyboard`, `gallery`, `dataCallout`, `splitNarrative`, `closing`) — use **whatever combination fits the story**, not a preset arc. A 3-slide deck might be `quote → dataCallout → closing`. A technical deep-dive might use `diagram` for every slide with different layouts. You are the designer; the intents are your palette, not your cage.
-
-**Design first, content second.** Lock the visual system before writing any slide text. But the visual system should serve the CONTENT, not the other way around. If the content demands an all-`diagram` deck, do it. If it demands six `splitNarrative` slides in a row because you're telling a linear story, that's fine. Rules like "no two consecutive same intents" are training wheels — override them when the story calls for it.
-
-**The content IS the design.** A slide that has nothing to say cannot be saved by styling. Let the substance drive the visual choices. If a slide needs a wall of data, use `dataCallout`. If it needs to show a process, use `timeline` or `diagram`. If it needs to persuade, use `comparison`. Don't pad slides with empty intents.
-
-**Available intent types:** hero, sectionBreak, bigNumber, timeline, map, diagram, quote, comparison, storyboard, gallery, dataCallout, splitNarrative, closing.
-
-## Adaptive Deck Standard
-
-When using the built-in `pptx_generator` tool, always use `designMode: "adaptive"`. Do not hand-build new decks with `python-pptx` unless the user specifically asks for low-level Python generation.
-
-Every deck should include:
-
-* `deckGoal`: what it should accomplish.
-* `audience`: who will see it.
-* `visualDirection`: a custom art direction.
-* `slides` with varied `intent` values that serve the story.
-* `visualIdea` and `speakerNotes` for most slides.
-* `brand` with `colors` and `font` when needed.
-
-## Expert Presentation Design Guidelines
-
-### 1. Typography & Readability
-- Hierarchy: Title 32–40pt, Section Header 24–28pt, Body 14–18pt, Captions 14pt.
-- Minimum 10pt absolute. Title at least 1.75× body size.
-- 1 heading + 1 body font per deck.
-
-### 2. Design Rules
-- Lock visual system before drafting content. No per-slide design decisions.
-- Color rules: Primary for titles/accents, secondary for support, accent for CTAs, muted for secondary text.
-- Whitespace: 0.5" margin minimum. Don't overcrowd.
-- Alignment: consistent baselines across slides of the same intent.
-
-### 3. Storytelling
-- Vary layouts. Don't repeat intent types unless the story demands it.
-- Search the web for data before designing.
-- Concise on-slide text, dense detail in `speakerNotes`.
-- Edit in place — refine instead of rebuilding.
-
-## Quick Reference
-
-| Task | Guide |
-|------|-------|
-| Read/analyze content | Python `python-pptx` |
-| Create from scratch | `pptx_generator` adaptive mode backed by PptxGenJS |
-| Low-level inspection/editing | Python `python-pptx` |
+You build presentations by **writing and executing code programmatically** (Node.js with `pptxgenjs` or Python with `python-pptx`), following Claude & Kimi's high-craft aesthetic code-execution pipeline.
 
 ---
 
-## Reading Content
+## 🚀 The Code-Execution Pipeline
 
-**Requirement:** `pip install python-pptx`
+### 1. Building a New Deck
+- **Write a Node.js script using `pptxgenjs`** (or a Python script using `python-pptx`).
+- Run the script via `run_command` (`node generate_deck.js` or `python generate_deck.py`) to generate a native `.pptx` file.
+- The script controls layout, typography, visual hierarchy, color palettes, container cards, category pill badges, and speaker notes.
 
-```python
-from pptx import Presentation
+### 2. Editing an Existing Deck or Working from a Template
+- **Unzip & XML Surgery or `python-pptx`**:
+  - Unzip `.pptx` (which is a ZIP archive of XML files under the hood), modify raw `ppt/slides/slideN.xml` or relationship files, and rezip back to `.pptx`.
+  - Or use Python (`python-pptx`) to read existing slides, modify text frames, update shapes, or adjust slide layouts.
 
-# Open presentation
-prs = Presentation(r"C:\path\to\presentation.pptx")
-print(f"Total Slides: {len(prs.slides)}")
+### 3. Reading / Extracting Content
+- Use `python-pptx` to extract slide text, titles, bullet structures, and speaker notes.
 
-# Extract text
-for i, slide in enumerate(prs.slides, 1):
-    print(f"\n--- Slide {i} ---")
-    for shape in slide.shapes:
-        if not shape.has_text_frame:
-            continue
-        for paragraph in shape.text_frame.paragraphs:
-            print(paragraph.text)
+---
+
+## 🎨 High-Aesthetic Design System (Claude & Kimi Style)
+
+### Phase 1: Lock the Visual System (BEFORE writing slide content)
+Select and lock these design tokens for the entire presentation:
+
+#### 1. Color Palettes (Curated 5-Color Systems)
+- **Claude Editorial (Warm Craft)**:
+  - Background: `FAF8F5` | Surface Cards: `FFFFFF` / `F2ECE1`
+  - Text: `1E1E1E` | Muted: `6B7280` | Accent: `D96B43` (Terracotta) / `2C3E35` (Deep Sage)
+- **Kimi Cyber Studio (Neon Dark)**:
+  - Background: `0D0F19` | Surface Cards: `131B2E` / `1E293B`
+  - Text: `F8FAFC` | Muted: `94A3B8` | Accent: `00F5A0` (Neon Mint) / `7B2CBF` (Electric Violet)
+- **Nordic Minimal (Clean Slate)**:
+  - Background: `F4F4F6` | Surface Cards: `FFFFFF` / `E4E4E7`
+  - Text: `0F172A` | Muted: `64748B` | Accent: `38BDF8` (Ice Blue) / `6366F1` (Indigo)
+- **Executive Strategy (Sleek Modern)**:
+  - Background: `F8FAFC` | Surface Cards: `FFFFFF` / `E2E8F0`
+  - Text: `0F172A` | Muted: `475569` | Accent: `2563EB` (Royal Blue) / `0D9488` (Teal)
+
+#### 2. Typography Rules
+- **Font Pairs**: 1 Heading Font + 1 Body Font (`Georgia` + `Calibri` for Editorial, `Aptos` + `Aptos` for Cyber/Modern, `Impact` + `Calibri` for Bold/Pop).
+- **Scale**: Title 32–40pt bold, Section Headers 22–26pt, Body 14–18pt, Captions/Badges 10–12pt.
+- **Hierarchy**: Main title must be at least 1.75× body font size.
+
+#### 3. Layout Best Practices
+- **Card-Based Containers**: Use container rectangles (`ROUNDED_RECTANGLE`) with subtle borders or background fill to group content (3-column feature grids, 2x2 cards, metric callout boxes).
+- **Category Pill Badges**: Place pill tags (e.g. `ROUNDED_RECTANGLE` with height ~0.35") above main headings for category tags or metadata.
+- **Hero Stats**: Use 42–60pt bold numbers for metrics with small uppercase labels below.
+- **Whitespace & Speaker Notes**: Keep margins at 0.5" minimum. Put dense supporting explanations into slide **speaker notes** (`slide.addNotes(...)`), keeping slide text concise and scannable.
+
+---
+
+## 💻 Sample Node.js `pptxgenjs` Blueprint Script
+
+```javascript
+const PptxGenJS = require('pptxgenjs');
+const pptx = new PptxGenJS();
+
+pptx.layout = 'LAYOUT_16x9';
+
+// 1. Locked Palette & Tokens (Claude Editorial)
+const COLORS = {
+  bg: 'FAF8F5',
+  card: 'FFFFFF',
+  cardAlt: 'F2ECE1',
+  text: '1E1E1E',
+  muted: '6B7280',
+  accent: 'D96B43',
+  accentDark: '2C3E35'
+};
+
+// 2. Slide 1: Hero Deck Title
+const slide1 = pptx.addSlide();
+slide1.background = { color: COLORS.bg };
+
+// Category Pill Badge
+slide1.addShape(pptx.shapes.ROUNDED_RECTANGLE, {
+  x: 0.8, y: 1.2, w: 1.8, h: 0.35,
+  fill: { color: COLORS.cardAlt },
+  line: { color: COLORS.cardAlt }
+});
+slide1.addText('PRODUCT ROADMAP', {
+  x: 0.8, y: 1.2, w: 1.8, h: 0.35,
+  fontSize: 10, bold: true, color: COLORS.accent, align: 'center', fontFace: 'Georgia'
+});
+
+// Title & Subtitle
+slide1.addText('Next-Gen AI Platform Strategy', {
+  x: 0.8, y: 1.8, w: 10.0, h: 1.2,
+  fontSize: 38, bold: true, color: COLORS.text, fontFace: 'Georgia'
+});
+slide1.addText('Delivering aesthetic, code-driven user experiences at scale', {
+  x: 0.8, y: 3.1, w: 9.0, h: 0.8,
+  fontSize: 16, color: COLORS.muted, fontFace: 'Calibri'
+});
+
+// 3 Metric Cards Grid
+const metrics = [
+  { val: '10x', label: 'Faster Generation' },
+  { val: '99.9%', label: 'Uptime SLA' },
+  { val: '4.9★', label: 'User Rating' }
+];
+
+metrics.forEach((m, idx) => {
+  const xPos = 0.8 + (idx * 3.8);
+  // Card Container
+  slide1.addShape(pptx.shapes.ROUNDED_RECTANGLE, {
+    x: xPos, y: 4.5, w: 3.5, h: 2.0,
+    fill: { color: COLORS.card },
+    line: { color: 'E5E7EB', width: 1 }
+  });
+  // Metric Value
+  slide1.addText(m.val, {
+    x: xPos + 0.3, y: 4.8, w: 2.9, h: 0.8,
+    fontSize: 40, bold: true, color: COLORS.accent, fontFace: 'Georgia'
+  });
+  // Label
+  slide1.addText(m.label, {
+    x: xPos + 0.3, y: 5.7, w: 2.9, h: 0.5,
+    fontSize: 14, color: COLORS.text, bold: true, fontFace: 'Calibri'
+  });
+});
+
+slide1.addNotes('This deck presents the core product roadmap and design principles for the upcoming quarter.');
+
+// 3. Write Presentation
+pptx.writeFile({ fileName: 'presentation.pptx' }).then(() => {
+  console.log('Presentation generated successfully!');
+});
 ```
-
----
-
-## Creating from Scratch
-
-Use `pptx_generator` for new decks because it is backed by PptxGenJS, produces adaptive editorial layouts, and keeps the PPTX editable. Use `python-pptx` only when you need low-level inspection, small edits, or compatibility work on an existing file.
-
-### Basic Presentation
-
-```python
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
-
-prs = Presentation()
-
-# Available Master Slide Layouts (0-8 by default):
-# 0: Title Slide
-# 1: Title and Content
-# 2: Section Header
-# 3: Two Content
-# 4: Comparison
-# 5: Title Only
-# 6: Blank
-# 7: Content with Caption
-# 8: Picture with Caption
-
-# Title Slide
-title_slide_layout = prs.slide_layouts[0]
-slide = prs.slides.add_slide(title_slide_layout)
-title = slide.shapes.title
-subtitle = slide.placeholders[1]
-
-title.text = "Hello, EverFern!"
-subtitle.text = "Agentic Desktop Assistant"
-
-# Standard Slide
-bullet_slide_layout = prs.slide_layouts[1]
-slide = prs.slides.add_slide(bullet_slide_layout)
-shapes = slide.shapes
-title_shape = shapes.title
-body_shape = shapes.placeholders[1]
-
-title_shape.text = "Features"
-
-tf = body_shape.text_frame
-tf.text = "Core workflow"
-
-p = tf.add_paragraph()
-p.text = "Mandatory Planning"
-p.level = 1
-
-p = tf.add_paragraph()
-p.text = "Human-in-the-loop review"
-p.level = 2
-
-# Add Picture
-# (assuming you have a local image)
-img_path = r"C:\path\to\image.jpg"
-# blank_slide_layout = prs.slide_layouts[6]
-# slide = prs.slides.add_slide(blank_slide_layout)
-# left = top = Inches(1)
-# height = Inches(5.5)
-# pic = slide.shapes.add_picture(img_path, left, top, height=height)
-
-prs.save(r"C:\path\to\output.pptx")
-```
-
----
-
-## Best Practices
-
-* **Always use absolute Windows paths** (e.g., `C:\Users\Username\file.pptx`).
-* **Use Raw Strings**: Path formatting in Python should use `r"C:\..."` or escaped slashes to prevent `\n` or `\t` bugs.
-* **Avoid Complex Shapes Elements**: `python-pptx` handles basic objects (text generation, static templates). For heavy data-driven visualizations, use Matplotlib/Seaborn and embed them as images.

@@ -28,37 +28,61 @@ function getPlaywrightBrowsersPath(): string {
   }
 }
 
-/** Returns the path to the Chromium executable if it exists, otherwise null. */
 export function findChromiumExecutable(): string | null {
   const browsersPath = getPlaywrightBrowsersPath();
-  if (!fs.existsSync(browsersPath)) return null;
+  if (fs.existsSync(browsersPath)) {
+    let dirs: string[] = [];
+    try {
+      dirs = fs.readdirSync(browsersPath).filter(d => d.startsWith('chromium'));
+    } catch {
+      dirs = [];
+    }
 
-  let dirs: string[];
-  try {
-    dirs = fs.readdirSync(browsersPath).filter(d => d.startsWith('chromium'));
-  } catch {
-    return null;
+    for (const dir of dirs) {
+      // Check platform-specific executable paths
+      const candidates =
+        process.platform === 'win32'
+          ? [
+              path.join(browsersPath, dir, 'chrome-win64', 'chrome.exe'),
+              path.join(browsersPath, dir, 'chrome-win', 'chrome.exe'),
+            ]
+          : process.platform === 'darwin'
+          ? [
+              path.join(browsersPath, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+            ]
+          : [
+              path.join(browsersPath, dir, 'chrome-linux', 'chrome'),
+            ];
+
+      for (const exe of candidates) {
+        if (fs.existsSync(exe)) return exe;
+      }
+    }
   }
 
-  for (const dir of dirs) {
-    // Check platform-specific executable paths
-    const candidates =
-      process.platform === 'win32'
-        ? [
-            path.join(browsersPath, dir, 'chrome-win64', 'chrome.exe'),
-            path.join(browsersPath, dir, 'chrome-win', 'chrome.exe'),
-          ]
-        : process.platform === 'darwin'
-        ? [
-            path.join(browsersPath, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
-          ]
-        : [
-            path.join(browsersPath, dir, 'chrome-linux', 'chrome'),
-          ];
+  // System installed browser fallback
+  const systemCandidates = process.platform === 'win32'
+    ? [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        path.join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(process.env.LOCALAPPDATA ?? '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      ]
+    : process.platform === 'darwin'
+    ? [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      ]
+    : [
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+      ];
 
-    for (const exe of candidates) {
-      if (fs.existsSync(exe)) return exe;
-    }
+  for (const exe of systemCandidates) {
+    if (exe && fs.existsSync(exe)) return exe;
   }
 
   return null;

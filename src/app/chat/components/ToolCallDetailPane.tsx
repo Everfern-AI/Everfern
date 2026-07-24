@@ -454,6 +454,7 @@ export function ToolCallDetailPane({
   const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
   const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
   const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+  const isTerminal = toolNameLower.includes('command') || toolNameLower.includes('bash') || toolNameLower.includes('terminal') || toolNameLower.includes('exec') || toolNameLower.includes('shell') || toolNameLower.includes('cmd') || toolNameLower.includes('run');
   const isCodeOrFileViewer = isWrite || isEdit || isRead;
 
   const [findingsContent, setFindingsContent] = useState<string>('');
@@ -700,10 +701,14 @@ export function ToolCallDetailPane({
         ))}
       </div>
 
-      {/* Tabs / Code Editor content */}
+      {/* Tabs / Code Editor / Terminal content */}
       {isCodeOrFileViewer ? (
         <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <CodeEditorPreview toolCall={toolCall} />
+        </div>
+      ) : isTerminal ? (
+        <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <TerminalViewPreview toolCall={toolCall} />
         </div>
       ) : (
         <>
@@ -887,36 +892,42 @@ export function ToolCallDetailPane({
 }
 
 /* ============================================================
-   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS
+   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS (INCLUDING MULTI_FILE_EDIT)
    ============================================================ */
 
-function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
-  const args = toolCall.arguments || (toolCall as any).args || {};
-  const filePathRaw = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+interface CodeLine {
+  text: string;
+  type: 'added' | 'removed' | 'normal';
+}
+
+interface ParsedFileDiff {
+  filePath: string;
+  fileName: string;
+  codeLines: CodeLine[];
+  addedCount: number;
+  removedCount: number;
+}
+
+function parseSingleFileDiff(
+  item: any,
+  defaultPath: string,
+  isWrite: boolean,
+  isRead: boolean,
+  toolCallResult?: any
+): ParsedFileDiff {
+  const filePathRaw = item?.path || item?.filePath || item?.TargetFile || item?.file || item?.targetFile || defaultPath || 'unknown_file';
   const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
-  
-  const toolNameLower = toolCall.toolName.toLowerCase();
-  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
-  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
-  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
-
-  interface CodeLine {
-    text: string;
-    type: 'added' | 'removed' | 'normal';
-  }
 
   let codeLines: CodeLine[] = [];
 
-  if (isWrite) {
-    // Try all known content argument keys
-    let content = args.content || args.text || args.CodeContent || args.html
-      || args.code || args.data || args.body || args.fileContent
-      || args.source || args.output || args.file_content || '';
+  if (isWrite && !item?.edits && !item?.oldString && !item?.find && !item?.TargetContent) {
+    let content = item?.content || item?.text || item?.CodeContent || item?.html
+      || item?.code || item?.data || item?.body || item?.fileContent
+      || item?.source || item?.output || item?.file_content || '';
 
-    // If args have no content, try extracting from the tool call result
-    if (!content && toolCall.result) {
-      const r = toolCall.result;
+    if (!content && toolCallResult) {
+      const r = toolCallResult;
       if (typeof r === 'string' && r.length > 0 && !r.startsWith('{')) {
         content = r;
       } else if (r?.data?.content) {
@@ -935,39 +946,37 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
     codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
   } else if (isRead) {
     let outputText = '';
-    if (toolCall.result) {
-      if (typeof toolCall.result === 'string') {
-        outputText = toolCall.result;
-      } else if (typeof toolCall.result.output === 'string') {
-        outputText = toolCall.result.output;
-      } else if (Array.isArray(toolCall.result.content)) {
-        outputText = toolCall.result.content
+    if (toolCallResult) {
+      if (typeof toolCallResult === 'string') {
+        outputText = toolCallResult;
+      } else if (typeof toolCallResult.output === 'string') {
+        outputText = toolCallResult.output;
+      } else if (Array.isArray(toolCallResult.content)) {
+        outputText = toolCallResult.content
           .filter((c: any) => c.type === 'text')
           .map((c: any) => c.text)
           .join('\n');
       } else {
-        outputText = JSON.stringify(toolCall.result);
+        outputText = JSON.stringify(toolCallResult);
       }
-    } else if (toolCall.status === 'executing' || toolCall.status === 'pending') {
+    } else {
       outputText = 'Reading file contents...';
-    } else if (toolCall.error) {
-      outputText = `Error reading file: ${toolCall.error}`;
     }
     const lines = outputText.split('\n');
     codeLines = lines.map(line => ({ text: line, type: 'normal' as const }));
   } else {
-    // Edit tool
-    const findStr = args.find || args.TargetContent || '';
-    const replaceStr = args.replace || args.ReplacementContent || args.insert || '';
-    const chunks = args.ReplacementChunks || [];
+    // Edit / multi_file_edit
+    const findStr = item?.find || item?.TargetContent || item?.oldString || item?.old_string || item?.search || '';
+    const replaceStr = item?.replace || item?.ReplacementContent || item?.newString || item?.new_string || item?.insert || '';
+    const chunks = item?.ReplacementChunks || item?.chunks || item?.edits || item?.replacements || [];
 
-    if (args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
-      args.edits.forEach((edit: any, idx: number) => {
+    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+      chunks.forEach((chunk: any, idx: number) => {
         if (idx > 0) {
           codeLines.push({ text: '...', type: 'normal' });
         }
-        const oldText = edit.oldText || '';
-        const newText = edit.newText || '';
+        const oldText = chunk.oldString || chunk.oldText || chunk.TargetContent || chunk.old_string || chunk.find || '';
+        const newText = chunk.newString || chunk.newText || chunk.ReplacementContent || chunk.new_string || chunk.replace || '';
         if (oldText) {
           oldText.split('\n').forEach((line: string) => {
             codeLines.push({ text: line, type: 'removed' });
@@ -975,25 +984,6 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
         }
         if (newText) {
           newText.split('\n').forEach((line: string) => {
-            codeLines.push({ text: line, type: 'added' });
-          });
-        }
-      });
-    } else if (chunks && Array.isArray(chunks) && chunks.length > 0) {
-      chunks.forEach((chunk: any, idx: number) => {
-        if (idx > 0) {
-          codeLines.push({ text: '...', type: 'normal' });
-        }
-        const chunkTarget = chunk.TargetContent || '';
-        const chunkRepl = chunk.ReplacementContent || '';
-        
-        if (chunkTarget) {
-          chunkTarget.split('\n').forEach((line: string) => {
-            codeLines.push({ text: line, type: 'removed' });
-          });
-        }
-        if (chunkRepl) {
-          chunkRepl.split('\n').forEach((line: string) => {
             codeLines.push({ text: line, type: 'added' });
           });
         }
@@ -1013,14 +1003,42 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   }
 
   if (codeLines.length === 0) {
-    if (toolCall.status === 'executing' || toolCall.status === 'pending') {
-      codeLines = [{ text: '// Writing file...', type: 'normal' }];
-    } else if (isWrite) {
-      codeLines = [{ text: '// File was written but content was not captured in tool arguments', type: 'normal' }];
-    } else {
-      codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
-    }
+    codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
   }
+
+  let addedCount = 0;
+  let removedCount = 0;
+  codeLines.forEach(l => {
+    if (l.type === 'added') addedCount++;
+    if (l.type === 'removed') removedCount++;
+  });
+
+  return { filePath, fileName, codeLines, addedCount, removedCount };
+}
+
+function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+  const isMultiFileTool = toolNameLower.includes('multi_file_edit') || toolNameLower.includes('multi_edit');
+
+  const rawFileList = args.files || args.items || args.targets || (Array.isArray(args.edits) && args.edits[0]?.path ? args.edits : null);
+  const isMultiFile = isMultiFileTool || (Array.isArray(rawFileList) && rawFileList.length > 0);
+
+  const defaultPath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
+
+  const parsedFiles: ParsedFileDiff[] = isMultiFile && Array.isArray(rawFileList) && rawFileList.length > 0
+    ? rawFileList.map((item: any) => parseSingleFileDiff(item, '', isWrite, isRead, toolCall.result))
+    : [parseSingleFileDiff(args, defaultPath, isWrite, isRead, toolCall.result)];
+
+  const [activeFileIndex, setActiveFileIndex] = useState<number | null>(parsedFiles.length > 1 ? null : 0);
+  
+  const filesToDisplay = activeFileIndex !== null && parsedFiles[activeFileIndex]
+    ? [parsedFiles[activeFileIndex]]
+    : parsedFiles;
 
   return (
     <div
@@ -1051,150 +1069,395 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+          <span style={{ fontSize: 11, color: '#8b949e', marginLeft: 8, fontFamily: T.mono }}>
+            {parsedFiles.length > 1 ? `${parsedFiles.length} Files Edited` : parsedFiles[0]?.fileName}
+          </span>
         </div>
-        
+
+        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
+          {isMultiFile ? `MULTI-FILE EDIT (${parsedFiles.length})` : isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
+        </div>
+      </div>
+
+      {/* Multi-File Tab / Filter Selector */}
+      {parsedFiles.length > 1 && (
         <div
           style={{
-            background: '#0d1117',
-            padding: '6px 16px',
-            borderRadius: '6px 6px 0 0',
-            border: '1px solid #30363d',
-            borderBottom: 'none',
-            fontSize: 12,
-            fontFamily: T.mono,
-            color: '#c9d1d9',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            marginBottom: -9,
-            marginTop: -4,
+            gap: 6,
+            padding: '8px 12px',
+            background: '#161b22',
+            borderBottom: '1px solid #30363d',
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
           }}
         >
-          <span style={{ color: '#4ade80' }}>⚡</span>
-          <span>{fileName}</span>
+          <button
+            onClick={() => setActiveFileIndex(null)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: activeFileIndex === null ? '#0d1117' : 'transparent',
+              border: activeFileIndex === null ? '1px solid #30363d' : '1px solid #21262d',
+              color: activeFileIndex === null ? '#f0f6fc' : '#8b949e',
+              fontSize: 11,
+              fontFamily: T.mono,
+              fontWeight: activeFileIndex === null ? 600 : 400,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span>All Files ({parsedFiles.length})</span>
+          </button>
+
+          {parsedFiles.map((f, idx) => {
+            const isActive = activeFileIndex === idx;
+            return (
+              <button
+                key={idx}
+                onClick={() => setActiveFileIndex(idx)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: isActive ? '#0d1117' : 'transparent',
+                  border: isActive ? '1px solid #30363d' : '1px solid #21262d',
+                  color: isActive ? '#f0f6fc' : '#8b949e',
+                  fontSize: 11,
+                  fontFamily: T.mono,
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span style={{ color: isActive ? '#4ade80' : '#6e7681' }}>⚡</span>
+                <span>{f.fileName}</span>
+                {(f.addedCount > 0 || f.removedCount > 0) && (
+                  <span style={{ display: 'flex', gap: 3, fontSize: 10 }}>
+                    {f.addedCount > 0 && <span style={{ color: '#4ade80' }}>+{f.addedCount}</span>}
+                    {f.removedCount > 0 && <span style={{ color: '#f87171' }}>-{f.removedCount}</span>}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
+      )}
 
-        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase' }}>
-          {isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
-        </div>
-      </div>
-
-      {/* Path Breadcrumb */}
-      <div
-        style={{
-          padding: '6px 16px',
-          background: '#090d13',
-          borderBottom: '1px solid #21262d',
-          fontSize: 11,
-          fontFamily: T.mono,
-          color: '#8b949e',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {filePath}
-      </div>
-
-      {/* Editor Content Area */}
+      {/* Main Diff Content Container */}
       <div
         style={{
           flex: 1,
-          overflow: 'auto',
-          padding: '12px 0',
+          overflowY: 'auto',
+          padding: '12px 14px',
           fontFamily: T.mono,
           fontSize: 12,
-          lineHeight: '1.6',
           color: '#c9d1d9',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <tbody>
-            {(() => {
-              const MAX_PREVIEW_LINES = 1000;
-              const truncated = codeLines.length > MAX_PREVIEW_LINES;
-              const linesToRender = truncated ? codeLines.slice(0, MAX_PREVIEW_LINES) : codeLines;
+        {filesToDisplay.map((file, fileIdx) => (
+          <div
+            key={fileIdx}
+            style={{
+              marginBottom: filesToDisplay.length > 1 && fileIdx < filesToDisplay.length - 1 ? 16 : 0,
+              border: '1px solid #30363d',
+              borderRadius: 6,
+              overflow: 'hidden',
+              background: '#0d1117',
+            }}
+          >
+            {/* File Section Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 14px',
+                background: '#161b22',
+                borderBottom: '1px solid #21262d',
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                <span style={{ color: '#4ade80' }}>⚡</span>
+                <span style={{ fontWeight: 600, color: '#f0f6fc', fontSize: 12 }}>{file.fileName}</span>
+                <span style={{ color: '#8b949e', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file.filePath}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                {file.addedCount > 0 && (
+                  <span style={{ color: '#4ade80', background: 'rgba(46, 160, 67, 0.2)', padding: '2px 6px', borderRadius: 4 }}>
+                    +{file.addedCount}
+                  </span>
+                )}
+                {file.removedCount > 0 && (
+                  <span style={{ color: '#f87171', background: 'rgba(248, 81, 112, 0.2)', padding: '2px 6px', borderRadius: 4 }}>
+                    -{file.removedCount}
+                  </span>
+                )}
+              </div>
+            </div>
 
-              const elements = linesToRender.map((line, idx) => {
-                const isAdded = line.type === 'added';
-                const isRemoved = line.type === 'removed';
-                const rowBg = isAdded 
-                  ? 'rgba(46, 160, 67, 0.15)' 
-                  : isRemoved 
-                    ? 'rgba(248, 81, 112, 0.15)' 
-                    : 'transparent';
-                
-                const textColor = isAdded 
-                  ? '#4ade80' 
-                  : isRemoved 
-                    ? '#f87171' 
-                    : '#8b949e';
+            {/* Code Line Diff Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', lineHeight: '1.6' }}>
+                <tbody>
+                  {(() => {
+                    const MAX_PREVIEW_LINES = 1000;
+                    const truncated = file.codeLines.length > MAX_PREVIEW_LINES;
+                    const linesToRender = truncated ? file.codeLines.slice(0, MAX_PREVIEW_LINES) : file.codeLines;
 
-                const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+                    const rows = linesToRender.map((line, idx) => {
+                      const isAdded = line.type === 'added';
+                      const isRemoved = line.type === 'removed';
+                      const rowBg = isAdded 
+                        ? 'rgba(46, 160, 67, 0.18)' 
+                        : isRemoved 
+                          ? 'rgba(248, 81, 112, 0.18)' 
+                          : 'transparent';
+                      
+                      const textColor = isAdded 
+                        ? '#4ade80' 
+                        : isRemoved 
+                          ? '#f87171' 
+                          : '#8b949e';
 
-                return (
-                  <tr 
-                    key={idx} 
-                    style={{ 
-                      background: rowBg,
-                      transition: 'background 0.1s',
-                    }}
-                  >
-                    <td
-                      style={{
-                        width: 45,
-                        textAlign: 'right',
-                        paddingRight: 12,
-                        color: '#484f58',
-                        userSelect: 'none',
-                        borderRight: '1px solid #21262d',
-                        fontSize: 11,
-                      }}
-                    >
-                      {idx + 1}
-                    </td>
-                    <td
-                      style={{
-                        width: 24,
-                        textAlign: 'center',
-                        color: textColor,
-                        fontWeight: 'bold',
-                        userSelect: 'none',
-                        fontSize: 12,
-                      }}
-                    >
-                      {prefix}
-                    </td>
-                    <td
-                      style={{
-                        paddingLeft: 8,
-                        paddingRight: 16,
-                        color: textColor,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {line.text}
-                    </td>
-                  </tr>
-                );
-              });
+                      const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
 
-              if (truncated) {
-                elements.push(
-                  <tr key="trunc-msg" style={{ background: 'transparent' }}>
-                    <td colSpan={3} style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
-                      ... [Remaining {codeLines.length - MAX_PREVIEW_LINES} lines truncated for performance]
-                    </td>
-                  </tr>
-                );
-              }
+                      return (
+                        <tr 
+                          key={idx} 
+                          style={{ 
+                            background: rowBg,
+                            transition: 'background 0.1s',
+                          }}
+                        >
+                          <td
+                            style={{
+                              width: 40,
+                              textAlign: 'right',
+                              paddingRight: 10,
+                              color: '#484f58',
+                              userSelect: 'none',
+                              borderRight: '1px solid #21262d',
+                              fontSize: 11,
+                            }}
+                          >
+                            {idx + 1}
+                          </td>
+                          <td
+                            style={{
+                              width: 24,
+                              textAlign: 'center',
+                              color: textColor,
+                              fontWeight: 'bold',
+                              userSelect: 'none',
+                              fontSize: 12,
+                            }}
+                          >
+                            {prefix}
+                          </td>
+                          <td
+                            style={{
+                              paddingLeft: 8,
+                              paddingRight: 16,
+                              color: textColor,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {line.text}
+                          </td>
+                        </tr>
+                      );
+                    });
 
-              return elements;
-            })()}
-          </tbody>
-        </table>
+                    if (truncated) {
+                      rows.push(
+                        <tr key="trunc-msg" style={{ background: 'transparent' }}>
+                          <td colSpan={3} style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
+                            ... [Remaining {file.codeLines.length - MAX_PREVIEW_LINES} lines truncated for performance]
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return rows;
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
+
+/* ============================================================
+   TERMINAL VIEW PREVIEW FOR COMMAND/EXECUTION TOOLS
+   ============================================================ */
+
+function normalizeTerminalOutput(output?: string, command?: string) {
+  let normalized = (output || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  normalized = normalized
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim();
+      if (trimmed.includes('$global:EF_M') || trimmed.includes('$global:EF_EXIT') || trimmed.includes('$EF_M') || trimmed.includes('__EF_DONE_')) return false;
+      if (trimmed.includes('try { & { $global:LASTEXITCODE = $null;')) return false;
+      if (trimmed.startsWith('Set-Location:') && trimmed.includes('Cannot find path')) return false;
+      if (command && trimmed.toLowerCase().startsWith('command:')) {
+        const rest = trimmed.slice('command:'.length).trim();
+        if (rest === command.trim()) return false;
+      }
+      return true;
+    })
+    .join('\n');
+
+  if (/^(success|error): (local )?command (completed|failed)/i.test(normalized.trim())) {
+    const lines = normalized.split('\n');
+    const outputIndex = lines.findIndex(l => l.trim().toLowerCase() === 'output:');
+    if (outputIndex !== -1) {
+      normalized = lines.slice(outputIndex + 1).join('\n');
+    }
+  }
+
+  return normalized.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function TerminalViewPreview({ toolCall }: { toolCall: ToolCallDetail }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const command = args.CommandLine || args.command || args.cmd || args.script || args.code || args.exec || toolCall.result?.command || '';
+  const cwd = args.Cwd || args.cwd || args.dir || args.path || args.workingDirectory || '';
+
+  let rawOutput = '';
+  if (toolCall.result) {
+    if (typeof toolCall.result === 'string') {
+      rawOutput = toolCall.result;
+    } else if (typeof toolCall.result.output === 'string') {
+      rawOutput = toolCall.result.output;
+    } else if (typeof toolCall.result.stdout === 'string') {
+      rawOutput = toolCall.result.stdout + (toolCall.result.stderr ? '\n' + toolCall.result.stderr : '');
+    } else if (Array.isArray(toolCall.result.content)) {
+      rawOutput = toolCall.result.content
+        .filter((c: any) => c.type === 'text')
+        .map((c: any) => c.text)
+        .join('\n');
+    } else if (toolCall.result.data?.output) {
+      rawOutput = toolCall.result.data.output;
+    } else {
+      rawOutput = JSON.stringify(toolCall.result, null, 2);
+    }
+  } else if (toolCall.error) {
+    rawOutput = toolCall.error;
+  }
+
+  const cleanOutput = normalizeTerminalOutput(rawOutput, command);
+  const isExecuting = toolCall.status === 'executing' || toolCall.status === 'pending';
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [cleanOutput, isExecuting]);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        background: '#0d1117',
+        border: '1px solid #30363d',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        fontFamily: T.mono,
+      }}
+    >
+      {/* Title Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 16px',
+          background: '#161b22',
+          borderBottom: '1px solid #30363d',
+          userSelect: 'none',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+          <span style={{ fontSize: 11, color: '#8b949e', marginLeft: 8, fontWeight: 600 }}>
+            Terminal {isExecuting ? '• Streaming' : ''}
+          </span>
+        </div>
+
+        {isExecuting ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: 12, padding: '2px 8px' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', animation: 'pulse 1.2s infinite' }} />
+            <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 600, fontFamily: T.sans }}>LIVE STREAMING</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: toolCall.status === 'completed' ? '#4ade80' : toolCall.status === 'failed' ? '#f87171' : '#8b949e', fontFamily: T.sans, fontWeight: 600 }}>
+            {toolCall.status?.toUpperCase() || 'FINISHED'}
+          </div>
+        )}
+      </div>
+
+      {/* Terminal Output Area */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '14px 16px',
+          fontSize: 12,
+          lineHeight: '1.6',
+          color: '#c9d1d9',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {/* Command prompt line */}
+        <div style={{ display: 'flex', gap: 8, color: '#38bdf8', marginBottom: cleanOutput ? 10 : 0 }}>
+          <span style={{ color: '#4ade80', fontWeight: 'bold' }}>PS {cwd || '~'}&gt;</span>
+          <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{command}</span>
+        </div>
+
+        {/* Output */}
+        {cleanOutput ? (
+          <div style={{ color: toolCall.status === 'failed' ? '#f87171' : '#c9d1d9' }}>
+            {cleanOutput}
+          </div>
+        ) : isExecuting ? (
+          <div style={{ color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
+            Running command... streaming output below
+          </div>
+        ) : (
+          <div style={{ color: '#6e7681', fontStyle: 'italic', fontSize: 11 }}>
+            (No output produced)
+          </div>
+        )}
+
+        {/* Live Cursor */}
+        {isExecuting && (
+          <div style={{ display: 'inline-block', width: 8, height: 14, background: '#38bdf8', marginLeft: 4, verticalAlign: 'middle', animation: 'blink 1s step-end infinite' }} />
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+

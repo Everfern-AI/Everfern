@@ -28,10 +28,10 @@ const MAX_ATTEMPTS_PER_STEP = 3;
 const MAX_ATTEMPTS_SAME_TOOL = 2;
 
 function categorizeTool(toolName: string): string {
-  const terminalTools = ['terminal_execute', 'executePwsh', 'bash', 'terminal_status'];
-  const fileReadTools = ['read', 'cat', 'ls', 'grep', 'find', 'glob'];
-  const fileWriteTools = ['write', 'edit', 'str_replace', 'create'];
-  const webTools = ['web_search', 'navis', 'fetch', 'browser'];
+  const terminalTools = ['terminal_execute', 'executePwsh', 'run_command', 'bash', 'terminal_status'];
+  const fileReadTools = ['read', 'read_file', 'view_file', 'cat', 'ls', 'list_dir', 'grep', 'grep_search', 'find', 'glob'];
+  const fileWriteTools = ['write', 'write_to_file', 'edit', 'replace_file_content', 'multi_replace_file_content', 'str_replace', 'create'];
+  const webTools = ['web_search', 'search_web', 'navis', 'fetch', 'read_url_content', 'browser', 'browser_subagent'];
   const memoryTools = ['memory_save', 'memory_search', 'recall_fact', 'remember_fact'];
 
   if (terminalTools.includes(toolName)) return 'terminal';
@@ -45,13 +45,13 @@ function categorizeTool(toolName: string): string {
 function getAlternativeTools(category: string, failedTool: string): string[] {
   switch (category) {
     case 'terminal':
-      return failedTool === 'terminal_execute' ? ['executePwsh'] : ['terminal_execute'];
+      return failedTool === 'terminal_execute' || failedTool === 'run_command' ? ['executePwsh'] : ['terminal_execute'];
     case 'file_read':
-      return ['read', 'ls', 'grep', 'find'];
+      return ['read_file', 'view_file', 'grep_search', 'list_dir'];
     case 'file_write':
-      return ['write', 'edit'];
+      return ['replace_file_content', 'write_to_file', 'multi_replace_file_content'];
     case 'web':
-      return ['web_search', 'navis'];
+      return ['search_web', 'read_url_content', 'navis'];
     default:
       return [];
   }
@@ -135,6 +135,25 @@ export class RecoveryEnforcer {
         message: `Command timed out. Try a different approach or tool.`,
         suggestedTools: alternatives,
         reason: `Timeout detected for ${toolName}`
+      };
+    }
+
+    // Diagnostics for common build & typecheck failures
+    if (/TS2304|Cannot find name/i.test(output)) {
+      return {
+        type: 'retry_different_tool',
+        message: `TypeScript error: Missing import or undeclared variable. Add the necessary import or type definition.`,
+        suggestedTools: ['read_file', 'replace_file_content'],
+        reason: `Missing import or type declaration detected in build output`
+      };
+    }
+
+    if (/TS2307|Cannot find module/i.test(output)) {
+      return {
+        type: 'retry_different_tool',
+        message: `Module missing. Run package installation (npm install <package>) before building.`,
+        suggestedTools: ['run_command', 'terminal_execute'],
+        reason: `Missing npm module detected`
       };
     }
 

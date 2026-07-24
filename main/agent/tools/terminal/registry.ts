@@ -26,8 +26,10 @@ interface PersistentShell {
     marker: string;
     output: string;
     onData?: (data: string) => void;
+    emitEvent?: (event: any) => void;
     resolve: (info: CommandInfo) => void;
     timeoutId?: NodeJS.Timeout;
+    streamIntervalId?: NodeJS.Timeout;
     startTime: number;
   } | null;
   queue: {
@@ -36,8 +38,31 @@ interface PersistentShell {
     cwd: string;
     timeoutMs?: number;
     onData?: (data: string) => void;
+    emitEvent?: (event: any) => void;
     resolve: (info: CommandInfo) => void;
   }[];
+}
+
+function cleanTerminalOutput(raw: string, isWin: boolean): string {
+  if (!raw) return '';
+  if (!isWin) return raw.trim();
+
+  const lines = raw.split(/\r?\n/);
+  const cleanLines = lines.filter((line) => {
+    let trimmed = line.trim();
+    // Strip PowerShell prompt preamble if prepended on the line (e.g. "PS C:\path> command")
+    trimmed = trimmed.replace(/^PS\s+[A-Za-z]:\\[^>]*>\s*/i, '').trim();
+
+    if (!trimmed) return false;
+    if (trimmed.startsWith('>>')) return false;
+    if (trimmed.startsWith('$global:EF_') || trimmed.startsWith('[Console]::OutputEncoding') || trimmed.startsWith('$OutputEncoding') || trimmed.startsWith('$ProgressPreference')) return false;
+    if (trimmed.startsWith('try {') || trimmed.startsWith('& {') || trimmed.startsWith('Set-Location -LiteralPath')) return false;
+    if (trimmed.startsWith('if ($LASTEXITCODE') || trimmed.startsWith('} catch {') || trimmed.startsWith('Write-Output')) return false;
+    if (trimmed.includes('__EF_DONE_') || trimmed.includes('$global:EF_M') || trimmed.includes('$global:EF_EXIT')) return false;
+    return true;
+  });
+
+  return cleanLines.join('\n').trim();
 }
 
 export class CommandRegistry {
@@ -219,6 +244,38 @@ export class CommandRegistry {
           active.output = '...[Output truncated]...\n' + active.output.slice(-MAX_OUTPUT_LENGTH);
         }
 
+        // Early return for long-running dev servers when server ready patterns are output
+        const isDevServerCmd = /\b(npm\s+run\s+dev|next\s+dev|vite|npm\s+start|yarn\s+dev|pnpm\s+dev|gatsby\s+develop)\b/i.test(active.command);
+        const hasServerReady = /(?:ready\s+in|local:\s*http|http:\/\/localhost:\d+|server\s+running|compiled\s+successfully|vite\s+v\d+)/i.test(active.output);
+        if (isDevServerCmd && hasServerReady && !(active as any).resolvedEarly) {
+          (active as any).resolvedEarly = true;
+          console.log(`[CommandRegistry] Dev server ready detected for ${active.id} ("${active.command}"). Resolving turn early while server continues in background.`);
+          
+          const info: CommandInfo = {
+            id: active.id,
+            command: active.command,
+            cwd: newShell.currentCwd,
+            pid: proc.pid,
+            status: 'running',
+            output: active.output + `\n[Dev Server active in background. Logs will stream live.]`,
+            startTime: active.startTime,
+            target
+          };
+
+          this.commands.set(active.id, info);
+          this.pendingMarkers.set(target, {
+            id: active.id,
+            marker: active.marker,
+            output: active.output,
+            target
+          });
+
+          newShell.activeExecution = null;
+          active.resolve(info);
+          this.processQueue(target);
+          return;
+        }
+
         const markerIndex = active.output.indexOf(active.marker);
         if (markerIndex !== -1) {
           const afterMarker = active.output.substring(markerIndex + active.marker.length);
@@ -237,8 +294,10 @@ export class CommandRegistry {
             }
 
             let cleanOutput = active.output.substring(0, markerIndex);
+            cleanOutput = cleanTerminalOutput(cleanOutput, isWin);
 
             if (active.timeoutId) clearTimeout(active.timeoutId);
+            if (active.streamIntervalId) clearInterval(active.streamIntervalId);
 
             if (exitCode !== 0) {
               try {
@@ -329,6 +388,7 @@ export class CommandRegistry {
       const active = newShell.activeExecution;
       if (active) {
         if (active.timeoutId) clearTimeout(active.timeoutId);
+        if (active.streamIntervalId) clearInterval(active.streamIntervalId);
         const info: CommandInfo = {
           id: active.id,
           command: active.command,
@@ -380,6 +440,35 @@ export class CommandRegistry {
     const req = shell.queue.shift()!;
     const marker = `__EF_DONE_${Date.now()}_${Math.random().toString(36).substring(2, 10)}__`;
 
+    let lastStreamedLength = 0;
+    const STREAM_INTERVAL_MS = 2000; // Fast 2-second live terminal log updates to AI & UI
+
+    const streamIntervalId = setInterval(() => {
+      const active = shell.activeExecution;
+      if (!active || active.id !== req.id) {
+        clearInterval(streamIntervalId);
+        return;
+      }
+      const currentOutput = active.output;
+      if (currentOutput.length > lastStreamedLength) {
+        const rawChunk = currentOutput.substring(lastStreamedLength);
+        lastStreamedLength = currentOutput.length;
+
+        const cleanChunk = cleanTerminalOutput(rawChunk, process.platform === 'win32');
+
+        if (cleanChunk) {
+          active.onData?.(cleanChunk);
+          active.emitEvent?.({
+            type: 'terminal_log_stream',
+            id: req.id,
+            command: req.command,
+            logs: cleanChunk,
+            timestamp: Date.now()
+          });
+        }
+      }
+    }, STREAM_INTERVAL_MS);
+
     shell.activeExecution = {
       id: req.id,
       command: req.command,
@@ -387,19 +476,23 @@ export class CommandRegistry {
       marker,
       output: '',
       onData: req.onData,
+      emitEvent: req.emitEvent,
       resolve: req.resolve,
+      streamIntervalId,
       startTime: Date.now()
     };
 
     this.processes.set(req.id, shell.proc);
 
-    const timeoutMs = req.timeoutMs || 60000;
+    const timeoutMs = req.timeoutMs || 300000;
     shell.activeExecution.timeoutId = setTimeout(() => {
       console.log(`[CommandRegistry] Command ${req.id} timed out after ${timeoutMs/1000}s. Returning partial output — command continues in background.`);
       const active = shell.activeExecution;
       if (active) {
+        if (active.streamIntervalId) clearInterval(active.streamIntervalId);
+        const cleanedOutput = cleanTerminalOutput(active.output, process.platform === 'win32');
         const timeoutMsg = `\n[⏱ Timeout after ${timeoutMs/1000}s — command is still running. Check with terminal_status(id="${active.id}").]`;
-        active.output += timeoutMsg;
+        const finalOutput = cleanedOutput ? `${cleanedOutput}\n${timeoutMsg}` : timeoutMsg;
         active.onData?.(timeoutMsg);
 
         const info: CommandInfo = {
@@ -408,7 +501,7 @@ export class CommandRegistry {
           cwd: shell.currentCwd,
           pid: shell.proc.pid,
           status: 'running',
-          output: active.output,
+          output: finalOutput,
           startTime: active.startTime,
           target
         };
@@ -440,22 +533,24 @@ export class CommandRegistry {
 
     if (isPowerShell) {
       const base64Marker = Buffer.from(marker).toString('base64');
+      const formattedCommand = req.command.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
       shell.proc.stdin?.write(`$global:EF_M = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${base64Marker}'))\n`);
       shell.proc.stdin?.write('$global:EF_EXIT = 0\n');
       if (needCd) {
         shell.proc.stdin?.write(`Set-Location -LiteralPath ${this.psSingleQuote(req.cwd)}\n`);
       }
-      shell.proc.stdin?.write(`try { & { $global:LASTEXITCODE = $null; ${req.command} }; if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $global:EF_EXIT = $LASTEXITCODE } elseif (-not $?) { $global:EF_EXIT = 1 } else { $global:EF_EXIT = 0 } } catch { Write-Error $_; $global:EF_EXIT = 1 }\n`);
+      shell.proc.stdin?.write(`try {\n  & {\n    $global:LASTEXITCODE = $null\n    ${formattedCommand}\n  }\n  if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $global:EF_EXIT = $LASTEXITCODE } elseif (-not $?) { $global:EF_EXIT = 1 } else { $global:EF_EXIT = 0 }\n} catch { Write-Error $_; $global:EF_EXIT = 1 }\n`);
       shell.proc.stdin?.write('Write-Output "$global:EF_M $global:EF_EXIT"\n');
-      shell.proc.stdin?.write('Write-Output (Get-Location).Path\n');
+      shell.proc.stdin?.write('Write-Output (Get-Location).Path\n\n');
     } else {
       const { translateWindowsPathToLinux } = require('../linux-vm-executor');
       const linuxCwd = isWin ? translateWindowsPathToLinux(req.cwd) : req.cwd;
+      const formattedCommand = req.command.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
       shell.proc.stdin?.write(`export EF_M="${marker}"\n`);
       if (needCd) {
         shell.proc.stdin?.write(`cd "${linuxCwd}"\n`);
       }
-      shell.proc.stdin?.write(`${req.command}\n`);
+      shell.proc.stdin?.write(`${formattedCommand}\n`);
       shell.proc.stdin?.write(`echo "$EF_M \$?"\n`);
       shell.proc.stdin?.write(`pwd\n`);
     }
@@ -467,7 +562,8 @@ export class CommandRegistry {
     cwd: string = path.join(os.homedir(), '.everfern'),
     timeoutMs?: number,
     target: 'main' | 'vm' = 'main',
-    onData?: (data: string) => void
+    onData?: (data: string) => void,
+    emitEvent?: (event: any) => void
   ): Promise<CommandInfo> {
     let actualTarget = target;
     if (process.platform === 'win32' && target === 'main') {
@@ -507,6 +603,7 @@ export class CommandRegistry {
           cwd,
           timeoutMs,
           onData,
+          emitEvent,
           resolve
         });
 

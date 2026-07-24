@@ -127,41 +127,47 @@ export async function ensureWSLSetup(): Promise<void> {
   }
 
   try {
-    // Check if python3 is installed
-    const { stdout: whichOut } = await execAsync(`${wslCmd} --exec bash -c "command -v python3"`, { timeout: 15000 });
-    if (whichOut.trim()) {
-      console.log('[ensureWSLSetup] python3 already installed');
+    // Check if python3 and nodejs are installed with 30s timeout for cold-start WSL
+    const { stdout: checkOut } = await execAsync(`${wslCmd} --exec bash -c "command -v python3 && command -v node || true"`, { timeout: 30000 });
+    if (checkOut.includes('python3') && checkOut.includes('node')) {
+      console.log('[ensureWSLSetup] python3 and nodejs already installed');
     } else {
-      console.log('[ensureWSLSetup] python3 not found, installing via root...');
-      // Use --user root because apt-get needs root in WSL
-      await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv curl wget pandoc poppler-utils libreoffice"`, { timeout: 180000 });
+      console.log('[ensureWSLSetup] Core tools missing, installing system toolchain via root...');
+      const sysPackages = 'python3 python3-pip python3-venv nodejs npm curl wget git build-essential jq pandoc poppler-utils libreoffice tesseract-ocr imagemagick ffmpeg';
+      try {
+        await execAsync(`${wslCmd} --user root --exec bash -c "apt-get update -qq && apt-get install -y -qq ${sysPackages}"`, { timeout: 240000 });
+      } catch (rootErr) {
+        console.log('[ensureWSLSetup] Root apt-get failed, trying sudo...', rootErr);
+        await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq ${sysPackages}"`, { timeout: 240000 });
+      }
     }
-  } catch (err) {
-    // First attempt failed (e.g., wsl --user root unavailable). Try sudo approach.
-    console.log('[ensureWSLSetup] Root attempt failed, trying sudo...', err);
-    try {
-      await execAsync(`${wslCmd} --exec bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-pip python3-venv curl wget pandoc poppler-utils libreoffice"`, { timeout: 180000 });
-    } catch (err2) {
-      // Both install attempts failed — log and continue without python3
-      console.error('[ensureWSLSetup] Failed to install python3:', err2);
+  } catch (err: any) {
+    const isTimeout = err?.killed || err?.signal === 'SIGTERM';
+    if (isTimeout) {
+      console.warn('[ensureWSLSetup] WSL environment check timed out (cold start/offline). Continuing startup.');
+    } else {
+      console.warn('[ensureWSLSetup] WSL package check completed with warning:', err?.message || err);
     }
   }
 
-  // Create ~/.everfern/ directory and set up venv (runs as default WSL user)
+  // Create ~/.everfern/ directory, set up Node environment, and Python venv
   try {
     const setupScript = [
       'mkdir -p ~/.everfern',
+      'cd ~/.everfern',
+      'if [ ! -f package.json ]; then npm init -y &>/dev/null; fi',
+      'npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true',
       'if command -v python3 &>/dev/null; then',
       '  if [ ! -d ~/.everfern/venv ]; then',
       '    python3 -m venv ~/.everfern/venv',
       '  fi',
       '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
-      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy openai-whisper -q',
+      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q',
       'fi'
     ].join('\n');
-    await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 60000 });
+    await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 120000 });
   } catch (err) {
-    console.error('[ensureWSLSetup] Failed to create venv:', err);
+    console.error('[ensureWSLSetup] Failed to set up Node/Python dependencies:', err);
   }
 
   // Ensure default user has passwordless sudo
@@ -175,14 +181,14 @@ export async function ensureWSLSetup(): Promise<void> {
     console.error('[ensureWSLSetup] Failed to configure passwordless sudo:', err);
   }
 
-  console.log('[ensureWSLSetup] WSL environment setup complete ✅');
+  console.log('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅');
 }
 
 async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   const wslCmd = getWslCmd();
   console.log(`[runInWSL] Using WSL command: ${wslCmd}`);
 
-  // Ensure WSL is set up (python3, .everfern/, venv) — never throws
+  // Ensure WSL is set up (python3, nodejs, pptxgenjs, python-pptx, .everfern/, venv) — never throws
   try {
     await ensureWSLSetup();
   } catch (err) {
@@ -198,12 +204,12 @@ async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string
     linuxCwd = translateWindowsPathToLinux(cwd);
   }
 
+  const envExports = 'export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
+
   // If a working directory is specified, prepend cd command
-  let fullCommand = command;
+  let fullCommand = `${envExports} && ${command}`;
   if (linuxCwd) {
-    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${linuxCwd}" && ${command}`;
-  } else {
-    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
+    fullCommand = `${envExports} && cd "${linuxCwd}" && ${command}`;
   }
 
   return executeCommand(wslCmd, ['--exec', 'bash', '-c', fullCommand], onUpdate);
@@ -222,10 +228,12 @@ async function runInDocker(command: string, cwd?: string, onUpdate?: (chunk: str
     dockerCwd = translateMacOSPathToDocker(cwd);
   }
 
+  const envExports = 'export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
+
   // If a working directory is specified, prepend cd command
-  let fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && ${command}`;
+  let fullCommand = `${envExports} && ${command}`;
   if (dockerCwd) {
-    fullCommand = `export PATH="$HOME/.everfern/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin" && cd "${dockerCwd}" && ${command}`;
+    fullCommand = `${envExports} && cd "${dockerCwd}" && ${command}`;
   }
 
   return executeCommand('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', fullCommand], onUpdate);
@@ -388,10 +396,10 @@ export async function ensureDockerContainer(): Promise<void> {
 
       // Install basic tools in the container
       await execAsync('docker exec everfern-ubuntu apt-get update');
-      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm pandoc poppler-utils');
+      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm build-essential jq pandoc poppler-utils libreoffice tesseract-ocr imagemagick ffmpeg');
 
-      // Create ~/.everfern/ directory and Python venv
-      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab fastapi uvicorn numpy openai-whisper -q"');
+      // Create ~/.everfern/ directory, Node dependencies, and Python venv
+      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && cd ~/.everfern && if [ ! -f package.json ]; then npm init -y &>/dev/null; fi && npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q"');
     } else {
       // Check if container is running
       const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');

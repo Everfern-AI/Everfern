@@ -9,7 +9,7 @@
     "dev:electron": "tsc -p tsconfig.electron.json -w",
     "prebuild:electron-ts": "node -e \"require('fs').rmSync('dist-electron', { recursive: true, force: true })\"",
     "build:electron-ts": "tsc -p tsconfig.electron.json",
-    "postbuild:electron-ts": "node -e \"const fs=require('fs'),path=require('path');const src='main/lib/migrations',dst='dist-electron/main/lib/migrations';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.sql')).forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dst,f)));console.log('[Build] SQL migrations copied to dist-electron');const pSrc='main/agent/prompts',pDst='dist-electron/main/agent/prompts';fs.mkdirSync(pDst,{recursive:true});fs.readdirSync(pSrc).filter(f=>f.endsWith('.md')).forEach(f=>fs.copyFileSync(path.join(pSrc,f),path.join(pDst,f)));console.log('[Build] Prompt files copied to dist-electron')\" && npm run zip:extension",
+    "postbuild:electron-ts": "node -e \"const fs=require('fs'),path=require('path');const src='main/lib/migrations',dst='dist-electron/main/lib/migrations';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.sql')).forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dst,f)));console.log('[Build] SQL migrations copied to dist-electron');const pSrc='main/agent/prompts',pDst='dist-electron/main/agent/prompts';fs.mkdirSync(pDst,{recursive:true});fs.readdirSync(pSrc).filter(f=>f.endsWith('.md')).forEach(f=>fs.copyFileSync(path.join(pSrc,f),path.join(pDst,f)));console.log('[Build] Prompt files copied to dist-electron');const sSrc='main/skills',sDst='dist-electron/main/skills';fs.cpSync(sSrc,sDst,{recursive:true});console.log('[Build] Skills copied to dist-electron')\" && npm run zip:extension",
     "zip:extension": "node scripts/zip-extension.js",
     "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=16 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
     "build:next": "next build",
@@ -67,6 +67,20 @@
       "!**/*.d.ts"
     ],
     "extraResources": [
+      {
+        "from": "main/skills",
+        "to": "skills",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "main/agent/prompts",
+        "to": "prompts",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "public",
         "to": "public",
@@ -151,7 +165,7 @@
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9",
     "fast-glob": "^3.3.3",
-    "framer-motion": "^12.38.0",
+    "framer-motion": "^12.42.2",
     "html-dom-parser": "^8.0.0",
     "ibm-cloud-sdk-core": "^5.4.11",
     "js-beautify": "^1.15.4",

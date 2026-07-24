@@ -4,6 +4,7 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { addOrUpdateMemory } from '../../learning/memory/persistent-memory';
 import { globalAbortManager } from '../abort-manager';
+import { extractJsonFromLLM } from '../json-repair';
 
 export const createMemoryConsolidatorNode = (
   runner: AgentRunner,
@@ -18,10 +19,7 @@ export const createMemoryConsolidatorNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
-    integrator.startNode('evaluation', 'Consolidating memories from interaction');
-    runner.telemetry.transition('evaluating');
-    runner.telemetry.info('Analyzing conversation to promote habits and preferences to persistent memory...');
-
+    // Run memory consolidation silently in the background without UI notifications
     try {
       const formattedHistory = state.messages.map(m => {
         const role = (m as any).role || (m as any).type || (m as any)._getType?.() || 'unknown';
@@ -83,17 +81,9 @@ If no new memory should be saved, respond with:
       ]) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      
-      content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
-      content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
-      const firstBrace = content.indexOf('{');
-      const lastBrace = content.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace > firstBrace) {
-        content = content.substring(firstBrace, lastBrace + 1);
-      }
-
-      const result = JSON.parse(content);
+      const result = extractJsonFromLLM(content) || { newMemories: [] };
       const newMemories = result.newMemories || [];
 
       console.log(`[MemoryConsolidator] Found ${newMemories.length} memory entries to save/update.`);
@@ -102,13 +92,12 @@ If no new memory should be saved, respond with:
         const { type, category, value, linkedFile } = mem;
         if (type && category && value && linkedFile) {
           await addOrUpdateMemory(type, category, value, linkedFile);
-          runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
+          console.log(`[MemoryConsolidator] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
         }
       }
 
       if (newMemories.length === 0) {
         console.log('[MemoryConsolidator] Primary agent found no memories. Invoking secondary auditor agent...');
-        runner.telemetry.info('Double-checking with Memory Auditor to ensure no important preferences or facts were missed...');
         
         const auditorSystemPrompt = `You are the EverFern Memory Auditor.
 Your job is to perform a rigorous secondary audit on the conversation history of the current interaction.
@@ -162,16 +151,9 @@ If you agree that there is absolutely nothing to store, respond with:
         ]) as any;
 
         let auditorContent = typeof auditorResponse.content === 'string' ? auditorResponse.content : JSON.stringify(auditorResponse.content);
-        auditorContent = auditorContent.replace(/<think>[\s\S]*?<\/think>/g, '');
-        auditorContent = auditorContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        auditorContent = auditorContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
-        const firstBraceAud = auditorContent.indexOf('{');
-        const lastBraceAud = auditorContent.lastIndexOf('}');
-        if (firstBraceAud !== -1 && lastBraceAud > firstBraceAud) {
-          auditorContent = auditorContent.substring(firstBraceAud, lastBraceAud + 1);
-        }
-
-        const auditorResult = JSON.parse(auditorContent);
+        const auditorResult = extractJsonFromLLM(auditorContent) || { newMemories: [] };
         const auditorNewMemories = auditorResult.newMemories || [];
 
         if (auditorNewMemories.length > 0) {
@@ -180,21 +162,17 @@ If you agree that there is absolutely nothing to store, respond with:
             const { type, category, value, linkedFile } = mem;
             if (type && category && value && linkedFile) {
               await addOrUpdateMemory(type, category, value, linkedFile);
-              runner.telemetry.info(`[Memory] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
+              console.log(`[MemoryConsolidator] Saved long-term ${type} (${category}): "${value}" -> ${linkedFile}`);
               newMemories.push(mem);
             }
           }
         }
       }
 
-      integrator.completeNode('evaluation', `Memory consolidation completed. Processed ${newMemories.length} entries.`);
-    } catch (err) {
-      console.warn('[MemoryConsolidator] Failed to consolidate memories:', err);
-      integrator.failNode('evaluation', err instanceof Error ? err.message : String(err));
+      console.log(`[MemoryConsolidator] Silent memory consolidation completed cleanly. Processed ${newMemories.length} entries.`);
+    } catch (err: any) {
+      console.warn('[MemoryConsolidator] Failed to consolidate memories silently:', err?.message || String(err));
     }
-
-    // Transition away from 'evaluating' so the telemetry spinner doesn't stay stuck on EVALUATING
-    runner.telemetry.transition('finalizing');
 
     return {};
   };

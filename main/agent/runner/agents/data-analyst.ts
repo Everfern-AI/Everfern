@@ -224,7 +224,14 @@ CRITICAL RULES:
       progressStreamer.emitStepComplete('Data Analysis', duration);
 
       const scrubbedContent = (result.messages?.[0] as any)?.content || '';
-      const isComplete = scrubbedContent.includes('MISSION_COMPLETE') || 
+
+      // Tool-call-presence routing: check if the agent called task_complete
+      const calledTaskComplete = (result.pendingToolCalls || []).some(
+        (tc: any) => (tc.name || tc.toolName || tc.function?.name || '') === 'task_complete'
+      );
+      // Legacy fallback: also treat MISSION_COMPLETE / ANALYSIS_FINISHED text strings as done
+      const isComplete = calledTaskComplete ||
+                         scrubbedContent.includes('MISSION_COMPLETE') ||
                          scrubbedContent.includes('ANALYSIS_FINISHED') ||
                          (result.pendingToolCalls?.length === 0 && scrubbedContent.length > 50);
 
@@ -232,7 +239,7 @@ CRITICAL RULES:
         ...result,
         returningFromSpecialist: isComplete ? null : 'data_analyst',
         dataAnalysisComplete: isComplete,
-        dataAnalysisSelfLoopCount: loopCount,
+        dataAnalysisSelfLoopCount: isComplete ? 0 : loopCount,
       };
 
 

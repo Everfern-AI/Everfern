@@ -21,7 +21,7 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
       command: { type: 'string', description: 'The command to execute. For target "main" on a Windows host, you MUST write Windows PowerShell commands (do not use "ls -la", use PowerShell syntax and backslash paths). For target "vm", write Linux Bash commands and use forward-slash Linux paths.' },
       cwd: { type: 'string', description: 'Working directory (defaults to ~/.everfern)' },
       id: { type: 'string', description: 'Optional unique ID for this command session' },
-      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 60000). Use 180000-300000 for builds, installs, typechecks, and slow commands.' },
+      timeoutMs: { type: 'number', description: 'Optional idle timeout in milliseconds (defaults to 300000). Use 300000-600000 for builds, installs, typechecks, and slow commands.' },
       timeout: { type: 'number', description: 'Optional timeout. Values <= 10000 are treated as seconds; larger values are milliseconds.' },
       timeoutSeconds: { type: 'number', description: 'Optional timeout in seconds.' },
       target: { type: 'string', enum: ['main', 'vm'], description: "Environment target: 'main' (host system: PowerShell on Windows, Bash/Zsh on Unix; requires permission) or 'vm' (Linux VM: WSL on Windows, Docker on macOS; no permission needed). Defaults to 'main'." }
@@ -95,7 +95,7 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
 
     onUpdate?.(`Terminal [${id}] (${target}): Executing "${command}"...`);
 
-    const info = await registry.execute(id, command, cwd, timeoutMs, target, onUpdate);
+    const info = await registry.execute(id, command, cwd, timeoutMs, target, onUpdate, emitEvent);
 
     try {
       const { getAgentContext } = require('../pi-tools');

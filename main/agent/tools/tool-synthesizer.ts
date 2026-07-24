@@ -183,7 +183,13 @@ export const synthesizeToolTool: AgentTool = {
     },
     required: ['name', 'description', 'parameters', 'requiredParameters', 'code']
   },
-  async execute(args) {
+  async execute(args, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void) {
+    const { checkToolPermission } = require('./permission-checker');
+    const perm = await checkToolPermission('synthesize_tool', args, onUpdate, emitEvent);
+    if (!perm.approved) {
+      return { success: false, output: perm.error || 'Permission denied by user for synthesize_tool.' };
+    }
+
     const name = String(args.name).trim();
     const description = String(args.description).trim();
     const code = String(args.code);
@@ -233,7 +239,13 @@ export const synthesizeSkillTool: AgentTool = {
     },
     required: ['name', 'description', 'content']
   },
-  async execute(args) {
+  async execute(args, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void) {
+    const { checkToolPermission } = require('./permission-checker');
+    const perm = await checkToolPermission('synthesize_skill', args, onUpdate, emitEvent);
+    if (!perm.approved) {
+      return { success: false, output: perm.error || 'Permission denied by user for synthesize_skill.' };
+    }
+
     const name = String(args.name).trim();
     const description = String(args.description).trim();
     const content = String(args.content);

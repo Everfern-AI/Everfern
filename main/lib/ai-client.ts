@@ -189,6 +189,8 @@ export interface ChatRequest {
   userConfirmation?: 'ACT' | 'STAY_ON_NOMINAL';
   abortSignal?: AbortSignal;
   reasoningEffort?: 'low' | 'medium' | 'high' | 'ultra' | 'ultra-delegate';
+  /** Agent/node name sent to EverFern Cloud for backend model routing (e.g. 'navis', 'coding_specialist', 'web_explorer') */
+  agent?: string;
 }
 
 export interface ChatResponse {
@@ -1690,6 +1692,12 @@ export class AIClient {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
+        // If local Ollama daemon is offline, fail fast immediately without noisy retries
+        if (url.includes('11434') || url.includes('localhost:11434')) {
+          console.log(`[AIClient] Local endpoint offline (${url}), failing fast.`);
+          throw lastError;
+        }
+
         // Check if it's an abort error (timeout)
         if (lastError.name === 'AbortError') {
           console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
@@ -1832,6 +1840,11 @@ export class AIClient {
     // Gemini: use text mode for response_format (json_object not supported)
     if (req.responseFormat === 'json' && this.config.provider === 'gemini') {
       // Gemini doesn't support json_object — we handle JSON parsing on our end
+    }
+
+    // EverFern Cloud: forward agent name for backend model routing
+    if (req.agent && this.config.provider === 'everfern') {
+      body['agent'] = req.agent;
     }
 
     const headers = { ...this._oaiHeaders };

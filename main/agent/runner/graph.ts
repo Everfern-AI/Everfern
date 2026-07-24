@@ -64,7 +64,7 @@ const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
   return ['coding', 'build', 'fix'].includes(state.currentIntent);
 };
 
-const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use', 'synthesize_tool', 'synthesize_skill']);
+const INTERACTIVE_AUTOMATION_TOOLS = new Set<string>();
 
 const getToolCallArgs = (call: any): Record<string, any> => {
   const raw = call?.arguments ?? call?.args ?? {};
@@ -100,6 +100,22 @@ const routePendingToolsWithAutomationApproval = (
   return 'multi_tool_orchestrator';
 };
 
+export const cleanCommandNarrative = (rawCmd: string): string => {
+  if (!rawCmd || typeof rawCmd !== 'string') return '';
+  let cmd = rawCmd;
+  const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+  if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
+  cmd = cmd
+    .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
+    .trim();
+  return cmd.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
 export const buildGraph = (
   runner: AgentRunner,
   toolDefs: any[],
@@ -114,7 +130,7 @@ export const buildGraph = (
   }
 
   const hitlNode = async (state: GraphStateType, config?: any) => {
-    const { runner, eventQueue, missionTracker, conversationId, shouldAbort, isResuming } = getContext(config);
+    const { runner, eventQueue, missionTracker, conversationId, shouldAbort } = getContext(config);
 
     if (shouldAbort?.()) {
       throw new Error('Execution aborted by user (stop button clicked)');
@@ -124,237 +140,175 @@ export const buildGraph = (
     if (missionTracker) missionTracker.startStep('step:hitl');
 
     try {
-      const { stateManager } = await import('./state-manager');
+      const getTcName = (call: any) => String(call?.name || call?.toolName || call?.function?.name || '').trim();
 
-      let originalRequest: any = null;
-      if (isResuming) {
-        originalRequest = stateManager.getInterruptData(conversationId || 'unknown');
-        if (!originalRequest && conversationId) {
-          const records = listHitlRecords(conversationId);
-          if (records.length > 0) {
-            originalRequest = records[0].request;
-            console.log(`[hitlNode] Found original request on disk: ${originalRequest.id}`);
-          }
-        }
-      }
 
-      const shouldSkipEvents = isResuming && !!originalRequest;
 
       const formatToolCallSummary = (call: any) => {
-        const name = call.name;
-        const args = call.arguments || {};
+        const name = getTcName(call) || 'tool';
+        let rawArgs = call?.arguments || call?.args || call?.function?.arguments || {};
+        if (typeof rawArgs === 'string') {
+          try { rawArgs = JSON.parse(rawArgs); } catch {}
+        }
 
         // Specialize formatting for terminal commands
-        if (name === 'terminal_execute' || name === 'executePwsh' || name === 'run_command' || name === 'bash') {
-          const cmd = args.command || args.CommandLine || args.cmd || JSON.stringify(args);
-          return `**${name}** — \`${cmd}\``;
+        if (['terminal_execute', 'executePwsh', 'run_command', 'bash', 'terminal_status'].includes(name)) {
+          const cmd = (typeof rawArgs === 'object' ? (rawArgs.command || rawArgs.CommandLine || rawArgs.cmd) : rawArgs) || JSON.stringify(rawArgs);
+          const cleanedCmd = cleanCommandNarrative(String(cmd));
+          return `**${name}** — \`${cleanedCmd.slice(0, 160)}\``;
+        }
+
+        // Specialize formatting for navis (web browser) tool calls
+        if (name === 'navis') {
+          const taskDesc = (typeof rawArgs === 'object' ? (rawArgs.task || rawArgs.taskName || rawArgs.url) : rawArgs) || JSON.stringify(rawArgs);
+          return `**navis** — \`${String(taskDesc).slice(0, 160)}\``;
+        }
+
+        // Specialize formatting for computer_use (desktop automation) tool calls
+        if (name === 'computer_use') {
+          const actionDesc = (typeof rawArgs === 'object' ? (rawArgs.action || rawArgs.task || rawArgs.taskName) : rawArgs) || JSON.stringify(rawArgs);
+          return `**computer_use** — \`${String(actionDesc).slice(0, 160)}\``;
         }
 
         // Default formatting for other tools
-        return `**${name}** — \`${JSON.stringify(args).slice(0, 120)}\``;
+        const summaryStr = typeof rawArgs === 'object' ? JSON.stringify(rawArgs) : String(rawArgs);
+        return `**${name}** — \`${summaryStr.slice(0, 120)}\``;
       };
 
       const buildFallbackActionSummary = () => {
         const signal = state.completionSignal;
         const rationale = String(signal?.hitlRationale || signal?.explanation || '').trim();
-        if (!rationale) {
-          return '**approval_required** — `Review the security rationale before proceeding.`';
-        }
-
+        if (!rationale) return 'Review the security rationale before proceeding.';
         const backtickCommand = rationale.match(/`([^`]{3,500})`/)?.[1]?.trim();
-        if (backtickCommand) {
-          return `**approval_required** — \`${backtickCommand}\``;
-        }
-
-        const quotedCommand = rationale.match(/["“]([^"”]{3,500})["”]/)?.[1]?.trim();
-        if (quotedCommand && /(?:npm|npx|pnpm|yarn|powershell|pwsh|cmd|python|node|git|rm|del|remove|new-item|mkdir|copy|move|curl|invoke-webrequest)/i.test(quotedCommand)) {
-          return `**approval_required** — \`${quotedCommand}\``;
-        }
-
-        return `**approval_required** — \`${rationale.slice(0, 240)}${rationale.length > 240 ? '…' : ''}\``;
+        if (backtickCommand) return backtickCommand;
+        return `${rationale.slice(0, 240)}${rationale.length > 240 ? '...' : ''}`;
       };
 
-      // If pendingToolCalls is empty but we're in HITL, check the message history for tool calls
-      let toolsToDisplay = originalRequest ? originalRequest.details.tools : (state.pendingToolCalls || []);
+      // Collect tools to display
+      let toolsToDisplay = state.pendingToolCalls || [];
       if (toolsToDisplay.length === 0 && state.messages && state.messages.length > 0) {
-        // Look for tool calls in the last assistant message
         for (let i = state.messages.length - 1; i >= 0; i--) {
           const msg = state.messages[i] as any;
           if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
             toolsToDisplay = msg.tool_calls.map((tc: any) => ({
-              name: tc.function?.name || tc.name || 'unknown',
-              arguments: tc.function?.arguments ?
-                (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
-                : tc.arguments || {}
+              name: getTcName(tc),
+              arguments: tc.function?.arguments
+                ? (typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments)
+                : tc.arguments || tc.args || {}
             }));
             break;
           }
         }
       }
 
-      const toolSummary = originalRequest ? originalRequest.details.summary : (
-        toolsToDisplay.length > 0
-          ? toolsToDisplay.map(formatToolCallSummary).join('\n')
-          : buildFallbackActionSummary()
-      );
+      const hasInteractiveAutomation = toolsToDisplay.some((tc: any) => INTERACTIVE_AUTOMATION_TOOLS.has(getTcName(tc)));
+      const hasToolSynthesis = toolsToDisplay.some((tc: any) => getTcName(tc) === 'synthesize_tool');
+      const hasSkillSynthesis = toolsToDisplay.some((tc: any) => getTcName(tc) === 'synthesize_skill');
 
-      const hasInteractiveAutomation = toolsToDisplay.some((tc: any) => INTERACTIVE_AUTOMATION_TOOLS.has(tc.name));
-      const hasToolSynthesis = toolsToDisplay.some((tc: any) => tc.name === 'synthesize_tool');
-      const hasSkillSynthesis = toolsToDisplay.some((tc: any) => tc.name === 'synthesize_skill');
-      const hitlRationale = originalRequest ? originalRequest.details.reasoning : (
-        state.completionSignal?.hitlRationale ||
+      // Extract actual AI narrative from the last assistant message (if present)
+      const lastAssistantMsg = [...(state.messages || [])].reverse().find((m: any) => {
+        const role = m.role || m._getType?.() || m.type;
+        return role === 'assistant' || role === 'ai';
+      });
+      const lastAiText = typeof lastAssistantMsg?.content === 'string'
+        ? lastAssistantMsg.content.trim()
+        : '';
+      const cleanAiNarrative = lastAiText ? lastAiText.slice(0, 300) : '';
+
+      const hitlRationale = state.completionSignal?.hitlRationale ||
+        (cleanAiNarrative ? cleanAiNarrative : undefined) ||
         (hasToolSynthesis
           ? 'An agent is requesting to synthesize and register a new custom tool. Please review the proposed tool code before approving.'
           : hasSkillSynthesis
             ? 'An agent is requesting to synthesize and register a new custom skill. Please review the proposed skill instructions before approving.'
             : hasInteractiveAutomation
               ? 'Interactive browser or desktop automation requires your permission before EverFern can control Navis or the computer.'
-              : 'High-risk operation detected')
-      );
-      const reasoning = hitlRationale;
-      const requestId = originalRequest ? originalRequest.id : crypto.randomUUID();
-      const timestamp = originalRequest ? originalRequest.timestamp : new Date().toISOString();
+              : 'High-risk operation detected');
 
-      const approvalRequest = originalRequest || {
-        id: requestId,
-        conversationId: conversationId || 'unknown',
-        timestamp,
-        question: "High-risk action detected. Please review and approve:",
-        details: {
-          tools: toolsToDisplay,
-          summary: toolSummary,
-          reasoning,
-        },
-        options: ['approve', 'reject', 'modify']
-      };
+      const toolSummary = toolsToDisplay.length > 0
+        ? toolsToDisplay.map(formatToolCallSummary).join('\n')
+        : buildFallbackActionSummary();
 
-      if (!shouldSkipEvents) {
-        if (conversationId) {
-          saveHitlRequest(approvalRequest);
-        }
+      // ── IPC Turn Intercept (same pattern as LocalExecutionPermissionCard) ──
+      // Emit local_execution_request -> frontend renders inline card ->
+      // user clicks a button -> acp:local-execution-response resolves the Promise.
+      // No graph interrupt(), no new messages, no LangGraph resume needed.
+      const { getLocalExecutionResolvers } = await import('../tools/pi-tools');
+      const { toolApprovalStore } = await import('../../store/tool-approvals');
 
-        // Emit tool_start for approve_actions so frontend knows to expect a result
-        eventQueue?.push({
-          type: 'tool_start',
-          toolName: 'approve_actions',
-          toolCallId: approvalRequest.id,
-          toolArgs: { questions: reasoning }
+      const requestId = `hitl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      runner.telemetry.info(`HITL — emitting IPC turn intercept card (requestId: ${requestId})`);
+
+      eventQueue?.push({
+        type: 'tool_start',
+        toolName: 'approve_actions',
+        toolCallId: requestId,
+        toolArgs: { questions: hitlRationale }
+      });
+
+      eventQueue?.push({
+        type: 'local_execution_request',
+        requestId,
+        command: toolSummary,
+        shellType: 'Security Check',
+        reason: hitlRationale,
+        conversationId: conversationId || undefined,
+        isHitlApproval: true, // tells card to show Allow Prefix button
+      });
+
+      // Await IPC response with abort check (releases immediately on user Stop)
+      const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }>((resolve) => {
+        const checkAbortInterval = setInterval(() => {
+          if (shouldAbort?.()) {
+            clearInterval(checkAbortInterval);
+            getLocalExecutionResolvers().delete(requestId);
+            resolve({ approved: false, alwaysAllow: false });
+          }
+        }, 300);
+
+        getLocalExecutionResolvers().set(requestId, (res) => {
+          clearInterval(checkAbortInterval);
+          resolve(res);
         });
+      });
 
-        const { askUserTool } = await import('../tools/ask-user');
-        const hitlResult = await askUserTool.execute({
-          questions: [
-            {
-              question: `⚠️ Security Check Required\n\n${reasoning}\n\nActions to execute:\n${toolSummary}`,
-              options: [
-                '✅ Approve — proceed once',
-                '🚀 Approve & Allow Always — never ask for this specific command again',
-                '📂 Approve & Allow Prefix — never ask for commands starting with this base (e.g. npm)',
-                '❌ Reject — cancel and do not proceed'
-              ],
-              multiSelect: false,
-            }
-          ]
-        }, (msg) => runner.telemetry.info(msg));
+      runner.telemetry.info('HITL — awaiting user IPC response...');
+      const response = await approvalPromise;
+      getLocalExecutionResolvers().delete(requestId);
 
-        eventQueue?.push({
-          type: 'tool_call',
-          toolCall: {
-            id: approvalRequest.id,
-            toolCallId: approvalRequest.id,
-            toolName: 'approve_actions',
-            args: { questions: (hitlResult.data as any)?.questions },
-            result: hitlResult,
-          },
-        } as any);
+      const isApproved = response.approved;
+      runner.telemetry.info(`HITL IPC response: ${isApproved ? 'APPROVED' : 'REJECTED'} alwaysAllow=${response.alwaysAllow} allowPrefix=${response.allowPrefix}`);
 
-        eventQueue?.push({
-          type: 'hitl_request',
-          request: approvalRequest,
-        } as any);
-
-        // Register interruption in stateManager so runStream can find it upon resume
-        if (conversationId) {
-          stateManager.setInterrupted(conversationId, approvalRequest);
-        }
-      }
-
-      runner.telemetry.info(shouldSkipEvents ? 'Resuming HITL approval — skipping request emission' : 'HITL approval required — ending turn, user must respond');
-      if (missionTracker) missionTracker.completeStep('step:hitl');
-
-      // Use interrupt() to pause the graph and wait for user response.
-      // When the user approves/rejects, the runner resumes with Command({ resume: answer }).
-      // BUG-11 FIX: The inner catch must re-throw GraphInterrupt so LangGraph
-      // can properly pause the graph. Only catch non-interrupt errors.
-      let answer: any;
-      try {
-        answer = interrupt(approvalRequest);
-      } catch (interruptErr: any) {
-        // Re-throw GraphInterrupt — this is how LangGraph pauses the graph
-        if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
-          throw interruptErr;
-        }
-        // Only non-interrupt errors route to END to prevent infinite recursion
-        runner.telemetry.info('HITL interrupt() threw a non-interrupt error — ending graph turn to prevent recursion');
-        return {
-          taskPhase: 'planning' as const,
-          hitlApprovalResult: {
-            approved: null as any, // null → routes to END
-            response: 'Waiting for user approval',
-            reasoning: 'HITL paused — awaiting user response',
-          },
-          completionSignal: null,
-        };
-      }
-
-      const answerStr = String(answer);
-      const isApproved = answerStr.includes('[HITL_APPROVED]') ||
-                         answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
-                         answerStr.includes('[HITL_APPROVED_PREFIX]') ||
-                         answerStr.includes('Approve — proceed once') ||
-                         answerStr.includes('proceed once') ||
-                         answerStr.includes('Approve & Allow Always') ||
-                         answerStr.includes('Approve & Allow Prefix');
-
-      if (isApproved && (
-        answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
-        answerStr.includes('[HITL_APPROVED_PREFIX]') ||
-        answerStr.includes('Approve & Allow Always') ||
-        answerStr.includes('Approve & Allow Prefix')
-      )) {
-        const type = (answerStr.includes('[HITL_APPROVED_ALWAYS]') || answerStr.includes('Approve & Allow Always')) ? 'exact' : 'prefix';
-
-        // Register policies for all pending tools
+      // Register auto-approval policies
+      if (isApproved && (response.alwaysAllow || response.allowPrefix)) {
+        const type = response.allowPrefix ? 'prefix' : 'exact';
         for (const tc of toolsToDisplay) {
-          const args = tc.arguments || {};
+          const toolName = getTcName(tc);
+          if (!toolName) continue;
+          const args = tc.arguments || tc.args || {};
           let pattern = '';
-
           const cmdTools = ['terminal_execute', 'executePwsh', 'run_command', 'bash'];
-          if (cmdTools.includes(tc.name)) {
-            const cmd = args.command || args.CommandLine || args.cmd || '';
-            if (type === 'prefix') {
-              // Extract prefix (e.g. "npm install" -> "npm")
-              pattern = cmd.split(' ')[0];
+          if (cmdTools.includes(toolName)) {
+            const cmd = (args.command || args.CommandLine || args.cmd || '').trim();
+            if (response.allowPrefix) {
+              const parts = cmd.split(/\s+/);
+              pattern = (parts.length >= 2 && ['run','push','pull','commit','checkout','add','install','build','exec'].includes(parts[1].toLowerCase()))
+                ? `${parts[0]} ${parts[1]}` : (parts[0] || cmd);
             } else {
               pattern = cmd;
             }
           } else {
-            // For other tools, we use the tool name as the pattern for now
-            pattern = tc.name;
+            pattern = toolName;
           }
-
           if (pattern) {
-            toolApprovalStore.addPolicy({
-              type,
-              toolName: tc.name,
-              pattern
-            });
-            runner.telemetry.info(`Registered auto-approval policy: ${type} match for ${tc.name} with pattern "${pattern}"`);
+            toolApprovalStore.addPolicy({ type, toolName, pattern });
+            runner.telemetry.info(`Auto-approval policy: ${type} for ${toolName} pattern="${pattern}"`);
           }
         }
       }
 
-      runner.telemetry.info(`HITL response received: ${isApproved ? 'APPROVED' : 'REJECTED'}`);
+      if (missionTracker) missionTracker.completeStep('step:hitl');
 
       return {
         taskPhase: 'executing' as const,
@@ -462,7 +416,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const codingTools = toolDefs.filter(t => 
-      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'grep_search', 'list_dir', 'run_command', 'terminal_execute', 'spawn_agent', 'ask_user_question'].includes(t.name) || 
+      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'grep_search', 'list_dir', 'run_command', 'terminal_execute', 'spawn_agent', 'ask_user_question', 'task_complete', 'view_file', 'executePwsh', 'grep', 'find', 'ls', 'read', 'write', 'edit', 'view_image', 'generate_image'].includes(t.name) || 
       t.name.includes('mcp')
     );
     const node = createCodingSpecialistNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, codingTools);
@@ -476,7 +430,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const dataTools = toolDefs.filter(t => 
-      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'run_command', 'terminal_execute', 'ask_user_question'].includes(t.name) || 
+      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'run_command', 'terminal_execute', 'ask_user_question', 'task_complete', 'view_file', 'executePwsh', 'grep_search', 'python_execute'].includes(t.name) || 
       t.name.includes('mcp')
     );
     const node = createDataAnalystNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, dataTools);
@@ -490,7 +444,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['navis', 'browser_subagent', 'read_url_content', 'search_web', 'ask_user_question', 'spawn_agent'].includes(t.name)
+      ['navis', 'browser_subagent', 'web_search', 'web_fetch', 'read_url_content', 'search_web', 'ask_user_question', 'spawn_agent', 'task_complete', 'view_file'].includes(t.name)
     );
     const node = createWebExplorerNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -502,7 +456,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['navis', 'browser_subagent', 'read_url_content', 'search_web', 'ask_user_question'].includes(t.name)
+      ['navis', 'browser_subagent', 'web_search', 'web_fetch', 'read_url_content', 'search_web', 'ask_user_question', 'task_complete', 'view_file'].includes(t.name)
     );
     const node = createDeepResearchNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -565,6 +519,25 @@ If a specialized agent failed to complete a step, identify the issue and use you
     return false;
   };
 
+  const wasTaskCompleteExecutedInLastTurn = (state: GraphStateType): boolean => {
+    const messages = state.messages || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      const role = msg.role || msg.type || msg._getType?.();
+      if (role === 'assistant' || role === 'ai') {
+        break;
+      }
+      if (role === 'tool' || role === 'function') {
+        const name = msg.name || msg.tool_name || msg.toolName || '';
+        if (name === 'task_complete') {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+
   const askUserWaitNode = async (state: GraphStateType, config?: any) => {
     const { runner, conversationId } = getContext(config);
 
@@ -609,6 +582,24 @@ If a specialized agent failed to complete a step, identify the issue and use you
     const answerStr = String(answer);
     console.log(`[ask_user_wait] Received user answer: ${answerStr}`);
 
+    const isHitlActionResponse = answerStr.includes('[HITL_APPROVED]') ||
+                                 answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
+                                 answerStr.includes('[HITL_APPROVED_PREFIX]') ||
+                                 answerStr.includes('[HITL_REJECTED]') ||
+                                 answerStr.includes('Approve — proceed once') ||
+                                 answerStr.includes('proceed once') ||
+                                 answerStr.includes('Approve & Allow Always') ||
+                                 answerStr.includes('Approve & Allow Prefix') ||
+                                 answerStr.includes('Reject — cancel');
+
+    let formattedContent = answerStr;
+    if (isHitlActionResponse) {
+      const isApproved = !answerStr.includes('[HITL_REJECTED]') && !answerStr.includes('Reject — cancel');
+      formattedContent = isApproved
+        ? `[User approved tool execution request (${answerStr}). Permission granted. Execute the requested tool now and proceed with the task.]`
+        : `[User rejected tool execution request (${answerStr}).]`;
+    }
+
     // Clean up interrupted state in stateManager
     if (conversationId) {
       stateManager.resumeFromInterrupt(conversationId, null);
@@ -616,13 +607,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
 
     const userMessage = {
       role: 'user',
-      content: answerStr,
+      content: formattedContent,
       id: `msg-user-ans-${Date.now()}`
     };
 
-    // BUG-02 FIX: Return only the NEW message. LangGraph's MessagesAnnotation
-    // uses an 'add' reducer — spreading the entire state.messages array causes
-    // every existing message to be duplicated.
     return {
       messages: [userMessage],
       returningFromSpecialist: state.returningFromSpecialist,
@@ -742,7 +730,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     return 'coding_specialist';
                 case 'route_data_analyst': return 'data_analyst';
                 case 'route_web_explorer': return 'web_explorer';
-                case 'route_deep_research': return 'web_explorer';
+                case 'route_deep_research': return 'deep_research';
             }
         }
         return 'memory_consolidator';
@@ -751,6 +739,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         coding_specialist: 'coding_specialist',
         data_analyst: 'data_analyst',
         web_explorer: 'web_explorer',
+        deep_research: 'deep_research',
         memory_consolidator: 'memory_consolidator'
     })
 
@@ -790,20 +779,18 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → memory_consolidator');
                     return 'memory_consolidator';
                 case 'continue_brain':
-                    if (!completionSignal) {
-                        console.warn('[Graph] ⚠️ continue_brain but completionSignal is null (likely parse error) → memory_consolidator');
-                        return 'memory_consolidator';
-                    }
-                    if (
-                        completionSignal.reason === 'waiting_for_user_input' ||
-                        completionSignal.reason === 'cannot_proceed'
-                    ) {
-                        console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal.reason} → END (avoid loop)`);
-                        return END;
-                    }
-                    if (completionSignal.reason === 'task_complete') {
-                        console.log(`[Graph] ➡️ continue_brain but completionSignal=task_complete → memory_consolidator`);
-                        return 'memory_consolidator';
+                    if (completionSignal) {
+                        if (
+                            completionSignal.reason === 'waiting_for_user_input' ||
+                            completionSignal.reason === 'cannot_proceed'
+                        ) {
+                            console.log(`[Graph] ➡️ continue_brain but completionSignal=${completionSignal.reason} → END (avoid loop)`);
+                            return END;
+                        }
+                        if (completionSignal.reason === 'task_complete') {
+                            console.log(`[Graph] ➡️ continue_brain but completionSignal=task_complete → memory_consolidator`);
+                            return 'memory_consolidator';
+                        }
                     }
                     console.log('[Graph] ➡️ Brain routing decision: continue_brain → brain');
                     return 'brain';
@@ -829,31 +816,45 @@ If a specialized agent failed to complete a step, identify the issue and use you
     })
 
     // All specialized agents route back to brain for coordination
-    // BUG-03 FIX: Added self-loop guard for coding_specialist to prevent infinite loops
+    // Tool-call-presence routing (ReAct / LangGraph / OpenAI Swarm pattern).
+    // "Continue if tools requested. Done if task_complete was called."
+    // No magic-string parsing required — everything is structural.
     .addConditionalEdges('coding_specialist', (state) => {
-        const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
+        const pendingTools = state.pendingToolCalls || [];
+        const hasTools = pendingTools.length > 0;
 
         if (hasTools) {
+            // Check if this IS the task_complete call — if so, specialist is done
+            const calledTaskComplete = pendingTools.some(
+                (tc: any) => (tc.name || tc.toolName || tc.function?.name || '') === 'task_complete'
+            );
+
+            if (calledTaskComplete) {
+                console.log('[Graph] ✅ Coding specialist called task_complete → returning to brain/operator');
+                // task_complete still gets executed by orchestrator; then routes back here.
+                // Let it flow through orchestrator so the tool result is recorded.
+                const route = routePendingToolsWithAutomationApproval(state, 'Coding specialist (task_complete)');
+                return route;
+            }
+
+            // Normal tool call — execute and loop back to specialist
             const route = routePendingToolsWithAutomationApproval(state, 'Coding specialist');
             console.log(`[Graph] 🔀 Coding specialist has tools → ${route}`);
             return route;
         }
 
-        // BUG-03 FIX: Loop guard — prevent infinite self-loops
-        const loopCount = state.codingSpecialistSelfLoopCount || 0;
-        const MAX_SELF_LOOPS = 5;
-        if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Coding specialist reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
-        }
-
-        // Keep specialist in control if not complete
-        if (!state.codingComplete) {
-            console.log('[Graph] 🔀 Coding specialist not complete → coding_specialist');
+        // No tool calls at all (text-only response).
+        // Give the specialist 2 grace passes to emit a tool call before deferring to brain.
+        // This handles the rare case where the model produces a bridging response
+        // without tools (e.g. "I'll now implement...") and needs another turn.
+        const noToolCount = state.codingSpecialistSelfLoopCount || 0;
+        if (noToolCount < 2 && !state.codingComplete) {
+            console.log(`[Graph] 🔄 Coding specialist: text-only response (grace pass ${noToolCount + 1}/2) → self-looping`);
             return 'coding_specialist';
         }
 
-        console.log('[Graph] 🔀 Coding specialist complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        // Text-only after 2 grace passes or codingComplete — return to coordinator
+        console.log('[Graph] 🔀 Coding specialist finished turn → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
         return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         hitl_approval: 'hitl_approval',
@@ -863,7 +864,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
         operator_coordinator: 'operator_coordinator',
     })
 
-    // BUG-03 FIX: Added self-loop guard for data_analyst to prevent infinite loops
+
+
     .addConditionalEdges('data_analyst', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
@@ -873,21 +875,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        // BUG-03 FIX: Loop guard — prevent infinite self-loops
-        const loopCount = state.dataAnalysisSelfLoopCount || 0;
-        const MAX_SELF_LOOPS = 5;
-        if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Data analyst reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
-        }
-
-        // Keep specialist in control if not complete
-        if (!state.dataAnalysisComplete) {
-            console.log('[Graph] 🔀 Data analyst not complete → data_analyst');
-            return 'data_analyst';
-        }
-
-        console.log('[Graph] 🔀 Data analyst complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        console.log('[Graph] 🔀 Data analyst finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
         return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         hitl_approval: 'hitl_approval',
@@ -896,7 +884,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         brain: 'brain',
         operator_coordinator: 'operator_coordinator',
     })
-
 
     .addConditionalEdges('web_explorer', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
@@ -907,25 +894,8 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        // Bug 5: Iteration limit for web_explorer self-loop
-        const loopCount = state.webExplorerSelfLoopCount || 0;
-        const MAX_SELF_LOOPS = 3;
-        if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Web explorer reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop to ` + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
-        }
-
-        // Sub-task 3.4: Check if web explorer workflow is complete
-        const webExplorerComplete = state.webExplorerComplete;
-        if (webExplorerComplete) {
-            console.log('[Graph] 🔀 Web explorer workflow complete (webExplorerComplete: true) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
-        }
-
-        // Sub-task 3.4: If no tools and not complete, continue web explorer workflow
-        console.log('[Graph] 🔀 Web explorer continuing workflow (webExplorerComplete: false) → web_explorer');
-        return 'web_explorer';
-
+        console.log('[Graph] 🔀 Web explorer finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
@@ -935,7 +905,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
         [END]: END,
     })
 
-    // BUG-04 FIX: Added operator_coordinator routing and edge for deep_research
     .addConditionalEdges('deep_research', (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
 
@@ -945,21 +914,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        // Loop guard for deep_research
-        const loopCount = state.deepResearchSelfLoopCount || 0;
-        const MAX_SELF_LOOPS = 5;
-        if (loopCount >= MAX_SELF_LOOPS) {
-            console.warn(`[Graph] ⚠️ Deep research reached MAX_SELF_LOOPS (${MAX_SELF_LOOPS}) → breaking loop`);
-            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
-        }
-
-        // Keep specialist in control if not complete
-        if (!state.deepResearchComplete) {
-            console.log('[Graph] 🔀 Deep research not complete → deep_research');
-            return 'deep_research';
-        }
-
-        console.log('[Graph] 🔀 Deep research complete → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
+        console.log('[Graph] 🔀 Deep research finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
         return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
     }, {
         hitl_approval: 'hitl_approval',
@@ -999,6 +954,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return 'ask_user_wait';
         }
 
+        if (wasTaskCompleteExecutedInLastTurn(state)) {
+            console.log('[Graph] ✅ task_complete tool executed → returning to brain/operator for turn completion');
+            return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        }
+
         if (specialist) {
             console.log(`[Graph] ⬅️ Returning to specialist: ${specialist}`);
             switch (specialist) {
@@ -1016,6 +976,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         brain: 'brain',
+        operator_coordinator: 'operator_coordinator',
         ask_user_wait: 'ask_user_wait',
     })
 
@@ -1037,7 +998,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
         web_explorer: 'web_explorer',
         deep_research: 'deep_research',
         brain: 'brain',
-    });
+    })
+
+    .addEdge('memory_consolidator', END);
 
   const finalGraph = compiledGraph.compile({
     checkpointer: lightweightCheckpointer

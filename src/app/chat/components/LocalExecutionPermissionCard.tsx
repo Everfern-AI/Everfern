@@ -3,14 +3,18 @@
 import React, { useRef, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
+import { GlobeAltIcon, CpuChipIcon, CommandLineIcon, WrenchScrewdriverIcon, CubeTransparentIcon } from "@heroicons/react/24/outline";
+
 interface LocalExecutionPermissionCardProps {
   command: string;
-  shellType: "Bash" | "PowerShell";
+  shellType: string;
   reason: string;
   agentName: string;
   onDeny: () => void;
   onAlwaysAllow: () => void;
   onAllowOnce: () => void;
+  /** Optional: shown only for HITL Security Check approvals */
+  onAllowPrefix?: () => void;
 }
 
 /**
@@ -28,6 +32,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
   onDeny,
   onAlwaysAllow,
   onAllowOnce,
+  onAllowPrefix,
 }) => {
   const denyButtonRef = useRef<HTMLButtonElement>(null);
   const respondedRef = useRef(false);
@@ -84,46 +89,66 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           }}
         >
           {/* Shield / Terminal icon badge */}
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              backgroundColor: "var(--color-bg-base)",
-              border: "1px solid var(--color-border)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--color-text-secondary)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="4 17 10 11 4 5" />
-              <line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                fontSize: 13.5,
-                fontWeight: 600,
-                color: "var(--color-text-primary)",
-                lineHeight: 1.3,
-                fontFamily: "var(--font-sans)",
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                backgroundColor: "var(--color-bg-base)",
+                border: "1px solid var(--color-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
               }}
             >
-              Allow {agentName} to execute a command?
+              {shellType === "Navis Browser" ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <line x1="21.17" y1="8" x2="12" y2="8"></line>
+                  <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+                  <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+                </svg>
+              ) : shellType === "Computer Use" ? (
+                <CpuChipIcon style={{ width: 18, height: 18, color: "var(--color-text-secondary)" }} />
+              ) : shellType === "Tool Creation" ? (
+                <WrenchScrewdriverIcon style={{ width: 18, height: 18, color: "var(--color-text-secondary)" }} />
+              ) : shellType === "Skill Creation" ? (
+                <CubeTransparentIcon style={{ width: 18, height: 18, color: "var(--color-text-secondary)" }} />
+              ) : shellType === "Security Check" ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              ) : (
+                <CommandLineIcon style={{ width: 18, height: 18, color: "var(--color-text-secondary)" }} />
+              )}
             </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  lineHeight: 1.3,
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                {shellType === "Navis Browser" ? (
+                  "Authorize Navis to use a new tab from My Browser to complete your task"
+                ) : shellType === "Computer Use" ? (
+                  "Authorize Computer Use to control your desktop to complete your task"
+                ) : shellType === "Tool Creation" ? (
+                  "Allow EverFern to create a new dynamic tool?"
+                ) : shellType === "Skill Creation" ? (
+                  "Allow EverFern to save a new reusable skill?"
+                ) : shellType === "Security Check" ? (
+                  "⚠️ Security check — review action before proceeding"
+                ) : (
+                  `Allow ${agentName} to execute a command?`
+                )}
+              </div>
             {reason && (
               <div
                 style={{
@@ -167,19 +192,51 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
             borderBottom: "1px solid var(--color-border)",
           }}
         >
-          <code
-            style={{
-              fontFamily: "'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-              fontSize: 13,
-              color: "var(--color-text-primary)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-              lineHeight: 1.6,
-              display: "block",
-            }}
-          >
-            {command}
-          </code>
+          {shellType === "Navis Browser" || shellType === "Computer Use" || shellType === "Tool Creation" || shellType === "Skill Creation" || shellType === "Security Check" ? (
+            <div
+              style={{
+                fontSize: 14,
+                color: "var(--color-text-primary)",
+                fontWeight: 500,
+                lineHeight: 1.5,
+                display: "block",
+                padding: "4px 0",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              <span style={{ color: "var(--color-text-secondary)", marginRight: 6 }}>
+                {shellType === "Tool Creation" || shellType === "Skill Creation" ? "Details:" : shellType === "Security Check" ? "Actions:" : "Action:"}
+              </span>
+              {command.replace(/^Navis Browser:\s*|^Computer Use:\s*|^Tool Creation:\s*|^Skill Creation:\s*/, "")}
+            </div>
+          ) : (
+            <code
+              style={{
+                fontFamily: "'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+                fontSize: 13,
+                color: "var(--color-text-primary)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                lineHeight: 1.6,
+                display: "block",
+              }}
+            >
+              {(() => {
+                let cmd = command;
+                const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+                if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
+                cmd = cmd
+                  .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                  .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                  .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                  .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                  .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
+                  .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
+                  .trim();
+                return cmd.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || command;
+              })()}
+            </code>
+          )}
         </div>
 
         {/* ── Button Row ── */}
@@ -253,8 +310,42 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border)";
             }}
           >
-            Deny
+            {shellType === "Security Check" ? "Reject" : "Deny"}
           </button>
+
+          {/* Allow Prefix — shown only for HITL Security Check */}
+          {onAllowPrefix && (
+            <button
+              onClick={() => handleResponse(onAllowPrefix!)}
+              onKeyDown={handleKeyDown}
+              aria-label="Allow prefix for local execution"
+              disabled={responded}
+              style={{
+                padding: "7px 16px",
+                borderRadius: 10,
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg-surface)",
+                color: "var(--color-text-secondary)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: responded ? "default" : "pointer",
+                opacity: responded ? 0.55 : 1,
+                fontFamily: "var(--font-sans)",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={e => {
+                if (responded) return;
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-hover)";
+              }}
+              onMouseLeave={e => {
+                if (responded) return;
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-bg-surface)";
+              }}
+            >
+              Allow prefix
+            </button>
+          )}
 
           {/* Always Allow */}
           <button

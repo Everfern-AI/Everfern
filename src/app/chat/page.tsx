@@ -140,38 +140,28 @@ import LocalExecutionPermissionCard from './components/LocalExecutionPermissionC
 // ── Orchestrator noise scrubber ───────────────────────────────────────────────
 // Strips internal orchestration lines that leak into streaming/stored content.
 const ORCHESTRATOR_LINE_PATTERNS = [
-    /🤖[^\n]*/g,
-    /🧭[^\n]*/g,
-    /🔍[^\n]*/g,
-    /⏱️[^\n]*/g,
-    /⏭️[^\n]*/g,
-    /🧠[^\n]*/g,
-    /💭(?!\s*Working on:|\s*Task:)[^\n]*/g,
-    /\[?BRAIN\]?[:\s][^\n]*/gi,
-    /\[?TRIAGE\]?[:\s][^\n]*/gi,
-    /\[?PLANNER\]?[:\s][^\n]*/gi,
-    /\[?DECOMPOSER\]?[:\s][^\n]*/gi,
+    /^\s*🤖[^\n]*/gm,
+    /^\s*🧭[^\n]*/gm,
+    /^\s*🔍[^\n]*/gm,
+    /^\s*⏱️[^\n]*/gm,
+    /^\s*⏭️[^\n]*/gm,
+    /^\s*🧠[^\n]*/gm,
+    /^\s*💭(?!\s*Working on:|\s*Task:)[^\n]*/gm,
+    /^\s*\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System)\][^\n]*/gim,
     /Triage in progress:[^\n]*/gi,
     /Initializing step[^\n]*/gi,
     /Analyzing task requirements[^\n]*/gi,
     /Routing analysis completed[^\n]*/gi,
-    /Processing\.\.\.[^\n]*/gi,
-    /\[?Evaluating in [^\]\s]+\]?\.*[^\n]*/gi,
-    /\[?Navis\]?[^\n]*/gi,
-    /\[?Terminal\]?[^\n]*/gi,
-    /\[?Computer\]?[^\n]*/gi,
+    /\[Evaluating in [^\]\s]+\]\.*[^\n]*/gi,
     /Intent Classification:.*?(?=(Decomposer:|Debate:|Skipped Debate:|Brain Node:|🧭|$))/gi,
     /(?:Skipped )?Decomposer: Skipped[^\n]*/gi,
     /(?:Skipped )?Debate:.*?(?=(Brain Node:|🧭|$))/gi,
     /Brain Node:.*?(?=(🧭|$))/gi,
-    /task_complete — Task completed[^\n]*/gi,
     /\{[\s\n]*"messages"[\s\S]*?\}/gi,
     /\{[\s\n]*"tool_calls"[\s\S]*?\}/gi,
     /\{[\s\n]*"role"[\s\S]*?\}/gi,
-    /\[?(?:Graph|IPC|Network|System)\]?[^\n]*/gi,
     /^\s*(?:Working|Thinking|Processing|Analyzing)(?:\.|\s)*$/gim,
-    /(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gi,
-    /(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[:\-\s][^\n]*/gi
+    /^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gim,
 ];
 
 function scrubOrchestratorNoise(text: string): string {
@@ -348,6 +338,18 @@ function escapeControlCharsInStrings(str: string): string {
         }
     }
     return result;
+}
+
+/** Safely coerce a message content value (string | array of content blocks) to a plain string. */
+function toContentString(content: any): string {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return (content as any[])
+            .map((b: any) => (b.type === 'text' ? b.text ?? '' : ''))
+            .join('');
+    }
+    return String(content);
 }
 
 function extractSuggestedFollowUps(content: string): { cleanContent: string; followUps: Array<{ icon: string; text: string }> } {
@@ -819,7 +821,7 @@ export default function ChatPage() {
                 const assistantMsgs = messagesRef.current.filter(m => m.role === 'assistant');
                 if (assistantMsgs.length > 0) {
                     const lastAssistantMsg = assistantMsgs[assistantMsgs.length - 1];
-                    const content = lastAssistantMsg.content || '';
+                    const content = toContentString(lastAssistantMsg.content);
                     const lines = content.split('\n');
                     const fallbackTasks: { description: string; status: 'pending' | 'in_progress' | 'completed' }[] = [];
                     for (const line of lines) {
@@ -1615,7 +1617,7 @@ export default function ChatPage() {
         answeredLocalExecutionRequestIdsRef.current.clear();
     }, [activeConversationId]);
 
-    const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean) => {
+    const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean) => {
         if (!request?.requestId || answeredLocalExecutionRequestIdsRef.current.has(request.requestId)) {
             return;
         }
@@ -1627,7 +1629,7 @@ export default function ChatPage() {
         }
 
         const acpApi = (window as any).electronAPI?.acp;
-        acpApi?.sendLocalExecutionResponse?.({ requestId: request.requestId, approved, alwaysAllow });
+        acpApi?.sendLocalExecutionResponse?.({ requestId: request.requestId, approved, alwaysAllow, allowPrefix: allowPrefix ?? false });
 
         setLocalExecutionRequest(current => current?.requestId === request.requestId ? null : current);
         const updatedToolCalls = liveToolCallsRef.current.map(tc => (
@@ -1638,7 +1640,7 @@ export default function ChatPage() {
                     output: approved
                         ? 'Permission approved. Running local command...'
                         : `Permission denied.\n\n${request.command}`,
-                    data: { ...(tc.data || {}), approved, alwaysAllow },
+                    data: { ...(tc.data || {}), approved, alwaysAllow, allowPrefix },
                 }
                 : tc
         ));
@@ -1901,7 +1903,30 @@ export default function ChatPage() {
         if (data.conversationId && data.conversationId !== activeConversationIdRef.current) {
             return;
         }
-        const update = String(data.update || '').trim();
+        const rawUpdate = String(data.update || '').trim();
+        if (!rawUpdate) return;
+
+        // Strip the [Terminal Live Logs (10s @ ...)] header and PowerShell boilerplate
+        // that may have leaked through from older backend versions or edge cases.
+        const update = rawUpdate
+            .replace(/^\[Terminal Live Logs \([^)]+\)\]:\n?/i, '')
+            .split('\n')
+            .filter(l => {
+                const t = l.trim();
+                if (/^PS\s+[A-Z]:\\.+>/i.test(t)) return false;
+                if (t.startsWith('>>')) return false;
+                if (t.startsWith('[Console]::OutputEncoding')) return false;
+                if (t.startsWith('$OutputEncoding')) return false;
+                if (t.startsWith('$ProgressPreference')) return false;
+                if (t.startsWith('$global:EF_')) return false;
+                if (t.startsWith('$global:LASTEXITCODE')) return false;
+                if (t.startsWith('try {') || t.startsWith('& {')) return false;
+                if (t.startsWith('Write-Output') || t.startsWith('Set-Location -LiteralPath')) return false;
+                if (t.includes('__EF_DONE_')) return false;
+                return true;
+            })
+            .join('\n')
+            .trim();
         if (!update) return;
 
         const key = data.toolCallId || `${data.toolName}_running`;
@@ -2623,6 +2648,11 @@ export default function ChatPage() {
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
                         streamingToolCallsRef.current = [];
+                        setStreamingContent("");
+                        setStreamingThought("");
+                        streamingContentRef.current = "";
+                        streamingThoughtRef.current = "";
+                        assistantMessageIdRef.current = null;
                         setMessages(prev => {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
@@ -2901,13 +2931,23 @@ export default function ChatPage() {
 
                 // Consume the pending narrative once — clear immediately so subsequent
                 // tool calls in the same burst don't inherit the same caption.
-                const narrativeText = streamingContentRef.current.trim();
-                if (narrativeText) {
+                // Priority: backend _narrative (from toolArgs) > streamed text from chat bubble
+                const backendNarrative = typeof toolArgs?._narrative === 'string' ? toolArgs._narrative.trim() :
+                                        typeof toolArgs?.narrative === 'string' ? toolArgs.narrative.trim() : '';
+                const streamNarrative = streamingContentRef.current.trim();
+                const narrativeText = backendNarrative || streamNarrative;
+
+                if (streamNarrative && !backendNarrative) {
                     streamingContentRef.current = '';
                     setStreamingContent('');
                 }
 
-                const display = resolveToolDisplay(toolName, toolArgs);
+                // Inject narrative into toolArgs so resolveToolDisplay picks it up for the pill label
+                const enrichedToolArgs = narrativeText
+                    ? { ...toolArgs, _narrative: narrativeText }
+                    : toolArgs;
+
+                const display = resolveToolDisplay(toolName, enrichedToolArgs);
 
                 const placeholder = liveToolCallsRef.current.find(t =>
                     t.id.startsWith('streaming-') && t.toolName === toolName
@@ -2920,7 +2960,7 @@ export default function ChatPage() {
                     toolName,
                     ...display,
                     status: 'running',
-                    args: toolArgs,
+                    args: enrichedToolArgs,
                     description: narrativeText || undefined,
                     orderIndex: inheritedOrderIndex,
                     subAgentProgress: inheritedSubAgentProgress,
@@ -3218,9 +3258,15 @@ export default function ChatPage() {
             activeConversationIdRef.current = id;
             setActiveConversationId(id);
         }
+        const firstMsgContent: any = msgs[0].content;
+        const firstMsgText = typeof firstMsgContent === 'string'
+            ? firstMsgContent
+            : Array.isArray(firstMsgContent)
+                ? ((firstMsgContent as any[]).find((b: any) => b.type === 'text')?.text ?? '')
+                : String(firstMsgContent);
         const conversation = {
             id,
-            title: msgs[0].content.slice(0, 60) + (msgs[0].content.length > 60 ? "..." : ""),
+            title: firstMsgText.slice(0, 60) + (firstMsgText.length > 60 ? "..." : ""),
             messages: msgs.map((m, idx) => ({
                 id: m.id || crypto.randomUUID(),
                 role: m.role,
@@ -3320,13 +3366,15 @@ export default function ChatPage() {
             await (window as any).electronAPI?.acp?.rollbackTurn?.(conversationId, timestamp);
 
             // Restore user prompt in the input box
-            if (userMsg) setInputValue(userMsg.content);
+            if (userMsg) setInputValue(toContentString(userMsg.content));
 
             // Remove the user message and all subsequent messages
             const newMessages = messages.slice(0, userMsgIndex);
             setMessages(newMessages);
             messagesRef.current = newMessages;
-            saveConversation(newMessages, true); // True = full save (delete removed messages from db)
+            // Await the save so DB deletes complete before any subsequent agent invocation
+            // loads history — prevents stale reverted messages reappearing in context
+            await saveConversation(newMessages, true);
         } catch (error) {
             console.error("Failed to undo turn:", error);
             alert("Failed to undo turn: " + error);
@@ -4275,11 +4323,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             setAttachments(prev => [...prev, ...newAttachments as any]);
         }
 
-        // Abort the previous agent stream before sending the form response.
-        // Prevents race conditions from the old stream still running.
-        (window as any).electronAPI?.acp?.stop?.();
+        // Do NOT call acp.stop() — graph is paused waiting for user resume, not aborted.
         bypassLoadingRef.current = true;
-        isMessageCommittedRef.current = true;
+        isMessageCommittedRef.current = false;
+        setIsLoading(true);
 
         // Send exactly once, pushing the current execute to the next tick so state settles
         setTimeout(() => {
@@ -4314,10 +4361,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         };
     }, [handleSend, setInputValue]);
 
-    const handleHitlApproval = useCallback((approved: boolean, sendMessage: boolean = false) => {
+    const handleHitlApproval = useCallback((approved: boolean | string, sendMessage: boolean = true) => {
         if (!hitlRequest) return;
 
-        console.log('[HITL] User decision:', approved ? 'approved' : 'rejected', 'sendMessage:', sendMessage);
+        const isApprovedBool = typeof approved === 'string' ? !approved.includes('REJECT') : Boolean(approved);
+        console.log('[HITL] User decision:', isApprovedBool ? 'approved' : 'rejected', 'sendMessage:', sendMessage);
 
         // Persist the resolution to disk so it won't re-appear on next app launch
         const convId = activeConversationIdRef.current || activeConversationId;
@@ -4325,7 +4373,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             (window as any).electronAPI?.history?.hitl?.resolve?.(
                 convId,
                 hitlRequest.id,
-                approved
+                isApprovedBool
             ).catch((e: any) => console.warn('[HITL] Failed to persist resolution:', e));
         }
 
@@ -4341,8 +4389,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         isMessageCommittedRef.current = false;
         setIsLoading(true);
 
-        // Send the approval response
-        const responseText = approved ? '[HITL_APPROVED]' : '[HITL_REJECTED]';
+        // Determine structured approval response
+        const responseText = typeof approved === 'string'
+            ? approved
+            : isApprovedBool ? '[HITL_APPROVED_ALWAYS]' : '[HITL_REJECTED]';
 
         // Commit the assistant's pending message (form content) before sending the user's response.
         // This ensures the AI's form questions survive in the conversation history.
@@ -4393,24 +4443,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         setMessages(finalHistory);
         saveConversation(finalHistory);
 
-        if (sendMessage) {
-            // Send as a visible chat message
-            const messageText = approved
-                ? `[HITL_APPROVED] I have reviewed and approved the requested operation. Please proceed.`
-                : `[HITL_REJECTED] I have reviewed and rejected the requested operation. Please do not proceed.`;
-
-            // Now trigger handleSend with the user response and committed history
-            // This sets up the stream and registers all streaming event listeners correctly
-            setTimeout(() => {
-                handleSend(messageText, finalHistory);
-            }, 50);
-        } else {
-            // Silent approval/rejection: trigger handleSend with skipAddUserMessage=true
-            // This starts the backend stream to resume the graph but keeps the user message hidden.
-            setTimeout(() => {
-                handleSend(responseText, finalHistory, true);
-            }, 50);
-        }
+        // Trigger handleSend with the user response and committed history
+        setTimeout(() => {
+            handleSend(responseText, finalHistory);
+        }, 50);
     }, [hitlRequest, messages, saveConversation, selectedModel, availableModels, pursueGoalMode, folderContexts, activeConversationId, handleSend]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -5534,7 +5570,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 console.log('[VoiceOverlay] Agent completed task. Setting state to completed, then idle.');
 
                 const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
-                const rawContent = lastAssistantMsg ? lastAssistantMsg.content : 'Task completed successfully.';
+                const rawContent = lastAssistantMsg ? toContentString(lastAssistantMsg.content) : 'Task completed successfully.';
                 const { cleanContent, followUps } = extractSuggestedFollowUps(rawContent);
 
                 if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
@@ -6021,7 +6057,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             {messages.map((msg, idx) => {
                                                 // Skip assistant messages that are purely noise with no other value
                                                 if (msg.role === 'assistant') {
-                                                    const scrubbed = scrubOrchestratorNoise(msg.content || '').trim();
+                                                    const scrubbed = scrubOrchestratorNoise(toContentString(msg.content)).trim();
                                                     const hasVisibleContent = scrubbed.length > 0;
                                                     const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
                                                     const hasReasoning = !!msg.reasoning_content;
@@ -6030,6 +6066,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     if (!hasVisibleContent && !hasToolCalls && !hasReasoning && !isLatest) {
                                                         return null;
                                                     }
+                                                }
+
+                                                if (msg.role === "user" && msg.content?.startsWith("[Form Response]")) {
+                                                    return null;
                                                 }
 
                                                 return (
@@ -6065,8 +6105,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         </div>
                                                                     )}
                                                                     {(() => {
-                                                                        if (!msg.content) return null;
-                                                                        const parts = msg.content.split(/\n\n\[Shared folder context\]\n/);
+                                                                        const msgContentStr = toContentString(msg.content);
+                                                                        if (!msgContentStr) return null;
+                                                                        const parts = msgContentStr.split(/\n\n\[Shared folder context\]\n/);
                                                                         const mainText = parts[0];
                                                                         const folderContextBlock = parts.length > 1 ? parts[1].split("\n\nNote:")[0] : null;
                                                                         const folderLines = folderContextBlock ? folderContextBlock.split('\n').filter(l => l.startsWith('- ')).map(l => l.substring(2).trim()) : [];
@@ -6365,10 +6406,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             }
 
                                                             const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
+                                                            const textToRender = finalStreamingContent || streamingContent;
+                                                            const isAlreadyInMessages = messages.length > 0 &&
+                                                                messages[messages.length - 1].role === "assistant" &&
+                                                                textToRender &&
+                                                                messages[messages.length - 1].content?.trim() === textToRender.trim();
 
                                                             return (
                                                                 <>
-                                                                    {(finalStreamingContent || streamingContent) && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
+                                                                    {!isAlreadyInMessages && textToRender && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
                                                                     {artifacts.map((art, i) => {
                                                                         const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                         const isPremiumDoc = ext === 'md';
@@ -6586,6 +6632,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         onAllowOnce={() => {
                                                             respondToLocalExecutionRequest(localExecutionRequest, true, false);
                                                         }}
+                                                        onAllowPrefix={(localExecutionRequest as any).isHitlApproval ? () => {
+                                                            respondToLocalExecutionRequest(localExecutionRequest, true, false, true);
+                                                        } : undefined}
                                                     />
                                                 </div>
                                             )}

@@ -90,8 +90,8 @@ function extractStreamingFileDetails(partialJson: string, toolName: string) {
         actionType = 'edit';
     }
 
-    // Try to extract filePath / TargetFile
-    const pathKeys = ['path', 'TargetFile', 'file_path'];
+    // Try to extract filePath / TargetFile / AbsolutePath / file
+    const pathKeys = ['TargetFile', 'AbsolutePath', 'filePath', 'file_path', 'path', 'file'];
     for (const key of pathKeys) {
         const keyIndex = partialJson.indexOf(`"${key}"`);
         if (keyIndex !== -1) {
@@ -101,14 +101,14 @@ function extractStreamingFileDetails(partialJson: string, toolName: string) {
                 if (quoteIndex !== -1) {
                     const rawValue = partialJson.slice(quoteIndex + 1);
                     filePath = unescapePartialJsonString(rawValue);
-                    break;
+                    if (filePath) break;
                 }
             }
         }
     }
 
-    // Try to extract code / content
-    const codeKeys = ['content', 'newString', 'new_string', 'CodeContent', 'ReplacementContent', 'replacement'];
+    // Try to extract code / content / CodeContent / ReplacementContent
+    const codeKeys = ['CodeContent', 'ReplacementContent', 'content', 'newString', 'new_string', 'replacement'];
     for (const key of codeKeys) {
         const keyIndex = partialJson.indexOf(`"${key}"`);
         if (keyIndex !== -1) {
@@ -118,7 +118,7 @@ function extractStreamingFileDetails(partialJson: string, toolName: string) {
                 if (quoteIndex !== -1) {
                     const rawValue = partialJson.slice(quoteIndex + 1);
                     codeContent = unescapePartialJsonString(rawValue);
-                    break;
+                    if (codeContent) break;
                 }
             }
         }
@@ -159,6 +159,208 @@ const detectLanguage = (filePath: string): string => {
             return 'text';
     }
 };
+
+function parseFileEditItems(args: any, defaultPath: string = ''): Array<{
+  filePath: string;
+  fileName: string;
+  codeLines: Array<{ text: string; type: 'added' | 'removed' | 'normal' }>;
+  addedCount: number;
+  removedCount: number;
+}> {
+  if (!args) return [];
+  const rawList = args.files || args.items || args.targets || (Array.isArray(args.edits) && args.edits[0]?.path ? args.edits : null);
+
+  const items = Array.isArray(rawList) && rawList.length > 0 ? rawList : [args];
+
+  return items.map((item: any) => {
+    const filePathRaw = item?.path || item?.filePath || item?.TargetFile || item?.file || item?.targetFile || defaultPath || 'unknown_file';
+    const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
+    const fileName = filePath.split(/[/\\]/).pop() || filePath;
+
+    let codeLines: Array<{ text: string; type: 'added' | 'removed' | 'normal' }> = [];
+
+    const findStr = item?.find || item?.TargetContent || item?.oldString || item?.old_string || item?.search || item?.oldText || '';
+    const replaceStr = item?.replace || item?.ReplacementContent || item?.newString || item?.new_string || item?.insert || item?.newText || '';
+    const chunks = item?.ReplacementChunks || item?.chunks || item?.edits || item?.replacements || [];
+
+    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+      chunks.forEach((chunk: any, idx: number) => {
+        if (idx > 0) {
+          codeLines.push({ text: '...', type: 'normal' });
+        }
+        const oldText = chunk.oldString || chunk.oldText || chunk.TargetContent || chunk.old_string || chunk.find || '';
+        const newText = chunk.newString || chunk.newText || chunk.ReplacementContent || chunk.new_string || chunk.replace || '';
+        if (oldText) {
+          oldText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'removed' });
+          });
+        }
+        if (newText) {
+          newText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'added' });
+          });
+        }
+      });
+    } else if (findStr || replaceStr) {
+      if (findStr) {
+        findStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'removed' });
+        });
+      }
+      if (replaceStr) {
+        replaceStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'added' });
+        });
+      }
+    } else if (item?.content || item?.CodeContent || item?.text || item?.body) {
+      let content = item?.content || item?.CodeContent || item?.text || item?.body || '';
+      const lines = typeof content === 'string' ? content.split('\n') : [];
+      codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
+    }
+
+    if (codeLines.length === 0) {
+      codeLines = [{ text: '// File edit operation', type: 'normal' }];
+    }
+
+    let addedCount = 0;
+    let removedCount = 0;
+    codeLines.forEach(l => {
+      if (l.type === 'added') addedCount++;
+      if (l.type === 'removed') removedCount++;
+    });
+
+    return { filePath, fileName, codeLines, addedCount, removedCount };
+  });
+}
+
+function MultiFileDiffView({ args, output }: { args: any; output?: string }) {
+  const parsedFiles = parseFileEditItems(args);
+
+  if (parsedFiles.length === 0) {
+    return (
+      <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
+        {output || 'No diff available'}
+      </pre>
+    );
+  }
+
+  return (
+    <div style={{ padding: '10px 12px', background: 'var(--color-bg-base)', color: 'var(--color-text-primary)', fontFamily: "var(--font-mono, 'JetBrains Mono', monospace)", fontSize: 12, borderRadius: 8, border: '1px solid var(--color-border)' }}>
+      {parsedFiles.map((file, fileIdx) => (
+        <div
+          key={fileIdx}
+          style={{
+            marginBottom: fileIdx < parsedFiles.length - 1 ? 12 : 0,
+            border: '1px solid var(--color-border)',
+            borderRadius: 6,
+            overflow: 'hidden',
+            background: 'var(--color-bg-surface)',
+          }}
+        >
+          {/* File Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 12px',
+              background: 'var(--color-bg-subtle)',
+              borderBottom: '1px solid var(--color-border-subtle)',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+              <span style={{ color: 'var(--color-green, #22c55e)', fontSize: 11 }}>⚡</span>
+              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 11.5 }}>{file.fileName}</span>
+              <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {file.filePath}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 4, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+              {file.addedCount > 0 && (
+                <span style={{ color: 'var(--color-green, #22c55e)', background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.25)', padding: '1px 5px', borderRadius: 4 }}>
+                  +{file.addedCount}
+                </span>
+              )}
+              {file.removedCount > 0 && (
+                <span style={{ color: 'var(--color-red, #ef4444)', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '1px 5px', borderRadius: 4 }}>
+                  -{file.removedCount}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Diff Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', lineHeight: '1.5' }}>
+              <tbody>
+                {file.codeLines.slice(0, 500).map((line, idx) => {
+                  const isAdded = line.type === 'added';
+                  const isRemoved = line.type === 'removed';
+                  const rowBg = isAdded 
+                    ? 'rgba(34, 197, 94, 0.12)' 
+                    : isRemoved 
+                      ? 'rgba(239, 68, 68, 0.12)' 
+                      : 'transparent';
+                  
+                  const textColor = isAdded 
+                    ? 'var(--color-green, #22c55e)' 
+                    : isRemoved 
+                      ? 'var(--color-red, #ef4444)' 
+                      : 'var(--color-text-secondary)';
+
+                  const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+
+                  return (
+                    <tr key={idx} style={{ background: rowBg }}>
+                      <td
+                        style={{
+                          width: 32,
+                          textAlign: 'right',
+                          paddingRight: 8,
+                          color: 'var(--color-text-tertiary)',
+                          userSelect: 'none',
+                          borderRight: '1px solid var(--color-border-subtle)',
+                          fontSize: 10.5,
+                        }}
+                      >
+                        {idx + 1}
+                      </td>
+                      <td
+                        style={{
+                          width: 20,
+                          textAlign: 'center',
+                          color: textColor,
+                          fontWeight: 'bold',
+                          userSelect: 'none',
+                          fontSize: 11,
+                        }}
+                      >
+                        {prefix}
+                      </td>
+                      <td
+                        style={{
+                          paddingLeft: 6,
+                          paddingRight: 12,
+                          color: textColor,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all',
+                          fontSize: 11.5,
+                        }}
+                      >
+                        {line.text}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── SearchResult Interfaces ──────────────────────────────────────────────────
 interface SearchResult {
@@ -254,10 +456,23 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
             </div>
 
             <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 12 : 8, paddingRight: 12 }}>
-                {/* Description (thought/narration above tool) */}
+                {/* Description (thought/narration above tool pill in agent timeline) */}
                 {tc.description && (
-                    <div data-testid="narrative-element" style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic' }}>
-                        {tc.description}
+                    <div data-testid="narrative-element" style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 6,
+                        fontSize: 12.5,
+                        color: 'var(--color-text-secondary, #4b5563)',
+                        marginBottom: 6,
+                        lineHeight: 1.5,
+                        fontWeight: 450,
+                        letterSpacing: '-0.01em'
+                    }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 2, flexShrink: 0, opacity: 0.6, color: '#6366f1' }}>
+                            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                        </svg>
+                        <span>{tc.description}</span>
                     </div>
                 )}
                 {/* Tool header row */}
@@ -401,21 +616,34 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                         </div>
                                     </div>
                                 )}
-                                {(tc.toolName === 'read' || tc.toolName === 'read_file' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill' || tc.toolName === 'skill_detected') || tc.output.includes('---') || tc.output.startsWith('#') ? (
-                                    <div className="px-[14px] py-[10px]" style={{ backgroundColor: 'var(--color-bg-surface)' }}>
-                                        <MarkdownRenderer content={tc.output} />
-                                    </div>
-                                ) : (
-                                    <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
-                                        {(() => {
-                                            const MAX_INLINE_CHARS = 10000;
-                                            if (tc.output.length > MAX_INLINE_CHARS) {
-                                                return tc.output.substring(0, MAX_INLINE_CHARS) + `\n\n... [Output truncated for inline performance. Total length: ${tc.output.length} characters. Click to open full details.]`;
-                                            }
-                                            return tc.output;
-                                        })()}
-                                    </pre>
-                                )}
+                                {(() => {
+                                    const lowerName = (tc.toolName || '').toLowerCase();
+                                    const isEditTool = lowerName === 'multi_file_edit' || lowerName === 'multi_replace_file_content' || lowerName.includes('edit') || lowerName.includes('replace') || Array.isArray(tc.args?.files) || Array.isArray(tc.args?.items);
+                                    
+                                    if (isEditTool) {
+                                        return <MultiFileDiffView args={tc.args} output={tc.output} />;
+                                    }
+                                    
+                                    if (tc.toolName === 'read' || tc.toolName === 'read_file' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill' || tc.toolName === 'skill_detected' || tc.output.includes('---') || tc.output.startsWith('#')) {
+                                        return (
+                                            <div className="px-[14px] py-[10px]" style={{ backgroundColor: 'var(--color-bg-surface)' }}>
+                                                <MarkdownRenderer content={tc.output} />
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <pre className="m-0 px-[14px] py-[10px] text-[11.5px] font-mono leading-relaxed select-text whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-primary)' }}>
+                                            {(() => {
+                                                const MAX_INLINE_CHARS = 10000;
+                                                if (tc.output.length > MAX_INLINE_CHARS) {
+                                                    return tc.output.substring(0, MAX_INLINE_CHARS) + `\n\n... [Output truncated for inline performance. Total length: ${tc.output.length} characters. Click to open full details.]`;
+                                                }
+                                                return tc.output;
+                                            })()}
+                                        </pre>
+                                    );
+                                })()}
                             </div>
                         </motion.div>
                     )}
@@ -683,9 +911,15 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                         {displayOutput.slice(0, 2000)}
                                         {displayOutput.length > 2000 && <span className="text-[#9ca3af]">{'\n'}... ({displayOutput.length - 2000} more chars)</span>}
                                     </div>
-                                ) : (
-                                    <MarkdownRenderer content={displayOutput} />
-                                )}
+                                ) : (() => {
+                                    const lowerName = (tc.toolName || '').toLowerCase();
+                                    const isEditTool = lowerName === 'multi_file_edit' || lowerName === 'multi_replace_file_content' || lowerName.includes('edit') || lowerName.includes('replace') || Array.isArray(tc.args?.files) || Array.isArray(tc.args?.items);
+                                    
+                                    if (isEditTool) {
+                                        return <MultiFileDiffView args={tc.args} output={tc.output} />;
+                                    }
+                                    return <MarkdownRenderer content={displayOutput} />;
+                                })()}
                             </div>
                         )}
                     </motion.div>

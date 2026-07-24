@@ -2774,7 +2774,316 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
   );
 };
 
+function parseFileEditItems(args: any, defaultPath: string = ''): Array<{
+  filePath: string;
+  fileName: string;
+  codeLines: Array<{ text: string; type: 'added' | 'removed' | 'normal' }>;
+  addedCount: number;
+  removedCount: number;
+}> {
+  if (!args) return [];
+  const rawList = args.files || args.items || args.targets || (Array.isArray(args.edits) && args.edits[0]?.path ? args.edits : null);
+
+  const items = Array.isArray(rawList) && rawList.length > 0 ? rawList : [args];
+
+  return items.map((item: any) => {
+    const filePathRaw = item?.path || item?.filePath || item?.TargetFile || item?.file || item?.targetFile || defaultPath || 'unknown_file';
+    const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
+    const fileName = filePath.split(/[/\\]/).pop() || filePath;
+
+    let codeLines: Array<{ text: string; type: 'added' | 'removed' | 'normal' }> = [];
+
+    const findStr = item?.find || item?.TargetContent || item?.oldString || item?.old_string || item?.search || item?.oldText || '';
+    const replaceStr = item?.replace || item?.ReplacementContent || item?.newString || item?.new_string || item?.insert || item?.newText || '';
+    const chunks = item?.ReplacementChunks || item?.chunks || item?.edits || item?.replacements || [];
+
+    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+      chunks.forEach((chunk: any, idx: number) => {
+        if (idx > 0) {
+          codeLines.push({ text: '...', type: 'normal' });
+        }
+        const oldText = chunk.oldString || chunk.oldText || chunk.TargetContent || chunk.old_string || chunk.find || '';
+        const newText = chunk.newString || chunk.newText || chunk.ReplacementContent || chunk.new_string || chunk.replace || '';
+        if (oldText) {
+          oldText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'removed' });
+          });
+        }
+        if (newText) {
+          newText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'added' });
+          });
+        }
+      });
+    } else if (findStr || replaceStr) {
+      if (findStr) {
+        findStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'removed' });
+        });
+      }
+      if (replaceStr) {
+        replaceStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'added' });
+        });
+      }
+    } else if (item?.content || item?.CodeContent || item?.text || item?.body) {
+      let content = item?.content || item?.CodeContent || item?.text || item?.body || '';
+      const lines = typeof content === 'string' ? content.split('\n') : [];
+      codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
+    }
+
+    if (codeLines.length === 0) {
+      codeLines = [{ text: '// File edit operation', type: 'normal' }];
+    }
+
+    let addedCount = 0;
+    let removedCount = 0;
+    codeLines.forEach(l => {
+      if (l.type === 'added') addedCount++;
+      if (l.type === 'removed') removedCount++;
+    });
+
+    return { filePath, fileName, codeLines, addedCount, removedCount };
+  });
+}
+
+function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: string }) {
+  const parsedFiles = useMemo(() => parseFileEditItems(args), [args]);
+  const [activeFileIndex, setActiveFileIndex] = useState<number | null>(parsedFiles.length > 1 ? null : 0);
+
+  const filesToDisplay = activeFileIndex !== null && parsedFiles[activeFileIndex]
+    ? [parsedFiles[activeFileIndex]]
+    : parsedFiles;
+
+  if (parsedFiles.length === 0) {
+    return (
+      <div style={{ padding: 16, background: T.bg, color: T.text, fontFamily: T.mono, fontSize: 12 }}>
+        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{output || 'No diff available'}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: T.bg }}>
+      {/* Title Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          background: T.surface,
+          borderBottom: `1px solid ${T.border}`,
+          userSelect: 'none',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+          <span style={{ fontSize: 12, color: T.text, marginLeft: 8, fontFamily: T.mono, fontWeight: 600 }}>
+            {parsedFiles.length > 1 ? `${parsedFiles.length} Files Edited` : parsedFiles[0]?.fileName}
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: T.textMuted, fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
+          MULTI-FILE EDIT ({parsedFiles.length})
+        </div>
+      </div>
+
+      {/* Tabs Filter Bar */}
+      {parsedFiles.length > 1 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 12px',
+            background: T.surface,
+            borderBottom: `1px solid ${T.border}`,
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <button
+            onClick={() => setActiveFileIndex(null)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: activeFileIndex === null ? T.surfaceRaised : 'transparent',
+              border: activeFileIndex === null ? `1px solid ${T.border}` : `1px solid ${T.borderSubtle}`,
+              color: activeFileIndex === null ? T.text : T.textMuted,
+              fontSize: 11,
+              fontFamily: T.mono,
+              fontWeight: activeFileIndex === null ? 600 : 400,
+              cursor: 'pointer',
+            }}
+          >
+            All Files ({parsedFiles.length})
+          </button>
+          {parsedFiles.map((f, idx) => {
+            const isActive = activeFileIndex === idx;
+            return (
+              <button
+                key={idx}
+                onClick={() => setActiveFileIndex(idx)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: isActive ? T.surfaceRaised : 'transparent',
+                  border: isActive ? `1px solid ${T.border}` : `1px solid ${T.borderSubtle}`,
+                  color: isActive ? T.text : T.textMuted,
+                  fontSize: 11,
+                  fontFamily: T.mono,
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: isActive ? T.green : T.textMuted }}>⚡</span>
+                <span>{f.fileName}</span>
+                {(f.addedCount > 0 || f.removedCount > 0) && (
+                  <span style={{ display: 'flex', gap: 3, fontSize: 10 }}>
+                    {f.addedCount > 0 && <span style={{ color: T.green }}>+{f.addedCount}</span>}
+                    {f.removedCount > 0 && <span style={{ color: T.red }}>-{f.removedCount}</span>}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Main Diff Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px', fontFamily: T.mono, fontSize: 12, color: T.text }}>
+        {filesToDisplay.map((file, fileIdx) => (
+          <div
+            key={fileIdx}
+            style={{
+              marginBottom: filesToDisplay.length > 1 && fileIdx < filesToDisplay.length - 1 ? 16 : 0,
+              border: `1px solid ${T.border}`,
+              borderRadius: 6,
+              overflow: 'hidden',
+              background: T.surface,
+            }}
+          >
+            {/* File Section Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 14px',
+                background: T.surfaceRaised,
+                borderBottom: `1px solid ${T.borderSubtle}`,
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                <span style={{ color: T.green }}>⚡</span>
+                <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{file.fileName}</span>
+                <span style={{ color: T.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file.filePath}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                {file.addedCount > 0 && (
+                  <span style={{ color: T.green, background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.25)', padding: '2px 6px', borderRadius: 4 }}>
+                    +{file.addedCount}
+                  </span>
+                )}
+                {file.removedCount > 0 && (
+                  <span style={{ color: T.red, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '2px 6px', borderRadius: 4 }}>
+                    -{file.removedCount}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Code Line Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', lineHeight: '1.6' }}>
+                <tbody>
+                  {file.codeLines.map((line, idx) => {
+                    const isAdded = line.type === 'added';
+                    const isRemoved = line.type === 'removed';
+                    const rowBg = isAdded 
+                      ? 'rgba(34, 197, 94, 0.12)' 
+                      : isRemoved 
+                        ? 'rgba(239, 68, 68, 0.12)' 
+                        : 'transparent';
+                    
+                    const textColor = isAdded 
+                      ? T.green 
+                      : isRemoved 
+                        ? T.red 
+                        : T.textSecondary;
+
+                    const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
+
+                    return (
+                      <tr key={idx} style={{ background: rowBg }}>
+                        <td
+                          style={{
+                            width: 40,
+                            textAlign: 'right',
+                            paddingRight: 10,
+                            color: T.textMuted,
+                            userSelect: 'none',
+                            borderRight: `1px solid ${T.borderSubtle}`,
+                            fontSize: 11,
+                          }}
+                        >
+                          {idx + 1}
+                        </td>
+                        <td
+                          style={{
+                            width: 24,
+                            textAlign: 'center',
+                            color: textColor,
+                            fontWeight: 'bold',
+                            userSelect: 'none',
+                            fontSize: 12,
+                          }}
+                        >
+                          {prefix}
+                        </td>
+                        <td
+                          style={{
+                            paddingLeft: 8,
+                            paddingRight: 16,
+                            color: textColor,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {line.text}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FileEditorView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
+  const name = (toolName || '').toLowerCase();
+  const rawFileList = args?.files || args?.items || data?.files || data?.items;
+
+  if (name === 'multi_file_edit' || name === 'multi_replace_file_content' || (Array.isArray(rawFileList) && rawFileList.length > 0)) {
+    return <SidePanelMultiFileDiffView args={args || data || {}} output={output} />;
+  }
+
   const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
   const { isWrite, isMulti, chunks, oldContent, newContent, isRead, hasRenderableContent } = useMemo(() => {
     const name = (toolName || '').toLowerCase();

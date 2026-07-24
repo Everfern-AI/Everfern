@@ -11,6 +11,7 @@ import { getRollbackManager } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedExecutor } from './unified-executor';
+import { taskCompleteTool } from './task-complete';
 
 async function existsAsync(p: string): Promise<boolean> {
   try {
@@ -41,6 +42,71 @@ function stripAnsi(str: string): string {
   // Covers: SGR params, cursor movement, erase, scroll, OSC, etc.
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
+}
+
+export function performSmartReplace(content: string, oldString: string, newString: string): { success: boolean; updatedContent: string; error?: string } {
+  if (!oldString) return { success: false, updatedContent: content, error: 'Empty oldString provided' };
+  if (content.includes(oldString)) {
+    return { success: true, updatedContent: content.replace(oldString, newString) };
+  }
+
+  // 1. Line ending normalization (\r\n vs \n)
+  const normContent = content.replace(/\r\n/g, '\n');
+  const normOld = oldString.replace(/\r\n/g, '\n');
+  const normNew = newString.replace(/\r\n/g, '\n');
+
+  if (normContent.includes(normOld)) {
+    const isCrlf = content.includes('\r\n');
+    const replacedNorm = normContent.replace(normOld, normNew);
+    return {
+      success: true,
+      updatedContent: isCrlf ? replacedNorm.replace(/\n/g, '\r\n') : replacedNorm
+    };
+  }
+
+  // 2. Trimmed lines matching (ignore leading/trailing indentation differences)
+  const fileLines = normContent.split('\n');
+  const oldLines = normOld.split('\n');
+
+  if (oldLines.length > 0) {
+    const trimmedOldFirst = oldLines[0].trim();
+    const trimmedOldLast = oldLines[oldLines.length - 1].trim();
+
+    for (let i = 0; i <= fileLines.length - oldLines.length; i++) {
+      if (fileLines[i].trim() === trimmedOldFirst && fileLines[i + oldLines.length - 1].trim() === trimmedOldLast) {
+        let matches = true;
+        for (let j = 0; j < oldLines.length; j++) {
+          if (fileLines[i + j].trim() !== oldLines[j].trim()) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) {
+          const newLines = normNew.split('\n');
+          fileLines.splice(i, oldLines.length, ...newLines);
+          const updated = fileLines.join(content.includes('\r\n') ? '\r\n' : '\n');
+          return { success: true, updatedContent: updated };
+        }
+      }
+    }
+  }
+
+  // 3. Single occurrence fallback (trimmed single line match)
+  const trimmedOld = oldString.trim();
+  if (trimmedOld.length > 5) {
+    const matchingIndices: number[] = [];
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line, idx) => {
+      if (line.trim() === trimmedOld) matchingIndices.push(idx);
+    });
+    if (matchingIndices.length === 1) {
+      const idx = matchingIndices[0];
+      lines[idx] = lines[idx].replace(trimmedOld, newString.trim());
+      return { success: true, updatedContent: lines.join(content.includes('\r\n') ? '\r\n' : '\n') };
+    }
+  }
+
+  return { success: false, updatedContent: content, error: `Could not find target content in file:\n${oldString.slice(0, 150)}...` };
 }
 
 // File tool names that run on the host and need Linux→Windows path translation
@@ -905,6 +971,15 @@ function adaptTool(
               }
             }
 
+            // Map edits / ReplacementChunks array aliases for multi-chunk edits
+            const editsAliases = ['edits', 'replacements', 'chunks', 'ReplacementChunks'];
+            for (const alias of editsAliases) {
+              if (Array.isArray(args[alias]) && !args.edits) {
+                args.edits = args[alias];
+                break;
+              }
+            }
+
             if (typeof args.path !== 'string' || !args.path.trim()) {
               return {
                 success: false,
@@ -912,18 +987,12 @@ function adaptTool(
                 error: "invalid_path"
               };
             }
-            if (typeof args.oldString !== 'string') {
+            const hasEditsArray = Array.isArray(args.edits) && args.edits.length > 0;
+            if (typeof args.oldString !== 'string' && !hasEditsArray && args.revert !== true && args.revert !== 'true') {
               return {
                 success: false,
-                output: "Error: Missing or invalid 'oldString' parameter for tool 'edit'",
+                output: "Error: Missing 'oldString' or 'edits' array parameter for tool 'edit'",
                 error: "invalid_old_string"
-              };
-            }
-            if (typeof args.newString !== 'string') {
-              return {
-                success: false,
-                output: "Error: Missing or invalid 'newString' parameter for tool 'edit'",
-                error: "invalid_new_string"
               };
             }
           } else if (['read'].includes(name)) {
@@ -1274,7 +1343,6 @@ async function withRollbackTracking(
     try {
       // Capture content before edit
       let contentBefore = '';
-
       try {
         if ((await existsAsync(filePath))) {
           contentBefore = await fs.promises.readFile(filePath, 'utf-8');
@@ -1283,22 +1351,74 @@ async function withRollbackTracking(
         console.warn(`[pi-tools] Could not read file before edit: ${filePath}`, readError);
       }
 
-      // Execute the edit operation
-      const result = await executor(toolCallId, args);
+      let result: ToolResult;
+      const edits = Array.isArray(args.edits) ? args.edits : [];
 
-      // Track the operation after successful execution
-      if (!result.isError) {
-        try {
-          // Read content after edit
-          let contentAfter = '';
-          try {
-            if ((await existsAsync(filePath))) {
-              contentAfter = await fs.promises.readFile(filePath, 'utf-8');
-            }
-          } catch (readError) {
-            console.warn(`[pi-tools] Could not read file after edit: ${filePath}`, readError);
+      if (edits.length > 0 && contentBefore) {
+        // Multi-chunk replacement in same file
+        let currentContent = contentBefore;
+        let appliedCount = 0;
+        const errors: string[] = [];
+
+        for (let i = 0; i < edits.length; i++) {
+          const item = edits[i];
+          const oldStr = item.oldString || item.old_string || item.TargetContent || item.search || '';
+          const newStr = item.newString || item.new_string || item.ReplacementContent || item.replace || '';
+          const res = performSmartReplace(currentContent, oldStr, newStr);
+          if (res.success) {
+            currentContent = res.updatedContent;
+            appliedCount++;
+          } else {
+            errors.push(`Chunk ${i + 1}: ${res.error || 'not found'}`);
           }
+        }
 
+        if (appliedCount > 0) {
+          await fs.promises.writeFile(filePath, currentContent, 'utf-8');
+          result = {
+            success: true,
+            output: stripAnsi(`Success: applied ${appliedCount}/${edits.length} edit chunk(s) to ${filePath}${errors.length > 0 ? `\nWarnings:\n${errors.join('\n')}` : ''}`),
+            data: { path: filePath, appliedCount, totalChunks: edits.length, contentBefore, contentAfter: currentContent }
+          };
+        } else {
+          result = {
+            success: false,
+            output: `Error: None of the ${edits.length} edit chunks could be applied to ${filePath}.\n${errors.join('\n')}`,
+            error: 'edit_failed'
+          };
+        }
+      } else {
+        // Single replacement: try standard executor first, fallback to performSmartReplace if standard fails
+        try {
+          result = await executor(toolCallId, args);
+        } catch (execErr: any) {
+          result = { success: false, output: execErr.message || String(execErr), error: 'exec_error' };
+        }
+
+        if ((!result || !result.success) && contentBefore) {
+          const oldStr = (args.oldString || args.old_string || args.TargetContent || args.search || '') as string;
+          const newStr = (args.newString || args.new_string || args.ReplacementContent || args.replace || '') as string;
+          if (oldStr) {
+            const smartRes = performSmartReplace(contentBefore, oldStr, newStr);
+            if (smartRes.success) {
+              await fs.promises.writeFile(filePath, smartRes.updatedContent, 'utf-8');
+              result = {
+                success: true,
+                output: stripAnsi(`Success: edited file via smart replace\nPath: ${filePath}`),
+                data: { path: filePath, oldString: oldStr, newString: newStr, contentBefore, contentAfter: smartRes.updatedContent }
+              };
+            }
+          }
+        }
+      }
+
+      // Track the operation for rollback after successful execution
+      if (result.success && contentBefore) {
+        try {
+          let contentAfter = '';
+          if ((await existsAsync(filePath))) {
+            contentAfter = await fs.promises.readFile(filePath, 'utf-8');
+          }
           if (contentBefore !== contentAfter) {
             await rollbackManager.trackFileModification(
               path.resolve(filePath),
@@ -1435,6 +1555,141 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
   };
 }
 
+export const multiFileEditTool: AgentTool = {
+  name: 'multi_file_edit',
+  description: '[MULTI-FILE-EDIT] Perform non-contiguous or multi-chunk edits across one or multiple files in a single atomic tool call. Accepts an array of file targets, each specifying path and either oldString/newString or an edits array of chunks.',
+  parameters: {
+    type: 'object',
+    properties: {
+      files: {
+        type: 'array',
+        description: 'List of file edit operations: Array<{ path: string, oldString?: string, newString?: string, edits?: Array<{ oldString: string, newString: string }> }>',
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Target file path' },
+            oldString: { type: 'string', description: 'String/block to replace' },
+            newString: { type: 'string', description: 'Replacement content' },
+            edits: {
+              type: 'array',
+              description: 'Array of replacement chunks: Array<{ oldString: string, newString: string }>',
+              items: {
+                type: 'object',
+                properties: {
+                  oldString: { type: 'string' },
+                  newString: { type: 'string' }
+                },
+                required: ['oldString', 'newString']
+              }
+            }
+          },
+          required: ['path']
+        }
+      }
+    },
+    required: ['files']
+  },
+  execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
+    const files = Array.isArray(args.files) ? args.files : [];
+    if (files.length === 0) {
+      return { success: false, output: 'Error: No files specified for multi_file_edit', error: 'empty_files' };
+    }
+
+    const editToolObj = loadedCodingTools?.find(t => t.name === 'edit');
+    if (!editToolObj) {
+      return { success: false, output: 'Error: edit tool is not available', error: 'edit_tool_missing' };
+    }
+
+    const results: string[] = [];
+    let successCount = 0;
+
+    for (const item of files) {
+      if (!item || typeof item.path !== 'string') continue;
+      const res = await editToolObj.execute(item, onUpdate, emitEvent, toolCallId);
+      if (res.success) {
+        successCount++;
+        results.push(`✅ ${item.path}: Success`);
+      } else {
+        results.push(`❌ ${item.path}: ${res.output || res.error || 'Failed'}`);
+      }
+    }
+
+    return {
+      success: successCount > 0,
+      output: stripAnsi(`Multi-file edit completed (${successCount}/${files.length} file(s) updated):\n${results.join('\n')}`),
+      data: { successCount, totalFiles: files.length, details: results }
+    };
+  }
+};
+
+export const multiReplaceFileContentTool: AgentTool = {
+  name: 'multi_replace_file_content',
+  description: '[MULTI-REPLACE-FILE-CONTENT] Edit multiple non-adjacent line blocks within a single file in one atomic tool call. Accepts TargetFile (or path) and ReplacementChunks array containing TargetContent/ReplacementContent pairs.',
+  parameters: {
+    type: 'object',
+    properties: {
+      TargetFile: { type: 'string', description: 'Absolute path to target file' },
+      path: { type: 'string', description: 'Target file path' },
+      ReplacementChunks: {
+        type: 'array',
+        description: 'List of replacement chunks: Array<{ TargetContent: string, ReplacementContent: string, StartLine?: number, EndLine?: number }>',
+        items: {
+          type: 'object',
+          properties: {
+            TargetContent: { type: 'string', description: 'Target string/block to replace' },
+            ReplacementContent: { type: 'string', description: 'New replacement text' },
+            oldString: { type: 'string' },
+            newString: { type: 'string' },
+            StartLine: { type: 'number' },
+            EndLine: { type: 'number' }
+          }
+        }
+      },
+      edits: {
+        type: 'array',
+        description: 'Array of replacement chunks: Array<{ oldString: string, newString: string }>',
+        items: {
+          type: 'object',
+          properties: {
+            oldString: { type: 'string' },
+            newString: { type: 'string' }
+          }
+        }
+      },
+      Instruction: { type: 'string', description: 'Edit rationale or instruction' }
+    },
+    required: ['TargetFile']
+  },
+  execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
+    const filePath = (args.TargetFile || args.path || args.filePath || args.file) as string;
+    if (!filePath) {
+      return { success: false, output: 'Error: TargetFile path parameter is required', error: 'missing_path' };
+    }
+
+    const rawChunks = (args.ReplacementChunks || args.edits || args.chunks || args.replacements) as any[];
+    if (!Array.isArray(rawChunks) || rawChunks.length === 0) {
+      return { success: false, output: 'Error: ReplacementChunks array is required', error: 'missing_chunks' };
+    }
+
+    const editToolObj = loadedCodingTools?.find(t => t.name === 'edit');
+    if (!editToolObj) {
+      return { success: false, output: 'Error: edit tool is not available', error: 'edit_tool_missing' };
+    }
+
+    const edits = rawChunks.map((chunk: any) => ({
+      oldString: chunk.TargetContent || chunk.oldString || chunk.target || chunk.old_string || chunk.find || '',
+      newString: chunk.ReplacementContent || chunk.newString || chunk.replacement || chunk.new_string || chunk.replace || ''
+    })).filter(e => e.oldString || e.newString);
+
+    const payload = {
+      path: filePath,
+      edits
+    };
+
+    return editToolObj.execute(payload, onUpdate, emitEvent, toolCallId);
+  }
+};
+
 export async function getPiCodingTools(): Promise<AgentTool[]> {
   if (loadedCodingTools) return loadedCodingTools;
 
@@ -1474,6 +1729,12 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
         ),
       'executePwsh'
     ),
+    multiFileEditTool,
+    multiReplaceFileContentTool,
+    // task_complete: a first-class tool agents call to signal task completion.
+    // This replaces magic string patterns like [PHASE_COMPLETE: complete] with
+    // tool-call-presence detection, consistent with ReAct / LangGraph patterns.
+    taskCompleteTool,
   ];
 
   return loadedCodingTools;

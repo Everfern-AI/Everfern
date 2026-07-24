@@ -86,7 +86,13 @@ export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void
                 {/* Star button — large, flat, theme-colored */}
                 <motion.button
                     type="button"
-                    onClick={onStar}
+                    onClick={() => {
+                        try {
+                            localStorage.setItem('everfern_github_starred', 'true');
+                            localStorage.setItem('everfern_star_dismissed', 'true');
+                        } catch (err) {}
+                        onStar();
+                    }}
                     whileHover={{ scale: 1.04, y: -1 }}
                     whileTap={{ scale: 0.97 }}
                     style={{
@@ -114,7 +120,12 @@ export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void
                 {/* Close / maybe later — intentionally subtle */}
                 <button
                     type="button"
-                    onClick={onClose}
+                    onClick={() => {
+                        try {
+                            localStorage.setItem('everfern_star_dismissed', 'true');
+                        } catch (err) {}
+                        onClose();
+                    }}
                     style={{
                         marginTop: 14,
                         background: 'none',
