@@ -789,10 +789,11 @@ export default function SetupPage() {
                         if (step === 8) return 9;
                         if (step === 9) return 10;
                         if (step === 10) return 11;
-                        return 11;
+                        if (step === 12) return 12;
+                        return 12;
                     };
                     const activeIndex = getActiveDotIndex();
-                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(s => (
+                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(s => (
                         <div
                             key={s}
                             style={{
@@ -2694,17 +2695,17 @@ export default function SetupPage() {
                                     <DiscordIcon size={18} />
                                     Join Discord
                                 </a>
-                                <button onClick={() => setStep(11)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                <button onClick={() => setStep(12)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                     Skip
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {/* ── Step 11: Privacy & Security ── */}
-                    {step === 11 && (
+                    {/* ── Step 12: Privacy & Security ── */}
+                    {step === 12 && (
                         <motion.div
-                            key="step11"
+                            key="step12"
                             variants={pageVariants}
                             initial="enter"
                             animate="center"
