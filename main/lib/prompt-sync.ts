@@ -13,14 +13,18 @@ import * as crypto from 'crypto';
 const PROMPTS_SOURCE_DIR = (() => {
   // Try several candidates for the prompts source directory
   const candidates = [
-    // 1. Production (dist-electron/main/lib -> dist-electron/main/agent/prompts)
+    // 1. Packaged resources fallback (production exe)
+    process.resourcesPath ? path.join(process.resourcesPath, 'prompts') : '',
+    process.resourcesPath ? path.join(process.resourcesPath, 'main/agent/prompts') : '',
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked/dist-electron/main/agent/prompts') : '',
+    // 2. Production (dist-electron/main/lib -> dist-electron/main/agent/prompts)
     path.join(__dirname, '../agent/prompts'),
-    // 2. Development (apps/desktop/main/lib -> apps/desktop/main/agent/prompts)
+    // 3. Development (apps/desktop/main/lib -> apps/desktop/main/agent/prompts)
     path.join(__dirname, '../../main/agent/prompts'),
-    // 3. Absolute project root fallback
+    // 4. Absolute project root fallback
     path.join(process.cwd(), 'main/agent/prompts'),
     path.join(process.cwd(), 'apps/desktop/main/agent/prompts'),
-  ];
+  ].filter(Boolean);
 
   for (const cand of candidates) {
     if (fs.existsSync(cand)) {

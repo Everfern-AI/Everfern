@@ -313,6 +313,26 @@ export class UnifiedExecutor {
       let lastUpdateTime = Date.now();
       const UPDATE_INTERVAL = 500; // Stream every 500ms
 
+      let last10sReportedLength = 0;
+      const LOG_STREAM_10S_INTERVAL = 10000;
+      const log10sInterval = setInterval(() => {
+        const fullOutput = stdout + (stderr ? `\n${stderr}` : '');
+        if (fullOutput.length > last10sReportedLength) {
+          const newChunk = fullOutput.substring(last10sReportedLength).trim();
+          last10sReportedLength = fullOutput.length;
+          if (newChunk) {
+            const timestamp = new Date().toLocaleTimeString();
+            options.onUpdate?.(`[Terminal Live Logs (10s @ ${timestamp})]:\n${newChunk}`);
+            options.emitEvent?.({
+              type: 'terminal_log_stream',
+              command: options.command,
+              logs: newChunk,
+              timestamp: Date.now()
+            });
+          }
+        }
+      }, LOG_STREAM_10S_INTERVAL);
+
       // Real-time stdout streaming
       proc.stdout?.on('data', (data: Buffer) => {
         const chunk = this.stripAnsi(this.decodeBuffer(data));
@@ -340,6 +360,7 @@ export class UnifiedExecutor {
 
       // Process completion
       proc.on('close', (exitCode: number | null) => {
+        clearInterval(log10sInterval);
         const code = exitCode ?? -1;
         const combined = stdout + (stderr ? `\n${stderr}` : '');
 
@@ -356,6 +377,7 @@ export class UnifiedExecutor {
 
       // Process errors
       proc.on('error', (err: Error) => {
+        clearInterval(log10sInterval);
         resolve({
           success: false,
           output: stderr || stdout || '',

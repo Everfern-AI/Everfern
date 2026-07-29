@@ -12,6 +12,7 @@ import type { AgentTool, ToolResult as AgentToolResult } from "../runner/types";
 import { AIClient, ChatMessage } from "../../lib/ai-client";
 import { globalAbortManager } from "../runner/abort-manager";
 import DesktopOverlay from "./desktop-overlay";
+import { checkToolPermission } from "./permission-checker";
 
 // ── Optional native deps ─────────────────────────────────────────────────────
 
@@ -2684,6 +2685,11 @@ function createToolWithClient(
       emitEvent?: (event: any) => void,
       toolCallId?: string,
     ): Promise<AgentToolResult> {
+      const perm = await checkToolPermission('computer_use', args, onUpdate, emitEvent);
+      if (!perm.approved) {
+        return { success: false, output: perm.error || 'Permission denied by user for computer_use.' };
+      }
+
       // Handle execute_actions from vision grounding
       if (args.action === 'execute_actions' && Array.isArray(args.actions)) {
         const actions = args.actions as string[];

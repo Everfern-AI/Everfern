@@ -16,6 +16,8 @@ import { toolSettingsStore } from '../../../store/tool-settings';
 import { broadcastNavisCompanionProgress, getNavisCompanionStatus, prepareNavisMainProfileExtension } from './companion-extension';
 import { bridgeServer } from '../../../lib/extension-server';
 
+import { checkToolPermission } from '../permission-checker';
+
 type SubAgentProgressEventType = 'step' | 'reasoning' | 'action' | 'screenshot' | 'complete' | 'abort';
 
 function mapNavisToProgressType(navisType: string): SubAgentProgressEventType {
@@ -190,6 +192,15 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
         const screenshots: any[] = [];
 
         console.log('[Navis Tool] 🚀 NAVIS TOOL EXECUTION STARTED');
+
+        const perm = await checkToolPermission('navis', args, onUpdate, emitEvent);
+        if (!perm.approved) {
+          return {
+            success: false,
+            output: perm.error || 'Permission denied by user for navis.',
+            data: { steps: 0, screenshots }
+          };
+        }
 
         if (!task) {
           const output = 'Navis requires a non-empty task string. The model called navis without task details.';

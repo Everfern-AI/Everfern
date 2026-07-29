@@ -766,10 +766,18 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:fetch-metadata', async (_event, url: string) => {
     if (!url) return null;
     try {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 4000);
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) return null;
+      } catch {
+        return null;
+      }
 
-      const response = await fetch(url, {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3000);
+
+      const response = await fetch(parsedUrl.href, {
         headers: { 
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36' 
         },
@@ -777,6 +785,7 @@ export function registerSystemHandlers() {
       });
       clearTimeout(id);
 
+      if (!response.ok) return null;
       const html = await response.text();
 
       // Basic meta extraction
@@ -813,14 +822,12 @@ export function registerSystemHandlers() {
 
       if (favicon && !favicon.startsWith('http')) {
         try {
-          const base = new URL(url);
-          favicon = new URL(favicon, base.origin).href;
+          favicon = new URL(favicon, parsedUrl.origin).href;
         } catch { /* ignore */ }
       }
 
       return { title, description, favicon };
-    } catch (err) {
-      console.warn(`[IPC] system:fetch-metadata failed for ${url}:`, err);
+    } catch {
       return null;
     }
   });

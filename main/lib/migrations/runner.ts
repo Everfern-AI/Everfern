@@ -15,11 +15,34 @@ export interface MigrationInfo {
   appliedAt?: string;
 }
 
+function getMigrationsDir(): string {
+  const possibleDirs = [
+    __dirname,
+    path.join(__dirname, '..', 'lib', 'migrations'),
+    path.join(__dirname, '..', '..', 'lib', 'migrations'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'migrations') : '',
+    process.resourcesPath ? path.join(process.resourcesPath, 'main', 'lib', 'migrations') : '',
+  ].filter(Boolean);
+
+  for (const dir of possibleDirs) {
+    try {
+      if (fs.existsSync(dir) && fs.readdirSync(dir).some(f => f.endsWith('.sql'))) {
+        return dir;
+      }
+    } catch {
+      // Continue
+    }
+  }
+  return __dirname;
+}
+
 /**
  * Get list of all available migration files
  */
 export function getAvailableMigrations(): MigrationInfo[] {
-  const migrationsDir = __dirname;
+  const migrationsDir = getMigrationsDir();
+  if (!fs.existsSync(migrationsDir)) return [];
+
   const files = fs.readdirSync(migrationsDir);
 
   return files
@@ -65,7 +88,8 @@ export async function getPendingMigrations(): Promise<MigrationInfo[]> {
  * Execute a single migration file
  */
 export async function executeMigration(migration: MigrationInfo): Promise<void> {
-  const migrationPath = path.join(__dirname, migration.filename);
+  const migrationsDir = getMigrationsDir();
+  const migrationPath = path.join(migrationsDir, migration.filename);
   const sql = fs.readFileSync(migrationPath, 'utf-8');
 
   console.log(`[Migration] Applying ${migration.version}...`);

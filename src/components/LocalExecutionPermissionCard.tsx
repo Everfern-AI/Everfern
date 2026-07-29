@@ -178,7 +178,20 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               display: "block",
             }}
           >
-            {command}
+            {(() => {
+              let cmd = command;
+              const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+              if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
+              cmd = cmd
+                .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+                .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
+                .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
+                .trim();
+              return cmd.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || command;
+            })()}
           </code>
         </div>
 

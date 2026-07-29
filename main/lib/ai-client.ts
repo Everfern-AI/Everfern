@@ -189,6 +189,8 @@ export interface ChatRequest {
   userConfirmation?: 'ACT' | 'STAY_ON_NOMINAL';
   abortSignal?: AbortSignal;
   reasoningEffort?: 'low' | 'medium' | 'high' | 'ultra' | 'ultra-delegate';
+  /** Agent/node name sent to EverFern Cloud for backend model routing (e.g. 'navis', 'coding_specialist', 'web_explorer') */
+  agent?: string;
 }
 
 export interface ChatResponse {
@@ -1690,6 +1692,12 @@ export class AIClient {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
+        // If local Ollama daemon is offline, fail fast immediately without noisy retries
+        if (url.includes('11434') || url.includes('localhost:11434')) {
+          console.log(`[AIClient] Local endpoint offline (${url}), failing fast.`);
+          throw lastError;
+        }
+
         // Check if it's an abort error (timeout)
         if (lastError.name === 'AbortError') {
           console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
@@ -1764,6 +1772,8 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: isStreaming,
       ...(isStreaming && { stream_options: { include_usage: true } }),
+      ...(req.agent && { agent: req.agent }),
+      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(body, req);
@@ -1834,6 +1844,11 @@ export class AIClient {
       // Gemini doesn't support json_object — we handle JSON parsing on our end
     }
 
+    // EverFern Cloud: forward agent name for backend model routing
+    if (req.agent && this.config.provider === 'everfern') {
+      body['agent'] = req.agent;
+    }
+
     const headers = { ...this._oaiHeaders };
     if (isStreaming) {
       headers['Accept'] = 'text/event-stream';
@@ -1882,6 +1897,13 @@ export class AIClient {
 
     if (!isStreaming) {
       const data = await res.json();
+      if (data.actual_model) {
+        DebugEmitter.emit('log', `EverFern Cloud Model: ${data.actual_model}`, {
+          requestedModel: req.model ?? this.config.model,
+          actualModel: data.actual_model,
+          agent: req.agent
+        });
+      }
       const choice = data.choices?.[0];
       const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
         id: tc.id,
@@ -2036,6 +2058,8 @@ export class AIClient {
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: true,
+      ...(req.agent && { agent: req.agent }),
+      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(streamBody, req);
@@ -2174,6 +2198,13 @@ export class AIClient {
         }
         try {
           const d = JSON.parse(payload);
+          if (d.actual_model && isFirstChunk) {
+            DebugEmitter.emit('log', `EverFern Cloud Model (Stream): ${d.actual_model}`, {
+              requestedModel: req.model ?? this.config.model,
+              actualModel: d.actual_model,
+              agent: req.agent
+            });
+          }
           const choice = d.choices?.[0];
           const delta = choice?.delta;
 

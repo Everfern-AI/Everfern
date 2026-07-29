@@ -796,6 +796,7 @@ export class AgentRunner {
                              textInput.includes('[HITL_APPROVED_ALWAYS]') ||
                              textInput.includes('[HITL_APPROVED_PREFIX]') ||
                              textInput.includes('[HITL_REJECTED]') ||
+                             textInput.includes('[Form Response]') ||
                              textInput.includes('✅ Approve — proceed once') ||
                              textInput.includes('🚀 Approve & Allow Always') ||
                              textInput.includes('📂 Approve & Allow Prefix') ||
@@ -1099,35 +1100,39 @@ export class AgentRunner {
         };
 
         (async () => {
+          const threadConfig = {
+            configurable: {
+              thread_id: convId,
+              executionContext: {
+                runner: this,
+                eventQueue,
+                missionTracker,
+                conversationId: convId,
+                shouldAbort,
+              }
+            },
+            recursionLimit: 250
+          };
+          let activeSanitizedMessages: any[] = [];
+
           try {
             globalAbortManager.checkAbort();
-
-            const threadConfig = {
-              configurable: {
-                thread_id: convId,
-                executionContext: {
-                  runner: this,
-                  eventQueue,
-                  missionTracker,
-                  conversationId: convId,
-                  shouldAbort,
-                }
-              },
-              recursionLimit: 250
-            };
 
             const currentState = await graph.getState(threadConfig);
             const { Command } = await import('@langchain/langgraph');
 
             globalAbortManager.checkAbort();
 
-            if (currentState && currentState.next && currentState.next.length > 0) {
+            const isWaitingForAnswer = stateManager.isInterrupted(convId) && !!stateManager.getInterruptData(convId);
+            const shouldResume = isHitlResponse || isWaitingForAnswer;
+
+            if (shouldResume) {
               console.log('[AgentRunner] 🔄 Resuming interrupted session...');
               this.telemetry.info(`Resuming session ${convId} from interrupted state...`);
 
               // Restore mission tracker timeline from persisted state if available
-              const persistedTimeline = currentState.values.missionTimeline;
-              const persistedSteps = currentState.values.missionSteps;
+              const persistedTimeline = currentState?.values?.missionTimeline;
+              const persistedSteps = currentState?.values?.missionSteps;
               if (persistedTimeline && persistedSteps) {
                 missionTracker.restoreTimeline(persistedTimeline, persistedSteps);
               }
@@ -1144,9 +1149,55 @@ export class AgentRunner {
                 }
               };
 
-              await graph.invoke(new Command({ resume: textInput }), resumeConfig);
+              try {
+                await graph.invoke(new Command({ resume: textInput }), resumeConfig);
+                stateManager.resumeFromInterrupt(convId, textInput);
+              } catch (resumeErr: any) {
+                console.warn('[AgentRunner] Resume via Command finished or error occurred in graph:', resumeErr);
+                stateManager.resumeFromInterrupt(convId, textInput);
+
+                const errStr = resumeErr instanceof Error ? resumeErr.message : (typeof resumeErr === 'object' ? JSON.stringify(resumeErr) : String(resumeErr));
+                const isRateLimit = /429|daily_limit_reached|rate_limit|quota|limit_exceeded/i.test(errStr);
+                const isApiError = isRateLimit || /401|403|500|502|503|504|invalid_api_key|authentication/i.test(errStr);
+
+                if (isApiError) {
+                  let userFacingErr = errStr;
+                  if (isRateLimit) {
+                    userFacingErr = "You have reached your tier's daily token limit or API rate limit (429 Too Many Requests). Your usage resets at midnight, or you can upgrade for higher limits.";
+                  }
+                  eventQueue.push({
+                    type: 'chunk',
+                    content: `\n\n⚠️ **API Error (429 Rate Limit Exceeded):** ${userFacingErr}`
+                  });
+                  if (missionTracker) missionTracker.fail(userFacingErr);
+                } else if (isHitlResponse) {
+                  const approved = textInput.includes('[HITL_APPROVED]') ||
+                                   textInput.includes('[HITL_APPROVED_ALWAYS]') ||
+                                   textInput.includes('[HITL_APPROVED_PREFIX]') ||
+                                   textInput.includes('Approve');
+                  eventQueue.push({
+                    type: 'chunk',
+                    content: approved
+                      ? '\n\n✅ Security approval recorded.'
+                      : '\n\n❌ Action rejected by user. Operation cancelled.'
+                  });
+                  missionTracker.completeStep('step:hitl');
+                }
+              }
             } else {
-              console.log('[AgentRunner] 🔄 Starting new graph invocation...');
+              console.log('[AgentRunner] 🔄 Starting new graph invocation for user message...');
+              stateManager.resumeFromInterrupt(convId, null);
+
+              // Guard against treating leftover HITL responses as new user prompts
+              if (isHitlResponse) {
+                console.log('[AgentRunner] 🛡️ Ignored standalone HITL form response in new graph invocation');
+                const approved = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_APPROVED_ALWAYS]') || textInput.includes('Approve');
+                eventQueue.push({
+                  type: 'chunk',
+                  content: approved ? '\n\n✅ Security approval recorded.' : '\n\n❌ Action rejected by user. Operation cancelled.'
+                });
+                return;
+              }
 
               // Only reconstruct history for NEW invocations
               // RESUMING invocations already have history in GraphState
@@ -1156,18 +1207,31 @@ export class AgentRunner {
               if (this.reasoningEffort === 'ultra-delegate') {
                 promptText += "\n\nCRITICAL SYSTEM INSTRUCTION: You are in ULTRA DELEGATION MODE. You must aggressively delegate sub-tasks to independent specialized sub-agents by calling the `spawn_agent` tool. Break down any complex task into components and spawn sub-agents for them immediately. Do not attempt to execute multi-file edits, complex searches, or large terminal sequences yourself; instead, spawn dedicated sub-agents to handle these tasks in parallel and coordinate their results.";
               }
-              const { messages: initialMessages } = await buildSystemMessages(history, userInput, platform, convId, [], promptText, projectId);
+              // Continuation context injection: expand short prompts like "continue" or "yes build it" with the original goal
+              let activeUserInput = userInput;
+              const userStr = typeof userInput === 'string' ? userInput : (Array.isArray(userInput) ? JSON.stringify(userInput) : String(userInput));
+              const isShortContinuation = /^(continue|yes|go ahead|do it|keep going|ok|okay|yes build it|build it|proceed|the apop)$/i.test(userStr.trim());
+              
+              const { messages: builtInitialMessages } = await buildSystemMessages(history, activeUserInput, platform, convId, [], promptText, projectId);
+              let initialMessages = [...builtInitialMessages];
 
-              // Reconstruction logic
               const chatHistoryStore = new ChatHistoryStore();
               try {
                 const fullConversation = await chatHistoryStore.load(convId);
                 if (fullConversation && fullConversation.messages.length > 0) {
-                  const priorMessages = reconstructFullHistory(fullConversation.messages, userInput);
+                  const priorMessages = reconstructFullHistory(fullConversation.messages, activeUserInput);
                   
                   // Preserve the first user message if it exists (the initial prompt/task request)
                   const firstMessage = priorMessages.length > 0 ? priorMessages[0] : null;
                   const hasFirstUserMsg = firstMessage && firstMessage.role === 'user';
+
+                  if (isShortContinuation && hasFirstUserMsg && typeof firstMessage.content === 'string') {
+                    const originalTask = firstMessage.content.slice(0, 400).replace(/[\r\n]+/g, ' ').trim();
+                    console.log(`[AgentRunner] 🧠 Short continuation detected ("${userStr}"). Injecting original task objective: "${originalTask.slice(0, 80)}..."`);
+                    activeUserInput = `[User Continuation Request for Task: "${originalTask}"] ${userStr}`;
+                    const rebuilt = await buildSystemMessages(history, activeUserInput, platform, convId, [], promptText, projectId);
+                    initialMessages = rebuilt.messages;
+                  }
                   
                   const maxMessages = 20;
                   let limitedPriorMessages: any[];
@@ -1184,14 +1248,14 @@ export class AgentRunner {
                   
                   const systemMessage = initialMessages[0];
                   const newUserMessage = initialMessages[initialMessages.length - 1];
-                  initialMessages.length = 0;
-                  initialMessages.push(systemMessage, ...limitedPriorMessages, newUserMessage);
+                  initialMessages = [systemMessage, ...limitedPriorMessages, newUserMessage];
                 }
               } catch (err) {
                 console.warn('[AgentRunner] Failed to load history:', err);
               }
 
               const sanitizedInitialMessages = sanitizeMessagesRoleAlternation(initialMessages);
+              activeSanitizedMessages = sanitizedInitialMessages;
 
               // Inject truncation awareness into the system message
               if (this.lastTruncationDetails && this.lastTruncationDetails.truncatedTools > 0) {
@@ -1220,15 +1284,70 @@ export class AgentRunner {
                 currentIntent: isBackground ? 'background_task' as any : undefined,
                 isScheduledTaskRun: !!isBackground,
                 operatorMode: !!operatorMode,
+                codingComplete: false,
+                dataAnalysisComplete: false,
+                webExplorerComplete: false,
+                deepResearchComplete: false,
+                computerUseComplete: false,
+                completionSignal: null,
+                routingDecision: null,
+                decomposedTask: undefined,
+                returningFromSpecialist: null,
               }, threadConfig);
             }
           } catch (err) {
-            // ... (error handling remains same)
             console.error('[AgentRunner] Graph Error:', err);
-            const errorMsg = err instanceof Error ? err.message : String(err);
+            const errorMsg = err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err));
+
+            if (errorMsg.includes('pregelTaskId')) {
+              console.log('[AgentRunner] 🔄 Detected Pregel checkpointer task collision from previous turn. Auto-healing with fresh thread context...');
+              const freshConfig = {
+                ...threadConfig,
+                configurable: {
+                  ...threadConfig.configurable,
+                  thread_id: `${convId}_t_${Date.now()}`
+                }
+              };
+              try {
+                await graph.invoke({
+                  messages: activeSanitizedMessages,
+                  toolCallRecords: [],
+                  iterations: 0,
+                  pendingToolCalls: [],
+                  finalResponse: '',
+                  toolCallHistory: [],
+                  missionId: convId,
+                  missionTimeline: missionTracker.getTimeline(),
+                  missionSteps: missionTracker.getSteps(),
+                  currentStepId: 'step:triage',
+                  decompositionAttempts: 0,
+                  currentIntent: isBackground ? 'background_task' as any : undefined,
+                  isScheduledTaskRun: !!isBackground,
+                  operatorMode: !!operatorMode,
+                  codingComplete: false,
+                  dataAnalysisComplete: false,
+                  webExplorerComplete: false,
+                  deepResearchComplete: false,
+                  computerUseComplete: false,
+                  completionSignal: null,
+                  routingDecision: null,
+                  decomposedTask: undefined,
+                  returningFromSpecialist: null,
+                }, freshConfig);
+                return;
+              } catch (retryErr: any) {
+                console.error('[AgentRunner] Auto-heal retry graph execution error:', retryErr);
+              }
+            }
+
+            const isRateLimit = /429|daily_limit_reached|rate_limit|quota|limit_exceeded/i.test(errorMsg);
             if (err instanceof AbortError || errorMsg.includes('Execution aborted by user')) {
               eventQueue.push({ type: 'chunk', content: '\n\n🛑 Stopped by user.' });
               missionTracker.fail('Execution stopped by user');
+            } else if (isRateLimit) {
+              const friendly = "You have reached your tier's daily output token limit or API rate limit (429 Too Many Requests). Your quota will reset at midnight, or you can upgrade to Pro / Max for higher limits.";
+              eventQueue.push({ type: 'chunk', content: `\n\n⚠️ **API Error (429 Rate Limit Exceeded):** ${friendly}` });
+              missionTracker.fail(friendly);
             } else if (/recursion\s+limit|recursionLimit|GraphRecursion/i.test(errorMsg)) {
               const friendly = 'The agent stopped because the execution graph repeated too many steps without reaching a completion state. I prevented the runaway loop; narrow the target files or ask me to continue from the latest checkpoint.';
               eventQueue.push({ type: 'chunk', content: `\n\n⚠️ ${friendly}` });

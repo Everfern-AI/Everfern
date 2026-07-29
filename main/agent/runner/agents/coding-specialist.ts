@@ -89,6 +89,11 @@ export const createCodingSpecialistNode = (
       };
     }
 
+    // Reset codingComplete at the start of each pass so stale state from a previous
+    // iteration never causes the graph edge to think the task is done prematurely.
+    // The node will only re-set it to true when [PHASE_COMPLETE] is explicitly signalled.
+
+
     const fallbackTools = toolDefs || (runner as any)._buildToolDefinitions();
 
     // Extract user request and determine current phase
@@ -135,7 +140,7 @@ REMEMBER:
 2. Ship the change (write or edit)
 3. Verify immediately (typecheck/lint/build)
 4. Fix errors before responding
-5. Use \`[PHASE_COMPLETE: complete]\` when you have verified everything works`;
+5. Call \`task_complete\` with a summary when you have verified everything works`;
 
       const result = await integrator.wrapNode(
         'coding_specialist',
@@ -149,22 +154,46 @@ REMEMBER:
         'Writing code'
       );
 
-      // ── Phase completion detection ──
       const agentMessages = result.messages || [];
       const lastAssistantMsg = [...agentMessages].reverse().find((m: any) => {
         const role = m.role || m._getType?.();
         return role === 'assistant' || role === 'ai';
       });
-      const content = typeof lastAssistantMsg?.content === 'string' ? lastAssistantMsg.content : '';
-      const isCompletePhase = content.includes('[PHASE_COMPLETE: complete]');
+      const hasPendingTools = !!(result.pendingToolCalls && result.pendingToolCalls.length > 0);
+
+      // ── Tool-call-presence routing (ReAct / LangGraph / OpenAI Swarm pattern) ──
+      // The specialist signals completion by calling the `task_complete` tool.
+      // We check tool-call presence structurally — no text pattern matching needed.
+      const calledTaskComplete = (result.pendingToolCalls || []).some(
+        (tc: any) => (tc.name || tc.toolName || tc.function?.name || '') === 'task_complete'
+      );
+
+      // Also check if task_complete was just executed in the previous turn
+      const wasTaskCompleteExecutedInLastTurn = (): boolean => {
+        const msgs = state.messages || [];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const msg = msgs[i] as any;
+          const role = msg.role || msg.type || msg._getType?.();
+          if (role === 'assistant' || role === 'ai') break;
+          if (role === 'tool' || role === 'function') {
+            const name = msg.name || msg.tool_name || msg.toolName || '';
+            if (name === 'task_complete') return true;
+          }
+        }
+        return false;
+      };
+
+      const isComplete = calledTaskComplete || wasTaskCompleteExecutedInLastTurn() || (state.codingComplete ?? false);
 
       return {
         ...result,
         subagentCoordination: undefined,
         returningFromSpecialist: null,
-        codingComplete: isCompletePhase,
-        codingSpecialistSelfLoopCount: loopCount,
+        codingComplete: isComplete,
+        // Reset self loop count to 0 when complete, otherwise track active passes
+        codingSpecialistSelfLoopCount: isComplete ? 0 : loopCount,
       };
+
     } catch (error) {
       console.error('[CodingSpecialist] Error in coding specialist:', error);
 

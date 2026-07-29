@@ -153,15 +153,19 @@ export function syncBuiltInSkills(): void {
 
     // Try multiple possible locations for built-in skills
     const possibleLocations = [
-      // Location 1: dist-electron/main/skills (compiled production)
+      // Location 1: dist-electron/main/skills (compiled production inside asar)
       path.join(__dirname, '..', 'skills'),
-      // Location 2: main/skills (source/dev)
+      // Location 2: extraResources (production resources/skills)
+      ...(process.resourcesPath ? [
+        path.join(process.resourcesPath, 'skills'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'skills'),
+      ] : []),
+      // Location 3: main/skills (source/dev)
       path.join(__dirname, '..', '..', 'main', 'skills'),
-      // Location 3: ../../../main/skills (if lib is nested differently)
       path.join(__dirname, '..', '..', '..', 'main', 'skills'),
-      // Location 4: Absolute path from app root
-      path.join(__dirname, '..', '..', '..', '..', '..', 'apps', 'desktop', 'main', 'skills'),
-    ];
+      path.join(process.cwd(), 'main', 'skills'),
+      path.join(process.cwd(), 'dist-electron', 'main', 'skills'),
+    ].filter(Boolean);
 
     let builtInSkillsDir: string | null = null;
 

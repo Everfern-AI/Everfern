@@ -231,10 +231,10 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                                         </span>
                                         <div style={{
                                             marginTop: 3,
-                                            padding: '5px 8px',
-                                            borderRadius: 5,
+                                            padding: '6px 10px',
+                                            borderRadius: 6,
                                             fontSize: 12,
-                                            fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+                                            fontFamily: isCommand ? 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace' : 'inherit',
                                             wordBreak: 'break-all',
                                             whiteSpace: 'pre-wrap',
                                             maxHeight: isLong ? 150 : 'none',
@@ -251,21 +251,30 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                             })}
                         </div>
                     ) : (
-                        <div style={{
-                            backgroundColor: '#1a1a1a',
-                            color: '#4ade80',
-                            border: '1px solid #333',
-                            borderRadius: 5,
-                            padding: '6px 10px',
-                            fontSize: 12,
-                            fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-all',
-                            maxHeight: 120,
-                            overflowY: 'auto',
-                        }}>
-                            $ {tool.rawValue}
-                        </div>
+                        (() => {
+                            let cleanRaw = (tool.rawValue || '').trim();
+                            if (cleanRaw.startsWith('$ ')) cleanRaw = cleanRaw.substring(2).trim();
+                            cleanRaw = cleanRaw.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+                            const isCmd = /^(npm|npx|git|cd|node|python|sudo|docker|wsl|pip|cargo|go|make)\b/i.test(cleanRaw);
+
+                            return (
+                                <div style={{
+                                    padding: '8px 12px',
+                                    borderRadius: 6,
+                                    fontSize: 12.5,
+                                    lineHeight: 1.5,
+                                    fontFamily: isCmd ? 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace' : 'inherit',
+                                    wordBreak: 'break-word',
+                                    whiteSpace: 'pre-wrap',
+                                    ...(isCmd
+                                        ? { backgroundColor: '#1a1a1a', color: '#4ade80', border: '1px solid #333' }
+                                        : { backgroundColor: 'var(--color-bg-base)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)' }
+                                    ),
+                                }}>
+                                    {isCmd ? `$ ${cleanRaw}` : cleanRaw}
+                                </div>
+                            );
+                        })()
                     )}
                 </div>
             )}
@@ -370,7 +379,7 @@ const HitlApprovalForm = ({
         return (
             <div style={{
                 background: 'var(--color-bg-surface)',
-                border: '1px solid #e8e6e1',
+                border: '1px solid var(--color-border)',
                 borderRadius: 16,
                 padding: '20px 24px',
                 margin: '16px 0',
@@ -408,12 +417,13 @@ const HitlApprovalForm = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                             <div style={{
                                 width: 32, height: 32, borderRadius: 10,
-                                background: 'linear-gradient(135deg, #f0f0ee 0%, #e8e6e1 100%)',
+                                background: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 flexShrink: 0,
                             }}>
                                 {hasBrowser ? (
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <circle cx="12" cy="12" r="4"></circle>
                                         <line x1="21.17" y1="8" x2="12" y2="8"></line>
@@ -421,14 +431,14 @@ const HitlApprovalForm = ({
                                         <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
                                     </svg>
                                 ) : (
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
                                         <line x1="8" y1="21" x2="16" y2="21"></line>
                                         <line x1="12" y1="17" x2="12" y2="21"></line>
                                     </svg>
                                 )}
                             </div>
-                            <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4 }}>
+                            <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
                                 Authorize {agentName} to {actionLabel} to complete your task
                             </span>
                         </div>
@@ -440,14 +450,14 @@ const HitlApprovalForm = ({
                                 disabled={isProcessing}
                                 style={{
                                     flex: 1, padding: '10px 0', borderRadius: 10,
-                                    border: '1px solid #d6d3ce', backgroundColor: 'var(--color-bg-surface)',
-                                    color: '#555', fontSize: 13.5, fontWeight: 600,
+                                    border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)',
+                                    color: 'var(--color-text-primary)', fontSize: 13.5, fontWeight: 600,
                                     cursor: isProcessing ? 'not-allowed' : 'pointer',
                                     opacity: isProcessing ? 0.5 : 1,
                                     transition: 'all 0.15s ease',
                                 }}
-                                onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#f8f8f6'; } }}
-                                onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; } }}
+                                onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; } }}
+                                onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-base)'; } }}
                             >
                                 No thanks
                             </button>
@@ -456,14 +466,14 @@ const HitlApprovalForm = ({
                                 disabled={isProcessing}
                                 style={{
                                     flex: 1, padding: '10px 0', borderRadius: 10,
-                                    border: 'none', backgroundColor: '#1a1a1a',
+                                    border: 'none', backgroundColor: 'var(--color-text-primary)',
                                     color: 'var(--color-bg-surface)', fontSize: 13.5, fontWeight: 600,
                                     cursor: isProcessing ? 'not-allowed' : 'pointer',
                                     opacity: isProcessing ? 0.5 : 1,
                                     transition: 'all 0.15s ease',
                                 }}
-                                onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#333'; }}
-                                onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                                onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.opacity = '0.85'; }}
+                                onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.opacity = '1'; }}
                             >
                                 Authorize
                             </button>
@@ -471,7 +481,7 @@ const HitlApprovalForm = ({
 
                         {/* Subtle note */}
                         <p style={{
-                            margin: 0, fontSize: 12, color: '#999', textAlign: 'center',
+                            margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)', textAlign: 'center',
                             lineHeight: 1.4,
                         }}>
                             {agentName} will continue working after your reply
@@ -741,6 +751,22 @@ const UserQuestionForm = ({
             setTimeout(() => fileInputRef.current?.click(), 50);
             return;
         }
+
+        if (isHighRisk && !current.multiSelect) {
+            // 1-Click execution for High Risk / HITL Security checks!
+            setIsProcessing(true);
+            const mapValue = (val: string) => {
+                if (val.includes('Approve & Allow Always') || val.includes('[HITL_APPROVED_ALWAYS]')) return '[HITL_APPROVED_ALWAYS]';
+                if (val.includes('Approve & Allow Prefix') || val.includes('[HITL_APPROVED_PREFIX]')) return '[HITL_APPROVED_PREFIX]';
+                if (val.includes('Approve') || val.includes('[HITL_APPROVED]')) return '[HITL_APPROVED]';
+                if (val.includes('Reject') || val.includes('[HITL_REJECTED]')) return '[HITL_REJECTED]';
+                return val;
+            };
+            const processed = { ...answers, [q]: [mapValue(value)] };
+            onSubmit(processed, attachedFiles.length > 0 ? attachedFiles : undefined);
+            return;
+        }
+
         setAnswers(prev => {
             if (current.multiSelect) {
                 const existing = prev[q] || [];
@@ -794,30 +820,56 @@ const UserQuestionForm = ({
     const isNavisSecurityCheck = isHighRisk && (current.question.toLowerCase().includes('navis') || current.question.toLowerCase().includes('browser') || current.question.toLowerCase().includes('tab'));
     const isComputerSecurityCheck = isHighRisk && (current.question.toLowerCase().includes('computer') || current.question.toLowerCase().includes('mouse') || current.question.toLowerCase().includes('click') || current.question.toLowerCase().includes('keyboard'));
 
-    if ((isNavisSecurityCheck || isComputerSecurityCheck) && isInline) {
-        const actionLabel = isNavisSecurityCheck ? 'use a new tab from My Browser' : 'control your computer';
+    if (isHighRisk && isInline) {
+        const rawQuestion = current.question;
+        const parts = rawQuestion.split(/Actions to execute:/i);
+        let headerReasoning = (parts[0] || '').replace('⚠️ High-risk action requires your approval', '').replace('⚠️ Security Check Required', '').replace('Dangerous tool detected', '').trim();
+        let actionSnippet = (parts[1] || '').trim();
+        if (/^no tools pending\.?$/i.test(actionSnippet)) actionSnippet = '';
+
+        const cleanText = (str: string) => {
+            let s = str.trim();
+            if (s.startsWith('$ ')) s = s.substring(2).trim();
+            return s.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+        };
+
+        const displaySnippet = cleanText(actionSnippet || headerReasoning || 'Modifying local files on your system.');
+
+        let actionLabel = 'modify local files on your system';
+        if (isNavisSecurityCheck) {
+            actionLabel = 'use a new tab from My Browser';
+        } else if (isComputerSecurityCheck) {
+            actionLabel = 'control your computer';
+        } else if (displaySnippet.toLowerCase().includes('npm') || displaySnippet.toLowerCase().includes('git') || displaySnippet.toLowerCase().includes('command') || displaySnippet.toLowerCase().includes('node')) {
+            actionLabel = 'run commands on your system';
+        }
+
         const agentName = isNavisSecurityCheck ? 'Navis' : 'EverFern';
-        
+
         return (
             <div style={{
                 background: 'var(--color-bg-surface)',
-                border: '1px solid #e8e6e1',
+                border: '1px solid var(--color-border)',
                 borderRadius: 16,
                 padding: '20px 24px',
                 margin: '16px 0',
                 fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
                 width: '100%',
                 maxWidth: 520,
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                {/* Header Icon + Title */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                     <div style={{
                         width: 32, height: 32, borderRadius: 10,
-                        background: 'linear-gradient(135deg, #f0f0ee 0%, #e8e6e1 100%)',
+                        background: 'var(--color-bg-subtle)',
+                        border: '1px solid var(--color-border)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0,
+                        color: 'var(--color-text-secondary)',
                     }}>
                         {isNavisSecurityCheck ? (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <circle cx="12" cy="12" r="4"></circle>
                                 <line x1="21.17" y1="8" x2="12" y2="8"></line>
@@ -825,18 +877,35 @@ const UserQuestionForm = ({
                                 <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
                             </svg>
                         ) : (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                <line x1="8" y1="21" x2="16" y2="21"></line>
-                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                             </svg>
                         )}
                     </div>
-                    <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4 }}>
+                    <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
                         Authorize {agentName} to {actionLabel} to complete your task
                     </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+
+                {/* Reason / Snippet Preview */}
+                {displaySnippet && (
+                    <div style={{
+                        backgroundColor: 'var(--color-bg-subtle)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 10,
+                        padding: '10px 14px',
+                        marginBottom: 16,
+                        fontSize: 13,
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.5,
+                        wordBreak: 'break-word',
+                    }}>
+                        {displaySnippet}
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                     <button
                         onClick={() => {
                             if (isProcessing) return;
@@ -846,17 +915,39 @@ const UserQuestionForm = ({
                         disabled={isProcessing}
                         style={{
                             flex: 1, padding: '10px 0', borderRadius: 10,
-                            border: '1px solid #d6d3ce', backgroundColor: 'var(--color-bg-surface)',
-                            color: '#555', fontSize: 13.5, fontWeight: 600,
+                            border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)',
+                            color: 'var(--color-text-primary)', fontSize: 13.5, fontWeight: 600,
                             cursor: isProcessing ? 'not-allowed' : 'pointer',
                             opacity: isProcessing ? 0.5 : 1,
                             transition: 'all 0.15s ease',
                         }}
-                        onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#f8f8f6'; } }}
-                        onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; } }}
+                        onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                        onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-bg-base)'; }}
                     >
                         No thanks
                     </button>
+
+                    <button
+                        onClick={() => {
+                            if (isProcessing) return;
+                            setIsProcessing(true);
+                            onSubmit({ [current.question]: ['[HITL_APPROVED]'] }, undefined);
+                        }}
+                        disabled={isProcessing}
+                        style={{
+                            flex: 1, padding: '10px 0', borderRadius: 10,
+                            border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)',
+                            color: 'var(--color-text-primary)', fontSize: 13.5, fontWeight: 600,
+                            cursor: isProcessing ? 'not-allowed' : 'pointer',
+                            opacity: isProcessing ? 0.5 : 1,
+                            transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                        onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'; }}
+                    >
+                        Authorize once
+                    </button>
+
                     <button
                         onClick={() => {
                             if (isProcessing) return;
@@ -866,20 +957,22 @@ const UserQuestionForm = ({
                         disabled={isProcessing}
                         style={{
                             flex: 1, padding: '10px 0', borderRadius: 10,
-                            border: 'none', backgroundColor: '#1a1a1a',
+                            border: 'none', backgroundColor: 'var(--color-text-primary)',
                             color: 'var(--color-bg-surface)', fontSize: 13.5, fontWeight: 600,
                             cursor: isProcessing ? 'not-allowed' : 'pointer',
                             opacity: isProcessing ? 0.5 : 1,
                             transition: 'all 0.15s ease',
                         }}
-                        onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#333'; }}
-                        onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                        onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.opacity = '0.85'; }}
+                        onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.opacity = '1'; }}
                     >
-                        Authorize
+                        Always allow
                     </button>
                 </div>
+
+                {/* Footer text */}
                 <p style={{
-                    margin: 0, fontSize: 12, color: '#999', textAlign: 'center',
+                    margin: 0, fontSize: 12, color: 'var(--color-text-tertiary)', textAlign: 'center',
                     lineHeight: 1.4,
                 }}>
                     {agentName} will continue working after your reply
@@ -1195,6 +1288,103 @@ const UserQuestionForm = ({
                         const selected = currentAnswers.includes(option.value);
                         const isFileOption = option.requiresFileUpload;
                         const fileAttached = isFileOption && attachedFiles.some(() => pendingFileOption === option.value);
+
+                        if (isHighRisk) {
+                            const val = option.value;
+                            const isApproveOnce = val.includes('Approve — proceed once') || val.includes('[HITL_APPROVED]');
+                            const isAlways = val.includes('Approve & Allow Always');
+                            const isPrefix = val.includes('Approve & Allow Prefix');
+                            const isReject = val.includes('Reject');
+
+                            let title = option.label;
+                            let sub = '';
+                            let badge = '1-CLICK';
+                            let badgeBg = 'rgba(16, 185, 129, 0.1)';
+                            let badgeColor = '#10b981';
+                            let borderHoverColor = 'var(--color-border-strong)';
+
+                            if (isApproveOnce) {
+                                title = 'Approve once';
+                                sub = 'Run this action single time';
+                                badge = 'PROCEED ONCE';
+                                badgeBg = 'rgba(16, 185, 129, 0.12)';
+                                badgeColor = '#059669';
+                                borderHoverColor = '#10b981';
+                            } else if (isAlways) {
+                                title = 'Approve & Allow Always';
+                                sub = 'Never ask for this specific command again';
+                                badge = 'ALWAYS ALLOW';
+                                badgeBg = 'rgba(99, 102, 241, 0.12)';
+                                badgeColor = '#4f46e5';
+                                borderHoverColor = '#6366f1';
+                            } else if (isPrefix) {
+                                title = 'Approve Command Prefix';
+                                sub = 'Never ask for commands starting with this base';
+                                badge = 'ALLOW PREFIX';
+                                badgeBg = 'rgba(168, 85, 247, 0.12)';
+                                badgeColor = '#9333ea';
+                                borderHoverColor = '#a855f7';
+                            } else if (isReject) {
+                                title = 'Reject & Cancel';
+                                sub = 'Stop execution and return control to agent';
+                                badge = 'DENY';
+                                badgeBg = 'rgba(239, 68, 68, 0.12)';
+                                badgeColor = '#dc2626';
+                                borderHoverColor = '#ef4444';
+                            }
+
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => handleOptionClick(option.value, option.requiresFileUpload)}
+                                    disabled={isProcessing}
+                                    style={{
+                                        padding: '12px 16px',
+                                        borderRadius: 12,
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        color: 'var(--color-text-primary)',
+                                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                        opacity: isProcessing ? 0.6 : 1,
+                                        textAlign: 'left',
+                                        transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!isProcessing) {
+                                            e.currentTarget.style.borderColor = borderHoverColor;
+                                            e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                        }
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!isProcessing) {
+                                            e.currentTarget.style.borderColor = 'var(--color-border)';
+                                            e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)';
+                                        }
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                            <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>{title}</span>
+                                            {sub && <span style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>{sub}</span>}
+                                        </div>
+                                        <span style={{
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            color: badgeColor,
+                                            backgroundColor: badgeBg,
+                                            padding: '3px 8px',
+                                            borderRadius: 20,
+                                            letterSpacing: '0.04em',
+                                            flexShrink: 0
+                                        }}>
+                                            {badge}
+                                        </span>
+                                    </div>
+                                </button>
+                            );
+                        }
+
                         return (
                             <button
                                 key={idx}
@@ -1300,10 +1490,12 @@ const UserQuestionForm = ({
                         Next
                     </button>
                 ) : (
-                    <button onClick={handleSubmit} disabled={!allAnswered || isProcessing}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered && !isProcessing ? 'var(--color-text-primary)' : 'var(--color-border)', color: allAnswered && !isProcessing ? 'var(--color-bg-surface)' : 'var(--color-text-tertiary)', fontSize: 14, fontWeight: 600, cursor: (!allAnswered || isProcessing) ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}>
-                        {isProcessing ? 'Submitting...' : 'Submit'} {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
-                    </button>
+                    !(isHighRisk && !current.multiSelect) && (
+                        <button onClick={handleSubmit} disabled={!allAnswered || isProcessing}
+                            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered && !isProcessing ? 'var(--color-text-primary)' : 'var(--color-border)', color: allAnswered && !isProcessing ? 'var(--color-bg-surface)' : 'var(--color-text-tertiary)', fontSize: 14, fontWeight: 600, cursor: (!allAnswered || isProcessing) ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}>
+                            {isProcessing ? 'Submitting...' : 'Submit'} {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
+                        </button>
+                    )
                 )}
             </div>
         </div>

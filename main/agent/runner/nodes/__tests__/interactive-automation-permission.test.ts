@@ -5,13 +5,12 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(__dirname, '../..');
 
 describe('interactive automation permission gate', () => {
-  it('routes normal navis and computer_use calls through HITL before execution', () => {
-    const graphSource = fs.readFileSync(path.join(root, 'graph.ts'), 'utf-8');
+  it('uses in-place permission check for navis and computer_use before execution', () => {
+    const navisSource = fs.readFileSync(path.join(root, '../tools/navis/tool.ts'), 'utf-8');
+    const computerUseSource = fs.readFileSync(path.join(root, '../tools/computer-use.ts'), 'utf-8');
 
-    expect(graphSource).toContain("const INTERACTIVE_AUTOMATION_TOOLS = new Set(['navis', 'computer_use'])");
-    expect(graphSource).toContain('routePendingToolsWithAutomationApproval');
-    expect(graphSource).toContain("return 'hitl_approval'");
-    expect(graphSource.match(/routePendingToolsWithAutomationApproval/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(navisSource).toContain("checkToolPermission('navis'");
+    expect(computerUseSource).toContain("checkToolPermission('computer_use'");
   });
 
   it('bypasses the prompt for scheduled/background runs only', () => {

@@ -19,6 +19,9 @@ import {
     Coffee,
     Check,
     Shield,
+    Star,
+    Heart,
+    ExternalLink,
 } from "lucide-react";
 
 import WindowControls from "../components/WindowControls";
@@ -391,6 +394,7 @@ export default function SetupPage() {
     const [referralSource, setReferralSource] = useState("");
     const [referralOtherText, setReferralOtherText] = useState("");
     const [submittingReferral, setSubmittingReferral] = useState(false);
+    const [hasStarredRepo, setHasStarredRepo] = useState(false);
 
     const handleNextFromReferral = async () => {
         if (!referralSource) return;
@@ -784,10 +788,12 @@ export default function SetupPage() {
                         if (step === 7) return 8;
                         if (step === 8) return 9;
                         if (step === 9) return 10;
-                        return 10;
+                        if (step === 10) return 11;
+                        if (step === 12) return 12;
+                        return 12;
                     };
                     const activeIndex = getActiveDotIndex();
-                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => (
+                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(s => (
                         <div
                             key={s}
                             style={{
@@ -2502,14 +2508,14 @@ export default function SetupPage() {
                                 >
                                     {submittingReferral ? "Saving..." : "Continue"}
                                 </button>
-                                <button onClick={() => setStep(10)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                <button onClick={() => setStep(9)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                     Skip
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {/* ── Step 9: Join Discord ── */}
+                    {/* ── Step 9: Star GitHub Repo ── */}
                     {step === 9 && (
                         <motion.div
                             key="step9"
@@ -2518,10 +2524,135 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
-                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                            style={{ width: "100%", maxWidth: 500, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
                                 <BackButton onClick={() => setStep(8)} />
+                            </div>
+
+                            {/* Glowing Star Badge */}
+                            <motion.div
+                                initial={{ scale: 0.8, rotate: -10 }}
+                                animate={{ scale: 1, rotate: 0 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                style={{
+                                    width: 72,
+                                    height: 72,
+                                    borderRadius: 28,
+                                    margin: "0 auto 24px",
+                                    background: "linear-gradient(135deg, rgba(234,179,8,0.15) 0%, rgba(245,158,11,0.05) 100%)",
+                                    border: "1px solid rgba(234,179,8,0.3)",
+                                    boxShadow: "0 12px 32px rgba(234,179,8,0.15)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center"
+                                }}
+                            >
+                                <Star size={36} color="#eab308" fill="#eab308" />
+                            </motion.div>
+
+                            <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--color-text-primary)", marginBottom: 12, lineHeight: 1.15 }}>
+                                Star EverFern on GitHub ⭐
+                            </h1>
+                            
+                            <div style={{
+                                backgroundColor: "rgba(32,30,36,0.03)",
+                                border: "1px solid rgba(32,30,36,0.08)",
+                                borderRadius: 20,
+                                padding: "20px 24px",
+                                marginBottom: 28,
+                                textAlign: "left",
+                                width: "100%",
+                                boxSizing: "border-box"
+                            }}>
+                                <p style={{ fontSize: 13.5, color: "var(--color-text-secondary)", lineHeight: 1.65, margin: 0 }}>
+                                    Building & maintaining EverFern full-time as an independent project takes <strong>countless sleepless nights, endless coffee, and 100% of our energy</strong> — completely free & open source.
+                                </p>
+                                <div style={{ height: 1, backgroundColor: "rgba(32,30,36,0.08)", margin: "14px 0" }} />
+                                <p style={{ fontSize: 13, color: "#e11d48", fontWeight: 500, lineHeight: 1.6, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                                    <Heart size={15} color="#e11d48" fill="#e11d48" style={{ flexShrink: 0 }} />
+                                    <span>If you skip starring the repo, a developer&apos;s open-source soul dies a little inside 💔. A single click takes 2 seconds and keeps this project alive!</span>
+                                </p>
+                            </div>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", alignItems: "center", justifyContent: "center" }}>
+                                <a
+                                    href="https://github.com/Everfern-AI/Everfern"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => {
+                                        setHasStarredRepo(true);
+                                        try {
+                                            localStorage.setItem('everfern_github_starred', 'true');
+                                            localStorage.setItem('everfern_star_dismissed', 'true');
+                                        } catch (err) {}
+                                        setTimeout(() => setStep(10), 1200);
+                                    }}
+                                    style={{
+                                        width: "100%",
+                                        padding: "16px",
+                                        backgroundColor: "var(--color-text-primary)",
+                                        color: "var(--color-bg-surface)",
+                                        borderRadius: 16,
+                                        fontWeight: 600,
+                                        fontSize: 15,
+                                        border: "none",
+                                        cursor: "pointer",
+                                        textDecoration: "none",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 8,
+                                        transition: "all 0.2s",
+                                        boxShadow: "0 4px 16px rgba(0,0,0,0.1)"
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = "0.9"}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                                >
+                                    <Star size={18} fill="currentColor" />
+                                    {hasStarredRepo ? "Thank you! You're an absolute legend! ❤️" : "⭐ Star on GitHub (Save the dev's soul!)"}
+                                    <ExternalLink size={15} style={{ opacity: 0.7 }} />
+                                </a>
+
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            localStorage.setItem('everfern_star_dismissed', 'true');
+                                        } catch (err) {}
+                                        setStep(10);
+                                    }}
+                                    style={{
+                                        background: "none",
+                                        border: "none",
+                                        color: "var(--color-text-tertiary)",
+                                        fontSize: 13,
+                                        cursor: "pointer",
+                                        textDecoration: "underline",
+                                        marginTop: 4,
+                                        transition: "color 0.2s"
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
+                                >
+                                    Skip (and break a developer&apos;s heart 💔)
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* ── Step 10: Join Discord ── */}
+                    {step === 10 && (
+                        <motion.div
+                            key="step10"
+                            variants={pageVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={pageTransition}
+                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
+                        >
+                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
+                                <BackButton onClick={() => setStep(9)} />
                             </div>
 
                             {/* Discord Logo */}
@@ -2564,17 +2695,17 @@ export default function SetupPage() {
                                     <DiscordIcon size={18} />
                                     Join Discord
                                 </a>
-                                <button onClick={() => setStep(10)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                <button onClick={() => setStep(12)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                     Skip
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {/* ── Step 10: Privacy & Security ── */}
-                    {step === 10 && (
+                    {/* ── Step 12: Privacy & Security ── */}
+                    {step === 12 && (
                         <motion.div
-                            key="step10"
+                            key="step12"
                             variants={pageVariants}
                             initial="enter"
                             animate="center"
@@ -2583,7 +2714,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(9)} />
+                                <BackButton onClick={() => setStep(10)} />
                             </div>
 
                             {/* Static Padlock SVG */}

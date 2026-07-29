@@ -250,11 +250,14 @@ const StepStatusIcon = ({ status }: { status: MissionStep["status"] }) => {
         return (
             <div style={{
                 width: 16, height: 16, borderRadius: "50%",
-                background: 'var(--color-error-dim)', border: "1.5px solid #fecaca",
+                background: 'rgba(239, 68, 68, 0.12)', border: "1.5px solid rgba(239, 68, 68, 0.5)",
                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 position: "relative", zIndex: 1,
+                boxShadow: "0 0 6px rgba(239, 68, 68, 0.2)",
             }}>
-                <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700, lineHeight: 1 }}>✕</span>
+                <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                    <path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
             </div>
         );
     }
@@ -578,6 +581,30 @@ const ToolPill = ({ tc, onClick }: { tc: ToolCallDisplay; onClick?: () => void }
     );
 };
 
+const cleanCommandNarrative = (rawCmd: string): string => {
+    if (!rawCmd || typeof rawCmd !== "string") return "";
+    let cmd = rawCmd;
+
+    // 1. Extract inner command from PowerShell wrapper try block if present
+    const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+    if (tryMatch && tryMatch[1]) {
+        cmd = tryMatch[1];
+    }
+
+    // 2. Strip PowerShell env/encoding setup commands & wrappers
+    cmd = cmd
+        .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, "")
+        .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, "")
+        .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, "")
+        .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, "")
+        .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, "")
+        .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, "")
+        .trim();
+
+    // 3. Normalize whitespace
+    return cmd.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+};
+
 const getToolNarrative = (tc: ToolCallDisplay): string | null => {
     const raw = tc.description?.trim();
     if (!raw) return null;
@@ -609,7 +636,8 @@ const getToolActivity = (tc: ToolCallDisplay): { verb: string; detail: string; m
         args.editedPath,
         args.outputPath
     );
-    const commandValue = argText(args.command, args.cmd, args.script, args.input);
+    const rawCommandValue = argText(args.command, args.cmd, args.script, args.input);
+    const commandValue = cleanCommandNarrative(rawCommandValue);
     const queryValue = argText(args.keyword, args.query, args.pattern, args.search, args.url, args.url_to_visit);
     const label = tc.displayName || tc.label || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Tool");
 
@@ -617,6 +645,15 @@ const getToolActivity = (tc: ToolCallDisplay): { verb: string; detail: string; m
         return {
             verb: "Creating file",
             detail: pathValue || "file",
+            monoDetail: pathValue,
+        };
+    }
+
+    if (name === "multi_file_edit") {
+        const fileCount = Array.isArray(args.files) ? args.files.length : 0;
+        return {
+            verb: "Multi-editing files",
+            detail: fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : "files",
             monoDetail: pathValue,
         };
     }
@@ -719,10 +756,16 @@ const getToolActivity = (tc: ToolCallDisplay): { verb: string; detail: string; m
         };
     }
 
-    if (name === "terminal_execute" || name === "executepwsh" || name === "execute_pwsh") {
+    if (name === "terminal_execute" || name === "executepwsh" || name === "execute_pwsh" || name.includes("terminal")) {
+        let conciseDetail = commandValue;
+        if (commandValue.length > 50) {
+            const parts = commandValue.split(/\s+/).filter(p => !p.startsWith('-'));
+            conciseDetail = parts.slice(0, 3).join(' ');
+            if (conciseDetail.length > 45) conciseDetail = commandValue.slice(0, 45) + "...";
+        }
         return {
             verb: "Running command",
-            detail: commandValue || "terminal",
+            detail: conciseDetail || "terminal",
             monoDetail: commandValue,
         };
     }
@@ -870,7 +913,7 @@ const getRepeatedToolGroupMeta = (toolName?: string) => {
     if (name === "write" || name.includes("write_file") || name.includes("write_to_file")) {
         return { Icon: DocumentTextIcon, noun: "write" };
     }
-    if (name === "edit" || name.includes("replace") || name.includes("str_replace")) {
+    if (name === "edit" || name === "multi_file_edit" || name.includes("replace") || name.includes("str_replace")) {
         return { Icon: PencilSquareIcon, noun: "edit" };
     }
     if (name === "grep" || name === "find" || name === "search_files") {
@@ -2059,7 +2102,11 @@ const OperatorTaskGraph = ({ planSteps, planTitle }: { planSteps: AgentTimelineP
                                                 style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor }}
                                             />
                                         )}
-                                        {isFailed && <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, lineHeight: 1 }}>✕</span>}
+                                        {isFailed && (
+                                            <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                                                <path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke={statusColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        )}
                                         {isPending && <span style={{ width: 4, height: 4, borderRadius: "50%", background: statusColor }} />}
                                     </div>
 

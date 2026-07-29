@@ -212,7 +212,7 @@ function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
         },
         body: JSON.stringify({
           input: texts[0], // Currently only supports 1 string in backend
-          model: config.model || "qwen/qwen3-embedding-8b"
+          model: config.model || "openai/text-embedding-3-small"
         })
       });
       const text = await res.text();

@@ -32,14 +32,18 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
       }
     } catch {
       console.warn(`[SkillsLoader] ⚠️ Skills directory missing or empty: ${skillsDir}`);
-      // Fallback: try loading directly from source main/skills/ directory
+      // Fallback: try loading directly from built-in skills directory locations
       const fallbackPaths = [
-        path.resolve(__dirname, '..', '..', '..', 'main', 'skills'),
-        path.resolve(__dirname, '..', '..', 'skills'),
         path.resolve(__dirname, '..', 'skills'),
-        // Absolute dev fallback for EverFern project structure
+        path.resolve(__dirname, '..', '..', 'skills'),
+        ...(process.resourcesPath ? [
+          path.join(process.resourcesPath, 'skills'),
+          path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'skills'),
+        ] : []),
+        path.resolve(__dirname, '..', '..', '..', 'main', 'skills'),
         path.join(process.cwd(), 'main', 'skills'),
-      ];
+        path.join(process.cwd(), 'dist-electron', 'main', 'skills'),
+      ].filter(Boolean);
       let found = false;
       for (const fb of fallbackPaths) {
         try {

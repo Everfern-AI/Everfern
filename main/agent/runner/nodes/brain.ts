@@ -150,10 +150,10 @@ USER REQUEST: "${originalRequest.slice(0, 300)}"
 YOUR RESPONSE: "${responseContent.slice(0, 500)}"
 
 Choose exactly one reason:
-- "task_complete"        — You fully completed the requested task with substantive output. Choose this if you have answered the user's question or provided the requested data, even if you ask a polite follow-up or ask if they want to choose one of the options next.
-- "waiting_for_user_input" — You are blocked and cannot proceed with the requested action without the user providing critical details (e.g. traveler details, payment info, file path) or choosing from a menu. Do NOT use this for informative queries where you have already listed options or answered the request and are just offering optional next steps or follow-ups.
-- "needs_hitl"           — A high-risk or irreversible action requires explicit human approval before execution. Use this for: file organizing/moving/renaming, bulk operations, deleting user files, installing system packages, or any local execution on the host system.
-- "cannot_proceed"       — You are blocked and cannot make progress (missing permissions, unsupported request, etc.)
+- "task_complete"          — You fully completed the requested task with substantive output. The user got what they asked for.
+- "waiting_for_user_input" — You are blocked and cannot proceed without the user providing critical details (e.g. file path, credentials). Do NOT use this for informative queries where you have already answered the request and are offering optional next steps.
+- "needs_hitl"             — A high-risk or irreversible action requires explicit human approval before execution (file operations, installs, bulk deletions, local execution on the host system).
+- "cannot_proceed"         — You are blocked and cannot make progress (missing permissions, unsupported request, etc.)
 
 Respond with JSON only:
 {
@@ -161,6 +161,7 @@ Respond with JSON only:
   "explanation": "one sentence explaining why",
   "hitlRationale": "If reason is needs_hitl, explain what action needs approval and why"
 }`;
+
 
     console.log('[Brain] Building completion signal...');
     console.log('[Brain] Original request (first 100 chars):', originalRequest.slice(0, 100));
@@ -381,47 +382,6 @@ export const createBrainNode = (
     // Emit initial brain activation message
 
 
-    // ── BOOKING INTENT OVERRIDE ─────────────────────────────────────────────
-    // Even if triage classified the task as 'task' or 'automate', if the user message
-    // contains booking/purchasing keywords, override to web_explorer.
-    // This is a safety net for cases where triage misclassifies booking requests.
-    if (!state.returningFromSpecialist && !state.webExplorerComplete) {
-      const allMsgs = state.messages || [];
-      const lastUserMsg = [...allMsgs].reverse().find((m: any) => {
-        const role = m.role || m._getType?.();
-        return role === 'user' || role === 'human';
-      });
-      const userText = lastUserMsg
-        ? (typeof (lastUserMsg as any).content === 'string'
-            ? (lastUserMsg as any).content
-            : JSON.stringify((lastUserMsg as any).content))
-        : '';
-      const lower = userText.toLowerCase();
-
-      const bookingKeywords = /\b(book|reserve|buy|purchase|order|checkout|sign\s*up|register)\b.*\b(flight|trip|hotel|ticket|cab|taxi|bus|train|room|stay|airbnb|hostel|table|appointment)\b|\b(flight|trip|hotel|ticket).*\b(book|reserve|buy|purchase)\b|\b(from|to)\s+\w+.*\b(to|from)\s+\w+.*\b(flight|trip|book)\b|\b[A-Z]{3}\s+(to|from)\s+[A-Z]{3}\b/i;
-
-      if (bookingKeywords.test(userText) || bookingKeywords.test(lower)) {
-        console.log('[Brain] Booking keywords detected → overriding to web-explorer');
-
-        eventQueue?.push({
-          type: 'thought',
-          content: 'Booking/transactional task detected — delegating to web-explorer.'
-        });
-
-        return {
-          pendingToolCalls: [],
-          routingDecision: {
-            decision: 'route_web_explorer',
-            explanation: 'Booking/transactional task detected — delegating to web-explorer for interactive workflow'
-          },
-          completionSignal: null,
-          taskPhase: 'specialized_agent' as const,
-          brainToolsInFlight: false,
-          returningFromSpecialist: 'web_explorer'
-        };
-      }
-    }
-
     // Load the main system prompt from synchronized location
     let systemPrompt = systemPromptOverride;
     if (!systemPrompt) {
@@ -573,52 +533,49 @@ export const createBrainNode = (
     // based on intent so the brain gets routed to the right specialist or
     // continues with its tools.
     if (state.resumingFromFormResponse && !hasPendingTools) {
-      console.log('[Brain] Resuming from form response — checking if brain needs to continue with tools');
+      console.log('[Brain] Resuming from form response — checking specialist status');
 
-      // If the LLM produced text without tools, it may have just acknowledged the
-      // form response. Force auto-routing based on intent to continue the task.
-      if (hasNoOutput && state.currentIntent) {
-        const intentRoutingMap: Record<string, RoutingDecision> = {
-          'research': 'route_web_explorer',
-          'coding': 'route_coding',
-          'build': 'route_coding',
-          'fix': 'route_coding',
-          'analyze': 'route_data_analyst',
-          'automate': 'continue_brain',
-        };
-        const autoDecision = intentRoutingMap[state.currentIntent];
-        if (autoDecision) {
-          const isDone = (
-            (autoDecision === 'route_coding' && state.codingComplete) ||
-            (autoDecision === 'route_web_explorer' && state.webExplorerComplete) ||
-            (autoDecision === 'route_data_analyst' && state.dataAnalysisComplete)
-          );
-          if (!isDone) {
-            runner.telemetry.info(`[Brain] Form response continuation — auto-routing to ${autoDecision} for intent ${state.currentIntent}`);
-            return {
-              ...result,
-              routingDecision: { decision: autoDecision, explanation: `Form response continuation for intent ${state.currentIntent}` },
-              completionSignal: null,
-              taskPhase: 'specialized_agent' as const,
-              brainToolsInFlight: false,
-              returningFromSpecialist: state.returningFromSpecialist,
-              resumingFromFormResponse: false,
-            };
-          }
-        }
+      const intentRoutingMap: Record<string, RoutingDecision> = {
+        'research': 'route_web_explorer',
+        'coding': 'route_coding',
+        'build': 'route_coding',
+        'fix': 'route_coding',
+        'analyze': 'route_data_analyst',
+        'automate': 'continue_brain',
+      };
+
+      let autoDecision = state.currentIntent ? intentRoutingMap[state.currentIntent] : undefined;
+      if (!autoDecision && state.returningFromSpecialist) {
+        const spec = state.returningFromSpecialist;
+        autoDecision = spec.startsWith('route_') ? (spec as RoutingDecision) : (`route_${spec}` as RoutingDecision);
       }
 
-      // Even if the LLM produced text with tools, make sure we don't short-circuit
-      // via the completion signal. If there ARE tools, they'll be handled by the
-      // pendingTools check above. If there are no tools and non-empty text, let it
-      // fall through to normal routing logic (but clear the flag so the next
-      // iteration doesn't re-enter this block).
+      // Check if the targeted specialist is already complete
+      const isCodingDone = autoDecision === 'route_coding' && state.codingComplete;
+      const isWebExplorerDone = autoDecision === 'route_web_explorer' && state.webExplorerComplete;
+      const isDataAnalystDone = autoDecision === 'route_data_analyst' && state.dataAnalysisComplete;
+      const isSpecialistFinished = isCodingDone || isWebExplorerDone || isDataAnalystDone;
+
+      if (autoDecision && autoDecision !== 'continue_brain' && !isSpecialistFinished) {
+        runner.telemetry.info(`[Brain] Form response continuation — auto-routing to ${autoDecision}`);
+        return {
+          ...result,
+          routingDecision: { decision: autoDecision, explanation: `Form response continuation for task` },
+          completionSignal: null,
+          taskPhase: 'specialized_agent' as const,
+          brainToolsInFlight: false,
+          returningFromSpecialist: state.returningFromSpecialist,
+          resumingFromFormResponse: false,
+        };
+      }
+
+      console.log('[Brain] Form response continuation — specialists finished or brain coordination needed. Proceeding to LLM synthesis.');
     }
 
     // Circuit breaker: if brain produced no meaningful output on repeat iterations,
     // signal task complete to prevent infinite loops (e.g. after spawn_agent returns
     // and the brain hallucinates filtered tools with empty response).
-    if (hasNoOutput && state.iterations > 1) {
+    if (hasNoOutput && state.iterations > 1 && !state.resumingFromFormResponse) {
       runner.telemetry.warn(`[Brain] No output on iteration ${state.iterations} — forcing task_complete to prevent loop`);
 
       const finalState = {
@@ -646,7 +603,7 @@ export const createBrainNode = (
     // (e.g. web_search) that are filtered out → empty output → routing/completion signals fail.
     // Instead of falling through to determineRouting (which gets blank content and returns null),
     // use the triage intent to route directly to the right specialist.
-    if (hasNoOutput && state.currentIntent) {
+    if (hasNoOutput) {
       const intentRoutingMap: Record<string, RoutingDecision> = {
         'research': 'route_web_explorer',
         'coding': 'route_coding',
@@ -654,8 +611,10 @@ export const createBrainNode = (
         'fix': 'route_coding',
         'analyze': 'route_data_analyst',
         'automate': 'continue_brain',
+        'task': state.webExplorerComplete ? 'continue_brain' : 'route_web_explorer',
+        'unknown': state.webExplorerComplete ? 'continue_brain' : 'route_web_explorer',
       };
-      const autoDecision = intentRoutingMap[state.currentIntent];
+      const autoDecision = (state.currentIntent && intentRoutingMap[state.currentIntent]) || (state.webExplorerComplete ? 'continue_brain' : 'route_web_explorer');
       if (autoDecision) {
         const isCodingDone = autoDecision === 'route_coding' && state.codingComplete;
         const isWebExplorerDone = autoDecision === 'route_web_explorer' && state.webExplorerComplete;
@@ -723,15 +682,15 @@ export const createBrainNode = (
       console.log('[Brain] Skipping routing decision because web explorer complete and returning from it');
     }
 
-    // Check if the target specialist (or task) has already completed
+    // Check if the target specialist (or task) has already completed in the current run
     if (routingDecision) {
-      const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete;
-      const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete;
-      const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete;
-      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete;
+      const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete && state.returningFromSpecialist === 'coding_specialist';
+      const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer';
+      const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete && state.returningFromSpecialist === 'data_analyst';
+      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete && state.returningFromSpecialist === 'deep_research';
       const isComputerUseDone = ((routingDecision.decision as any) === 'route_computer_use' || 
                                  (routingDecision.decision === 'continue_brain' && state.currentIntent === 'automate')) && 
-                                state.computerUseComplete;
+                                state.computerUseComplete && state.returningFromSpecialist === 'computer_use';
 
       if (isCodingDone || isWebExplorerDone || isDataAnalystDone || isDeepResearchDone || isComputerUseDone) {
         runner.telemetry.info(`[Brain] Override routing decision to complete_task because target specialist/task (${routingDecision.decision}) has already completed`);

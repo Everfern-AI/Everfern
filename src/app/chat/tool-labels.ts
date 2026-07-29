@@ -74,9 +74,11 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     case 'run_terminal':
     case 'run_command':
     case 'bash': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const cmdStr = args?.command || args?.CommandLine || args?.commandLine || '';
       const cmd = typeof cmdStr === 'string' ? cmdStr.trim() : '';
-      const label = cmd ? resolveTerminalLabel(cmd) : 'Running command';
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : cmd ? resolveTerminalLabel(cmd) : 'Running command';
 
       // Enhanced logging for debugging
       console.log(`[ToolDisplay] run_command - cmdStr:`, cmdStr);
@@ -161,8 +163,18 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       };
     }
 
-    case 'read_file': {
-      const path = typeof args?.path === 'string' ? args.path.trim() : '';
+    case 'task_complete': {
+      const summary = typeof args?.summary === 'string' ? args.summary.trim() : '';
+      return {
+        icon: React.createElement(CheckCircleIcon, { width: 16, height: 16 }),
+        label: summary ? `Task Completed: ${truncate(summary, 60)}` : 'Task Completed',
+        color: '#10b981'
+      };
+    }
+
+    case 'read_file':
+    case 'view_file': {
+      const path = extractPath(args);
       return { icon: React.createElement(BookOpenIcon, { width: 16, height: 16 }), label: path ? `Reading ${basename(path)}` : 'Reading file', color: '#64748b' };
     }
 
@@ -171,14 +183,23 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     case 'write_to_file':
     case 'edit_file':
     case 'edit':
-    case 'replace': {
-      const path = typeof args?.path === 'string' ? args.path.trim() : '';
-      const isEdit = ['edit_file', 'edit', 'replace'].includes(toolName);
+    case 'multi_file_edit':
+    case 'replace':
+    case 'replace_file_content':
+    case 'multi_replace_file_content': {
+      const path = extractPath(args);
+      const isMulti = toolName === 'multi_file_edit' || toolName === 'multi_replace_file_content' || Array.isArray(args?.files) || Array.isArray(args?.ReplacementChunks);
+      const isEdit = ['edit_file', 'edit', 'replace', 'replace_file_content', 'multi_file_edit', 'multi_replace_file_content'].includes(toolName);
+      const fileCount = isMulti && Array.isArray(args?.files) ? args.files.length : (isMulti && Array.isArray(args?.ReplacementChunks) ? args.ReplacementChunks.length : 0);
+      let label = path ? `${isEdit ? 'Editing' : 'Writing'} ${basename(path)}` : `${isEdit ? 'Editing' : 'Writing'} file`;
+      if (isMulti && !path) {
+        label = fileCount ? `Multi-editing ${fileCount} block${fileCount === 1 ? '' : 's'}` : 'Multi-editing file';
+      }
       return {
         icon: React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", fill: "none", viewBox: "0 0 24 24", strokeWidth: 1.5, stroke: "currentColor", width: 16, height: 16 },
           React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" })
         ),
-        label: path ? `${isEdit ? 'Editing' : 'Writing'} ${basename(path)}` : `${isEdit ? 'Editing' : 'Writing'} file`,
+        label,
         color: '#f59e0b',
         // Enhanced file operation display
         useEnhancedCard: true,
@@ -302,14 +323,22 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     }
 
     default: {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const cleaned = toolName.replace(/_/g, ' ').trim();
-      const label = cleaned ? capitalize(cleaned) : 'Running tool';
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : cleaned ? capitalize(cleaned) : 'Running tool';
       return { icon: React.createElement('img', { src: '/assets/tool-generic.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#71717a' };
     }
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
+
+function extractPath(args?: Record<string, unknown>): string {
+  if (!args) return '';
+  const p = args.path || args.TargetFile || args.file || args.filePath || args.file_path || args.AbsolutePath;
+  return typeof p === 'string' ? p.trim() : '';
+}
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -324,8 +353,22 @@ function capitalize(s: string): string {
 }
 
 function resolveTerminalLabel(command: string): string {
+  if (!command || typeof command !== 'string') return 'Running command';
+  // Strip PowerShell wrapper boilerplate ([Console]::OutputEncoding, Set-Location, etc.)
+  let cmd = command;
+  const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+  if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
+  cmd = cmd
+    .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
+    .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
+    .trim();
+
   // Strip cd preambles like `cd /foo && npm test`
-  const clean = command.replace(/^(cd\s+\S+\s*&&\s*)+/, '').trim();
+  const clean = cmd.replace(/^(cd\s+\S+\s*&&\s*)+/, '').trim();
   const words = clean.split(/\s+/);
   const bin = words[0]?.toLowerCase() ?? '';
 

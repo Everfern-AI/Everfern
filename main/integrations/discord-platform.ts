@@ -7,6 +7,7 @@
 
 import {
   Client,
+  Events,
   GatewayIntentBits,
   Message,
   TextChannel,
@@ -109,7 +110,7 @@ export class DiscordPlatform extends MessagePlatform {
           reject(new Error('Discord client ready timeout'));
         }, 30000);
 
-        this.client!.once('ready', () => {
+        this.client!.once(Events.ClientReady, () => {
           clearTimeout(timeout);
           resolve();
         });
@@ -476,7 +477,7 @@ export class DiscordPlatform extends MessagePlatform {
   private setupEventHandlers(): void {
     if (!this.client) return;
 
-    this.client.on('ready', () => {
+    this.client.on(Events.ClientReady, () => {
       console.log(`[Discord] ✅ Bot logged in as ${this.client!.user?.tag}`);
       console.log(`[Discord] Bot ID: ${this.client!.user?.id}`);
       console.log(`[Discord] Guilds: ${this.client!.guilds.cache.size}`);

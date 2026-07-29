@@ -44,6 +44,54 @@ function stripLLMWrappers(raw: string): string {
 }
 
 /**
+ * Repairs common LLM JSON formatting errors and parses the JSON string.
+ */
+function repairAndParseJSON(str: string): any {
+    // 1. Direct parse attempt
+    try {
+        return JSON.parse(str);
+    } catch {
+        // Continue to repair attempts
+    }
+
+    // 2. Pre-process common LLM JSON syntax errors:
+    let repaired = str
+        // Fix missing commas between properties on separate lines
+        .replace(/([}\]"\d]|true|false|null)\s*[\r\n]+\s*("[a-zA-Z0-9_]+"\s*:)/g, '$1,\n$2')
+        // Fix missing commas between array elements/objects on separate lines
+        .replace(/([}\]"\d]|true|false|null)\s*[\r\n]+\s*(\{)/g, '$1,\n$2')
+        // Fix trailing commas before closing braces/brackets
+        .replace(/,\s*([\}\]])/g, '$1');
+
+    try {
+        return JSON.parse(repaired);
+    } catch {
+        // Continue to string escaping repair
+    }
+
+    // 3. Fix unescaped newlines/tabs inside string values
+    try {
+        const stringEscaped = repaired.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match) => {
+            return match
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+        });
+        return JSON.parse(stringEscaped);
+    } catch {
+        // Continue to bracket auto-closure
+    }
+
+    // 4. Handle truncated JSON (missing closing brackets or braces)
+    let openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
+    let openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+    let autoClosed = repaired.trim();
+    while (openBrackets > 0) { autoClosed += ']'; openBrackets--; }
+    while (openBraces > 0) { autoClosed += '}'; openBraces--; }
+    return JSON.parse(autoClosed);
+}
+
+/**
  * Extracts a JSON object { ... } from text robustly.
  */
 function extractJSONObject(text: string): string | null {
@@ -129,41 +177,43 @@ CODING TASK RULES:
 
 Respond with ONLY the JSON object.`;
 
-    try {
-        const response = await client.chat({
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0,
-            maxTokens: 2000,
-        }) as any;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const response = await client.chat({
+                messages: [{ role: 'user', content: prompt }],
+                temperature: attempt === 1 ? 0 : 0.1,
+                maxTokens: 2000,
+            }) as any;
 
-        const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
-        const jsonStr = extractJSONObject(rawContent);
-        
-        if (jsonStr) {
-            const parsed = JSON.parse(jsonStr);
-            return {
-                analysis: {
-                    complexity: parsed.analysis?.complexity || 'moderate',
-                    taskType: parsed.analysis?.taskType || 'task',
-                    entities: [],
-                    canParallelize: !!parsed.analysis?.canParallelize,
-                    suggestedApproach: parsed.analysis?.suggestedApproach || 'sequential',
-                    estimatedSteps: parsed.steps?.length || 2,
-                    requiresExternalData: true,
-                    requiresFileOps: true,
-                    requiresCommandExecution: false
-                },
-                steps: Array.isArray(parsed.steps) ? parsed.steps : []
-            };
+            const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
+            const jsonStr = extractJSONObject(rawContent);
+
+            if (jsonStr) {
+                const parsed = repairAndParseJSON(jsonStr);
+                return {
+                    analysis: {
+                        complexity: parsed.analysis?.complexity || 'moderate',
+                        taskType: parsed.analysis?.taskType || 'task',
+                        entities: [],
+                        canParallelize: !!parsed.analysis?.canParallelize,
+                        suggestedApproach: parsed.analysis?.suggestedApproach || 'sequential',
+                        estimatedSteps: parsed.steps?.length || 2,
+                        requiresExternalData: true,
+                        requiresFileOps: true,
+                        requiresCommandExecution: false
+                    },
+                    steps: Array.isArray(parsed.steps) ? parsed.steps : []
+                };
+            }
+        } catch (err) {
+            console.warn(`[TaskDecomposer] decomposeWithAIUnified attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
-        throw new Error('No JSON object found');
-    } catch (err) {
-        console.warn(`[TaskDecomposer] decomposeWithAIUnified failed: ${err instanceof Error ? err.message : String(err)}`);
-        return {
-            analysis: { complexity: 'moderate', taskType: 'task', entities: [], canParallelize: false, suggestedApproach: 'sequential', estimatedSteps: 1, requiresExternalData: true, requiresFileOps: true, requiresCommandExecution: false },
-            steps: [{ id: 'step_1', title: 'Execute', description: userInput, tool: 'internal', dependsOn: [], canParallelize: false, estimatedComplexity: 'medium', priority: 'normal' }]
-        };
     }
+
+    return {
+        analysis: { complexity: 'moderate', taskType: 'task', entities: [], canParallelize: false, suggestedApproach: 'sequential', estimatedSteps: 1, requiresExternalData: true, requiresFileOps: true, requiresCommandExecution: false },
+        steps: [{ id: 'step_1', title: 'Execute', description: userInput, tool: 'internal', dependsOn: [], canParallelize: false, estimatedComplexity: 'medium', priority: 'normal' }]
+    };
 }
 
 

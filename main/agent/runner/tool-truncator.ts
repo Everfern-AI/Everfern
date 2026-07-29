@@ -54,9 +54,9 @@ const CATEGORY_SIGNALS: Record<ToolCategory, string[]> = {
 const TOOL_CATEGORY_MAP: Array<{ pattern: RegExp; category: ToolCategory }> = [
   // File system
   { pattern: /^(read_file|write_to_file|replace_file_content|grep_search|list_dir|system_files|create_file|delete_file|move_file|copy_file|rename_file|search_files|create_directory|delete_directory|list_directory|batch_write)$/i,          category: 'filesystem' },
-  { pattern: /^(read|write|edit|delete|rename|move|copy|mkdir|touch|append_file|prepend_file|create_project|open_file|save_file|file)$/i,                                                                                          category: 'filesystem' },
+  { pattern: /^(read|write|edit|multi_file_edit|delete|rename|move|copy|mkdir|touch|append_file|prepend_file|create_project|open_file|save_file|file|ls|grep|find)$/i,                                                                                          category: 'filesystem' },
   // Terminal
-  { pattern: /^(terminal|terminal_status|run_command|exec|execute_command|run_script|run_code)$/i,                                                                                                                            category: 'terminal' },
+  { pattern: /^(terminal|terminal_status|terminal_execute|run_command|exec|execute_command|run_script|run_code|bash|executePwsh|powershell|cmd)$/i,                                                                                                                            category: 'terminal' },
   // Web
   { pattern: /^(web_search|web_search_bing|web_fetch|web_scrape|fetch_url)$/i,                                                                                                                                                  category: 'web' },
   // Vision
@@ -74,7 +74,7 @@ const TOOL_CATEGORY_MAP: Array<{ pattern: RegExp; category: ToolCategory }> = [
   // Browser
   { pattern: /^(navis|browser|browser_use|page_navigate|page_click|page_type|page_scroll|page_extract|dom_extract)$/i,                                                                                                            category: 'browser' },
   // Artifact
-  { pattern: /^(create_artifact|edit_artifact|visualize|pptx_generator|present_files|create_chart|create_report|create_dashboard)$/i,                                                                                             category: 'artifact' },
+  { pattern: /^(create_artifact|edit_artifact|visualize|present_files|create_chart|create_report|create_dashboard)$/i,                                                                                             category: 'artifact' },
   // MCP
   { pattern: /^(search_mcp_registry|connect_mcp_server|list_mcp_tools|mcp_)/i,                                                                                                                                                   category: 'mcp' },
   // Scheduling
@@ -96,8 +96,12 @@ const TOOL_CATEGORY_MAP: Array<{ pattern: RegExp; category: ToolCategory }> = [
 const ALWAYS_INCLUDE = new Set<string>([
   'ask_user_question',
   'local_permission',
-  'terminal',
+  'terminal_execute',
+  'bash',
+  'executePwsh',
   'terminal_status',
+  'edit',
+  'multi_file_edit',
   // Navigation / browser
   'navis',
   'computer_use',

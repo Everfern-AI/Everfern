@@ -244,7 +244,7 @@ export class ChatHistoryStore {
     const indexTasks: Array<{ id: string; content: string }> = [];
 
     try {
-      await dbOps.run('BEGIN TRANSACTION');
+      await dbOps.run('SAVEPOINT save_conv');
       transactionStarted = true;
 
       // 1. Upsert Conversation — use INSERT OR REPLACE to avoid race conditions
@@ -332,19 +332,18 @@ export class ChatHistoryStore {
         );
       }
 
-      await dbOps.run('COMMIT');
+      await dbOps.run('RELEASE SAVEPOINT save_conv');
       transactionStarted = false;
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (transactionStarted) {
         try {
-          await dbOps.run('ROLLBACK');
+          await dbOps.run('ROLLBACK TO SAVEPOINT save_conv');
         } catch (rollbackErr) {
           const rollMsg = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
-          // Only log rollback errors that aren't the cascading "no transaction" case
-          if (!rollMsg.includes('no transaction is active')) {
-            console.error('[History] Failed to rollback:', rollbackErr);
+          if (!rollMsg.includes('no transaction is active') && !rollMsg.includes('no such savepoint')) {
+            console.error('[History] Failed to rollback savepoint:', rollbackErr);
           }
         }
       }

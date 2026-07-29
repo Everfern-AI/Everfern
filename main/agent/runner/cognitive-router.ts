@@ -1,6 +1,7 @@
 import { GraphStateType, IntentType, StreamEvent } from './state';
 import { AgentRunner } from './runner';
 import { globalAbortManager } from './abort-manager';
+import { extractJsonFromLLM } from './json-repair';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -47,10 +48,6 @@ export class CognitiveRouter {
     const intent = state.currentIntent || 'unknown';
 
     this.runner.telemetry.info(`[CognitiveRouter] Starting routing analysis for request: "${userRequest.slice(0, 80)}..."`);
-    this.eventQueue?.push({
-      type: 'thought',
-      content: `[Cognitive Router] Initializing routing analysis using ReAct framework...`
-    });
 
     // Sub-agent constraint: sub-agents cannot delegate further
     if (isSubAgent) {
@@ -167,24 +164,63 @@ TRIAGE INTENT: "${intent}"`
       }) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
       // Log the LLM's thought/action
-      console.log(`[CognitiveRouter] Iteration ${currentIteration} raw LLM output:\n${content}`);
+      console.log(`[CognitiveRouter] Iteration ${currentIteration} raw LLM output:\n${content.slice(0, 500)}`);
 
       let step: any;
-      try {
-        step = JSON.parse(content);
-      } catch (parseErr) {
+      const extracted = extractJsonFromLLM(content);
+
+      if (extracted) {
+        if (extracted.thought && extracted.action) {
+          step = extracted;
+        } else if (extracted.name && extracted.arguments) {
+          step = {
+            thought: 'Analyzing request...',
+            action: extracted
+          };
+        } else if (extracted.action) {
+          step = {
+            thought: extracted.thought || 'Analyzing request...',
+            action: extracted.action
+          };
+        } else if (extracted.subsystem) {
+          step = {
+            thought: extracted.explanation || 'Routing request...',
+            action: {
+              name: 'route_to',
+              arguments: extracted
+            }
+          };
+        }
+      }
+
+      if (!step) {
+        // Fallback: try substring extraction
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            const parsedObj = extractJsonFromLLM(content.substring(firstBrace, lastBrace + 1));
+            if (parsedObj?.action) {
+              step = { thought: parsedObj.thought || 'Analyzing request...', action: parsedObj.action };
+            } else if (parsedObj?.name && parsedObj?.arguments) {
+              step = { thought: 'Analyzing request...', action: parsedObj };
+            }
+          } catch (e) {
+            console.warn('[CognitiveRouter] Substring JSON parse failed:', e);
+          }
+        }
+      }
+
+      if (!step) {
         this.runner.telemetry.warn('[CognitiveRouter] Failed to parse ReAct step JSON, attempting default fallback...');
         break;
       }
 
       const thought = step.thought || 'Analyzing request...';
-      this.eventQueue?.push({
-        type: 'thought',
-        content: `[Cognitive Router] Thought: ${thought}`
-      });
+      this.runner.telemetry.info(`[CognitiveRouter] Thought: ${thought}`);
 
       const action = step.action;
       if (!action || !action.name || !action.arguments) {
@@ -202,12 +238,7 @@ TRIAGE INTENT: "${intent}"`
         const confidence = typeof actionArgs.confidence === 'number' ? actionArgs.confidence : 1.0;
         const explanation = actionArgs.explanation || 'Routed by Cognitive Router';
 
-        this.runner.telemetry.info(`[CognitiveRouter] Routing decision finalized: ${subsystem} (${Math.round(confidence * 100)}% confidence)`);
-        
-        this.eventQueue?.push({
-          type: 'thought',
-          content: `[Cognitive Router] Finalized Route: ${subsystem} - ${explanation}`
-        });
+        this.runner.telemetry.info(`[CognitiveRouter] Routing decision finalized: ${subsystem} (${Math.round(confidence * 100)}% confidence) - ${explanation}`);
 
         return {
           decision: subsystem as RoutingDecision,
@@ -220,17 +251,11 @@ TRIAGE INTENT: "${intent}"`
       let observation = '';
       if (actionName === 'evaluate_confidence') {
         const subsystem = actionArgs.subsystem || '';
-        this.eventQueue?.push({
-          type: 'thought',
-          content: `[Cognitive Router] Action: Evaluating confidence for ${subsystem}...`
-        });
+        this.runner.telemetry.info(`[CognitiveRouter] Action: Evaluating confidence for ${subsystem}...`);
         const evalResult = await this.evaluateSubsystemConfidence(subsystem, userRequest, intent);
         observation = `Confidence evaluation for ${subsystem}: score = ${evalResult.confidence}, reasoning = ${evalResult.reasoning}`;
       } else if (actionName === 'inspect_context') {
-        this.eventQueue?.push({
-          type: 'thought',
-          content: `[Cognitive Router] Action: Inspecting conversation context...`
-        });
+        this.runner.telemetry.info(`[CognitiveRouter] Action: Inspecting conversation context...`);
         observation = `Conversation history has ${state.messages?.length || 0} messages. Current workspace: ${this.runner.workspaceDir || 'None'}.`;
       } else {
         observation = `Unknown action: ${actionName}. Please use evaluate_confidence, inspect_context, or route_to.`;
@@ -245,7 +270,7 @@ TRIAGE INTENT: "${intent}"`
 
     // Default Fallback
     this.runner.telemetry.warn('[CognitiveRouter] ReAct loop completed without explicit route_to. Falling back to intent classification.');
-    return this.fallbackRoute(intent, userRequest);
+    return await this.fallbackRoute(intent, userRequest);
   }
 
   /**
@@ -259,7 +284,7 @@ Triage Intent: "${intent}"
 
 Subsystem Descriptions:
 - coding_specialist: for coding tasks (writing code, fixing bugs, scaffold projects, edit files, package installation)
-- web_explorer: for interactive web browsing, web forms, transactions, hotel/flight booking, form submission
+- web_explorer: for web research, reading online docs, opening websites, visiting URLs, interactive web browsing, web forms, transactions, hotel/flight booking, form submission
 - data_analyst: for analyzing CSV/Excel files, running computations, data processing, visualizing datasets
 - deep_research: for multi-source search/academic research, parallel crawling/scraping, comprehensive synthesis
 - brain: for general assistant duties, small talk, questions, simple automation, file organization, or if you decide to handle it yourself.
@@ -290,9 +315,9 @@ Respond with JSON only:
   }
 
   /**
-   * Heuristic/intent fallback routing.
+   * Heuristic/intent fallback routing with AI single-turn classifier fallback.
    */
-  private fallbackRoute(intent: string, request: string): RouterResult {
+  private async fallbackRoute(intent: string, request: string): Promise<RouterResult> {
     const fallbackRoutingMap: Record<string, RoutingDecision> = {
       'research': 'route_web_explorer',
       'coding': 'route_coding',
@@ -301,11 +326,59 @@ Respond with JSON only:
       'analyze': 'route_data_analyst',
       'automate': 'continue_brain',
     };
-    const decision = fallbackRoutingMap[intent] || 'continue_brain';
+
+    if (fallbackRoutingMap[intent]) {
+      return {
+        decision: fallbackRoutingMap[intent],
+        confidence: 0.7,
+        explanation: `Fallback intent-based routing decision for intent: ${intent}`
+      };
+    }
+
+    // AI single-turn classification fallback when intent is task or unknown
+    try {
+      const prompt = `Classify which specialist should handle this user request.
+User Request: "${request.slice(0, 300)}"
+
+Options:
+- route_web_explorer (for web research, reading online docs, opening websites, visiting URLs, web forms, booking)
+- route_coding (for writing code, editing files, fixing bugs, software project tasks)
+- route_data_analyst (for analyzing CSV/Excel files, plotting, data calculations)
+- continue_brain (for general questions, chat, non-web single tasks)
+
+Respond ONLY with a JSON object: {"subsystem": "<one of the options above>"}`;
+
+      const response = await this.runner.client.chat({
+        messages: [{ role: 'user', content: prompt }],
+        responseFormat: 'json',
+        temperature: 0.1,
+        maxTokens: 100,
+        abortSignal: globalAbortManager.abortController.signal,
+      }) as any;
+
+      let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const firstBrace = content.indexOf('{');
+      const lastBrace = content.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        content = content.substring(firstBrace, lastBrace + 1);
+      }
+      const data = JSON.parse(content);
+      if (data.subsystem && ['route_web_explorer', 'route_coding', 'route_data_analyst', 'continue_brain'].includes(data.subsystem)) {
+        return {
+          decision: data.subsystem as RoutingDecision,
+          confidence: 0.8,
+          explanation: `AI fallback classification selected ${data.subsystem}`
+        };
+      }
+    } catch (e) {
+      console.warn('[CognitiveRouter] Fallback AI classification failed:', e);
+    }
+
     return {
-      decision,
-      confidence: 0.7,
-      explanation: `Fallback intent-based routing decision for intent: ${intent}`
+      decision: 'continue_brain',
+      confidence: 0.5,
+      explanation: `Default fallback routing decision for intent: ${intent}`
     };
   }
 }

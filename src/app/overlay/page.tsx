@@ -5,30 +5,74 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 function renderMarkdown(text: string): string {
   if (!text) return '';
-  let html = text
+
+  // 1. Process Markdown Tables before inline replacements
+  let html = text.replace(/((?:\|[^\n]+\|\n?)+)/g, (match) => {
+    const lines = match.trim().split('\n').filter(line => line.trim().startsWith('|'));
+    if (lines.length < 2) return match;
+
+    // Check if line 1 (index 1) is a separator line (e.g. |---|---|)
+    const isSeparator = /^\|?[\s:-]+(\|\s*[\s:-]+\s*)+\|?$/.test(lines[1].trim());
+    const headerRowIndex = isSeparator ? 0 : -1;
+    const bodyRowsStartIndex = isSeparator ? 2 : 0;
+
+    let tableHtml = '<div style="overflow-x:auto;margin:10px 0;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.25)"><table style="width:100%;border-collapse:collapse;font-size:12.5px;text-align:left;color:rgba(255,255,255,0.9);font-family:inherit">';
+
+    if (headerRowIndex === 0) {
+      const headers = lines[0].split('|').slice(1, -1).map(cell => cell.trim());
+      tableHtml += '<thead style="background:rgba(255,255,255,0.08);border-bottom:1px solid rgba(255,255,255,0.15)"><tr>';
+      headers.forEach(h => {
+        tableHtml += `<th style="padding:7px 12px;font-weight:600;color:#fff">${h}</th>`;
+      });
+      tableHtml += '</tr></thead>';
+    }
+
+    tableHtml += '<tbody>';
+    for (let i = bodyRowsStartIndex; i < lines.length; i++) {
+      const cells = lines[i].split('|').slice(1, -1).map(cell => cell.trim());
+      const bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+      tableHtml += `<tr style="background:${bg};border-bottom:1px solid rgba(255,255,255,0.05)">`;
+      cells.forEach(c => {
+        tableHtml += `<td style="padding:6px 12px">${c}</td>`;
+      });
+      tableHtml += '</tr>';
+    }
+    tableHtml += 'tbody></table></div>';
+    return tableHtml;
+  });
+
+  html = html
     // Code blocks (```...```)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:8px 10px;margin:6px 0;overflow-x:auto;font-size:12px;line-height:1.5;font-family:monospace;color:rgba(255,255,255,0.85)"><code>$2</code></pre>')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;margin:8px 0;overflow-x:auto;font-size:12px;line-height:1.5;font-family:monospace;color:#e2e8f0"><code>$2</code></pre>')
     // Inline code
-    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);border-radius:4px;padding:1px 5px;font-size:12.5px;font-family:monospace;color:rgba(255,255,255,0.9)">$1</code>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);border-radius:4px;padding:2px 6px;font-size:12px;font-family:monospace;color:#60a5fa">$1</code>')
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff;font-weight:600">$1</strong>')
+    // Strikethrough
+    .replace(/~~(.+?)~~/g, '<del style="color:rgba(255,255,255,0.5)">$1</del>')
     // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#7eb8ff;text-decoration:none;border-bottom:1px solid rgba(126,184,255,0.3)">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#60a5fa;text-decoration:none;border-bottom:1px solid rgba(96,165,250,0.4)">$1</a>')
+    // Blockquotes
+    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #60a5fa;margin:6px 0;padding-left:10px;color:rgba(255,255,255,0.8);font-style:italic">$1</blockquote>')
+    // Task lists / Checkboxes
+    .replace(/^[ \t]*\[ \] (.+)$/gm, '<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:12px;height:12px;border:1px solid rgba(255,255,255,0.3);border-radius:3px;display:inline-block"></span><span>$1</span></div>')
+    .replace(/^[ \t]*\[[xX]\] (.+)$/gm, '<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:12px;height:12px;background:#3b82f6;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px">✓</span><span style="text-decoration:line-through;color:rgba(255,255,255,0.6)">$1</span></div>')
     // Headings
-    .replace(/^### (.+)$/gm, '<div style="font-size:13px;font-weight:600;color:#fff;margin:8px 0 4px">$1</div>')
-    .replace(/^## (.+)$/gm, '<div style="font-size:14px;font-weight:600;color:#fff;margin:8px 0 4px">$1</div>')
-    .replace(/^# (.+)$/gm, '<div style="font-size:15px;font-weight:600;color:#fff;margin:8px 0 4px">$1</div>')
+    .replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:600;color:#fff;margin:10px 0 4px;letter-spacing:-0.01em">$1</div>')
+    .replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:600;color:#fff;margin:12px 0 6px;letter-spacing:-0.01em">$1</div>')
+    .replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;color:#fff;margin:14px 0 6px;letter-spacing:-0.01em">$1</div>')
     // Unordered list items
-    .replace(/^[ \t]*[-*] (.+)$/gm, '<div style="padding-left:12px;position:relative;margin:2px 0"><span style="position:absolute;left:0;color:rgba(255,255,255,0.4)">•</span>$1</div>')
+    .replace(/^[ \t]*[-*] (.+)$/gm, '<div style="padding-left:14px;position:relative;margin:3px 0"><span style="position:absolute;left:2px;color:#60a5fa">•</span>$1</div>')
     // Ordered list items
-    .replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:16px;position:relative;margin:2px 0"><span style="position:absolute;left:0;color:rgba(255,255,255,0.5)">$1.</span>$2</div>')
+    .replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:18px;position:relative;margin:3px 0"><span style="position:absolute;left:0;color:rgba(255,255,255,0.6);font-weight:500">$1.</span>$2</div>')
     // Horizontal rules
-    .replace(/^---+$/gm, '<div style="border-top:1px solid rgba(255,255,255,0.1);margin:8px 0"></div>')
-    // Line breaks
-    .replace(/\n\n/g, '<div style="margin:6px 0"></div>')
+    .replace(/^---+$/gm, '<div style="border-top:1px solid rgba(255,255,255,0.12);margin:10px 0"></div>')
+    // Paragraphs / Line breaks
+    .replace(/\n\n/g, '<div style="margin:8px 0"></div>')
     .replace(/\n/g, '<br/>');
+
   return html;
 }
 

@@ -427,7 +427,7 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
       }
     }
 
-    // Remove tasks that are scheduled for future but too old
+    const initialCount = this.queue.tasks.length;
     this.queue.tasks = this.queue.tasks.filter(task => {
       if (task.scheduledFor && task.scheduledFor.getTime() > now) {
         return now - task.createdAt.getTime() < maxAge;
@@ -435,7 +435,9 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
       return true;
     });
 
-    console.log(`[Background Processor] Queue cleanup completed`);
+    if (initialCount > this.queue.tasks.length) {
+      console.log(`[Background Processor] Cleaned up ${initialCount - this.queue.tasks.length} expired queue tasks`);
+    }
   }
 
   /**

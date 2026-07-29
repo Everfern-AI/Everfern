@@ -332,6 +332,74 @@ const adaptivePalettes: Record<string, { palette: Palette; motif: StyleGuide['mo
     },
     fonts: { heading: 'Georgia', accent: 'Georgia' },
   },
+  claude: {
+    motif: 'editorial',
+    isDark: false,
+    palette: {
+      background: 'FAF8F5',
+      surface: 'FFFFFF',
+      surfaceAlt: 'F2ECE1',
+      primary: '1E1E1E',
+      secondary: '2C3E35',
+      accent: 'D96B43',
+      accent2: 'E89874',
+      text: '1E1E1E',
+      muted: '6B7280',
+      inverse: 'FFFFFF',
+    },
+    fonts: { heading: 'Georgia', body: 'Calibri', accent: 'Georgia' },
+  },
+  kimi: {
+    motif: 'neon',
+    isDark: true,
+    palette: {
+      background: '0D0F19',
+      surface: '131B2E',
+      surfaceAlt: '1E293B',
+      primary: '00F5A0',
+      secondary: '7B2CBF',
+      accent: '00E5FF',
+      accent2: 'F43F5E',
+      text: 'F8FAFC',
+      muted: '94A3B8',
+      inverse: '0D0F19',
+    },
+    fonts: { heading: 'Aptos', body: 'Aptos', accent: 'Aptos' },
+  },
+  nordic: {
+    motif: 'grid',
+    isDark: false,
+    palette: {
+      background: 'F4F4F6',
+      surface: 'FFFFFF',
+      surfaceAlt: 'E4E4E7',
+      primary: '0F172A',
+      secondary: '38BDF8',
+      accent: '6366F1',
+      accent2: '14B8A6',
+      text: '0F172A',
+      muted: '64748B',
+      inverse: 'FFFFFF',
+    },
+    fonts: { heading: 'Aptos', body: 'Aptos', accent: 'Aptos' },
+  },
+  brutalist: {
+    motif: 'playful',
+    isDark: false,
+    palette: {
+      background: 'FFFDF5',
+      surface: 'FFFFFF',
+      surfaceAlt: 'FDE68A',
+      primary: '18181B',
+      secondary: '8B5CF6',
+      accent: 'F59E0B',
+      accent2: 'EC4899',
+      text: '18181B',
+      muted: '52525B',
+      inverse: 'FFFFFF',
+    },
+    fonts: { heading: 'Impact', body: 'Calibri', accent: 'Impact' },
+  },
 };
 
 function stringValue(value: unknown): string {
@@ -406,15 +474,19 @@ function chooseStyleKey(request: PresentationRequest): string {
     request.theme,
   ].filter(Boolean).join(' ').toLowerCase();
 
+  if (/(claude|artifact|warm|paper|book|essay|craft|aesthetic)/.test(text)) return 'claude';
+  if (/(kimi|cyber|studio|electric|neon mint|future|dark studio)/.test(text)) return 'kimi';
+  if (/(nordic|scandi|minimal|clean|slate|ice)/.test(text)) return 'nordic';
+  if (/(brutalist|impact|vibrant|bold|pop)/.test(text)) return 'brutalist';
   if (/(anime|manga|cyberpunk|neon|game|gaming|esports|sci-fi|sci fi)/.test(text)) return 'anime';
   if (/(luxury|fashion|real estate|hotel|resort|premium|jewelry|watch|villa)/.test(text)) return 'luxury';
   if (/(climate|earth|nasa|space|science|environment|ocean|energy)/.test(text)) return 'climate';
   if (/(startup|saas|product|launch|founder|growth|investor|pitch)/.test(text)) return 'startup';
   if (/(school|gen z|kids|playful|fun|creative|festival|club)/.test(text)) return 'playful';
   if (/(data|analytics|dashboard|metrics|finance|forecast|market)/.test(text)) return 'data';
-  if (/(magazine|editorial|story|culture|brand|campaign)/.test(text)) return 'magazine';
+  if (/(magazine|editorial|story|brand|campaign)/.test(text)) return 'magazine';
   if (request.theme && adaptivePalettes[request.theme]) return request.theme;
-  return 'executive';
+  return 'claude';
 }
 
 function buildStyleGuide(request: PresentationRequest): StyleGuide {
