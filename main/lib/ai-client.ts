@@ -1772,6 +1772,8 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: isStreaming,
       ...(isStreaming && { stream_options: { include_usage: true } }),
+      ...(req.agent && { agent: req.agent }),
+      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(body, req);
@@ -1895,6 +1897,13 @@ export class AIClient {
 
     if (!isStreaming) {
       const data = await res.json();
+      if (data.actual_model) {
+        DebugEmitter.emit('log', `EverFern Cloud Model: ${data.actual_model}`, {
+          requestedModel: req.model ?? this.config.model,
+          actualModel: data.actual_model,
+          agent: req.agent
+        });
+      }
       const choice = data.choices?.[0];
       const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
         id: tc.id,
@@ -2049,6 +2058,8 @@ export class AIClient {
       temperature: req.temperature ?? this.config.temperature,
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: true,
+      ...(req.agent && { agent: req.agent }),
+      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(streamBody, req);
@@ -2187,6 +2198,13 @@ export class AIClient {
         }
         try {
           const d = JSON.parse(payload);
+          if (d.actual_model && isFirstChunk) {
+            DebugEmitter.emit('log', `EverFern Cloud Model (Stream): ${d.actual_model}`, {
+              requestedModel: req.model ?? this.config.model,
+              actualModel: d.actual_model,
+              agent: req.agent
+            });
+          }
           const choice = d.choices?.[0];
           const delta = choice?.delta;
 
