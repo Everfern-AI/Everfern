@@ -1,3 +1,5 @@
+
+https://github.com/user-attachments/assets/f5273853-8eb7-4abd-88c4-c116ddc1c2fc
 <div align="center">
   <img src="public/images/banner.jpg" alt="EverFern" width="100%" />
 
@@ -51,10 +53,11 @@ Think of it as the free, open-source alternative to **Claude Cowork**, **Manus D
 
 Navis, EverFern's built-in browser agent, opens a browser, searches, reads through multiple sources, and compiles the findings — no scripts, no scraping code, just the prompt above.
 
-<video src="https://github.com/Everfern-AI/Everfern/raw/main/public/demo/navis-cursor.mp4" controls muted width="100%">
-  Your browser doesn't support inline video. Watch it directly:
-  <a href="public/demo/navis-cursor.mp4">public/demo/navis-cursor.mp4</a>
-</video>
+https://github.com/user-attachments/assets/c9eea820-ea9e-437b-9dfe-a94a36d647bd
+
+
+
+
 
 <br/>
 
