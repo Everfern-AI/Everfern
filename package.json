@@ -64,7 +64,10 @@
       "dist-electron/**/*",
       "package.json",
       "!**/*.map",
-      "!**/*.d.ts"
+      "!**/*.d.ts",
+      "!**/*.mp4",
+      "!**/*.webm",
+      "!public/demo/**/*"
     ],
     "extraResources": [
       {
@@ -85,7 +88,12 @@
         "from": "public",
         "to": "public",
         "filter": [
-          "**/*"
+          "**/*",
+          "!demo/**/*",
+          "!**/*.mp4",
+          "!**/*.webm",
+          "!**/*.avi",
+          "!**/*.mkv"
         ]
       },
       {
@@ -126,6 +134,13 @@
       "icon": "public/images/logos/everfern.ico",
       "artifactName": "${productName}.Setup.${version}.${ext}"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EverFern"
+    },
     "linux": {
       "category": "Productivity",
       "target": [
@@ -136,6 +151,7 @@
       "icon": "public/images/logos/everfern.png"
     }
   },
+
   "dependencies": {
     "@assistant-ui/react": "^0.12.24",
     "@assistant-ui/react-markdown": "^0.12.8",
