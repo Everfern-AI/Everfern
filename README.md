@@ -1,5 +1,4 @@
 
-https://github.com/user-attachments/assets/f5273853-8eb7-4abd-88c4-c116ddc1c2fc
 <div align="center">
   <img src="public/images/banner.jpg" alt="EverFern" width="100%" />
 
@@ -53,7 +52,11 @@ Think of it as the free, open-source alternative to **Claude Cowork**, **Manus D
 
 Navis, EverFern's built-in browser agent, opens a browser, searches, reads through multiple sources, and compiles the findings — no scripts, no scraping code, just the prompt above.
 
-https://github.com/user-attachments/assets/c9eea820-ea9e-437b-9dfe-a94a36d647bd
+
+
+
+https://github.com/user-attachments/assets/e9bd901e-67fb-4110-8ea6-053730d0be34
+
 
 
 
