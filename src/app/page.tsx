@@ -15,9 +15,11 @@ export default function OnboardingPage() {
   const { theme } = useTheme();
 
   useEffect(() => {
+    let active = true;
     const checkConfig = async () => {
       if ((window as any).electronAPI?.loadConfig) {
         const res = await (window as any).electronAPI.loadConfig();
+        if (!active) return;
         if (res.success && res.config) {
           router.push("/chat");
           return;
@@ -42,15 +44,17 @@ export default function OnboardingPage() {
               };
               await (window as any).electronAPI.saveConfig(config);
             }
+            if (!active) return;
             router.push("/chat");
             return;
           }
         } catch { }
       }
 
-      setIsChecking(false);
+      if (active) setIsChecking(false);
     };
     checkConfig();
+    return () => { active = false; };
   }, [router]);
 
   if (isChecking) return <div className="min-h-screen bg-[var(--color-bg-base)]" />;

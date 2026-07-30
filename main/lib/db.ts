@@ -279,10 +279,11 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
     const db = new sqlite3.Database(dbPath, (err) => {
       if (err) return reject(err);
 
-      // Configure WAL mode and busy timeout to handle concurrent writes safely
+      // Configure WAL mode, busy timeout, and synchronous mode to handle concurrent writes safely
       db.serialize(() => {
         db.run('PRAGMA journal_mode = WAL');
-        db.run('PRAGMA busy_timeout = 5000');
+        db.run('PRAGMA busy_timeout = 30000');
+        db.run('PRAGMA synchronous = NORMAL');
       });
 
       // Load sqlite-vec extension with a timeout guard
@@ -341,30 +342,48 @@ export function closeDb(): Promise<void> {
   });
 }
 
+async function withRetry<T>(operation: () => Promise<T>, maxRetries = 5, initialDelay = 50): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      attempt++;
+      const isSqliteBusy = err && (err.code === 'SQLITE_BUSY' || (err.message && (err.message.includes('busy') || err.message.includes('locked'))));
+      if (isSqliteBusy && attempt <= maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt - 1) + Math.random() * 50;
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export const dbOps = {
   get: (sql: string, params: any[] = []): Promise<any> => {
-    return new Promise(async (resolve, reject) => {
+    return withRetry(() => new Promise(async (resolve, reject) => {
       const db = await getDb();
       db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
-    });
+    }));
   },
   all: (sql: string, params: any[] = []): Promise<any[]> => {
-    return new Promise(async (resolve, reject) => {
+    return withRetry(() => new Promise(async (resolve, reject) => {
       const db = await getDb();
       db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
-    });
+    }));
   },
   run: (sql: string, params: any[] = []): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
+    return withRetry(() => new Promise(async (resolve, reject) => {
       const db = await getDb();
       db.run(sql, params, (err) => err ? reject(err) : resolve());
-    });
+    }));
   },
   exec: (sql: string): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
+    return withRetry(() => new Promise(async (resolve, reject) => {
       const db = await getDb();
       db.exec(sql, (err) => err ? reject(err) : resolve());
-    });
+    }));
   }
 };
 

@@ -103,24 +103,45 @@ const routePendingToolsWithAutomationApproval = (
 export const cleanCommandNarrative = (rawCmd: string): string => {
   if (!rawCmd || typeof rawCmd !== 'string') return '';
   let cmd = rawCmd;
-  const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
-  if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
-  cmd = cmd
-    .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
-    .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
-    .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
-    .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
-    .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
-    .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
-    .trim();
+  // Issue #23 Fix: Only strip Windows/PowerShell boilerplate on Windows.
+  // On macOS/Linux these patterns don't appear so stripping is a no-op,
+  // but applying it unconditionally masked bash-specific noise.
+  if (process.platform === 'win32') {
+    const tryMatch = cmd.match(/try\s*\{\s*&\s*\{\s*\$global:LASTEXITCODE\s*=\s*\$null;\s*([\s\S]*?)\s*\}\s*;/i);
+    if (tryMatch && tryMatch[1]) cmd = tryMatch[1];
+    cmd = cmd
+      .replace(/\[Console\]::OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+      .replace(/\$OutputEncoding\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+      .replace(/\$ProgressPreference\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+      .replace(/\$global:EF_\w+\s*=\s*.*?(?:\r?\n|;|$)/gi, '')
+      .replace(/Set-Location\s+-LiteralPath\s+.*?(?:\r?\n|;|$)/gi, '')
+      .replace(/;\s*if\s*\(\$LASTEXITCODE[\s\S]*$/i, '')
+      .trim();
+  } else {
+    // On POSIX, strip common bash preamble (e.g. export TERM=, cd <dir>)
+    cmd = cmd
+      .replace(/^export\s+\w+=.*?(?:\n|;|$)/gm, '')
+      .replace(/^cd\s+.*?(?:\n|;|$)/gm, '')
+      .trim();
+  }
   return cmd.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
 };
+
+const compiledGraphCache = new Map<string, any>();
 
 export const buildGraph = (
   runner: AgentRunner,
   toolDefs: any[],
   tools: any[],
 ) => {
+  // Issue #14 Fix: Include model + provider in cache key so that switching models
+  // mid-session (e.g. fern-1 → claude) gets a fresh graph instead of reusing a
+  // stale cached one compiled for a different provider configuration.
+  const cacheKey = `${runner.client.provider}:${runner.client.model}:${runner.currentAgentSessionKey || 'default'}:${toolDefs.map(t => t.name).sort().join(',')}`;
+  if (compiledGraphCache.has(cacheKey)) {
+    return compiledGraphCache.get(cacheKey)!;
+  }
+
   console.log(`[Graph] 🏗️  BUILDING AGENT EXECUTION GRAPH (with debate_chamber)`);
   console.log(`[Graph] Available tools: ${toolDefs.map(t => t.name).join(', ')}`);
 
@@ -317,7 +338,16 @@ export const buildGraph = (
           response: isApproved ? 'Approved by user' : 'Rejected by user',
           reasoning: isApproved ? 'User approved the action' : 'User rejected the action',
         },
-        completionSignal: null,
+        completionSignal: isApproved
+          ? null
+          : {
+              // Issue #8 Fix: When the user rejects a HITL request, set completionSignal
+              // to 'cannot_proceed' so the brain edge routes to END instead of looping
+              // back and retrying the same rejected tool call indefinitely.
+              reason: 'cannot_proceed' as const,
+              explanation: 'User rejected the requested tool execution. Cannot proceed without approval.',
+            },
+        pendingToolCalls: isApproved ? state.pendingToolCalls : [],
       };
 
     } catch (error) {
@@ -619,6 +649,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
       webExplorerComplete: false,
       deepResearchComplete: false,
       resumingFromFormResponse: true,
+      // Issue #9 Fix: Increment the clarification counter so the brain edge can
+      // detect repeated clarification loops and break out after 3 consecutive asks.
+      clarificationCount: ((state as any).clarificationCount || 0) + 1,
     };
   };
 
@@ -772,9 +805,11 @@ If a specialized agent failed to complete a step, identify the issue and use you
                 case 'route_data_analyst':
                     return 'data_analyst';
                 case 'route_web_explorer':
-                case 'route_deep_research':
-                    // Always use web_explorer for web research tasks to ensure navis is used
                     return 'web_explorer';
+                case 'route_deep_research':
+                    // Issue #3 Fix: deep_research was silently routed to web_explorer,
+                    // bypassing the dedicated node and its research-specific prompts.
+                    return 'deep_research';
                 case 'complete_task':
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → memory_consolidator');
                     return 'memory_consolidator';
@@ -791,6 +826,13 @@ If a specialized agent failed to complete a step, identify the issue and use you
                             console.log(`[Graph] ➡️ continue_brain but completionSignal=task_complete → memory_consolidator`);
                             return 'memory_consolidator';
                         }
+                    }
+                    // Issue #9 Fix: If the agent has clarified 3+ times in a row,
+                    // break the ask_user_wait loop and route to END to prevent
+                    // infinite clarification cycles.
+                    if ((state as any).clarificationCount >= 3) {
+                        console.log('[Graph] ⚠️ Max clarifications (3) reached → END');
+                        return END;
                     }
                     console.log('[Graph] ➡️ Brain routing decision: continue_brain → brain');
                     return 'brain';
@@ -1005,5 +1047,6 @@ If a specialized agent failed to complete a step, identify the issue and use you
   const finalGraph = compiledGraph.compile({
     checkpointer: lightweightCheckpointer
   });
+  compiledGraphCache.set(cacheKey, finalGraph);
   return finalGraph;
 };

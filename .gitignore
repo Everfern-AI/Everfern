@@ -51,3 +51,7 @@ gha-creds-*.json
 .everfern/
 
 dist-electron/
+*.mp4
+*.zip
+output.txt
+

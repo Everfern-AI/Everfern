@@ -111,12 +111,27 @@ class SubagentSpawner {
     private readonly MAX_CONCURRENT_AGENTS = 10; // Increased from 2 to allow for a true "army" of parallel research
     private queue: Array<() => void> = [];
 
-    private async acquireSlot(): Promise<void> {
+    private async acquireSlot(abortSignal?: AbortSignal): Promise<void> {
         if (this.activeAgents < this.MAX_CONCURRENT_AGENTS) {
             this.activeAgents++;
             return;
         }
-        return new Promise(resolve => this.queue.push(resolve));
+        // Issue #13 Fix: If the parent agent is aborted while a sub-agent is
+        // waiting in the concurrency queue, the slot must be released without
+        // incrementing activeAgents so future sub-agents are not starved.
+        return new Promise((resolve, reject) => {
+            const onAbort = () => {
+                const idx = this.queue.indexOf(onResolve);
+                if (idx !== -1) this.queue.splice(idx, 1);
+                reject(new Error('Subagent slot acquisition aborted (parent cancelled)'));
+            };
+            const onResolve = () => {
+                abortSignal?.removeEventListener('abort', onAbort);
+                resolve();
+            };
+            this.queue.push(onResolve);
+            abortSignal?.addEventListener('abort', onAbort, { once: true });
+        });
     }
 
     private releaseSlot(): void {
@@ -130,7 +145,7 @@ class SubagentSpawner {
         }
     }
 
-    private getPromptForAgentType(agentType: AgentType): string | null {
+    private getPromptForAgentType(agentType: AgentType): string {
         const PROMPT_MAP: Record<AgentType, string> = {
             'web-explorer': 'web-explorer.md',
             'coding-specialist': 'coding-specialist.md',
@@ -138,8 +153,20 @@ class SubagentSpawner {
             'generic': 'SYSTEM_PROMPT.md',
         };
         const promptFile = PROMPT_MAP[agentType] || 'SYSTEM_PROMPT.md';
-        return loadPrompt(promptFile);
+        const loaded = loadPrompt(promptFile);
+        if (loaded) return loaded;
+
+        // Fallback 1: Try default SYSTEM_PROMPT.md if specialist prompt failed to load
+        if (promptFile !== 'SYSTEM_PROMPT.md') {
+            const defaultPrompt = loadPrompt('SYSTEM_PROMPT.md');
+            if (defaultPrompt) return defaultPrompt;
+        }
+
+        // Fallback 2: Minimal structured agent prompt if disk I/O failed completely
+        console.warn(`[SubagentSpawner] ⚠️ Failed to load prompt file "${promptFile}". Using hardcoded fallback.`);
+        return `# EverFern ${agentType} Sub-Agent\nYou are an autonomous specialized sub-agent tasked with executing: ${agentType}. Perform the task carefully using available tools.`;
     }
+
 
     async spawn(options: SpawnOptions): Promise<SpawnedAgent> {
         const {
@@ -286,8 +313,17 @@ class SubagentSpawner {
         registry.update(agent.agentId, { status: 'running' });
         agent.status = 'running';
 
-        await this.acquireSlot();
+        try {
+          const { globalAbortManager } = await import('./abort-manager');
+          await this.acquireSlot(globalAbortManager.abortController.signal);
+        } catch (slotErr) {
+          // Issue #13 Fix: Slot acquisition was aborted (parent cancelled while queued).
+          // Mark the agent as aborted and exit cleanly without running it.
+          registry.update(agent.agentId, { status: 'aborted', error: String(slotErr) });
+          return;
+        }
         console.log(`[SubagentSpawner] 🎰 Agent ${agent.agentId} acquired execution slot. Active: ${this.activeAgents}`);
+
 
         // SWARM SYNC: Subscribe to real-time memory updates from sibling agents
         // This ensures the agent is aware of what its "army" peers are finding
@@ -311,7 +347,12 @@ class SubagentSpawner {
         const parentEvents = getAgentEvents(agent.parentSessionId);
 
         try {
-            const cappedHistory = parentHistory.slice(-40).map((msg: any) => {
+            // Issue #20 Fix: Pin the first user message before capping so sub-agents
+            // always know the original task goal even when the history window is full.
+            const MAX_HISTORY = 40;
+            const firstUserMsg = parentHistory.find((m: any) => (m.role || '') === 'user');
+            const sliceStart = parentHistory.length > MAX_HISTORY ? parentHistory.length - MAX_HISTORY : 0;
+            let historySample = parentHistory.slice(sliceStart).map((msg: any) => {
                 const role = msg.role || (msg._getType?.() === 'human' ? 'user' : 'assistant');
                 const mapped: any = {
                     role,
@@ -328,6 +369,16 @@ class SubagentSpawner {
                 }
                 return mapped;
             });
+            // Prepend the first user message if it was cut by the slice, so the
+            // sub-agent remembers what the root task objective is.
+            if (firstUserMsg && sliceStart > 0 && historySample[0]?.content !== firstUserMsg.content) {
+                const firstMapped: any = {
+                    role: 'user',
+                    content: typeof firstUserMsg.content === 'string' ? firstUserMsg.content : JSON.stringify(firstUserMsg.content)
+                };
+                historySample = [firstMapped, ...historySample];
+            }
+            const cappedHistory = historySample;
 
             // SWARM SYNC: Prepend existing swarm knowledge to the task
             const existingMemory = swarm.getMemory(agent.parentSessionId)
@@ -494,8 +545,12 @@ class SubagentSpawner {
         parentSessionId: string,
         tasks: string[],
         options: Omit<SpawnOptions, 'task' | 'parentSessionId'> & { runner: SubagentRunner }
-    ): Promise<SpawnedAgent[]> {
+    ): Promise<{ spawned: SpawnedAgent[]; errors: Array<{ task: string; error: string }> }> {
         const spawned: SpawnedAgent[] = [];
+        // Issue #25 Fix: Collect spawn errors and return them to the caller instead
+        // of silently dropping them. Callers that assumed all tasks were spawned
+        // would receive a partial list with no indication of how many failed.
+        const errors: Array<{ task: string; error: string }> = [];
 
         for (const task of tasks) {
             try {
@@ -506,11 +561,17 @@ class SubagentSpawner {
                 });
                 spawned.push(agent);
             } catch (error) {
-                console.error(`[SubagentSpawner] Failed to spawn agent for task "${(task || '').substring(0, 50)}...":`, error);
+                const msg = error instanceof Error ? error.message : String(error);
+                console.error(`[SubagentSpawner] Failed to spawn agent for task "${(task || '').substring(0, 50)}...": ${msg}`);
+                errors.push({ task, error: msg });
             }
         }
 
-        return spawned;
+        if (errors.length > 0) {
+            console.warn(`[SubagentSpawner] spawnMultiple: ${errors.length}/${tasks.length} tasks failed to spawn.`);
+        }
+
+        return { spawned, errors };
     }
 
     async waitForAgent(

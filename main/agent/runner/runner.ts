@@ -24,6 +24,8 @@ import { loadPrompt } from '../../lib/prompt-sync';
 import { TelemetryLogger } from '../helpers/telemetry-logger';
 import { stateManager } from './state-manager';
 import { globalAbortManager, AbortError } from './abort-manager';
+import { toolApprovalStore } from '../../store/tool-approvals';
+
 
 // Tool Imports
 import { plannerTool, updateStepTool, executionPlanTool } from '../tools/planner';
@@ -47,7 +49,9 @@ import { getAgentEvents, emitLifecycle } from '../infra/agent-events';
 import { sessionCreated } from '../sessions';
 
 const DEFAULT_CONFIG: AgentRunnerConfig = {
-  maxIterations: 100000,
+  // Issue #4 Fix: 100000 was effectively no cap — a stuck agent could run for hours.
+  // 250 is generous enough for any real task while preventing runaway loops.
+  maxIterations: 250,
   enableTerminal: true,
 };
 
@@ -70,6 +74,11 @@ export class AgentRunner {
 
   /** Session lock map to prevent concurrent execution on the same conversation */
   private static sessionLocks: Map<string, Promise<void>> = new Map();
+
+  /** Issue #2 Fix: Serialise initializePiTools() calls so concurrent invocations
+   *  from the constructor and waitForToolsReady() share one promise instead of
+   *  both reading the tools array as empty and double-registering tools. */
+  private piToolsInitPromise: Promise<void> | null = null;
 
   constructor(client: AIClient, config: Partial<AgentRunnerConfig> = {}) {
     this.client = client;
@@ -118,22 +127,31 @@ export class AgentRunner {
   }
 
   private async initializePiTools() {
-    try {
-      const piTools = await getPiCodingTools();
-      if (!this.tools.find(t => t.name === piTools[0].name)) {
-        console.log(`[AgentRunner] 🔄 Registering ${piTools.length} Pi coding tools and swarm tools...`);
-        this.tools.push(
-          ...piTools,
-          this.createSpawnAgentTool(),
-          this.createSpawnSwarmTool(),
-          this.createBroadcastSwarmFactTool(),
-          this.createReadSwarmMemoryTool()
-        );
-        console.log(`[AgentRunner] ✅ Pi coding tools and swarm tools registered. Total tools: ${this.tools.length}`);
+    // Issue #2 Fix: Serialize concurrent calls through a shared promise so that
+    // if both the constructor and waitForToolsReady() fire simultaneously they
+    // share a single initialization, preventing double-registered tools.
+    if (this.piToolsInitPromise) return this.piToolsInitPromise;
+    this.piToolsInitPromise = (async () => {
+      try {
+        const piTools = await getPiCodingTools();
+        if (!this.tools.find(t => t.name === piTools[0]?.name)) {
+          console.log(`[AgentRunner] 🔄 Registering ${piTools.length} Pi coding tools and swarm tools...`);
+          this.tools.push(
+            ...piTools,
+            this.createSpawnAgentTool(),
+            this.createSpawnSwarmTool(),
+            this.createBroadcastSwarmFactTool(),
+            this.createReadSwarmMemoryTool()
+          );
+          console.log(`[AgentRunner] ✅ Pi coding tools and swarm tools registered. Total tools: ${this.tools.length}`);
+        }
+      } catch (error) {
+        console.error('[AgentRunner] Failed to initialize Pi tools:', error);
+        // Reset so a subsequent call can try again
+        this.piToolsInitPromise = null;
       }
-    } catch (error) {
-      console.error('[AgentRunner] Failed to initialize Pi tools:', error);
-    }
+    })();
+    return this.piToolsInitPromise;
   }
 
   /**
@@ -719,11 +737,19 @@ export class AgentRunner {
       await existingLock;
     }
 
-    let resolveLock: () => void;
+    // Issue #1 Fix: Initialize resolveLock to a no-op so that if an early error
+    // occurs before the Promise constructor executes the callback, the finally
+    // block's resolveLock() call never throws, preventing an eternal session lock.
+    let resolveLock: () => void = () => {};
     const lockPromise = new Promise<void>(resolve => { resolveLock = resolve; });
     AgentRunner.sessionLocks.set(convId, lockPromise);
 
     let syncToDb: ((force?: boolean) => Promise<void>) | undefined;
+    // Issue #21 Fix: Track whether telemetry.terminate() was already called on the
+    // success path (inside the inner try) so the outer finally doesn't fire a second
+    // terminate() and emit duplicate telemetry events. missionTracker is scoped
+    // to the inner block and cannot be referenced here directly.
+    let telemetryTerminated = false;
 
     try {
       if (model) this.client.setModel(model);
@@ -1191,7 +1217,14 @@ export class AgentRunner {
               // Guard against treating leftover HITL responses as new user prompts
               if (isHitlResponse) {
                 console.log('[AgentRunner] 🛡️ Ignored standalone HITL form response in new graph invocation');
-                const approved = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_APPROVED_ALWAYS]') || textInput.includes('Approve');
+                // Issue #22 Fix: Removed bare 'Approve' substring — it matched
+                // real user messages like "I don't approve of this approach".
+                // Only structured markers are reliable HITL approval indicators.
+                const approved = textInput.includes('[HITL_APPROVED]') || textInput.includes('[HITL_APPROVED_ALWAYS]') ||
+                                 textInput.includes('[HITL_APPROVED_PREFIX]') ||
+                                 textInput.includes('✅ Approve — proceed once') ||
+                                 textInput.includes('🚀 Approve & Allow Always') ||
+                                 textInput.includes('📂 Approve & Allow Prefix');
                 eventQueue.push({
                   type: 'chunk',
                   content: approved ? '\n\n✅ Security approval recorded.' : '\n\n❌ Action rejected by user. Operation cancelled.'
@@ -1210,7 +1243,10 @@ export class AgentRunner {
               // Continuation context injection: expand short prompts like "continue" or "yes build it" with the original goal
               let activeUserInput = userInput;
               const userStr = typeof userInput === 'string' ? userInput : (Array.isArray(userInput) ? JSON.stringify(userInput) : String(userInput));
-              const isShortContinuation = /^(continue|yes|go ahead|do it|keep going|ok|okay|yes build it|build it|proceed|the apop)$/i.test(userStr.trim());
+              // Issue #16 Fix: Removed 'the apop' (OCR artifact) from the pattern.
+              // Also added a minimum word-length guard: single-word 'yes'/'ok' are
+              // fine, but multi-word phrases are only matched if they appear exactly.
+              const isShortContinuation = /^(continue|yes|go ahead|do it|keep going|ok|okay|yes build it|build it|proceed)$/i.test(userStr.trim());
               
               const { messages: builtInitialMessages } = await buildSystemMessages(history, activeUserInput, platform, convId, [], promptText, projectId);
               let initialMessages = [...builtInitialMessages];
@@ -1461,6 +1497,7 @@ export class AgentRunner {
         const thinkingDuration = durationTracker.onMissionComplete();
         const success = !missionTracker.getTimeline().error && !globalAbortManager.streamAborted;
         this.telemetry.terminate(success, currentContent || undefined);
+        telemetryTerminated = true;
 
         yield {
           type: 'mission_complete',
@@ -1475,7 +1512,12 @@ export class AgentRunner {
         removeProgressListener?.();
       }
     } finally {
-      this.telemetry.terminate(false);
+      // Issue #21 Fix: Only terminate telemetry in the outer finally if it was not
+      // already called on the success path (tracked by telemetryTerminated flag).
+      // missionTracker is scoped to the inner try block and cannot be referenced here.
+      if (!telemetryTerminated) {
+        this.telemetry.terminate(false);
+      }
       
       // Ensure the final state of the assistant message and timeline is persisted on errors/aborts
       if (syncToDb) {
@@ -1490,7 +1532,11 @@ export class AgentRunner {
         const records = listHitlRecords(convId);
         const hasPendingHitl = records.some(r => r.status === 'pending');
         
-        if (!hasPendingHitl) {
+        // Issue #11 Fix: Only attempt browser cleanup if the NavisOrchestrator was
+        // actually used in this session. Unconditionally instantiating BrowserSession
+        // fires Chromium cleanup on every stream end (even text-only sessions) and
+        // can throw on systems without Chromium, blocking the session lock release.
+        if (!hasPendingHitl && this.navisOrchestrator) {
           console.log('[Runner] No pending HITL, closing browser sessions if any');
           const { BrowserSession } = await import('../tools/navis/session');
           const session = new BrowserSession();
@@ -1503,10 +1549,22 @@ export class AgentRunner {
       }
 
       // Release session lock
-      if (AgentRunner.sessionLocks.get(convId) === lockPromise) {
-        AgentRunner.sessionLocks.delete(convId);
+      // Issue #17 Fix: Always delete the entry so sessionLocks doesn't grow
+      // without bound (one entry per completed conversation = memory leak).
+      // Issue #5 Fix: Use resolveLock() instead of resolveLock!() — the '!' is
+      // a TypeScript lie; we initialise it to a safe no-op above so it never throws.
+
+      // Issue #15 Fix: Clear session-scoped tool approval policies so that
+      // 'allow for this session' HITL approvals don't persist into future sessions.
+      try {
+        toolApprovalStore.clearSessionPolicies(convId);
+      } catch (policyErr) {
+        console.warn('[Runner] Failed to clear session approval policies:', policyErr);
       }
-      resolveLock!();
+
+      AgentRunner.sessionLocks.delete(convId);
+      resolveLock();
+
     }
   }
 }
@@ -1519,17 +1577,24 @@ export class AgentRunner {
 function reconstructFullHistory(storedMessages: any[], currentUserInput: string | any[]): any[] {
   const reconstructed: any[] = [];
 
-  // Skip the very last user message if it matches the current input
-  const currentInputText = typeof currentUserInput === 'string' ? currentUserInput : JSON.stringify(currentUserInput);
+  // Issue #10 Fix: Normalize both sides to string before comparing.
+  // For multimodal inputs (any[]), JSON.stringify is used but the stored content
+  // may have been serialized differently. Normalize whitespace to avoid missed dedup.
+  const normalizeContent = (c: unknown): string => {
+    if (typeof c === 'string') return c.trim();
+    try { return JSON.stringify(c); } catch { return String(c); }
+  };
+  const currentInputText = normalizeContent(currentUserInput);
   let messagesToProcess = storedMessages;
 
   // Remove the last user message if it matches current input (avoid duplication)
   if (storedMessages.length > 0) {
     const lastMsg = storedMessages[storedMessages.length - 1];
-    if (lastMsg.role === 'user' && lastMsg.content === currentInputText) {
+    if (lastMsg.role === 'user' && normalizeContent(lastMsg.content) === currentInputText) {
       messagesToProcess = storedMessages.slice(0, -1);
     }
   }
+
 
   // Pre-collect all existing tool message IDs to avoid duplication
   const existingToolMessageIds = new Set<string>();

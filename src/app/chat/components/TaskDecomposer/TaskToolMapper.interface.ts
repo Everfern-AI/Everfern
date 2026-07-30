@@ -125,7 +125,7 @@ export interface ITaskToolMapper {
    * @returns The deserialized TaskToolMapperState
    * @throws Error if JSON is invalid or cannot be deserialized
    */
-  static deserialize(json: string): TaskToolMapperState;
+  deserialize(json: string): TaskToolMapperState;
 
   /**
    * Reset the mapper to initial state

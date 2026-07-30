@@ -40,24 +40,47 @@ const MORE_PROVIDERS = [
     { id: 'huggingface', name: 'Hugging Face', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="Hugging Face" width={size} height={size} /> }
 ];
 
-const navSections = [
-    { id: 'general', label: 'General', icon: Cog6ToothIcon },
-    { id: 'openclaw', label: 'Personality & Routing (EverFern)', icon: CommandLineIcon },
-    { id: 'profile', label: 'Profile', icon: UserCircleIcon },
-    { id: 'models', label: 'Models & Providers', icon: CpuChipIcon },
-    { id: 'voice', label: 'Voice Mode', icon: MicrophoneIcon },
-    { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon },
-    { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon },
-    { id: 'memory', label: 'Memory Graph', icon: LightBulbIcon },
-    { id: 'skills', label: 'Custom Skills', icon: BoltIcon },
-    { id: 'tools', label: 'Registered Tools', icon: ServerIcon },
-    { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon },
-    { id: 'tool-permissions', label: 'Tool Permissions', icon: ShieldCheckIcon },
-    { id: 'privacy', label: 'Privacy & Data', icon: KeyIcon },
-    { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon },
-    { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon },
-    { id: 'help', label: 'Help & Architecture', icon: BookOpenIcon },
+export const navCategories = [
+    {
+        category: 'Account & System',
+        items: [
+            { id: 'profile', label: 'Profile', icon: UserCircleIcon, keywords: 'user name avatar email account tier plan cloud support' },
+            { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view' },
+            { id: 'keybinds', label: 'Keybindings & Shortcuts', icon: CommandLineIcon, keywords: 'keyboard shortcuts keybinds hotkeys commands ctrl cmd bind key toggle' },
+            { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon, keywords: 'dispatch remote cloud orchestration sync' },
+            { id: 'privacy', label: 'Privacy & Data', icon: KeyIcon, keywords: 'telemetry keys security local privacy storage' },
+        ]
+    },
+    {
+        category: 'AI & Intelligence',
+        items: [
+            { id: 'models', label: 'Models & Providers', icon: CpuChipIcon, keywords: 'engine provider ollama openrouter openai anthropic key custom model qwen gpt claude deepseek gemini llama mistral minimax huggingface' },
+            { id: 'openclaw', label: 'Personality & Routing', icon: CommandLineIcon, keywords: 'soul agent prompt routing persona openclaw prompt system instructions' },
+            { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon, keywords: 'vision tars image screen browser OCR screenshot desktop' },
+            { id: 'voice', label: 'Voice Mode', icon: MicrophoneIcon, keywords: 'speech voice whisper stt tts audio mic microphone speech-to-text' },
+            { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon, keywords: 'vector index embedding model semantics RAG database pinecone' },
+            { id: 'memory', label: 'Memory Graph', icon: LightBulbIcon, keywords: 'brain memory knowledge graph facts nodes context remember' },
+        ]
+    },
+    {
+        category: 'Tools & Execution',
+        items: [
+            { id: 'tools', label: 'Registered Tools', icon: ServerIcon, keywords: 'mcp tools registered bash python web filesystem terminal navis' },
+            { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon, keywords: 'search tavily crawl fetch website web google duckduckgo' },
+            { id: 'tool-permissions', label: 'Tool Permissions', icon: ShieldCheckIcon, keywords: 'security auto-approval rules permissions grants allow authorize' },
+            { id: 'skills', label: 'Custom Skills', icon: BoltIcon, keywords: 'skill custom scripts functions instructions prompt workflow' },
+            { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon, keywords: 'wsl docker container ubuntu linux terminal environment sandbox' },
+        ]
+    },
+    {
+        category: 'Help',
+        items: [
+            { id: 'help', label: 'Help & Architecture', icon: BookOpenIcon, keywords: 'documentation help architecture logs debug support troubleshooting' },
+        ]
+    }
 ];
+
+const navSections = navCategories.flatMap(c => c.items);
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -1256,10 +1279,44 @@ export default function SettingsPage({
         }
     };
     const [toastState, setToastState] = useState<'idle' | 'saving' | 'saved'>('idle');
+    const [settingsSearch, setSettingsSearch] = useState('');
     const [profileName, setProfileName] = useState(username || 'User');
     const [displayName, setDisplayName] = useState(username || 'User');
     const [preferences, setPreferences] = useState('');
     const [workFunction, setWorkFunction] = useState('');
+    const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
+    const [profileSaveSuccess, setProfileSaveSuccess] = useState<boolean>(false);
+
+    const handleSaveProfile = async () => {
+        setIsSavingProfile(true);
+        setProfileSaveSuccess(false);
+        try {
+            if ((window as any).electronAPI?.saveConfig) {
+                const currentConfig = (await (window as any).electronAPI.loadConfig?.())?.config || {};
+                await (window as any).electronAPI.saveConfig({
+                    ...currentConfig,
+                    userName: profileName.trim(),
+                    displayName: displayName.trim(),
+                    preferences: preferences.trim(),
+                    workFunction: workFunction,
+                });
+            } else {
+                localStorage.setItem('everfern_profile', JSON.stringify({
+                    userName: profileName.trim(),
+                    displayName: displayName.trim(),
+                    preferences: preferences.trim(),
+                    workFunction: workFunction,
+                }));
+            }
+            setProfileSaveSuccess(true);
+            setTimeout(() => setProfileSaveSuccess(false), 3000);
+        } catch (e) {
+            console.error('Failed to save profile settings:', e);
+            alert('Failed to save profile settings.');
+        } finally {
+            setIsSavingProfile(false);
+        }
+    };
     const [isCloudUser, setIsCloudUser] = useState(false);
     const [cloudEmail, setCloudEmail] = useState('');
     const [cloudUsage, setCloudUsage] = useState<{
@@ -1283,6 +1340,17 @@ export default function SettingsPage({
     const [vectorsData, setVectorsData] = useState<any[]>([]);
     const [loadingVectors, setLoadingVectors] = useState(false);
     const router = useRouter();
+
+    const checkEverFernLogin = (providerId: string): boolean => {
+        if (providerId === 'everfern') {
+            const sessionStr = localStorage.getItem('everfern_cloud_session') || localStorage.getItem('everfern_auth_token');
+            if (!sessionStr) {
+                router.push('/auth');
+                return false;
+            }
+        }
+        return true;
+    };
 
     useEffect(() => {
         const fetchVersion = async () => {
@@ -1403,6 +1471,15 @@ export default function SettingsPage({
                         if (res.config?.displayName) dispName = res.config.displayName;
                         if (res.config?.preferences) prefs = res.config.preferences;
                         if (res.config?.workFunction) work = res.config.workFunction;
+                    }
+                } else {
+                    const savedStr = localStorage.getItem('everfern_profile');
+                    if (savedStr) {
+                        const saved = JSON.parse(savedStr);
+                        if (saved.userName) name = saved.userName;
+                        if (saved.displayName) dispName = saved.displayName;
+                        if (saved.preferences) prefs = saved.preferences;
+                        if (saved.workFunction) work = saved.workFunction;
                     }
                 }
                 if (name === "User" && (window as any).electronAPI?.system?.getUsername) {
@@ -1603,6 +1680,61 @@ export default function SettingsPage({
         </div>
     );
 
+    // ── Keybindings Section ───────────────────────────────────────────────────
+    const KeybindsSection = () => {
+        const appShortcuts = [
+            { id: 'open_settings', name: 'Open Settings', key: 'Ctrl+,' },
+            { id: 'new_chat', name: 'New Chat Session', key: 'Ctrl+N' },
+            { id: 'search_history', name: 'Global Command Palette / Search', key: 'Ctrl+K' },
+            { id: 'toggle_sidebar', name: 'Toggle Left Sidebar', key: 'Ctrl+B' },
+        ];
+
+        const voiceShortcuts = [
+            { id: 'hold_to_speak', name: 'Hold to Speak (Voice Mode)', key: 'Ctrl + Alt' },
+            { id: 'resume_chat', name: 'Resume Chat in Voice Overlay', key: 'Ctrl + Alt + B' },
+            { id: 'select_chat_history', name: 'Select Chat History in Voice Overlay', key: 'Ctrl + Alt + H' },
+        ];
+
+        return (
+            <div>
+                <SectionTitle>Keybindings & Shortcuts</SectionTitle>
+                <SectionSubtitle>Overview of all application navigation, voice overlay, and global system keybindings.</SectionSubtitle>
+
+                <Card>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 14px' }}>
+                        Application Shortcuts
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {appShortcuts.map((kb) => (
+                            <div key={kb.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)' }}>
+                                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>{kb.name}</span>
+                                <kbd style={{ padding: '4px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-text-secondary)', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>
+                                    {kb.key}
+                                </kbd>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+
+                <Card>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 14px' }}>
+                        Voice Mode Shortcuts
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {voiceShortcuts.map((kb) => (
+                            <div key={kb.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)' }}>
+                                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>{kb.name}</span>
+                                <kbd style={{ padding: '4px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-text-secondary)', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>
+                                    {kb.key}
+                                </kbd>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            </div>
+        );
+    };
+
     // ── Profile ───────────────────────────────────────────────────────────────
     const ProfileSection = () => (
         <div>
@@ -1648,6 +1780,35 @@ export default function SettingsPage({
                         onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
                         placeholder="E.g. Use TypeScript for all code examples, explain concepts simply..."
                     />
+                </div>
+
+                {/* Profile Save Action */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--color-border)' }}>
+                    <div>
+                        {profileSaveSuccess && (
+                            <span style={{ fontSize: 13, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                ✓ Profile saved successfully
+                            </span>
+                        )}
+                    </div>
+                    <button
+                        onClick={handleSaveProfile}
+                        disabled={isSavingProfile}
+                        style={{
+                            padding: '10px 20px',
+                            backgroundColor: 'var(--color-text-primary)',
+                            color: 'var(--color-text-inverse)',
+                            borderRadius: 10,
+                            fontWeight: 600,
+                            fontSize: 13,
+                            border: 'none',
+                            cursor: isSavingProfile ? 'not-allowed' : 'pointer',
+                            opacity: isSavingProfile ? 0.7 : 1,
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                    </button>
                 </div>
 
                 {isCloudUser ? (
@@ -1791,6 +1952,7 @@ export default function SettingsPage({
                         <div
                             key={id}
                             onClick={() => {
+                                if (id === 'everfern' && !checkEverFernLogin('everfern')) return;
                                 setSettingsEngine(id as 'online' | 'local' | 'everfern');
                                 if (id !== 'online') { setSettingsProvider(null); setSettingsApiKey(''); }
                                 if (id === 'everfern') {
@@ -1873,7 +2035,11 @@ export default function SettingsPage({
                                     const isSel = settingsProvider === id;
                                     return (
                                         <div key={id}
-                                            onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); setSettingsProvider(id); }}
+                                            onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+                                                e.stopPropagation();
+                                                if (id === 'everfern' && !checkEverFernLogin('everfern')) return;
+                                                setSettingsProvider(id);
+                                            }}
                                             style={{
                                                 padding: '14px 12px',
                                                 borderRadius: 12,
@@ -2199,6 +2365,7 @@ export default function SettingsPage({
                                         <div key={id}
                                             onClick={(e: React.MouseEvent<HTMLDivElement>) => {
                                                 e.stopPropagation();
+                                                if (id === 'everfern' && !checkEverFernLogin('everfern')) return;
                                                 setSettingsVlmCloudProvider(id);
                                                 setSettingsVlmCloudModel(getVisionDefaultModel(id));
                                                 setSettingsVlmCloudUrl(getVisionDefaultBaseUrl(id));
@@ -2324,6 +2491,7 @@ export default function SettingsPage({
                                     key={id}
                                     onClick={() => {
                                         if (!supportsEmbed) return;
+                                        if (id === 'everfern' && !checkEverFernLogin('everfern')) return;
                                         setEmbeddingProvider(id);
                                         const prov = EMBEDDING_PROVIDERS.find(p => p.id === id);
                                         if (prov && prov.models.length > 0) setEmbeddingModel(prov.models[0]);
@@ -4306,6 +4474,7 @@ export default function SettingsPage({
 
     const sectionContent: Record<string, React.ReactNode> = {
         general: GeneralSection(),
+        keybinds: KeybindsSection(),
         openclaw: OpenClawSection(),
         profile: ProfileSection(),
         models: ModelsSection(),
@@ -4361,30 +4530,129 @@ export default function SettingsPage({
 
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                 {/* Left nav */}
-                <div style={{ width: 220, backgroundColor: 'var(--color-bg-subtle)', borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', padding: '20px 12px', flexShrink: 0, overflowY: 'auto' }}>
-                    <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {navSections.map(({ id, label, icon: Icon }) => {
-                            const isActive = activeSection === id;
+                <div style={{ width: 240, backgroundColor: 'var(--color-bg-subtle)', borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', padding: '16px 12px', flexShrink: 0, overflowY: 'auto' }}>
+                    {/* Search Input */}
+                    <div style={{ marginBottom: 16 }}>
+                        <input
+                            type="text"
+                            placeholder="Search settings..."
+                            value={settingsSearch}
+                            onChange={e => setSettingsSearch(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 10,
+                                fontSize: 13,
+                                color: 'var(--color-text-primary)',
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                                fontFamily: 'var(--font-sans)',
+                                transition: 'border-color 0.15s'
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--color-border-focus)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
+                        />
+                    </div>
+
+                    <nav style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {navCategories.map(cat => {
+                            const filteredItems = cat.items.filter(item => {
+                                if (!settingsSearch.trim()) return true;
+                                const q = settingsSearch.toLowerCase();
+                                return item.label.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q);
+                            });
+
+                            if (filteredItems.length === 0) return null;
+
                             return (
-                                <button
-                                    key={id}
-                                    onClick={() => setActiveSection(id)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 10,
-                                        padding: '9px 14px', borderRadius: 10, border: 'none',
-                                        backgroundColor: isActive ? 'var(--color-bg-surface)' : 'transparent',
-                                        color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                                        fontSize: 14, fontWeight: isActive ? 600 : 400,
-                                        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                                        boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
-                                        fontFamily: 'var(--font-sans)',
-                                    }}
-                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
-                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                                >
-                                    <Icon width={16} height={16} />
-                                    {label}
-                                </button>
+                                <div key={cat.category}>
+                                    <div style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: 'var(--color-text-tertiary)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.08em',
+                                        padding: '0 10px 6px',
+                                    }}>
+                                        {cat.category}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        {filteredItems.map(({ id, label, icon: Icon, keywords }) => {
+                                            const isActive = activeSection === id;
+                                            const query = settingsSearch.trim().toLowerCase();
+
+                                            // Contextual status badge or specific match subtitle
+                                            let badgeText = '';
+                                            let badgeColor = '';
+                                            if (id === 'models') {
+                                                badgeText = settingsProvider ? settingsProvider.toUpperCase() : 'OLLAMA';
+                                                badgeColor = 'var(--color-text-tertiary)';
+                                            } else if (id === 'profile' && isCloudUser) {
+                                                badgeText = cloudUsage?.plan ? cloudUsage.plan.toUpperCase() : 'FREE';
+                                                badgeColor = cloudUsage?.plan === 'pro' ? '#10b981' : '#a855f7';
+                                            }
+
+                                            // Find specific sub-option matched by search query
+                                            let matchedOption = '';
+                                            if (query && !label.toLowerCase().includes(query)) {
+                                                const match = keywords.split(' ').find(k => k.toLowerCase().includes(query));
+                                                if (match) matchedOption = match;
+                                            }
+
+                                            return (
+                                                <button
+                                                    key={id}
+                                                    onClick={() => setActiveSection(id)}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                        padding: '8px 10px', borderRadius: 10, border: 'none',
+                                                        backgroundColor: isActive ? 'var(--color-bg-surface)' : 'transparent',
+                                                        color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                                        fontSize: 13, fontWeight: isActive ? 600 : 400,
+                                                        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                                                        boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
+                                                        fontFamily: 'var(--font-sans)',
+                                                    }}
+                                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                >
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                            <Icon width={16} height={16} style={{ flexShrink: 0 }} />
+                                                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+                                                        </div>
+                                                        {matchedOption && (
+                                                            <span style={{ fontSize: 10, color: '#10b981', paddingLeft: 24, textTransform: 'capitalize' }}>
+                                                                ↳ matches "{matchedOption}"
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {badgeText && !matchedOption && (
+                                                        <span style={{
+                                                            fontSize: 7.5,
+                                                            fontWeight: 700,
+                                                            padding: '1px 4px',
+                                                            borderRadius: 4,
+                                                            backgroundColor: 'var(--color-bg-subtle)',
+                                                            color: badgeColor,
+                                                            border: '1px solid var(--color-border)',
+                                                            flexShrink: 0,
+                                                            letterSpacing: '0.03em',
+                                                            maxWidth: 70,
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {badgeText}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             );
                         })}
                     </nav>

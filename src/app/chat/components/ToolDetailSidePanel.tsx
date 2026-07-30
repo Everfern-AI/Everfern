@@ -6771,8 +6771,8 @@ export default function ToolDetailSidePanel({
 
     const poll = async () => {
       try {
-        if (!mounted || !window.electronAPI?.terminal?.getStatus) return;
-        const res = await window.electronAPI.terminal.getStatus(pollId);
+        if (!mounted || !(window as any).electronAPI?.terminal?.getStatus) return;
+        const res = await (window as any).electronAPI.terminal.getStatus(pollId);
         if (mounted && res && res.success) {
           setToolData((prev: any) => ({
             ...prev,
