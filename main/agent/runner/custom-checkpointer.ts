@@ -104,13 +104,13 @@ export class LightweightCheckpointer extends BaseCheckpointSaver {
         ]
       );
 
-      // Limit storage to last 100 checkpoints per thread
-      await dbOps.run(
+      // Limit storage to last 100 checkpoints per thread asynchronously
+      dbOps.run(
         `DELETE FROM checkpoints WHERE thread_id = ? AND checkpoint_id NOT IN (
-          SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC LIMIT 100
+          SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY rowid DESC LIMIT 100
         )`,
         [threadId, threadId]
-      );
+      ).catch(err => console.error('[Checkpointer] Failed to prune checkpoints:', err));
 
     } catch (err) {
       console.error('[Checkpointer] Failed to put checkpoint:', err);

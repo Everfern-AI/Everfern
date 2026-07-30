@@ -12,6 +12,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
+import { invalidateSkillsCache } from '../agent/runner/skills-loader';
+
 
 // ── Levenshtein Distance for Spelling Correction ────────────────────────
 
@@ -151,21 +153,40 @@ export function syncBuiltInSkills(): void {
       fs.mkdirSync(configDir, { recursive: true });
     }
 
+    function getAppPathSafe(): string | null {
+      try {
+        const { app } = require('electron');
+        if (app && typeof app.getAppPath === 'function') {
+          return app.getAppPath();
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    const appPath = getAppPathSafe();
+
     // Try multiple possible locations for built-in skills
     const possibleLocations = [
-      // Location 1: dist-electron/main/skills (compiled production inside asar)
+      // Location 1: Electron app.getAppPath() candidates (most reliable for packaged app)
+      appPath ? path.join(appPath, 'main', 'skills') : '',
+      appPath ? path.join(appPath, 'dist-electron', 'main', 'skills') : '',
+      // Location 2: dist-electron/main/skills (compiled production inside asar)
       path.join(__dirname, '..', 'skills'),
-      // Location 2: extraResources (production resources/skills)
+      path.join(__dirname, '..', '..', 'skills'),
+      // Location 3: extraResources (production resources/skills)
       ...(process.resourcesPath ? [
         path.join(process.resourcesPath, 'skills'),
+        path.join(process.resourcesPath, 'main', 'skills'),
         path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'skills'),
       ] : []),
-      // Location 3: main/skills (source/dev)
+      // Location 4: main/skills (source/dev)
       path.join(__dirname, '..', '..', 'main', 'skills'),
       path.join(__dirname, '..', '..', '..', 'main', 'skills'),
       path.join(process.cwd(), 'main', 'skills'),
+      path.join(process.cwd(), 'apps', 'desktop', 'main', 'skills'),
       path.join(process.cwd(), 'dist-electron', 'main', 'skills'),
     ].filter(Boolean);
+
 
     let builtInSkillsDir: string | null = null;
 
@@ -212,8 +233,10 @@ export function syncBuiltInSkills(): void {
 
     // Persist the hash so the next startup can skip the sync
     writeSyncVersion(skillsDir, sourceHash);
+    invalidateSkillsCache();
 
     // Log synced skills
+
     const syncedSkills = getAllSkillPaths(skillsDir);
     console.log(`[SkillsSync] ✅ Skills synced successfully (${syncedSkills.length} files)`);
 

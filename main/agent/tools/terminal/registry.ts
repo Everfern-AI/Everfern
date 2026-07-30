@@ -79,7 +79,7 @@ export class CommandRegistry {
   private constructor() {}
 
   private resolvePowerShellExecutable(): string {
-    if (process.platform !== 'win32') return 'bash';
+    if (process.platform !== 'win32') return process.env.SHELL || 'bash';
     try {
       execSync('where pwsh.exe', { stdio: 'ignore', timeout: 3000 });
       return 'pwsh.exe';

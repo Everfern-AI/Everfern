@@ -843,6 +843,11 @@ export default function SetupPage() {
                                         onClick={() => {
                                             setEngine(opt.id as any);
                                             if (opt.id === "everfern") {
+                                                const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
+                                                if (!cloudSession) {
+                                                    router.push("/auth?redirect=/setup");
+                                                    return;
+                                                }
                                                 setProvider("everfern");
                                                 setStep(4);
                                                 return;
@@ -1135,7 +1140,16 @@ export default function SetupPage() {
                                 ].map(opt => (
                                     <button
                                         key={opt.id}
-                                        onClick={() => setVlmMode(opt.id as any)}
+                                        onClick={() => {
+                                            if (opt.id === "everfern") {
+                                                const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
+                                                if (!cloudSession) {
+                                                    router.push("/auth?redirect=/setup");
+                                                    return;
+                                                }
+                                            }
+                                            setVlmMode(opt.id as any);
+                                        }}
                                         style={{
                                             background: vlmMode === opt.id ? "rgba(32,30,36,0.06)" : "rgba(255,255,255,0.02)",
                                             border: `1px solid ${vlmMode === opt.id ? 'var(--color-text-tertiary)' : 'var(--color-border)'}`,

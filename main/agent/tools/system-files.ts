@@ -6,10 +6,10 @@ type SystemFilesAction = 'list' | 'mkdirp' | 'move' | 'rename' | 'delete';
 
 function isInsideRoot(rootAbs: string, candidateAbs: string): boolean {
   const rel = path.relative(rootAbs, candidateAbs);
-  if (!rel) return true;
-  if (rel === '') return true;
-  // Prevent path traversal
-  return !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel);
+  if (!rel || rel === '') return true;
+  const posixRel = rel.replace(/\\/g, '/');
+  // Prevent path traversal across Windows and POSIX systems
+  return !posixRel.startsWith('../') && posixRel !== '..' && !path.isAbsolute(posixRel);
 }
 
 function resolveUnderRoot(rootAbs: string, p: string): string {

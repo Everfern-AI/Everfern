@@ -202,6 +202,12 @@ export const GraphState = Annotation.Root({
   // Form response continuation flag — set by ask_user_wait so brain
   // knows to skip premature task_complete when resuming after user answered a form
   resumingFromFormResponse: Annotation<boolean>(),
+
+  // Issue #9 Fix: Tracks consecutive ask_user_question calls to break infinite
+  // clarification loops. Incremented by ask_user_wait node; reset to 0 on non-
+  // clarification turns. Brain conditional edge routes to END when this reaches 3.
+  clarificationCount: Annotation<number>(),
 });
+
 
 export type GraphStateType = typeof GraphState.State;

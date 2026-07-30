@@ -172,10 +172,14 @@ export class AbortSignalManager {
             toolCallRegistry.markAllAborted();
           }
           try {
-            const { stopAllServers } = require('../tools/dev-preview');
-            stopAllServers();
-          } catch (devServerErr) {
-            console.warn('[Cleanup] Dev preview server stop failed:', devServerErr);
+            const devPreview = require('../tools/dev-preview');
+            if (devPreview && typeof devPreview.stopAllServers === 'function') {
+              devPreview.stopAllServers();
+            }
+          } catch (devServerErr: any) {
+            if (devServerErr?.code !== 'MODULE_NOT_FOUND') {
+              console.warn('[Cleanup] Dev preview server stop failed:', devServerErr);
+            }
           }
         } catch (err) {
           console.error('[Cleanup] Tool call cancellation error:', err);

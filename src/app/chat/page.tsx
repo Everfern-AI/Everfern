@@ -4,6 +4,9 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { EverFernCloudLimitNotice, EverFernCloudUsageBanner, PromptWrapper } from "./components/EverFernCloudBanners";
+import { SuggestedFollowUps } from "./components/SuggestedFollowUps";
+import { ExecutionPlanPane } from "./components/ExecutionPlanPane";
 import {
     PlusIcon,
     Cog6ToothIcon,
@@ -486,110 +489,7 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
     return { cleanContent, followUps };
 }
 
-const SuggestedFollowUpsComponent = ({
-    followUps,
-    onSelect
-}: {
-    followUps: Array<{ icon: string; text: string }>;
-    onSelect: (text: string) => void;
-}) => {
-    return (
-        <div style={{
-            marginTop: 18,
-            marginBottom: 8,
-            width: "100%",
-            maxWidth: 640,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8
-        }}>
-            <div style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--color-text-tertiary)",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-                marginBottom: 4,
-                paddingLeft: 4
-            }}>
-                Suggested follow-ups
-            </div>
-            <div style={{
-                display: "flex",
-                flexDirection: "column",
-                border: "1px solid var(--color-border)",
-                borderRadius: 14,
-                overflow: "hidden",
-                backgroundColor: "var(--color-bg-surface)",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.02)"
-            }}>
-                {followUps.map((item, idx) => (
-                    <button
-                        key={idx}
-                        type="button"
-                        onClick={() => onSelect(item.text)}
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            padding: "12px 16px",
-                            border: "none",
-                            background: "transparent",
-                            cursor: "pointer",
-                            width: "100%",
-                            textAlign: "left",
-                            color: "var(--color-text-primary)",
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 13.5,
-                            borderBottom: idx < followUps.length - 1 ? "1px solid var(--color-border-subtle)" : "none",
-                            transition: "background-color 0.15s ease",
-                            outline: "none"
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = "transparent";
-                        }}
-                    >
-                        {item.icon && (
-                            <span style={{
-                                fontSize: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: 28,
-                                height: 28,
-                                borderRadius: "50%",
-                                backgroundColor: "var(--color-bg-subtle)",
-                                flexShrink: 0
-                            }}>
-                                {item.icon}
-                            </span>
-                        )}
-                        <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.4 }}>
-                            {item.text}
-                        </span>
-                        <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}
-                        >
-                            <path d="M5 12h14" />
-                            <path d="m12 5 7 7-7 7" />
-                        </svg>
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-};
+const SuggestedFollowUpsComponent = SuggestedFollowUps;
 
 const isNavisHitl = (request: any) => {
     if (!request) return false;
@@ -613,132 +513,6 @@ const isNavisQuestion = (questions: any[]) => {
 };
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
-function EverFernCloudLimitNotice() {
-    return (
-        <div style={{
-            marginTop: 4,
-            padding: 18,
-            borderRadius: 16,
-            border: '1px solid var(--color-border)',
-            background: 'var(--color-bg-subtle)',
-            display: 'flex',
-            gap: 14,
-            alignItems: 'flex-start',
-            maxWidth: 560,
-        }}>
-            <div style={{
-                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 18,
-            }}>🌿</div>
-            <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
-                    You've reached your EverFern Cloud daily limit
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.6 }}>
-                    EverFern Cloud gives you managed access to our AI models with a daily usage allowance.
-                    You've used today's allowance — it resets automatically at midnight. In the meantime you can
-                    switch to your own API key in Settings to keep going, or check your usage details there.
-                </p>
-            </div>
-        </div>
-    );
-}
-
-function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
-    const { theme } = useTheme();
-    const isDark = theme === 'dark';
-
-    const handleUpgradeClick = () => {
-        const pricingUrl = 'https://everfern.app/pricing';
-        if ((window as any).electronAPI?.system?.openExternal) {
-            (window as any).electronAPI.system.openExternal(pricingUrl);
-        } else if ((window as any).electronAPI?.shell?.openExternal) {
-            (window as any).electronAPI.shell.openExternal(pricingUrl);
-        } else {
-            window.open(pricingUrl, '_blank');
-        }
-        onUpgrade();
-    };
-
-    return (
-        <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '10px 16px',
-            width: '100%',
-            boxSizing: 'border-box',
-        }}>
-            <span style={{
-                fontSize: 13.5,
-                fontWeight: 400,
-                color: isDark ? '#e3e1d9' : '#4a4846',
-                fontFamily: 'var(--font-sans)',
-                letterSpacing: '-0.01em',
-            }}>
-                You are out of free <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted', cursor: 'default' }}>messages</span> until 12:00 AM
-            </span>
-            <button
-                type="button"
-                onClick={handleUpgradeClick}
-                style={{
-                    backgroundColor: isDark ? '#ffffff' : '#111111',
-                    color: isDark ? '#111111' : '#ffffff',
-                    padding: '5px 14px',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    flexShrink: 0,
-                    letterSpacing: '-0.01em',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-            >
-                Upgrade
-            </button>
-        </div>
-    );
-}
-
-function PromptWrapper({
-    isCloudUsageOver,
-    onUpgrade,
-    children,
-}: {
-    isCloudUsageOver: boolean;
-    onUpgrade: () => void;
-    children: React.ReactNode;
-}) {
-    const { theme } = useTheme();
-    const isDark = theme === 'dark';
-
-    if (!isCloudUsageOver) {
-        return <>{children}</>;
-    }
-
-    return (
-        <div style={{
-            width: "100%",
-            backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 20,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            boxSizing: "border-box",
-        }}>
-            <EverFernCloudUsageBanner onUpgrade={onUpgrade} />
-            <div style={{ width: "100%" }}>
-                {children}
-            </div>
-        </div>
-    );
-}
-
 export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
@@ -2473,17 +2247,63 @@ export default function ChatPage() {
         };
     }, []);
 
-    // JSON Viewer keyboard shortcut (Ctrl+Shift+J)
+    // Application Keyboard Shortcuts Listener
     useEffect(() => {
-        const handleKeyDown = (e: Event) => {
-            const ke = e as unknown as KeyboardEvent<HTMLDivElement>;
-            if ((ke.metaKey || ke.ctrlKey) && ke.shiftKey && ke.key === "J") {
-                ke.preventDefault();
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                // Allow normal typing inside input fields unless Ctrl modifier is held
+                if (!e.ctrlKey && !e.metaKey) return;
+            }
+
+            const savedKeybinds = localStorage.getItem('everfern_keybinds');
+            const keybinds = savedKeybinds ? JSON.parse(savedKeybinds) : [
+                { id: 'open_settings', key: 'Ctrl+,' },
+                { id: 'new_chat', key: 'Ctrl+N' },
+                { id: 'search_history', key: 'Ctrl+K' },
+                { id: 'toggle_sidebar', key: 'Ctrl+B' },
+                { id: 'toggle_voice', key: 'Ctrl+Alt' },
+            ];
+
+            const activeKeys: string[] = [];
+            if (e.ctrlKey || e.metaKey) activeKeys.push('Ctrl');
+            if (e.altKey) activeKeys.push('Alt');
+            if (e.shiftKey) activeKeys.push('Shift');
+            if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                activeKeys.push(e.key.toUpperCase());
+            }
+            const currentCombo = activeKeys.join('+');
+
+            const match = keybinds.find((kb: any) => kb.key.toUpperCase() === currentCombo.toUpperCase());
+            if (match) {
+                e.preventDefault();
+                switch (match.id) {
+                    case 'open_settings':
+                        setShowSettings(prev => !prev);
+                        break;
+                    case 'new_chat':
+                        setActiveConversationId(null);
+                        setMessages([]);
+                        break;
+                    case 'search_history':
+                        setShowSearch(true);
+                        break;
+                    case 'toggle_sidebar':
+                        setSidebarOpen(prev => !prev);
+                        break;
+                    case 'toggle_voice':
+                        setIsRecording(prev => !prev);
+                        break;
+                }
+            }
+
+            // Developer JSON Viewer shortcut (Ctrl+Shift+J)
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toUpperCase() === "J") {
+                e.preventDefault();
                 handleShowJsonViewer();
             }
         };
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
+        window.addEventListener("keydown", handleKeyDown as any);
+        return () => window.removeEventListener("keydown", handleKeyDown as any);
     }, []);
 
     // Listen for acp:show-json-viewer event from main process
@@ -2933,7 +2753,7 @@ export default function ChatPage() {
                 // tool calls in the same burst don't inherit the same caption.
                 // Priority: backend _narrative (from toolArgs) > streamed text from chat bubble
                 const backendNarrative = typeof toolArgs?._narrative === 'string' ? toolArgs._narrative.trim() :
-                                        typeof toolArgs?.narrative === 'string' ? toolArgs.narrative.trim() : '';
+                    typeof toolArgs?.narrative === 'string' ? toolArgs.narrative.trim() : '';
                 const streamNarrative = streamingContentRef.current.trim();
                 const narrativeText = backendNarrative || streamNarrative;
 
@@ -5371,7 +5191,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
                                 const tempCtx = new AudioContextClass();
                                 const decodedBuffer = await tempCtx.decodeAudioData(arrayBuffer);
-                                tempCtx.close().catch(() => {});
+                                tempCtx.close().catch(() => { });
 
                                 const targetSampleRate = 16000;
                                 const offlineCtx = new OfflineAudioContext(
@@ -5477,7 +5297,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
                     const isVoiceEnabled = !!voiceProvider && (
-                        voiceProvider === 'local' || 
+                        voiceProvider === 'local' ||
                         (voiceProvider === 'deepgram' && !!voiceDeepgramKey?.trim())
                     );
                     if (!isVoiceEnabled) {
@@ -5579,7 +5399,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         response: cleanContent || 'Task completed successfully.',
                         followUps: followUps || []
                     });
-                    
+
                     // After a brief delay to show the completed checkmark, go back to idle.
                     if (overlayIdleTimeoutRef.current) clearTimeout(overlayIdleTimeoutRef.current);
                     overlayIdleTimeoutRef.current = setTimeout(() => {
@@ -5626,7 +5446,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 } else if (streamingThought) {
                     actionText = streamingThought;
                 }
-                
+
                 (window as any).electronAPI.voiceOverlay.sendState?.({
                     state: 'executing',
                     action: actionText
@@ -5962,47 +5782,47 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     )}
 
                                                     <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
-                                                    {/* Progressive input container */}
-                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
-                                                        {renderSubagentSpawnAttachment()}
-                                                        {renderAttachmentStrip()}
-                                                        {isRecording && recordingSource === 'button' ? (
-                                                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
-                                                                {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
-                                                                    <div
-                                                                        key={i}
-                                                                        style={{
-                                                                            width: 4,
-                                                                            height: Math.max(6, level * 0.5),
-                                                                            borderRadius: 2,
-                                                                            backgroundColor: "var(--color-accent, #3b82f6)",
-                                                                            transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
-                                                                        }}
-                                                                        className="waveform-bar"
-                                                                    />
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                                activeUserQuestions.length > 0
-                                                                    ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
-                                                                    : showHitlApproval
-                                                                        ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
-                                                                        : "How can I help you today?"
-                                                            } rows={1}
-                                                                disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                                className="placeholder-[var(--color-text-placeholder)]"
-                                                                style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
-                                                        )}
+                                                        {/* Progressive input container */}
+                                                        <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
+                                                            {renderSubagentSpawnAttachment()}
+                                                            {renderAttachmentStrip()}
+                                                            {isRecording && recordingSource === 'button' ? (
+                                                                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
+                                                                    {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
+                                                                        <div
+                                                                            key={i}
+                                                                            style={{
+                                                                                width: 4,
+                                                                                height: Math.max(6, level * 0.5),
+                                                                                borderRadius: 2,
+                                                                                backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                                transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                                                                            }}
+                                                                            className="waveform-bar"
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                                    activeUserQuestions.length > 0
+                                                                        ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                        : showHitlApproval
+                                                                            ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                            : "How can I help you today?"
+                                                                } rows={1}
+                                                                    disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                                    className="placeholder-[var(--color-text-placeholder)]"
+                                                                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
+                                                            )}
 
-                                                        {/* Progressive fade at the bottom of the textarea */}
-                                                        <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
-                                                        <div style={{ flex: 1 }} />
-                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
-                                                            {renderComposerLeftActions()}
-                                                            {renderComposerRightActions(false)}
+                                                            {/* Progressive fade at the bottom of the textarea */}
+                                                            <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
+                                                            <div style={{ flex: 1 }} />
+                                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
+                                                                {renderComposerLeftActions()}
+                                                                {renderComposerRightActions(false)}
+                                                            </div>
                                                         </div>
-                                                    </div>
                                                     </PromptWrapper>
                                                     {renderShortcutsLegend()}
 
@@ -6614,7 +6434,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             )}
                                         </AnimatePresence>
 
-<div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+                                        <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                                             {/* Task 7.4: Local Execution Permission Card — above input */}
                                             {localExecutionRequest && (
                                                 <div style={{ padding: '0 0 12px' }}>
@@ -6638,135 +6458,135 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     />
                                                 </div>
                                             )}
-                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
-                                            <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
-                                                {/* Memory Preference Banner */}
-                                                {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, y: -8 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        exit={{ opacity: 0, y: -8 }}
-                                                        transition={{ duration: 0.2 }}
-                                                        style={{
-                                                            margin: "12px 16px 0",
-                                                            padding: "12px 14px",
-                                                            backgroundColor: "var(--color-bg-subtle)",
-                                                            border: "1px solid var(--color-border)",
-                                                            borderLeft: "3px solid var(--color-navis-active-border)",
-                                                            borderRadius: 10,
-                                                            display: "flex",
-                                                            flexDirection: "column",
-                                                            gap: 8,
-                                                        }}
-                                                    >
-                                                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-active-border)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                                                                <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
-                                                                <path d="M12 8v4M12 16h.01" />
-                                                            </svg>
-                                                            <div style={{ flex: 1 }}>
-                                                                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
-                                                                    From your previous preferences
+                                            <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
+                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
+                                                    {/* Memory Preference Banner */}
+                                                    {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, y: -8 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -8 }}
+                                                            transition={{ duration: 0.2 }}
+                                                            style={{
+                                                                margin: "12px 16px 0",
+                                                                padding: "12px 14px",
+                                                                backgroundColor: "var(--color-bg-subtle)",
+                                                                border: "1px solid var(--color-border)",
+                                                                borderLeft: "3px solid var(--color-navis-active-border)",
+                                                                borderRadius: 10,
+                                                                display: "flex",
+                                                                flexDirection: "column",
+                                                                gap: 8,
+                                                            }}
+                                                        >
+                                                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-active-border)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                                                    <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
+                                                                    <path d="M12 8v4M12 16h.01" />
+                                                                </svg>
+                                                                <div style={{ flex: 1 }}>
+                                                                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                        From your previous preferences
+                                                                    </div>
+                                                                    <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
+                                                                        {memoryPreferenceBanner.preference}
+                                                                    </div>
                                                                 </div>
-                                                                <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
-                                                                    {memoryPreferenceBanner.preference}
-                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 2, flexShrink: 0 }}
+                                                                >
+                                                                    <XMarkIcon width={14} height={14} />
+                                                                </button>
                                                             </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 2, flexShrink: 0 }}
-                                                            >
-                                                                <XMarkIcon width={14} height={14} />
-                                                            </button>
+                                                            <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                                    style={{
+                                                                        fontSize: 11.5, fontWeight: 500,
+                                                                        padding: "4px 12px", borderRadius: 6,
+                                                                        backgroundColor: "var(--color-navis-active-text)", color: "var(--color-bg-base)",
+                                                                        border: "none", cursor: "pointer",
+                                                                    }}
+                                                                >
+                                                                    Continue this way
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
+                                                                        setInputValue("I'd like to do this differently — ");
+                                                                        setTimeout(() => textareaRef.current?.focus(), 50);
+                                                                    }}
+                                                                    style={{
+                                                                        fontSize: 11.5, fontWeight: 500,
+                                                                        padding: "4px 12px", borderRadius: 6,
+                                                                        backgroundColor: "transparent", color: "var(--color-text-secondary)",
+                                                                        border: "1px solid var(--color-border)", cursor: "pointer",
+                                                                    }}
+                                                                >
+                                                                    Do it differently
+                                                                </button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+
+                                                    {/* User Question Form (single or multiple questions) */}
+                                                    {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
+                                                        <div style={{ padding: '16px 20px 0' }}>
+                                                            <UserQuestionForm
+                                                                questions={activeUserQuestions}
+                                                                onSubmit={handleQuestionSubmit}
+                                                                previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                            />
                                                         </div>
-                                                        <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                                style={{
-                                                                    fontSize: 11.5, fontWeight: 500,
-                                                                    padding: "4px 12px", borderRadius: 6,
-                                                                    backgroundColor: "var(--color-navis-active-text)", color: "var(--color-bg-base)",
-                                                                    border: "none", cursor: "pointer",
-                                                                }}
-                                                            >
-                                                                Continue this way
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
-                                                                    setInputValue("I'd like to do this differently — ");
-                                                                    setTimeout(() => textareaRef.current?.focus(), 50);
-                                                                }}
-                                                                style={{
-                                                                    fontSize: 11.5, fontWeight: 500,
-                                                                    padding: "4px 12px", borderRadius: 6,
-                                                                    backgroundColor: "transparent", color: "var(--color-text-secondary)",
-                                                                    border: "1px solid var(--color-border)", cursor: "pointer",
-                                                                }}
-                                                            >
-                                                                Do it differently
-                                                            </button>
+                                                    )}
+
+                                                    {/* HITL Approval Form */}
+                                                    {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
+                                                        <div style={{ padding: '16px 20px 0' }}>
+                                                            <HitlApprovalForm
+                                                                request={hitlRequest}
+                                                                onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                                onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                            />
                                                         </div>
-                                                    </motion.div>
-                                                )}
+                                                    )}
 
-                                                {/* User Question Form (single or multiple questions) */}
-                                                {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
-                                                    <div style={{ padding: '16px 20px 0' }}>
-                                                        <UserQuestionForm
-                                                            questions={activeUserQuestions}
-                                                            onSubmit={handleQuestionSubmit}
-                                                            previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                        />
+                                                    {renderSubagentSpawnAttachment()}
+                                                    {renderAttachmentStrip()}
+                                                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                                        <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
+                                                            <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                                activeUserQuestions.length > 0
+                                                                    ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                    : showHitlApproval
+                                                                        ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                        : "How can I help you today?"
+                                                            } rows={1}
+                                                                disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                                style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
+                                                        </div>
+
+
                                                     </div>
-                                                )}
+                                                    {(isRecording || voiceLoading || voiceTranscript) && (
+                                                        <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                                                            {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
+                                                            {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
+                                                            {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
+                                                        </div>
+                                                    )}
 
-                                                {/* HITL Approval Form */}
-                                                {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
-                                                    <div style={{ padding: '16px 20px 0' }}>
-                                                        <HitlApprovalForm
-                                                            request={hitlRequest}
-                                                            onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                            onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                        />
+                                                    <div style={{ flex: 1 }} />
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px" }}>
+                                                        {renderComposerLeftActions()}
+                                                        {renderComposerRightActions(true)}
                                                     </div>
-                                                )}
-
-                                                {renderSubagentSpawnAttachment()}
-                                                {renderAttachmentStrip()}
-                                                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                                                    <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
-                                                        <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                            activeUserQuestions.length > 0
-                                                                ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
-                                                                : showHitlApproval
-                                                                    ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
-                                                                    : "How can I help you today?"
-                                                        } rows={1}
-                                                            disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                            style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
-                                                    </div>
-
-
                                                 </div>
-                                                {(isRecording || voiceLoading || voiceTranscript) && (
-                                                    <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                                                        {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
-                                                        {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
-                                                        {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
-                                                    </div>
-                                                )}
-
-                                                <div style={{ flex: 1 }} />
-                                                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px" }}>
-                                                    {renderComposerLeftActions()}
-                                                    {renderComposerRightActions(true)}
-                                                </div>
-                                             </div>
-                                             </PromptWrapper>
+                                            </PromptWrapper>
                                             {renderShortcutsLegend()}
                                             <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
                                                 Everfern is an agentic AI and can make mistakes. Please double-check responses.
@@ -6997,31 +6817,26 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         const content = typeof m.content === 'string' ? m.content : '';
                                         return content.includes('[PLAN_APPROVED]');
                                     });
-                                    const shouldShowApproveButton = !isLoading && !isPlanAlreadyApproved;
                                     return (
-                                        <motion.div key="exec-plan" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12, overflow: "hidden", minHeight: 480, width: "100%" }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: "12px 14px", borderBottom: '1px solid var(--color-border-subtle)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <div style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        {isLoading ? (
-                                                            <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10" stroke="var(--color-border)" strokeWidth="4" /><path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="var(--color-text-primary)" stroke="none" /></svg>
-                                                        ) : (
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                                                        )}
-                                                    </div>
-                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Execution Plan</span>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: 6 }}>
-                                                    {shouldShowApproveButton && (
-                                                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`; setInputValue(msg); setTimeout(() => { const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement; if (sendBtn) sendBtn.click(); }, 100); }} style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-inverse)", backgroundColor: "var(--color-text-primary)", padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", boxShadow: "none" }}>Approve</button>
-                                                    )}
-                                                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsExecutionPlanPaneOpen(false); if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true"); }} style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-bg-subtle)', border: 'none', borderRadius: 6, cursor: 'pointer' }} title="Close"><XMarkIcon width={14} height={14} color="var(--color-text-secondary)" /></button>
-                                                </div>
-                                            </div>
-                                            <div style={{ padding: "12px 14px", maxHeight: 600, overflowY: 'auto', fontSize: 12, fontFamily: "'Figtree', system-ui, sans-serif", color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                                                <MarkdownRenderer content={executionPlan.content} />
-                                            </div>
-                                        </motion.div>
+                                        <ExecutionPlanPane
+                                            executionPlan={executionPlan.content}
+                                            isLoading={isLoading}
+                                            isPlanAlreadyApproved={isPlanAlreadyApproved}
+                                            onApprove={() => {
+                                                setIsExecutionPlanPaneOpen(false);
+                                                if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
+                                                const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`;
+                                                setInputValue(msg);
+                                                setTimeout(() => {
+                                                    const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement;
+                                                    if (sendBtn) sendBtn.click();
+                                                }, 100);
+                                            }}
+                                            onClose={() => {
+                                                setIsExecutionPlanPaneOpen(false);
+                                                if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
+                                            }}
+                                        />
                                     );
                                 })()}
                             </AnimatePresence>

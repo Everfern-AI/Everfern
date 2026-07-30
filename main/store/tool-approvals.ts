@@ -11,6 +11,10 @@ export interface ToolApprovalPolicy {
   toolName: string;
   pattern: string;
   createdAt: string;
+  // Issue #15 Fix: Optional conversation scope. When set, this policy only
+  // applies within the given conversationId and is cleared on session end.
+  // Policies without a conversationId are global (user-intentional 'always allow').
+  conversationId?: string;
 }
 
 const POLICIES_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-approvals.json');
@@ -56,16 +60,21 @@ export class ToolApprovalStore {
       createdAt: new Date().toISOString(),
     };
     
-    // Avoid duplicates
+    // Avoid duplicates (match within the same scope — same conversationId or both global)
     const exists = this.policies.some(p => 
       p.type === newPolicy.type && 
       p.toolName === newPolicy.toolName && 
-      p.pattern === newPolicy.pattern
+      p.pattern === newPolicy.pattern &&
+      p.conversationId === newPolicy.conversationId
     );
     
     if (!exists) {
       this.policies.push(newPolicy);
-      this.save();
+      // Only persist global policies (no conversationId) to disk;
+      // session-scoped ones live only in memory and are cleared on session end.
+      if (!newPolicy.conversationId) {
+        this.save();
+      }
     }
     
     return newPolicy;
@@ -74,7 +83,7 @@ export class ToolApprovalStore {
   /**
    * Check if a tool call matches any auto-approval policy
    */
-  isApproved(toolName: string, args: Record<string, any>): boolean {
+  isApproved(toolName: string, args: Record<string, any>, conversationId?: string): boolean {
     const cmdTools = ['terminal_execute', 'executePwsh', 'run_command', 'bash'];
 
     // Auto-approve common safe read-only terminal commands
@@ -93,6 +102,8 @@ export class ToolApprovalStore {
 
     for (const policy of this.policies) {
       if (policy.toolName !== toolName) continue;
+      // Issue #15 Fix: Only apply session-scoped policies within their own session.
+      if (policy.conversationId && policy.conversationId !== conversationId) continue;
       
       if (cmdTools.includes(toolName)) {
         const cmd = (args.command || args.CommandLine || args.cmd || '').trim();
@@ -148,6 +159,21 @@ export class ToolApprovalStore {
   clearAllPolicies(): void {
     this.policies = [];
     this.save();
+  }
+
+  /**
+   * Issue #15 Fix: Clear all session-scoped policies for a given conversation.
+   * Call this at the end of each session (after session lock release) to prevent
+   * session-specific approvals from leaking into future conversations.
+   */
+  clearSessionPolicies(conversationId: string): void {
+    const before = this.policies.length;
+    this.policies = this.policies.filter(p => p.conversationId !== conversationId);
+    const removed = before - this.policies.length;
+    if (removed > 0) {
+      console.log(`[ToolApprovalStore] Cleared ${removed} session-scoped policies for session ${conversationId}`);
+    }
+    // Session-scoped policies are never persisted, so no save() call needed.
   }
 }
 

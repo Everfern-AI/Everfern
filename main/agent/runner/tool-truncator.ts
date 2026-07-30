@@ -123,7 +123,15 @@ const ALWAYS_INCLUDE = new Set<string>([
   // Subagent
   'spawn_agent',
   'spawn_swarm',
+  // Issue #19 Fix: task_complete, update_step, and execution_plan are structural
+  // lifecycle tools the agent MUST always have. Without task_complete the agent
+  // cannot signal completion and will run until maxIterations. Without update_step
+  // it cannot update plan progress. These must never be truncated regardless of task.
+  'task_complete',
+  'update_step',
+  'execution_plan',
 ]);
+
 
 function scoreTaskText(text: string, signals: string[]): number {
   if (!text) return 0;

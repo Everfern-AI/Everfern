@@ -49,14 +49,52 @@ export class CognitiveRouter {
 
     this.runner.telemetry.info(`[CognitiveRouter] Starting routing analysis for request: "${userRequest.slice(0, 80)}..."`);
 
-    // Sub-agent constraint: sub-agents cannot delegate further
+    // Issue #6 Fix: Previous lists were too narrow (3 words each) meaning most
+    // real intents fell through to continue_brain. Expanded to cover common
+    // synonyms so sub-agents actually reach the right specialist.
     if (isSubAgent) {
-      this.runner.telemetry.info('[CognitiveRouter] Sub-agent detected, skipping ReAct loop to avoid delegation loops.');
+      this.runner.telemetry.info('[CognitiveRouter] Sub-agent detected, applying direct domain routing.');
+      const subIntent = (state.currentIntent || '').toLowerCase();
+      let subDecision: RoutingDecision = 'continue_brain';
+      const codingKeywords = ['coding', 'build', 'fix', 'refactor', 'debug', 'test', 'implement', 'scaffold', 'compile', 'lint', 'deploy', 'migrate', 'typescript', 'javascript', 'python'];
+      const webKeywords = ['web', 'browser', 'booking', 'navigate', 'scrape', 'crawl', 'form', 'login', 'click', 'fetch', 'url', 'http'];
+      const dataKeywords = ['data', 'csv', 'excel', 'spreadsheet', 'sql', 'database', 'analyze', 'statistics', 'plot', 'chart', 'dataset'];
+      const researchKeywords = ['research', 'search', 'investigate', 'summarize', 'literature', 'academic', 'survey', 'synthesis'];
+
+      if (codingKeywords.some(k => subIntent.includes(k))) subDecision = 'route_coding';
+      else if (webKeywords.some(k => subIntent.includes(k))) subDecision = 'route_web_explorer';
+      else if (dataKeywords.some(k => subIntent.includes(k))) subDecision = 'route_data_analyst';
+      else if (researchKeywords.some(k => subIntent.includes(k))) subDecision = 'route_deep_research';
+
       return {
-        decision: 'continue_brain',
+        decision: subDecision,
         confidence: 1.0,
-        explanation: 'Sub-agent must handle tasks directly using local tools.'
+        explanation: `Sub-agent mapped directly to domain ${subDecision}.`
       };
+    }
+
+    // Fast path: direct intent mapping to eliminate 2-5s ReAct LLM routing latency for obvious tasks
+    const normReq = userRequest.toLowerCase();
+    const normIntent = (intent || '').toLowerCase();
+
+    if (normIntent === 'coding' || normReq.includes('code') || normReq.includes('fix bug') || normReq.includes('build app') || normReq.includes('create file')) {
+      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: coding domain.');
+      return { decision: 'route_coding', confidence: 0.95, explanation: 'Fast path: coding task detected.' };
+    }
+    if (normIntent === 'web' || normReq.includes('browse') || normReq.includes('http://') || normReq.includes('https://') || normReq.includes('search web')) {
+      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: web domain.');
+      return { decision: 'route_web_explorer', confidence: 0.95, explanation: 'Fast path: web browsing task detected.' };
+    }
+    // Issue #7 Fix: Removed '.json' from the data analyst fast-path matcher.
+    // Coding tasks like "read package.json", "update tsconfig.json" all contain
+    // '.json' and were being misrouted to the data analyst specialist.
+    if (normIntent === 'data' || normReq.includes('.csv') || normReq.includes('.xlsx') || normReq.includes('dataset')) {
+      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: data domain.');
+      return { decision: 'route_data_analyst', confidence: 0.95, explanation: 'Fast path: data analysis task detected.' };
+    }
+    if (normIntent === 'research' || normReq.includes('deep research') || normReq.includes('investigate')) {
+      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: research domain.');
+      return { decision: 'route_deep_research', confidence: 0.95, explanation: 'Fast path: research task detected.' };
     }
 
     const reactMessages: any[] = [

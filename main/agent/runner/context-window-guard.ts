@@ -20,25 +20,43 @@ export interface ContextUsage {
 }
 
 // Model context windows (approximate)
+// Issue #24 Fix: The 'claude-3-5-sonnet-202410' key was a typo (missing '22' suffix
+// in the date). Rather than hardcode fragile date-suffixed keys that must be kept
+// in sync with Anthropic's releases, we rely on the fuzzy provider-prefix fallback
+// (lower.includes('claude') → 200000) which correctly handles any Claude model the
+// user's provider sends. The exact-match table is kept for non-Anthropic models only
+// where the fuzzy match is insufficient.
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+    // OpenAI
     'gpt-4o': 128000,
     'gpt-4o-mini': 128000,
     'gpt-4-turbo': 128000,
     'gpt-4': 8192,
-    'claude-3-5-sonnet-202410': 200000,
-    'claude-3-opus-202402': 200000,
-    'claude-3-sonnet-202402': 200000,
-    'claude-3-haiku-202403': 200000,
-    'deepseek-v4-flash': 64000,
-    'deepseek-v4-pro': 128000,
-    'deepseek-coder': 16000,
+    // OpenAI reasoning
     'o1-preview': 128000,
     'o1-mini': 128000,
     'o3-mini': 128000,
+    'o1': 200000,
+    'o3': 200000,
+    // DeepSeek
+    'deepseek-v4-flash': 64000,
+    'deepseek-v4-pro': 128000,
+    'deepseek-coder': 16000,
+    // Gemini
     'gemini-1.5-pro': 1000000,
     'gemini-1.5-flash': 1000000,
+    'gemini-2.0-flash': 1000000,
+    'gemini-2.5-pro': 1000000,
+    // LLaMA
     'llama-3.1-70b': 128000,
     'llama-3.1-8b': 128000,
+    // Issue #12 Fix: EverFern cloud models — add explicit entries so context window
+    // guard doesn't silently fall back to a potentially wrong 128k default for
+    // fern-branded models that may have smaller underlying context windows.
+    'fern-1': 128000,
+    'fern-2': 200000,
+    'everfern-pro': 200000,
+    'everfern-lite': 128000,
 };
 
 export function getContextWindowForModel(model: string): number {
@@ -51,12 +69,20 @@ export function getContextWindowForModel(model: string): number {
 
     // Check known provider prefixes/patterns first for better estimation
     if (lower.includes('gemini')) return 1000000;
+    // Claude models: all modern Claude variants have 200k context.
+    // We rely on the provider prefix rather than hardcoded date-suffixed keys
+    // so any model string the user's Anthropic provider sends (e.g. claude-sonnet-4-5,
+    // claude-3-5-haiku-20241022, etc.) is matched without needing a new entry.
     if (lower.includes('claude')) return 200000;
     if (lower.includes('deepseek')) {
         if (lower.includes('flash')) return 64000;
         return 128000;
     }
     if (lower.includes('gpt-4') || lower.includes('gpt-3.5') || lower.includes('o1') || lower.includes('o3') || lower.includes('llama-3.1')) {
+        return 128000;
+    }
+    // EverFern-branded models: fuzzy match on 'fern' prefix
+    if (lower.startsWith('fern') || lower.startsWith('everfern')) {
         return 128000;
     }
 

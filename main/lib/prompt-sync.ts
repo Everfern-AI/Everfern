@@ -10,32 +10,51 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 
-const PROMPTS_SOURCE_DIR = (() => {
-  // Try several candidates for the prompts source directory
+function getAppPathSafe(): string | null {
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getAppPath === 'function') {
+      return app.getAppPath();
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Dynamically resolves the prompts source directory across dev and production packaged apps.
+ */
+export function getPromptsSourceDir(): string {
+  const appPath = getAppPathSafe();
   const candidates = [
-    // 1. Packaged resources fallback (production exe)
+    // 1. Electron app.getAppPath() candidates (most reliable for packaged app)
+    appPath ? path.join(appPath, 'main', 'agent', 'prompts') : '',
+    appPath ? path.join(appPath, 'dist-electron', 'main', 'agent', 'prompts') : '',
+    // 2. Packaged resources fallback (production exe)
     process.resourcesPath ? path.join(process.resourcesPath, 'prompts') : '',
-    process.resourcesPath ? path.join(process.resourcesPath, 'main/agent/prompts') : '',
-    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked/dist-electron/main/agent/prompts') : '',
-    // 2. Production (dist-electron/main/lib -> dist-electron/main/agent/prompts)
-    path.join(__dirname, '../agent/prompts'),
-    // 3. Development (apps/desktop/main/lib -> apps/desktop/main/agent/prompts)
-    path.join(__dirname, '../../main/agent/prompts'),
-    // 4. Absolute project root fallback
-    path.join(process.cwd(), 'main/agent/prompts'),
-    path.join(process.cwd(), 'apps/desktop/main/agent/prompts'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'main', 'agent', 'prompts') : '',
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'agent', 'prompts') : '',
+    // 3. __dirname resolution relative to compiled output
+    path.join(__dirname, '..', 'agent', 'prompts'),
+    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts'),
+    path.join(__dirname, '..', '..', '..', 'main', 'agent', 'prompts'),
+    // 4. Working directory fallbacks
+    path.join(process.cwd(), 'main', 'agent', 'prompts'),
+    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts'),
   ].filter(Boolean);
 
   for (const cand of candidates) {
-    if (fs.existsSync(cand)) {
-      console.log(`[PromptSync] 📍 Found prompt source: ${cand}`);
-      return cand;
-    }
+    try {
+      if (fs.existsSync(cand)) {
+        return cand;
+      }
+    } catch (_) {}
   }
 
   console.error(`[PromptSync] ❌ CRITICAL: Could not find prompt source directory! Checked: ${candidates.join(', ')}`);
-  return candidates[0]; // Return default and hope for the best
-})();
+  return candidates[0] || path.join(process.cwd(), 'main', 'agent', 'prompts');
+}
+
+
 
 const PROMPTS_TARGET_DIR = path.join(os.homedir(), '.everfern', 'prompts');
 
@@ -72,12 +91,13 @@ function ensureTargetDirectory(): void {
  * Get all prompt files from source directory
  */
 function getPromptFiles(): string[] {
-  if (!fs.existsSync(PROMPTS_SOURCE_DIR)) {
-    console.warn(`[PromptSync] Source directory not found: ${PROMPTS_SOURCE_DIR}`);
+  const sourceDir = getPromptsSourceDir();
+  if (!fs.existsSync(sourceDir)) {
+    console.warn(`[PromptSync] Source directory not found: ${sourceDir}`);
     return [];
   }
 
-  return fs.readdirSync(PROMPTS_SOURCE_DIR)
+  return fs.readdirSync(sourceDir)
     .filter(file => file.endsWith('.md') && file.toLowerCase() !== 'soul.md' && file.toLowerCase() !== 'agents.md')
     .sort();
 }
@@ -86,7 +106,7 @@ function getPromptFiles(): string[] {
  * Check if a prompt file needs synchronization
  */
 function checkPromptSync(filename: string): PromptSyncInfo {
-  const sourcePath = path.join(PROMPTS_SOURCE_DIR, filename);
+  const sourcePath = path.join(getPromptsSourceDir(), filename);
   const targetPath = path.join(PROMPTS_TARGET_DIR, filename);
 
   const sourceHash = calculateFileHash(sourcePath);
@@ -108,7 +128,7 @@ function checkPromptSync(filename: string): PromptSyncInfo {
  */
 function syncPromptFile(filename: string): boolean {
   try {
-    const sourcePath = path.join(PROMPTS_SOURCE_DIR, filename);
+    const sourcePath = path.join(getPromptsSourceDir(), filename);
     const targetPath = path.join(PROMPTS_TARGET_DIR, filename);
 
     if (!fs.existsSync(sourcePath)) {
@@ -188,7 +208,7 @@ export function loadPrompt(filename: string): string | null {
       if (!success) {
         // Sync failed — try reading directly from source as fallback
         try {
-          const sourcePath = path.join(PROMPTS_SOURCE_DIR, filename);
+          const sourcePath = path.join(getPromptsSourceDir(), filename);
           if (fs.existsSync(sourcePath)) {
             const content = fs.readFileSync(sourcePath, 'utf-8');
             console.log(`[PromptSync] 📖 Loaded prompt from source (sync failed): ${filename} (${content.length} chars)`);
@@ -208,7 +228,7 @@ export function loadPrompt(filename: string): string | null {
     console.error(`[PromptSync] Failed to load prompt ${filename}:`, error);
     // Last-resort fallback: try reading directly from source directory
     try {
-      const sourcePath = path.join(PROMPTS_SOURCE_DIR, filename);
+      const sourcePath = path.join(getPromptsSourceDir(), filename);
       if (fs.existsSync(sourcePath)) {
         const content = fs.readFileSync(sourcePath, 'utf-8');
         console.log(`[PromptSync] 📖 Loaded prompt from source fallback: ${filename} (${content.length} chars)`);
@@ -259,14 +279,15 @@ export function initializePromptSync(forceSync: boolean = false): void {
  * Watch for changes and auto-sync (for development)
  */
 export function watchPrompts(): void {
-  if (!fs.existsSync(PROMPTS_SOURCE_DIR)) {
+  const sourceDir = getPromptsSourceDir();
+  if (!fs.existsSync(sourceDir)) {
     console.warn('[PromptSync] Cannot watch prompts - source directory not found');
     return;
   }
 
   console.log('[PromptSync] 👀 Watching for prompt changes...');
 
-  fs.watch(PROMPTS_SOURCE_DIR, { recursive: false }, (eventType, filename) => {
+  fs.watch(sourceDir, { recursive: false }, (eventType, filename) => {
     if (filename && filename.endsWith('.md')) {
       console.log(`[PromptSync] 📝 Detected change in ${filename}, syncing...`);
 
@@ -279,3 +300,4 @@ export function watchPrompts(): void {
     }
   });
 }
+

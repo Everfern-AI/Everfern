@@ -13,25 +13,41 @@ export interface Skill {
  * Load skills asynchronously using fs.promises for non-blocking I/O
  * This function should be used during initialization to avoid blocking the event loop
  */
-export async function loadSkillsAsync(): Promise<Skill[]> {
+let cachedSkills: Skill[] | null = null;
+let lastSkillsLoadTime = 0;
+const SKILLS_CACHE_TTL = 300000; // 5 minutes
+
+/**
+ * Invalidate the in-memory skills cache so the next request reloads from disk.
+ */
+export function invalidateSkillsCache(): void {
+  cachedSkills = null;
+  lastSkillsLoadTime = 0;
+}
+
+/**
+ * Load skills asynchronously using fs.promises for non-blocking I/O
+ * Uses in-memory caching to avoid blocking disk I/O on every prompt.
+ */
+export async function loadSkillsAsync(forceRefresh: boolean = false): Promise<Skill[]> {
+  const now = Date.now();
+  if (!forceRefresh && cachedSkills && (now - lastSkillsLoadTime < SKILLS_CACHE_TTL)) {
+    return cachedSkills;
+  }
+
   const skillsDir = getSkillsPath();
   const skills: Skill[] = [];
 
-  console.log(`[SkillsLoader] 📂 Loading skills asynchronously from: ${skillsDir}`);
-
   try {
-    // Check if directory exists using async access
     let actualSkillsDir = skillsDir;
     try {
       await fs.promises.access(skillsDir);
-      // Check if directory is empty
       const contents = await fs.promises.readdir(skillsDir);
       const hasSkills = contents.some(c => c !== '.sync-version');
       if (!hasSkills) {
         throw new Error('Skills directory is empty');
       }
     } catch {
-      console.warn(`[SkillsLoader] ⚠️ Skills directory missing or empty: ${skillsDir}`);
       // Fallback: try loading directly from built-in skills directory locations
       const fallbackPaths = [
         path.resolve(__dirname, '..', 'skills'),
@@ -50,7 +66,6 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
           await fs.promises.access(fb);
           const fbContents = await fs.promises.readdir(fb);
           if (fbContents.length > 0) {
-            console.log(`[SkillsLoader] 🔄 Fallback: Loading skills from source directory: ${fb}`);
             actualSkillsDir = fb;
             found = true;
             break;
@@ -58,19 +73,16 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
         } catch { /* skip */ }
       }
       if (!found) {
-        console.warn(`[SkillsLoader] ⚠️ No skills directory found in any fallback location.`);
+        cachedSkills = skills;
+        lastSkillsLoadTime = now;
         return skills;
       }
     }
 
-    const loadSkillFiles = async (currentPath: string, depth = 0): Promise<void> => {
-      const indent = '  '.repeat(depth);
-      console.log(`[SkillsLoader] ${indent}📁 Scanning directory: ${currentPath}`);
-      
-      const items = await fs.promises.readdir(currentPath);
-      console.log(`[SkillsLoader] ${indent}   Found ${items.length} items`);
+    const IGNORE_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out', 'coverage', '.vscode', '.idea', '__pycache__', 'venv', '.env', 'target']);
 
-      const IGNORE_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'out', 'coverage', '.vscode', '.idea', '__pycache__', 'venv', '.env', 'target']);
+    const loadSkillFiles = async (currentPath: string): Promise<void> => {
+      const items = await fs.promises.readdir(currentPath);
 
       for (const item of items) {
         const itemPath = path.join(currentPath, item);
@@ -78,70 +90,50 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
 
         if (stat.isDirectory()) {
           if (IGNORE_DIRS.has(item)) continue;
-          console.log(`[SkillsLoader] ${indent}   📁 [DIR] ${item}`);
-          await loadSkillFiles(itemPath, depth + 1);
+          await loadSkillFiles(itemPath);
         } else if (item === 'SKILL.md' || (item.endsWith('.md') && item.includes('SKILL'))) {
-          console.log(`[SkillsLoader] ${indent}   📄 [SKILL] ${item}`);
           try {
             const content = await fs.promises.readFile(itemPath, 'utf-8');
-            console.log(`[SkillsLoader] ${indent}      Parsing SKILL.md (${content.length} bytes)...`);
-
-            // Improved YAML frontmatter parser - handle quoted multiline descriptions
             const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
 
             if (match) {
               const frontmatter = match[1];
-              console.log(`[SkillsLoader] ${indent}      Found YAML frontmatter (${frontmatter.length} bytes)`);
-
-              // Extract name: handle various YAML formats
               const nameMatch = frontmatter.match(/(?:^|##\s*)name:\s*["']?([^"'\n]+)["']?/m);
-              console.log(`[SkillsLoader] ${indent}      Name match: ${nameMatch ? nameMatch[1] : 'NOT FOUND'}`);
 
-              // Extract description: handle quoted strings (single or double quotes)
               let description = '';
-              // Try double quotes first
               let descMatch = frontmatter.match(/description:\s*"([^"]*)"/m);
               if (!descMatch) {
-                // Try single quotes
                 descMatch = frontmatter.match(/description:\s*'([^']*)'/m);
               }
               if (!descMatch) {
-                // Try unquoted (up to newline)
                 descMatch = frontmatter.match(/description:\s*([^\n]+)/m);
               }
 
               if (descMatch && descMatch[1]) {
                 description = descMatch[1].trim();
               }
-              console.log(`[SkillsLoader] ${indent}      Description: ${description.slice(0, 50)}...`);
 
               if (nameMatch && nameMatch[1] && description) {
                 const skillName = nameMatch[1].trim();
                 const skillPath = itemPath.replace(/\\/g, '/');
-                console.log(`[SkillsLoader] ${indent}      ✅ Added skill: ${skillName}`);
                 skills.push({
                   name: skillName,
                   description: description,
                   path: skillPath
                 });
-              } else {
-                console.warn(`[SkillsLoader] ${indent}      ❌ Missing name or description in frontmatter`);
               }
-            } else {
-              console.warn(`[SkillsLoader] ${indent}      ❌ No YAML frontmatter found`);
             }
           } catch (err) {
-            console.error(`[SkillsLoader] ${indent}      ❌ Error parsing skill at ${itemPath}:`, err);
+            console.error(`[SkillsLoader] Error parsing skill at ${itemPath}:`, err);
           }
         }
       }
     };
 
     await loadSkillFiles(actualSkillsDir);
-    console.log(`[SkillsLoader] ✅ Async skill loading complete: Found ${skills.length} skills`);
-    for (const skill of skills) {
-      console.log(`[SkillsLoader]    • ${skill.name}`);
-    }
+    console.log(`[SkillsLoader] ✅ Loaded ${skills.length} skills into memory cache`);
+    cachedSkills = skills;
+    lastSkillsLoadTime = now;
     return skills;
   } catch (error) {
     console.error('[SkillsLoader] ❌ Error loading skills asynchronously:', error);
@@ -149,14 +141,19 @@ export async function loadSkillsAsync(): Promise<Skill[]> {
   }
 }
 
+
 /**
  * Load skills synchronously (DEPRECATED - use loadSkillsAsync instead)
  * This function performs blocking file I/O and should not be called during graph compilation
  * @deprecated Use loadSkillsAsync() instead to avoid blocking the event loop
  */
 export function loadSkills(): Skill[] {
+  if (cachedSkills) {
+    return cachedSkills;
+  }
   const skillsDir = getSkillsPath();
   const skills: Skill[] = [];
+
 
   console.log(`[SkillsLoader] 📂 Loading skills from: ${skillsDir}`);
 

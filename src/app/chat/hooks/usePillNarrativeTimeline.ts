@@ -6,8 +6,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { NarrativeTimeline } from '../../../main/agent/runner/pill-narrative/types';
-import { getPillTimelineIntegration } from '../../../main/agent/runner/pill-narrative/integration';
+import type { NarrativeTimeline } from '@/main/agent/runner/pill-narrative/types';
+import { getPillTimelineIntegration } from '@/main/agent/runner/pill-narrative/integration';
 
 /**
  * Hook for managing pill-based timeline
@@ -72,9 +72,9 @@ export function usePillTimelineInitialization(missionId: string | null, userRequ
     (async () => {
       try {
         const { initializePillTimelineIntegration } = await import(
-          '../../../main/agent/runner/pill-narrative/integration'
+          '@/main/agent/runner/pill-narrative/integration'
         );
-        const { getPooledAIClient } = await import('../../../lib/ai-client');
+        const { getPooledAIClient } = await import('@/main/lib/ai-client');
 
         // Get or create AI client
         const client = getPooledAIClient({

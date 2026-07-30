@@ -61,7 +61,7 @@ export const ToolCallGroup: React.FC<ToolCallGroupProps> = ({
             data-testid={`tool-call-group-item-${index}`}
           >
             <ToolCallRow
-              tc={toolCall}
+              tc={toolCall as any}
               isLast={index === toolCalls.length - 1}
               onClick={() => onToolCallClick?.(toolCall)}
             />

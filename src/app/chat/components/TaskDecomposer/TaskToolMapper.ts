@@ -286,6 +286,10 @@ export class TaskToolMapper implements ITaskToolMapper {
    * @returns The deserialized TaskToolMapperState
    * @throws Error if JSON is invalid or cannot be deserialized
    */
+  deserialize(json: string): TaskToolMapperState {
+    return TaskToolMapper.deserialize(json);
+  }
+
   static deserialize(json: string): TaskToolMapperState {
     try {
       const parsed: SerializedTaskToolMapperState = JSON.parse(json);

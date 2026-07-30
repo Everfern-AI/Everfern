@@ -6,24 +6,19 @@
 
   <p>
     <a href="https://everfern.app"><b>Website</b></a> ·
-    <a href="#quick-start"><b>Quick Start</b></a> ·
+    <a href="#installation"><b>Installation</b></a> ·
     <a href="#features"><b>Features</b></a> ·
+    <a href="#demo"><b>Demo</b></a> ·
     <a href="https://discord.gg/wU2DuYSP7s"><b>Discord</b></a> ·
-    <a href="https://github.com/CodenRust/Everfern/blob/main/LICENSE"><b>MIT License</b></a>
+    <a href="https://github.com/Everfern-AI/Everfern/blob/main/LICENSE"><b>MIT License</b></a>
   </p>
 
   <p>
-    <img src="https://img.shields.io/github/stars/CodenRust/Everfern?style=flat-square" />
-    <img src="https://img.shields.io/github/license/CodenRust/Everfern?style=flat-square" />
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square" />
+    <img src="https://img.shields.io/github/stars/Everfern-AI/Everfern?style=flat-square" />
+    <img src="https://img.shields.io/github/license/Everfern-AI/Everfern?style=flat-square" />
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" />
     <a href="https://discord.gg/wU2DuYSP7s"><img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   </p>
-
-  <br/>
-
-  <img src="public/demo/spotify-demo.gif" alt="EverFern opening Spotify and playing a song, controlled entirely by plain English" width="80%" />
-
-  <p><i>No scripts. No automation code. Just plain English.</i></p>
 </div>
 
 <br/>
@@ -38,22 +33,28 @@ Think of it as the free, open-source alternative to **Claude Cowork**, **Manus D
 
 <br/>
 
-<div align="center">
-  <img src="benchmark.svg" alt="EverFern benchmark comparison" width="90%" />
-</div>
-
-<br/>
-
 ### How it stacks up
 
 | | 🌿 EverFern | 🤖 Claude Cowork | 🚀 Manus Desktop | 🛠️ OpenWork |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Price** | Free forever | $20+/mo | $200+/mo | Free |
 | **Runs locally** | ✅ | ❌ Cloud only | ❌ Cloud only | ⚠️ Partial |
 | **Open source** | ✅ MIT | ❌ | ❌ | ✅ |
 | **AI providers** | 10+ (local & cloud) | Anthropic only | Locked | 3–4 |
-| **Computer use** | ✅ | ✅ | ✅ | ❌ |
 | **Browser agent** | ✅ Navis | Limited | ✅ | ❌ |
+
+<br/>
+
+## Demo
+
+**Prompt:** *"Research Cursor, the AI code editor — how teams are using it, adoption numbers, and any reported ROI or productivity data — and summarize what you find."*
+
+Navis, EverFern's built-in browser agent, opens a browser, searches, reads through multiple sources, and compiles the findings — no scripts, no scraping code, just the prompt above.
+
+<video src="https://github.com/Everfern-AI/Everfern/raw/main/public/demo/navis-cursor.mp4" controls muted width="100%">
+  Your browser doesn't support inline video. Watch it directly:
+  <a href="public/demo/navis-cursor.mp4">public/demo/navis-cursor.mp4</a>
+</video>
 
 <br/>
 
@@ -65,7 +66,7 @@ Think of it as the free, open-source alternative to **Claude Cowork**, **Manus D
 - 📚 **Reusable skills** — the agent turns what it learns into saved, reusable instructions that make future tasks faster.
 - 🛡️ **Self-healing runs** — failed terminal commands or edits trigger automatic rollback, root-cause analysis, and a retry — no babysitting required.
 - 🤝 **Peer agent debate** — for hard tasks, specialized agents argue out the best plan before executing anything.
-- 🧠 **Persistent memory** — remembers your preferences across sessions, and compresses old context by up to 80% with no information loss.
+- 🧠 **Persistent memory** — remembers your preferences across sessions, and compresses old context with no information loss.
 - 🔒 **Sandboxed execution** — every shell command runs in an isolated Linux VM, so nothing touches your real system by accident.
 - 📄 **Document handling** — reads and writes PDFs, Word, Excel, PowerPoint, and CSVs out of the box.
 - ⚙️ **Workflow builder** — chain actions, save them, schedule them, automate the boring stuff.
@@ -78,21 +79,33 @@ Run fully offline with **Ollama** or **LM Studio**, or connect to **OpenAI, Anth
 
 <br/>
 
-## Quick Start
+## Installation
 
-**Requirements:** Node.js v18+, Windows 10/11 or macOS
+### Download a build
 
-```bash
-git clone https://github.com/CodenRust/Everfern.git
+Prebuilt releases for Windows, macOS, and Linux are available at:
+[https://github.com/Everfern-AI/Everfern/releases](https://github.com/Everfern-AI/Everfern/releases)
+
+### Build from source
+
+**Prerequisites**
+
+- **macOS:** Node.js v18+
+- **Windows:** Node.js v18+ (Windows 10/11)
+- **Linux:** Node.js v18+
+
+**Steps**
+
+```
+git clone https://github.com/Everfern-AI/Everfern.git
 cd Everfern
 npm install
 npm run dev
 ```
 
-Prebuilt installers for Windows and macOS are on the [Releases](../../releases) page.
+For packaged builds:
 
-**Building for production:**
-```bash
+```
 npm run build
 npm run make
 ```
@@ -105,7 +118,7 @@ npm run make
 "Open Spotify and play my liked songs"
 "Summarize all the PDFs in my Downloads folder into one document"
 "Open VS Code and refactor the auth module to use JWT tokens"
-"Research the top 5 AI coding tools and make a comparison spreadsheet"
+"Research Cursor's ROI and adoption numbers and summarize the findings"
 "Find all my photos from last year and organize them by month"
 ```
 

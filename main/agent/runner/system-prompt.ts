@@ -257,6 +257,42 @@ Always prioritize the project path for file operations.
   return finalPrompt;
 }
 
+function getAppPathSafe(): string | null {
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getAppPath === 'function') {
+      return app.getAppPath();
+    }
+  } catch (_) {}
+  return null;
+}
+
+function getSystemPromptSearchPaths(): string[] {
+  const homedir = osHomedir();
+  const appPath = getAppPathSafe();
+  return [
+    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
+    ...(appPath ? [
+      path.join(appPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+      path.join(appPath, 'dist-electron', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+    ] : []),
+    ...(process.resourcesPath ? [
+      path.join(process.resourcesPath, 'prompts', 'SYSTEM_PROMPT.md'),
+      path.join(process.resourcesPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+    ] : []),
+    path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(__dirname, '..', 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(__dirname, '..', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(process.cwd(), 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md')
+  ].filter(Boolean);
+}
+
+
+
 /**
  * Load and assemble system prompt asynchronously using fs.promises for non-blocking I/O
  * This function should be used before graph building to avoid blocking the event loop
@@ -273,22 +309,9 @@ export async function getSlimSystemPromptAsync(
   preloadedSkills?: any[],
   projectId?: string
 ): Promise<string> {
-  const homedir = osHomedir();
-
   // Read the Markdown file asynchronously
   let promptMd = '';
-  const searchPaths = [
-    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
-    ...(process.resourcesPath ? [
-      path.join(process.resourcesPath, 'prompts', 'SYSTEM_PROMPT.md'),
-      path.join(process.resourcesPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    ] : []),
-    path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'), // Fallback from dist-electron
-    path.join(process.cwd(), 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md')
-  ];
+  const searchPaths = getSystemPromptSearchPaths();
 
   for (const mdPath of searchPaths) {
     try {
@@ -340,22 +363,9 @@ export function getSlimSystemPrompt(
     return cached;
   }
 
-  const homedir = osHomedir();
-
   // Read the Markdown file (cache this separately if needed)
   let promptMd = '';
-  const searchPaths = [
-    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
-    ...(process.resourcesPath ? [
-      path.join(process.resourcesPath, 'prompts', 'SYSTEM_PROMPT.md'),
-      path.join(process.resourcesPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    ] : []),
-    path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'), // Fallback from dist-electron
-    path.join(process.cwd(), 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md')
-  ];
+  const searchPaths = getSystemPromptSearchPaths();
 
   for (const mdPath of searchPaths) {
     try {
@@ -373,6 +383,7 @@ export function getSlimSystemPrompt(
     console.error('[SystemPrompt] ❌ Failed to read SYSTEM_PROMPT.md from any search path.');
     promptMd = '# EverFern System Prompt\n(Error loading full prompt file - check logs)';
   }
+
 
   const skills = loadSkills();
   const skillsTable = formatSkillsForPrompt(skills);
