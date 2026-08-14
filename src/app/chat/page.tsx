@@ -5286,13 +5286,26 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     const arrayBuffer = await audioBlob.arrayBuffer();
 
                     let transcript = '';
-                    const effectiveDeepgramKey = voiceDeepgramKey.trim() || '6366f322f239a28a5f689ec90667833d23266b6c';
-                    if ((voiceProvider === "deepgram" || voiceProvider === "everfern") && effectiveDeepgramKey) {
+                    if (voiceProvider === "deepgram" || voiceProvider === "everfern") {
                         try {
-                            const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', { method: 'POST', headers: { 'Authorization': `Token ${effectiveDeepgramKey}`, 'Content-Type': 'audio/webm' }, body: arrayBuffer });
-                            if (response.ok) {
-                                const result = await response.json();
-                                transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+                            const sys = (window as any).electronAPI?.system;
+                            if (sys?.transcribeAudio) {
+                                const res = await sys.transcribeAudio(arrayBuffer, voiceDeepgramKey.trim() || undefined);
+                                if (res && res.success) {
+                                    transcript = res.transcript || '';
+                                } else if (res?.error) {
+                                    console.error('[Voice] Transcription error:', res.error);
+                                }
+                            } else if (voiceDeepgramKey.trim()) {
+                                const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', {
+                                    method: 'POST',
+                                    headers: { 'Authorization': `Token ${voiceDeepgramKey.trim()}`, 'Content-Type': 'audio/webm' },
+                                    body: arrayBuffer
+                                });
+                                if (response.ok) {
+                                    const result = await response.json();
+                                    transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+                                }
                             }
                         } catch (error) {
                             console.error('[Voice] Transcription error:', error);
