@@ -7,6 +7,16 @@
 
 // ── Browser State ────────────────────────────────────────────────────────────
 
+export interface DetectedFormInfo {
+  id: string;
+  name: string;
+  tag?: string;
+  inputCount: number;
+  rect?: { x: number; y: number; width: number; height: number };
+  refs?: string[];
+  isFocused?: boolean;
+}
+
 export interface BrowserPageState {
   tabId?: number;
   url: string;
@@ -14,6 +24,9 @@ export interface BrowserPageState {
   text?: string;
   refs: RefMetadata[];
   tabs: TabInfo[];
+  forms?: DetectedFormInfo[];
+  activeForm?: DetectedFormInfo | null;
+  scopedForm?: DetectedFormInfo | null;
   snapshot?: unknown;
   mode: 'extension' | 'playwright';
 }
@@ -151,7 +164,9 @@ export type ActionName =
   | 'browser_type'
   | 'browser_double_click'
   | 'browser_right_click'
-  | 'browser_hover';
+  | 'browser_hover'
+  | 'focus_form'
+  | 'unfocus_form';
 
 export interface ActionResult {
   success: boolean;

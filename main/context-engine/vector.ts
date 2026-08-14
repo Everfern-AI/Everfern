@@ -1,30 +1,38 @@
 /**
  * EverFern Desktop — Vector Context Engine
  * 
- * Context engine that uses sqlite-vec embeddings for semantic retrieval.
- * Provides both sliding window AND vector-based retrieval for better context.
+ * Context engine that uses sqlite-vec embeddings for semantic retrieval
+ * combined with CompactingContextEngine for smart turn summarization & distillation.
  */
 
 import type { ChatMessage } from '../lib/ai-client';
-import type { ContextEngine, ContextEngineInfo, AssembleResult, CompactResult, IngestResult } from './types';
+import type {
+  ContextEngine,
+  ContextEngineInfo,
+  AssembleResult,
+  CompactResult,
+  IngestResult,
+  CompactionOptions,
+  DAGNodeState,
+} from './types';
 import {
   embedAndStoreMessage,
   searchChatVectors,
-  getChatVectors,
-  refreshEmbeddingConfig,
   getVectorStats,
 } from '../store/chat-vectors';
-import { estimateTokens, estimateMessageTokens } from '../agent/helpers/char-estimator';
+import { CompactingContextEngine, estimateMessageTokens } from './compacting';
 
 export class VectorContextEngine implements ContextEngine {
   readonly info: ContextEngineInfo = {
     id: 'vector',
     name: 'EverFern Vector Context Engine',
-    version: '1.0.0',
+    version: '2.0.0',
+    ownsCompaction: true,
   };
 
   private sessionTokens: Map<string, number> = new Map();
   private lastAssemble: Map<string, AssembleResult> = new Map();
+  private compactor = new CompactingContextEngine();
 
   async ingest(params: {
     sessionId: string;
@@ -47,7 +55,7 @@ export class VectorContextEngine implements ContextEngine {
         Date.now()
       );
       
-      const tokens = estimateMessageTokens(message);
+      const tokens = estimateMessageTokens([message]);
       const current = this.sessionTokens.get(sessionId) || 0;
       this.sessionTokens.set(sessionId, current + tokens);
       
@@ -68,45 +76,29 @@ export class VectorContextEngine implements ContextEngine {
     tokenBudget?: number;
     model?: string;
     prompt?: string;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
   }): Promise<AssembleResult> {
     const budget = params.tokenBudget ?? 100_000;
-    const msgs = params.messages;
     const prompt = params.prompt || '';
 
-    if (msgs.length === 0) {
-      return { messages: [], estimatedTokens: 0 };
-    }
-
-    const systemMsgs = msgs.filter((m) => m.role === 'system');
-    const conversationMsgs = msgs.filter((m) => m.role !== 'system');
-
-    const systemTokens = estimateTokens(systemMsgs);
-    let remaining = budget - systemTokens;
-
-    const kept: ChatMessage[] = [];
-    for (let i = conversationMsgs.length - 1; i >= 0; i--) {
-      const msg = conversationMsgs[i];
-      const tokens = estimateMessageTokens(msg);
-      if (remaining - tokens < 0 && kept.length > 0) {
-        break;
-      }
-      kept.unshift(msg);
-      remaining -= tokens;
-    }
+    // First, perform compacting assembly
+    const baseAssemble = await this.compactor.assemble(params);
+    let remaining = budget - baseAssemble.estimatedTokens;
 
     let vectorContext: ChatMessage[] = [];
-    if (prompt && prompt.length > 10) {
+    if (prompt && prompt.length > 10 && remaining > 1000) {
       try {
-        const results = await searchChatVectors(prompt, 5, params.sessionId);
+        const results = await searchChatVectors(prompt, 4, params.sessionId);
         
         for (const result of results) {
           if (result.similarity < 0.85) continue;
           
           const ctxMsg: ChatMessage = {
             role: result.role as any,
-            content: result.content,
+            content: `[Relevant Historical Memory (Similarity: ${Math.round(result.similarity * 100)}%)]\n${result.content}`,
           };
-          const ctxTokens = estimateMessageTokens(ctxMsg);
+          const ctxTokens = estimateMessageTokens([ctxMsg]);
           
           if (remaining - ctxTokens > 0) {
             vectorContext.push(ctxMsg);
@@ -122,12 +114,23 @@ export class VectorContextEngine implements ContextEngine {
       }
     }
 
-    const assembled = [...systemMsgs, ...vectorContext, ...kept];
-    const estimatedTokens = estimateTokens(assembled);
+    if (vectorContext.length === 0) {
+      this.lastAssemble.set(params.sessionId, baseAssemble);
+      return baseAssemble;
+    }
+
+    // Merge vector context after system message(s)
+    const msgs = baseAssemble.messages;
+    const systemMsgs = msgs.filter((m) => m.role === 'system');
+    const nonSystemMsgs = msgs.filter((m) => m.role !== 'system');
+
+    const merged = [...systemMsgs, ...vectorContext, ...nonSystemMsgs];
+    const totalEst = estimateMessageTokens(merged);
 
     const result: AssembleResult = {
-      messages: assembled,
-      estimatedTokens,
+      ...baseAssemble,
+      messages: merged,
+      estimatedTokens: totalEst,
     };
     
     this.lastAssemble.set(params.sessionId, result);
@@ -136,21 +139,26 @@ export class VectorContextEngine implements ContextEngine {
 
   async compact(params: {
     sessionId: string;
+    messages?: ChatMessage[];
     tokenBudget?: number;
+    force?: boolean;
+    currentTokenCount?: number;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
   }): Promise<CompactResult> {
+    const compactRes = await this.compactor.compact(params);
     const stats = await getVectorStats();
-    
+
     return {
-      ok: true,
-      compacted: true,
-      reason: `Vector store holds ${stats.messageCount} messages (${Math.round(stats.storageSize / 1024)}KB)`,
-      freedTokens: 0,
+      ...compactRes,
+      reason: `${compactRes.reason || 'Compaction finished'}. Vector store holds ${stats.messageCount} items (${Math.round(stats.storageSize / 1024)}KB)`,
     };
   }
 
   async dispose(): Promise<void> {
     this.sessionTokens.clear();
     this.lastAssemble.clear();
+    await this.compactor.dispose();
   }
 }
 
@@ -158,11 +166,12 @@ export class HybridContextEngine implements ContextEngine {
   readonly info: ContextEngineInfo = {
     id: 'hybrid',
     name: 'EverFern Hybrid Context Engine',
-    version: '1.0.0',
+    version: '2.0.0',
+    ownsCompaction: true,
   };
 
   private vectorEngine = new VectorContextEngine();
-  private compactThreshold = 0.85;
+  private compactThreshold = 0.80;
 
   async ingest(params: { sessionId: string; message: ChatMessage }): Promise<IngestResult> {
     return this.vectorEngine.ingest(params);
@@ -174,6 +183,8 @@ export class HybridContextEngine implements ContextEngine {
     tokenBudget?: number;
     model?: string;
     prompt?: string;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
   }): Promise<AssembleResult> {
     const budget = params.tokenBudget ?? 100_000;
     const result = await this.vectorEngine.assemble(params);
@@ -181,13 +192,28 @@ export class HybridContextEngine implements ContextEngine {
     const usagePercent = result.estimatedTokens / budget;
     
     if (usagePercent >= this.compactThreshold) {
-      console.log(`[HybridContext] Context at ${Math.round(usagePercent * 100)}% — consider compacting`);
+      console.log(`[HybridContext] Context usage at ${Math.round(usagePercent * 100)}% — executing proactive compaction pass.`);
+      return this.vectorEngine.assemble({
+        ...params,
+        options: {
+          ...params.options,
+          targetBudgetRatio: 0.70,
+        },
+      });
     }
     
     return result;
   }
 
-  async compact(params: { sessionId: string; tokenBudget?: number }): Promise<CompactResult> {
+  async compact(params: {
+    sessionId: string;
+    messages?: ChatMessage[];
+    tokenBudget?: number;
+    force?: boolean;
+    currentTokenCount?: number;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
+  }): Promise<CompactResult> {
     return this.vectorEngine.compact(params);
   }
 

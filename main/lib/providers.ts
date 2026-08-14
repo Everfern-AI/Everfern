@@ -77,7 +77,6 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   lmstudio: [], // populated dynamically at runtime
   everfern: [
     'fern-1',
-    'everfern-fast',
   ],
   openrouter: [
     'openrouter/free',
@@ -375,7 +374,6 @@ export function formatModelName(id: string): string {
     'gemini-2.5-flash': 'Gemini 2.5 Flash',
     'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
     'fern-1': 'Fern-1',
-    'everfern-fast': 'Fern Fast',
     'qwen/qwen3.5-122b-a10b': 'Qwen 3.5 122B (NIM)', // thinking model
     'mistralai/mistral-small-4-119b-2603': 'Mistral Small (NIM)',
     'z-ai/glm5': 'GLM 5 (NIM)',

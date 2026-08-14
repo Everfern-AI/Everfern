@@ -24,12 +24,25 @@ export class ChatHistoryStore {
     // Migration is handled asynchronously via init()
   }
 
-  private async acquireSaveLock(): Promise<void> {
+  private async acquireSaveLock(timeoutMs = 10000): Promise<void> {
     if (!this.saveMutex) {
       this.saveMutex = true;
       return Promise.resolve();
     }
-    return new Promise(resolve => this.saveQueue.push(resolve));
+    return new Promise(resolve => {
+      let timer: NodeJS.Timeout | null = null;
+      const callback = () => {
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+      timer = setTimeout(() => {
+        const idx = this.saveQueue.indexOf(callback);
+        if (idx !== -1) this.saveQueue.splice(idx, 1);
+        console.warn('[History] Save lock acquisition timed out after', timeoutMs, 'ms; proceeding defensively.');
+        resolve();
+      }, timeoutMs);
+      this.saveQueue.push(callback);
+    });
   }
 
   private releaseSaveLock() {

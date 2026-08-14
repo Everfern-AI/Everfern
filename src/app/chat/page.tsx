@@ -103,7 +103,7 @@ import {
 } from './components/ProviderLogos';
 import { WaveformIcon, FernStarburst } from './components/UIIcons';
 import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
-import { ContextTokenRing, VoiceButton, RateLimitContinueButton } from './components/UIHelpers';
+import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton } from './components/UIHelpers';
 import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
 import { ReportContainer } from './components/ReportComponents';
 import { InlineVisualization } from './components/InlineVisualization';
@@ -139,6 +139,15 @@ import LocalExecutionPermissionCard from './components/LocalExecutionPermissionC
 
 
 
+
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+    if (!value) return fallback;
+    try {
+        return JSON.parse(value) as T;
+    } catch {
+        return fallback;
+    }
+}
 
 // ── Orchestrator noise scrubber ───────────────────────────────────────────────
 // Strips internal orchestration lines that leak into streaming/stored content.
@@ -684,14 +693,15 @@ export default function ChatPage() {
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
     const [localLimitReached, setLocalLimitReached] = useState(false);
+    const [cloudAuthError, setCloudAuthError] = useState(false);
+    const isDark = theme === 'dark';
 
     // Poll for EverFern Cloud usage
     useEffect(() => {
         const fetchUsage = async () => {
             try {
                 const sessionStr = localStorage.getItem('everfern_cloud_session');
-                if (!sessionStr) return;
-                const session = JSON.parse(sessionStr);
+                const session = safeJsonParse<any>(sessionStr, null);
                 if (!session?.accessToken) return;
                 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
                 const userRes = await fetch(`${API_URL.replace(/\/$/, '')}/api/user/me`, {
@@ -1179,7 +1189,7 @@ export default function ChatPage() {
     const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
 
     // Voice state
-    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | "local" | null>(null);
+    const [voiceProvider, setVoiceProvider] = useState<"everfern" | "deepgram" | "elevenlabs" | "local" | null>(null);
     const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
     const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
 
@@ -1617,7 +1627,7 @@ export default function ChatPage() {
                 });
             }, 5000);
             // Cancel the timer as soon as any real stream event arrives
-            const cleanup = (window as any).electronAPI?.onStreamChunk?.(() => {
+            const cleanup = (window as any).electronAPI?.acp?.onStreamChunk?.(() => {
                 clearTimeout(safetyTimer);
                 cleanup?.();
             });
@@ -1794,6 +1804,7 @@ export default function ChatPage() {
         setInstructions("");
         setActiveUserQuestions([]);
         activeUserQuestionRef.current = false;
+        setCloudAuthError(false);
         setShowHitlApproval(false);
         setHitlRequest(null);
         setLocalExecutionRequest(null);
@@ -1818,39 +1829,39 @@ export default function ChatPage() {
     const isEmpty = messages.length === 0 && !isLoading && liveToolCalls.length === 0 && !streamingContent;
     const isProjectLocked = !isEmpty && folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
     const [profileDisplayName, setProfileDisplayName] = useState<string>("");
-    const displayName = (config?.userName || onboardingName || profileDisplayName || "User").toString();
+    const displayName = (profileDisplayName || config?.displayName || config?.userName || onboardingName || "User").toString();
 
     useEffect(() => {
         let mounted = true;
         const fetchDisplayName = async () => {
             try {
                 let name = "";
+                let dispName = "";
                 if ((window as any).electronAPI?.loadConfig) {
                     const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success && res.config?.provider === 'everfern' && res.config?.apiKey) {
+                    if (res.success && res.config) {
+                        if (res.config.displayName) dispName = res.config.displayName;
+                        if (res.config.userName) name = res.config.userName;
+                    }
+                }
+                if (!dispName && !name) {
+                    const savedProfile = localStorage.getItem('everfern_profile');
+                    if (savedProfile) {
                         try {
-                            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
-                            const userRes = await fetch(`${API_URL}/api/user/me`, {
-                                headers: { Authorization: `Bearer ${res.config.apiKey}` }
-                            });
-                            if (userRes.ok) {
-                                const userData = await userRes.json();
-                                name = userData.displayName || userData.fullName || userData.name || '';
-                                if (!name && userData.email) name = userData.email.split('@')[0];
-                            }
-                        } catch (e) {
-                            console.error("Failed to fetch user from API", e);
-                        }
-                    }
-                    if (!name && res.success && res.config?.userName) {
-                        name = res.config.userName;
+                            const p = JSON.parse(savedProfile);
+                            if (p.displayName) dispName = p.displayName;
+                            if (p.userName) name = p.userName;
+                        } catch {}
                     }
                 }
-                if (!name && (window as any).electronAPI?.system?.getUsername) {
-                    name = await (window as any).electronAPI.system.getUsername();
-                }
-                if (mounted && name) {
-                    setProfileDisplayName(name);
+                const finalName = dispName || name;
+                if (!finalName && (window as any).electronAPI?.system?.getUsername) {
+                    const sysUser = await (window as any).electronAPI.system.getUsername();
+                    if (mounted && sysUser) {
+                        setProfileDisplayName(sysUser);
+                    }
+                } else if (mounted && finalName) {
+                    setProfileDisplayName(finalName);
                 }
             } catch {
                 // Keep the existing greeting fallback.
@@ -2256,13 +2267,13 @@ export default function ChatPage() {
             }
 
             const savedKeybinds = localStorage.getItem('everfern_keybinds');
-            const keybinds = savedKeybinds ? JSON.parse(savedKeybinds) : [
+            const keybinds = safeJsonParse(savedKeybinds, [
                 { id: 'open_settings', key: 'Ctrl+,' },
                 { id: 'new_chat', key: 'Ctrl+N' },
                 { id: 'search_history', key: 'Ctrl+K' },
                 { id: 'toggle_sidebar', key: 'Ctrl+B' },
                 { id: 'toggle_voice', key: 'Ctrl+Alt' },
-            ];
+            ]);
 
             const activeKeys: string[] = [];
             if (e.ctrlKey || e.metaKey) activeKeys.push('Ctrl');
@@ -2373,6 +2384,11 @@ export default function ChatPage() {
                 setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
                 setNotification({ id: conversationId, title: title || 'Chat task' });
                 setTimeout(() => setNotification(prev => prev?.id === conversationId ? null : prev), 8000);
+
+                // Auto-sync backend draft or history so when user navigates back to this chat, the completed message is immediately there
+                try {
+                    (window as any).electronAPI?.history?.load?.(conversationId);
+                } catch { }
                 return;
             }
             if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) {
@@ -3001,6 +3017,25 @@ export default function ChatPage() {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) return;
                 if (isMessageCommittedRef.current) return;
+                // Detect 401 Unauthorized streamed as error payload
+                if (delta && (delta.includes('"Unauthorized"') || delta.includes('"error":"Unauthorized"') || delta.includes('401') || delta.toLowerCase().includes('unauthorized'))) {
+                    let is401 = false;
+                    try {
+                        const parsed = JSON.parse(delta.replace(/^data:\s*/, ''));
+                        if (parsed?.error === 'Unauthorized' || parsed?.statusCode === 401) {
+                            is401 = true;
+                        }
+                    } catch {
+                        if (delta.includes('401') || delta.toLowerCase().includes('unauthorized')) {
+                            is401 = true;
+                        }
+                    }
+                    if (is401) {
+                        setCloudAuthError(true);
+                        setIsLoading(false);
+                        return;
+                    }
+                }
                 if (!done) {
                     if (delta) {
                         streamingContentRef.current += delta;
@@ -3062,7 +3097,14 @@ export default function ChatPage() {
                     assistantMessageId: assistantMessageIdRef.current,
                     operatorMode: pursueGoalMode,
                 });
-            } catch (err) { console.error("Stream error:", err); }
+            } catch (err: any) {
+                console.error("Stream error:", err);
+                // Detect 401 in thrown error message
+                const errStr = String(err?.message || err || '');
+                if (errStr.includes('401') || errStr.toLowerCase().includes('unauthorized')) {
+                    setCloudAuthError(true);
+                }
+            }
             finally { setIsLoading(false); }
         })();
     }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate]);
@@ -3821,9 +3863,23 @@ export default function ChatPage() {
                         return;
                     }
                     console.log(`[Frontend onStreamChunk] delta="${delta}", done=${done}, isMessageCommittedRef=${isMessageCommittedRef.current}`);
-                    if (isMessageCommittedRef.current) {
-                        console.log('[Frontend onStreamChunk] BLOCKED by isMessageCommittedRef guard');
-                        return;
+                    if (delta && (delta.includes('"Unauthorized"') || delta.includes('"error":"Unauthorized"') || delta.includes('401') || delta.toLowerCase().includes('unauthorized'))) {
+                        let is401 = false;
+                        try {
+                            const parsed = JSON.parse(delta.replace(/^data:\s*/, ''));
+                            if (parsed?.error === 'Unauthorized' || parsed?.statusCode === 401) {
+                                is401 = true;
+                            }
+                        } catch {
+                            if (delta.includes('401') || delta.toLowerCase().includes('unauthorized')) {
+                                is401 = true;
+                            }
+                        }
+                        if (is401) {
+                            setCloudAuthError(true);
+                            setIsLoading(false);
+                            return;
+                        }
                     }
                     if (!done) {
                         accumulated += delta;
@@ -4391,7 +4447,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 onMouseEnter={e => { if (!minimal) { e.currentTarget.style.borderColor = "var(--color-text-primary)"; } e.currentTarget.style.color = "var(--color-text-primary)"; }}
                 onMouseLeave={e => { if (!minimal) { e.currentTarget.style.borderColor = "var(--color-border)"; } e.currentTarget.style.color = "var(--color-text-primary)"; }}
             >
-                {!minimal && currentModel.logo && <currentModel.logo size={14} />}
+                {!minimal && currentModel.logo && (
+                    currentModel.providerType === 'everfern'
+                        ? <EverFernBglessLogo size={14} isDark={isDark} />
+                        : <currentModel.logo size={14} />
+                )}
                 {currentModel.name}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: minimal ? 0.7 : 1, marginLeft: minimal ? -2 : 0 }}><path d="m6 9 6 6 6-6" /></svg>
             </button>
@@ -4409,7 +4469,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         if (isDisabled) return;
                                         if (model.providerType === 'everfern') {
                                             const sessionStr = localStorage.getItem('everfern_cloud_session');
-                                            if (!sessionStr) {
+                                            const session = safeJsonParse<any>(sessionStr, null);
+                                            if (!session?.accessToken) {
                                                 setShowModelSelector(false);
                                                 router.push('/auth');
                                                 return;
@@ -4422,7 +4483,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         onMouseEnter={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                                         onMouseLeave={e => { if (selectedModel !== model.id && !isDisabled) e.currentTarget.style.background = "transparent"; }}
                                     >
-                                        {model.logo ? <model.logo size={14} /> : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
+                                        {model.logo
+                                            ? (model.providerType === 'everfern'
+                                                ? <EverFernBglessLogo size={14} isDark={isDark} />
+                                                : <model.logo size={14} />)
+                                            : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
                                         <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{model.name}</span>
                                         {selectedModel === model.id && <CheckSolidIcon width={14} height={14} className="text-indigo-400" />}
                                     </button>
@@ -4435,8 +4500,45 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         </div>
     );
 
-    const handleSaveSettings = async () => {
-        const updated: any = { ...config, engine: settingsEngine, provider: settingsEngine === "online" ? settingsProvider : settingsEngine, apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined, customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined, showuiUrl: settingsShowuiUrl || undefined };
+    const handleSaveSettings = async (
+        newProfileName?: string,
+        newDisplayName?: string,
+        newPreferences?: string,
+        newWorkFunction?: string
+    ) => {
+        let baseConfig = config || {};
+        try {
+            if ((window as any).electronAPI?.loadConfig) {
+                const loaded = await (window as any).electronAPI.loadConfig();
+                if (loaded?.config) {
+                    baseConfig = { ...baseConfig, ...loaded.config };
+                }
+            }
+        } catch { }
+
+        const updated: any = {
+            ...baseConfig,
+            engine: settingsEngine,
+            provider: settingsEngine === "online" ? settingsProvider : settingsEngine,
+            apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined,
+            customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined,
+            showuiUrl: settingsShowuiUrl || undefined
+        };
+
+        if (newProfileName !== undefined && newProfileName.trim()) {
+            updated.userName = newProfileName.trim();
+        }
+        if (newDisplayName !== undefined && newDisplayName.trim()) {
+            updated.displayName = newDisplayName.trim();
+            setProfileDisplayName(newDisplayName.trim());
+        }
+        if (newPreferences !== undefined) {
+            updated.preferences = newPreferences.trim();
+        }
+        if (newWorkFunction !== undefined) {
+            updated.workFunction = newWorkFunction;
+        }
+
         if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
@@ -4455,9 +4557,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
                 try {
                     const sessionStr = localStorage.getItem('everfern_cloud_session');
-                    if (sessionStr) {
-                        const session = JSON.parse(sessionStr);
-                        finalCloudKey = session?.accessToken;
+                    const session = safeJsonParse<any>(sessionStr, null);
+                    if (session?.accessToken) {
+                        finalCloudKey = session.accessToken;
                     }
                 } catch (e) { }
             }
@@ -4471,11 +4573,22 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             };
         }
         else if (config?.vlm) { updated.vlm = config.vlm; }
-        if (voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
+        if (voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
         // Embedding config
         updated.embedding = { provider: embeddingProvider, model: embeddingModel, apiKey: embeddingApiKey };
         setConfig(updated);
         if ((window as any).electronAPI?.saveConfig) await (window as any).electronAPI.saveConfig(updated);
+
+        // Also update local storage profile cache
+        if (updated.userName || updated.displayName) {
+            localStorage.setItem('everfern_profile', JSON.stringify({
+                userName: updated.userName,
+                displayName: updated.displayName,
+                preferences: updated.preferences,
+                workFunction: updated.workFunction
+            }));
+        }
+
         setShowSettings(false);
     };
 
@@ -5173,9 +5286,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     const arrayBuffer = await audioBlob.arrayBuffer();
 
                     let transcript = '';
-                    if (voiceProvider === "deepgram" && voiceDeepgramKey) {
+                    const effectiveDeepgramKey = voiceDeepgramKey.trim() || '6366f322f239a28a5f689ec90667833d23266b6c';
+                    if ((voiceProvider === "deepgram" || voiceProvider === "everfern") && effectiveDeepgramKey) {
                         try {
-                            const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', { method: 'POST', headers: { 'Authorization': `Token ${voiceDeepgramKey}`, 'Content-Type': 'audio/webm' }, body: arrayBuffer });
+                            const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', { method: 'POST', headers: { 'Authorization': `Token ${effectiveDeepgramKey}`, 'Content-Type': 'audio/webm' }, body: arrayBuffer });
                             if (response.ok) {
                                 const result = await response.json();
                                 transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
@@ -5292,13 +5406,35 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         }
     }, [voiceProvider, voiceDeepgramKey, handleSend]);
 
+    // Cleanup recording resources on unmount
+    useEffect(() => {
+        return () => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                try { mediaRecorderRef.current.stop(); } catch { }
+            }
+            if (audioStreamRef.current) {
+                try { audioStreamRef.current.getTracks().forEach(track => track.stop()); } catch { }
+            }
+            if (voiceTimeoutRef.current) {
+                clearTimeout(voiceTimeoutRef.current);
+                voiceTimeoutRef.current = null;
+            }
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+        };
+    }, []);
+
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
             (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
                     const isVoiceEnabled = !!voiceProvider && (
+                        voiceProvider === 'everfern' ||
                         voiceProvider === 'local' ||
-                        (voiceProvider === 'deepgram' && !!voiceDeepgramKey?.trim())
+                        voiceProvider === 'deepgram' ||
+                        (voiceProvider === 'elevenlabs' && !!voiceElevenlabsKey?.trim())
                     );
                     if (!isVoiceEnabled) {
                         console.log('[VoiceOverlay] Voice mode is disabled/unconfigured. Broadcasting error.');
@@ -6084,6 +6220,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         />
                                                                     ))}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
+                                                                    <CloudAuthLoginButton content={msg.content} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                         <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                             <UserQuestionForm
@@ -6172,7 +6309,54 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             }
                                         </AnimatePresence>
 
-
+                                        {/* 401 Cloud Auth Error Card */}
+                                        {cloudAuthError && !isLoading && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 8 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
+                                            >
+                                                <div style={{
+                                                    padding: '16px 20px',
+                                                    borderRadius: 14,
+                                                    border: '1px solid var(--color-border)',
+                                                    background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                                                    display: 'flex',
+                                                    gap: 14,
+                                                    alignItems: 'flex-start',
+                                                    maxWidth: 480,
+                                                }}>
+                                                    <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🌿</div>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Sign in to EverFern Cloud</div>
+                                                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '0 0 12px', lineHeight: 1.6 }}>
+                                                            You need to be logged in to use EverFern Cloud models. Sign in to continue.
+                                                        </p>
+                                                        <button
+                                                            onClick={() => {
+                                                                setCloudAuthError(false);
+                                                                router.push('/auth');
+                                                            }}
+                                                            style={{
+                                                                backgroundColor: '#10b981',
+                                                                color: '#fff',
+                                                                padding: '8px 18px',
+                                                                borderRadius: 8,
+                                                                fontSize: 13,
+                                                                fontWeight: 600,
+                                                                border: 'none',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s',
+                                                            }}
+                                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#059669'; }}
+                                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#10b981'; }}
+                                                        >
+                                                            Login with EverFern
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        )}
 
                                         {/* Live streaming state - hide if last message already has this content (prevent duplicates).
                                         Exception: when HITL or user question is active, always show the streaming bubble

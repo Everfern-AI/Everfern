@@ -7,6 +7,33 @@
 
 import type { ChatMessage } from '../lib/ai-client';
 
+// ── Extended Context Options ──────────────────────────────────────────
+
+export type DAGNodeState = {
+  nodeId: string;
+  nodeName: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  summary?: string;
+  timestamp?: string;
+};
+
+export type DistillationOptions = {
+  maxToolOutputChars?: number;
+  preserveErrors?: boolean;
+  stripThoughts?: boolean;
+  truncateToolArguments?: boolean;
+  maxArgumentChars?: number;
+};
+
+export type CompactionOptions = {
+  targetBudgetRatio?: number; // e.g. 0.75 target capacity
+  preserveRecentTurnCount?: number;
+  preserveSystemMessages?: boolean;
+  preserveDWSP?: boolean; // Preserve Dynamic Workspace State Projection
+  preserveDAGState?: boolean;
+  distillation?: DistillationOptions;
+};
+
 // ── Result Types ─────────────────────────────────────────────────────
 
 export type AssembleResult = {
@@ -16,6 +43,14 @@ export type AssembleResult = {
   estimatedTokens: number;
   /** Optional instructions to prepend to the system prompt */
   systemPromptAddition?: string;
+  /** Active DAG node lineage summaries if available */
+  dagContextSummary?: string;
+  /** Compaction statistics if compaction occurred during assembly */
+  compactionInfo?: {
+    wasCompacted: boolean;
+    freedTokens?: number;
+    droppedTurnCount?: number;
+  };
 };
 
 export type CompactResult = {
@@ -92,6 +127,8 @@ export interface ContextEngine {
     tokenBudget?: number;
     model?: string;
     prompt?: string;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
   }): Promise<AssembleResult>;
 
   /**
@@ -100,9 +137,12 @@ export interface ContextEngine {
    */
   compact?(params: {
     sessionId: string;
+    messages?: ChatMessage[];
     tokenBudget?: number;
     force?: boolean;
     currentTokenCount?: number;
+    options?: CompactionOptions;
+    dagNodes?: DAGNodeState[];
   }): Promise<CompactResult>;
 
   /**
@@ -120,3 +160,4 @@ export interface ContextEngine {
    */
   dispose?(): Promise<void>;
 }
+

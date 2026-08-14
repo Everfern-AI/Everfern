@@ -1119,8 +1119,8 @@ interface SettingsPageProps {
     modelInstalled: boolean | null;
 
     // Voice Mode
-    voiceProvider: 'deepgram' | 'elevenlabs' | 'local' | null;
-    setVoiceProvider: (v: 'deepgram' | 'elevenlabs' | 'local' | null) => void;
+    voiceProvider: 'everfern' | 'deepgram' | 'elevenlabs' | 'local' | null;
+    setVoiceProvider: (v: 'everfern' | 'deepgram' | 'elevenlabs' | 'local' | null) => void;
     voiceDeepgramKey: string;
     setVoiceDeepgramKey: (v: string) => void;
     voiceElevenlabsKey: string;
@@ -1286,28 +1286,33 @@ export default function SettingsPage({
     const [workFunction, setWorkFunction] = useState('');
     const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
     const [profileSaveSuccess, setProfileSaveSuccess] = useState<boolean>(false);
-
     const handleSaveProfile = async () => {
         setIsSavingProfile(true);
         setProfileSaveSuccess(false);
         try {
+            const updatedProfile = {
+                userName: profileName.trim(),
+                displayName: displayName.trim(),
+                preferences: preferences.trim(),
+                workFunction: workFunction,
+            };
             if ((window as any).electronAPI?.saveConfig) {
                 const currentConfig = (await (window as any).electronAPI.loadConfig?.())?.config || {};
                 await (window as any).electronAPI.saveConfig({
                     ...currentConfig,
-                    userName: profileName.trim(),
-                    displayName: displayName.trim(),
-                    preferences: preferences.trim(),
-                    workFunction: workFunction,
+                    ...updatedProfile
                 });
-            } else {
-                localStorage.setItem('everfern_profile', JSON.stringify({
-                    userName: profileName.trim(),
-                    displayName: displayName.trim(),
-                    preferences: preferences.trim(),
-                    workFunction: workFunction,
-                }));
             }
+            localStorage.setItem('everfern_profile', JSON.stringify(updatedProfile));
+
+            if ((window as any).electronAPI?.memory?.saveDirect && (displayName.trim() || profileName.trim())) {
+                const preferredName = displayName.trim() || profileName.trim();
+                await (window as any).electronAPI.memory.saveDirect(
+                    `The user's preferred name is ${preferredName}. Full name: ${profileName.trim()}. Always refer to them as ${preferredName}.`,
+                    '[User Profile]'
+                );
+            }
+
             setProfileSaveSuccess(true);
             setTimeout(() => setProfileSaveSuccess(false), 3000);
         } catch (e) {
@@ -1460,39 +1465,50 @@ export default function SettingsPage({
     useEffect(() => {
         const fetchProfileData = async () => {
             try {
-                let name = "User";
-                let dispName = "User";
+                let name = "";
+                let dispName = "";
                 let prefs = "";
                 let work = "";
+
                 if ((window as any).electronAPI?.loadConfig) {
                     const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success) {
-                        if (res.config?.userName) name = res.config.userName;
-                        if (res.config?.displayName) dispName = res.config.displayName;
-                        if (res.config?.preferences) prefs = res.config.preferences;
-                        if (res.config?.workFunction) work = res.config.workFunction;
+                    if (res.success && res.config) {
+                        if (res.config.userName) name = res.config.userName;
+                        if (res.config.displayName) dispName = res.config.displayName;
+                        if (res.config.preferences) prefs = res.config.preferences;
+                        if (res.config.workFunction) work = res.config.workFunction;
                     }
-                } else {
-                    const savedStr = localStorage.getItem('everfern_profile');
-                    if (savedStr) {
+                }
+
+                // Check localStorage fallback
+                const savedStr = localStorage.getItem('everfern_profile');
+                if (savedStr) {
+                    try {
                         const saved = JSON.parse(savedStr);
-                        if (saved.userName) name = saved.userName;
-                        if (saved.displayName) dispName = saved.displayName;
-                        if (saved.preferences) prefs = saved.preferences;
-                        if (saved.workFunction) work = saved.workFunction;
-                    }
+                        if (!name && saved.userName) name = saved.userName;
+                        if (!dispName && saved.displayName) dispName = saved.displayName;
+                        if (!prefs && saved.preferences) prefs = saved.preferences;
+                        if (!work && saved.workFunction) work = saved.workFunction;
+                    } catch {}
                 }
-                if (name === "User" && (window as any).electronAPI?.system?.getUsername) {
-                    name = await (window as any).electronAPI?.system.getUsername();
-                    dispName = name;
+
+                if (!name && (window as any).electronAPI?.system?.getUsername) {
+                    name = await (window as any).electronAPI.system.getUsername();
                 }
-                const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-                const formattedDispName = dispName.charAt(0).toUpperCase() + dispName.slice(1);
-                setProfileName(formattedName);
-                setDisplayName(formattedDispName);
+                if (!dispName) {
+                    dispName = name || "User";
+                }
+                if (!name) {
+                    name = "User";
+                }
+
+                setProfileName(name);
+                setDisplayName(dispName);
                 setPreferences(prefs);
                 setWorkFunction(work);
-            } catch { }
+            } catch (err) {
+                console.error("Failed to load profile data in SettingsPage", err);
+            }
         };
         fetchProfileData();
     }, []);
@@ -2184,8 +2200,9 @@ export default function SettingsPage({
 
             <Card>
                 <Label>Voice Provider</Label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
                     {[
+                        { id: 'everfern', name: 'EverFern Voice', icon: '/images/logos/everfern-withoutbg.png' },
                         { id: 'deepgram', name: 'Deepgram', icon: '/images/ai-providers/Deepgram.svg' },
                         { id: 'elevenlabs', name: 'ElevenLabs', icon: '/images/ai-providers/elevenlabs.svg' },
                         { id: 'local', name: 'Local (Ollama)', icon: '/images/ai-providers/ollama.svg' },
@@ -2194,7 +2211,7 @@ export default function SettingsPage({
                         return (
                             <div
                                 key={id}
-                                onClick={() => setVoiceProvider(id as 'deepgram' | 'elevenlabs' | 'local')}
+                                onClick={() => setVoiceProvider(id as 'everfern' | 'deepgram' | 'elevenlabs' | 'local')}
                                 style={{
                                     padding: '16px 14px',
                                     borderRadius: 12,
@@ -2210,7 +2227,7 @@ export default function SettingsPage({
                                     userSelect: 'none',
                                 }}
                             >
-                                <Image unoptimized src={icon} alt={name} width={24} height={24} className="dark:invert" />
+                                <Image unoptimized src={icon} alt={name} width={24} height={24} className={id === 'everfern' ? '' : 'dark:invert'} />
                                 <span style={{ fontSize: 12, fontWeight: isSel ? 600 : 500, color: 'var(--color-text-primary)', textAlign: 'center' }}>{name}</span>
                                 {isSel && <div style={{ position: 'absolute', top: 8, right: 8, color: 'var(--color-text-primary)' }}><CheckIcon width={14} height={14} strokeWidth={2.5} /></div>}
                             </div>
@@ -2219,14 +2236,24 @@ export default function SettingsPage({
                 </div>
 
                 <AnimatePresence initial={false}>
+                    {voiceProvider === 'everfern' && (
+                        <motion.div key="everfern" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)' }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🌿 EverFern Cloud Voice (Deepgram Nova-2)</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
+                                    Zero-configuration cloud speech-to-text powered by Deepgram Nova-2. Ready to use out-of-the-box.
+                                </span>
+                            </div>
+                        </motion.div>
+                    )}
                     {voiceProvider === 'deepgram' && (
                         <motion.div key="deepgram" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <Label>Deepgram API Key</Label>
                             <div style={{ position: 'relative', marginBottom: 8 }}>
                                 <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
-                                <Input type="password" placeholder="sk-..." value={voiceDeepgramKey} onChange={e => setVoiceDeepgramKey(e.target.value)} style={{ paddingLeft: 40 }} />
+                                <Input type="password" placeholder="6366f3... (Leave empty to use EverFern Cloud key)" value={voiceDeepgramKey} onChange={e => setVoiceDeepgramKey(e.target.value)} style={{ paddingLeft: 40 }} />
                             </div>
-                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Get your API key from <a href="https://console.deepgram.com" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>Deepgram Console</a></p>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Leave blank to use EverFern Cloud Deepgram, or enter your custom key from <a href="https://console.deepgram.com" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>Deepgram Console</a></p>
                         </motion.div>
                     )}
                     {voiceProvider === 'elevenlabs' && (

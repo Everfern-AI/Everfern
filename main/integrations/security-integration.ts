@@ -336,7 +336,6 @@ export class SecurityIntegrationService extends EventEmitter {
       throw new Error('Security dashboard not available');
     }
 
-    // Placeholder implementation - SecurityDashboardManager doesn't have exportSecurityReport yet
     const dashboardData = await this.securityDashboard.getDashboardData();
 
     if (format === 'json') {
@@ -345,10 +344,58 @@ export class SecurityIntegrationService extends EventEmitter {
         filename: `security-report-${Date.now()}.json`
       };
     } else {
-      // Simple CSV export
-      const csv = 'Security Report\n' + JSON.stringify(dashboardData);
+      // RFC 4180 compliant CSV export
+      const escapeCsvCell = (val: any): string => {
+        const str = String(val ?? '');
+        if (/[",\n\r]/.test(str)) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const rows: string[] = [
+        ['Category', 'Identifier / Metric', 'Severity / Type', 'Status', 'Timestamp / Description', 'Value'].map(escapeCsvCell).join(',')
+      ];
+
+      // Export System Metrics
+      if (dashboardData.metrics) {
+        for (const [key, value] of Object.entries(dashboardData.metrics)) {
+          rows.push(['Metric', key, 'N/A', 'ACTIVE', new Date().toISOString(), String(value)].map(escapeCsvCell).join(','));
+        }
+      }
+
+      // Export Recent Security Events
+      const events = (dashboardData as any).recentEvents || dashboardData.recentActivity;
+      if (Array.isArray(events)) {
+        for (const evt of events) {
+          rows.push([
+            'Security Event',
+            evt.id || 'N/A',
+            evt.severity || evt.type || 'INFO',
+            evt.status || 'LOGGED',
+            evt.timestamp ? new Date(evt.timestamp).toISOString() : new Date().toISOString(),
+            evt.description || evt.message || JSON.stringify((evt as any).details || {})
+          ].map(escapeCsvCell).join(','));
+        }
+      }
+
+      // Export Threat Indicators / Alerts
+      const threats = (dashboardData as any).activeThreats || dashboardData.alerts;
+      if (Array.isArray(threats)) {
+        for (const threat of threats) {
+          rows.push([
+            'Active Threat',
+            threat.id || (threat as any).source || 'N/A',
+            threat.severity || 'HIGH',
+            (threat as any).status || 'ACTIVE',
+            (threat as any).detectedAt || threat.timestamp ? new Date((threat as any).detectedAt || threat.timestamp).toISOString() : new Date().toISOString(),
+            (threat as any).summary || threat.description || threat.title || 'Threat detected'
+          ].map(escapeCsvCell).join(','));
+        }
+      }
+
       return {
-        data: csv,
+        data: rows.join('\n'),
         filename: `security-report-${Date.now()}.csv`
       };
     }

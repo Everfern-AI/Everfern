@@ -692,21 +692,47 @@ export class DataRetentionManager extends EventEmitter {
   }
 
   /**
-   * Export data for a specific type
+   * Export data for a specific type from active stores and databases
    */
   private async exportDataType(userId: string, dataType: string, exportDir: string): Promise<void> {
     const exportFile = path.join(exportDir, `${dataType}.json`);
+    let records: any[] = [];
 
-    // This would implement data export for each type
-    // For now, we'll create placeholder files
+    try {
+      const dbModule = await import('../lib/db');
+      const dbOps = dbModule.dbOps;
+
+      if (dataType === 'security_events') {
+        const rows = await dbOps.all('SELECT * FROM security_events ORDER BY timestamp DESC LIMIT 5000');
+        records = rows || [];
+      } else if (dataType === 'conversation_history') {
+        const rows = await dbOps.all('SELECT * FROM messages ORDER BY created_at DESC LIMIT 5000');
+        records = rows || [];
+      } else if (dataType === 'user_data') {
+        const memModule = await import('../agent/learning/memory/persistent-memory');
+        const graph = memModule.loadMemoryGraph();
+        records = graph.nodes || [];
+      } else if (dataType === 'file_attachments') {
+        const rows = await dbOps.all('SELECT * FROM files ORDER BY created_at DESC LIMIT 1000');
+        records = rows || [];
+      } else {
+        const rows = await dbOps.all('SELECT * FROM checkpoints LIMIT 100');
+        records = rows || [];
+      }
+    } catch (err) {
+      console.warn(`[DataRetention] Store query fallback for ${dataType}:`, err);
+      records = [];
+    }
+
     const exportData = {
       userId,
       dataType,
       exportedAt: new Date().toISOString(),
-      data: [] // Would contain actual user data
+      recordCount: records.length,
+      data: records
     };
 
-    await fs.writeFile(exportFile, JSON.stringify(exportData, null, 2));
+    await fs.writeFile(exportFile, JSON.stringify(exportData, null, 2), 'utf-8');
   }
 
   /**

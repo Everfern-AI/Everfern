@@ -279,14 +279,7 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
     const db = new sqlite3.Database(dbPath, (err) => {
       if (err) return reject(err);
 
-      // Configure WAL mode, busy timeout, and synchronous mode to handle concurrent writes safely
-      db.serialize(() => {
-        db.run('PRAGMA journal_mode = WAL');
-        db.run('PRAGMA busy_timeout = 30000');
-        db.run('PRAGMA synchronous = NORMAL');
-      });
-
-      // Load sqlite-vec extension with a timeout guard
+      // Load sqlite-vec extension with serialized execution and timeout guard
       let extLoaded = false;
       const extTimeout = setTimeout(() => {
         if (!extLoaded) {
@@ -294,31 +287,40 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
           console.warn('[Optima] sqlite-vec loadExtension timed out — continuing without vector support');
           continueWithSetup(db, resolve, reject);
         }
-      }, 5000);
+      }, 15000);
 
-      let extensionPath = path.normalize(sqliteVec.getLoadablePath());
-      if (extensionPath.includes('app.asar')) {
-        extensionPath = extensionPath.replace('app.asar', 'app.asar.unpacked');
-      }
+      // Configure WAL mode, busy timeout, and synchronous mode to handle concurrent writes safely
+      db.serialize(() => {
+        db.run('PRAGMA journal_mode = WAL');
+        db.run('PRAGMA busy_timeout = 30000');
+        db.run('PRAGMA synchronous = NORMAL');
 
-      try {
-        db.loadExtension(extensionPath, (extErr) => {
-          if (extLoaded) return; // timed out already
-          clearTimeout(extTimeout);
-          extLoaded = true;
-          if (extErr) {
-            console.warn('[Optima] Failed to load sqlite-vec extension — continuing without vector support:', extErr.message);
-          }
-          continueWithSetup(db, resolve, reject);
-        });
-      } catch (loadErr: any) {
-        clearTimeout(extTimeout);
-        if (!extLoaded) {
-          extLoaded = true;
-          console.warn('[Optima] sqlite-vec loadExtension threw — continuing without vector support:', loadErr.message);
-          continueWithSetup(db, resolve, reject);
+        let extensionPath = path.normalize(sqliteVec.getLoadablePath());
+        if (extensionPath.includes('app.asar')) {
+          extensionPath = extensionPath.replace('app.asar', 'app.asar.unpacked');
         }
-      }
+
+        try {
+          db.loadExtension(extensionPath, (extErr) => {
+            if (extLoaded) return; // timed out already
+            clearTimeout(extTimeout);
+            extLoaded = true;
+            if (extErr) {
+              console.warn('[Optima] Failed to load sqlite-vec extension — continuing without vector support:', extErr.message);
+            } else {
+              console.log('[Optima] sqlite-vec extension loaded successfully');
+            }
+            continueWithSetup(db, resolve, reject);
+          });
+        } catch (loadErr: any) {
+          clearTimeout(extTimeout);
+          if (!extLoaded) {
+            extLoaded = true;
+            console.warn('[Optima] sqlite-vec loadExtension threw — continuing without vector support:', loadErr.message);
+            continueWithSetup(db, resolve, reject);
+          }
+        }
+      });
     });
   });
 }

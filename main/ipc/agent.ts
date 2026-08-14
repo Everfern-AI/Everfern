@@ -577,16 +577,29 @@ export function registerAgentHandlers() {
         };
       };
 
+      let fullResponse = '';
+      let lastMissionTimeline: any = null;
+
       const saveDraft = async () => {
-        if (!convId || (!draftContent && draftToolCalls.length === 0)) return;
+        if (!convId || (!draftContent && draftToolCalls.length === 0 && !thoughtBuffer)) return;
         try {
           await dbOps.run(
             `INSERT OR REPLACE INTO messages
-             (id, conversation_id, role, content, tool_calls, order_index, created_at)
-             VALUES (?, ?, 'assistant', ?, ?, 9999, COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
-            [msgId, convId, draftContent,
-             draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls.map(attachDraftProgress)) : null,
-             msgId, new Date().toISOString()]
+             (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, order_index, created_at)
+             VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, COALESCE((SELECT order_index FROM messages WHERE id = ?), (SELECT COUNT(*) FROM messages WHERE conversation_id = ?)), COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
+            [
+              msgId,
+              convId,
+              draftContent,
+              thoughtBuffer || null,
+              thoughtBuffer || null,
+              draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls.map(attachDraftProgress)) : null,
+              lastMissionTimeline ? JSON.stringify(lastMissionTimeline) : null,
+              msgId,
+              convId,
+              msgId,
+              new Date().toISOString()
+            ]
           );
           // Also ensure the conversation row exists
           await dbOps.run(
@@ -595,7 +608,13 @@ export function registerAgentHandlers() {
             [convId, requestedModel || 'unknown',
              new Date().toISOString(), new Date().toISOString()]
           );
-        } catch { /* DB may not have draft_messages table yet */ }
+          await dbOps.run(
+            `UPDATE conversations SET updated_at = ? WHERE id = ?`,
+            [new Date().toISOString(), convId]
+          );
+        } catch (e) {
+          console.warn('[AgentIPC] Draft save error:', e);
+        }
       };
 
       const cleanupDraft = async () => {
@@ -608,7 +627,6 @@ export function registerAgentHandlers() {
       };
       // ── End draft setup ──────────────────────────────────────────────────
 
-      let fullResponse = '';
       for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
         (globalThis as any).lastStreamEvent = streamEvent;
         if (globalAbortManager.streamAborted) {
@@ -707,6 +725,7 @@ export function registerAgentHandlers() {
           safeSend('acp:tool-call-complete', { index: streamEvent.index, toolName: streamEvent.toolName, arguments: streamEvent.arguments });
         } else if (streamEvent.type === 'mission_step_update') {
           // ── Mission Step Update → acp:mission-step-update ──────────────
+          lastMissionTimeline = (streamEvent as any).timeline || lastMissionTimeline;
           safeSend('acp:mission-step-update', {
             conversationId: (streamEvent as any).conversationId,
             step: (streamEvent as any).step,
@@ -714,6 +733,7 @@ export function registerAgentHandlers() {
           });
         } else if (streamEvent.type === 'mission_phase_change') {
           // ── Mission Phase Change → acp:mission-phase-change ────────────
+          lastMissionTimeline = (streamEvent as any).timeline || lastMissionTimeline;
           safeSend('acp:mission-phase-change', {
             conversationId: (streamEvent as any).conversationId,
             phase: (streamEvent as any).phase,
@@ -722,6 +742,7 @@ export function registerAgentHandlers() {
         } else if (streamEvent.type === 'mission_complete') {
           // ── Mission Complete — send BEFORE done:true so listeners are still alive ──
           console.log('[AgentIPC] Mission complete event received');
+          lastMissionTimeline = (streamEvent as any).timeline || lastMissionTimeline;
           safeSend('acp:mission-complete', {
             conversationId: (streamEvent as any).conversationId,
             timeline: (streamEvent as any).timeline,

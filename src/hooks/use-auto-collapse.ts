@@ -25,14 +25,25 @@ export function useAutoCollapse(
   const prevIsLive = useRef(isLive);
 
   useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
     // Detect transition from live (true) to complete (false)
     if (prevIsLive.current && !isLive && autoCollapseEnabled) {
-      setExpanded(false); // Auto-collapse
+      if (duration && duration > 0) {
+        timer = setTimeout(() => {
+          setExpanded(false);
+        }, duration);
+      } else {
+        setExpanded(false); // Auto-collapse immediately
+      }
     }
     
     // Update previous state for next comparison
     prevIsLive.current = isLive;
-  }, [isLive, autoCollapseEnabled]);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isLive, autoCollapseEnabled, duration]);
 
   return [expanded, setExpanded];
 }

@@ -1418,7 +1418,7 @@ ipcMain.handle('terminal:kill-process', (_event, id: string) => {
 
 // ── IPC: Vector Store (Text-based search, no SQLite-vec) ─────────────
 
-registerContextEngine('vector', () => new VectorContextEngine());
+registerContextEngine('vector', () => new VectorContextEngine(), { force: true });
 setDefaultContextEngine('vector');
 
 // Initialize vector DB asynchronously, won't block app startup

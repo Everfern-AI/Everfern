@@ -43,6 +43,7 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
   private activeTabId?: number;
   private cachedTabs: any[] = [];
   private tabCacheExpiresAt = 0;
+  private currentFormScope?: string;
   private static readonly TAB_CACHE_TTL_MS = 5000;
 
   constructor(private logger: NavisLogger) {}
@@ -69,15 +70,21 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
     this.logger.browserLaunch('Extension-first browser control connected');
   }
 
-  async capture(): Promise<BrowserPageState> {
+  async capture(options?: { scope?: 'form' | 'page'; formId?: string }): Promise<BrowserPageState> {
     const now = Date.now();
     const needsTabs = now >= this.tabCacheExpiresAt;
+    const reqScope = options?.scope || (this.currentFormScope ? 'form' : undefined);
+    const reqFormId = options?.formId || this.currentFormScope;
 
     let capture: any;
     let lastCaptureError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        capture = await bridgeServer.sendRequest('capture', { tabId: this.activeTabId }, 15000);
+        capture = await bridgeServer.sendRequest('capture', {
+          tabId: this.activeTabId,
+          scope: reqScope,
+          formId: reqFormId
+        }, 15000);
         break;
       } catch (err: any) {
         lastCaptureError = err;
@@ -111,15 +118,26 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
       text: String(snapshot?.text || capture?.text || ''),
       refs: Array.isArray(snapshot?.refs) ? snapshot.refs : Array.isArray(capture?.refs) ? capture.refs : [],
       tabs: this.cachedTabs,
+      forms: Array.isArray(capture?.forms) ? capture.forms : Array.isArray(snapshot?.forms) ? snapshot.forms : [],
+      activeForm: capture?.activeForm || snapshot?.activeForm || null,
+      scopedForm: capture?.scopedForm || snapshot?.scopedForm || null,
       snapshot,
       mode: 'extension',
     };
   }
 
-  async screenshot(options?: { quality?: number }): Promise<string> {
+  async screenshot(options?: { quality?: number; scope?: 'form' | 'page'; formId?: string }): Promise<string> {
+    const reqScope = options?.scope || (this.currentFormScope ? 'form' : undefined);
+    const reqFormId = options?.formId || this.currentFormScope;
+
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const result = await bridgeServer.sendRequest('screenshot', { tabId: this.activeTabId, quality: options?.quality || 70 }, 15000);
+        const result = await bridgeServer.sendRequest('screenshot', {
+          tabId: this.activeTabId,
+          quality: options?.quality || 70,
+          scope: reqScope,
+          formId: reqFormId
+        }, 15000);
         if (!result || !result.success || !result.dataUrl) {
           throw new Error(result?.message || 'Failed to capture screenshot via extension');
         }
@@ -277,6 +295,17 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, 'Closed tab');
         return normalizeResult(result, 'Closed tab', true);
+      }
+      case 'focus_form': {
+        const formId = String(args.formId || args.id || args.target || '');
+        this.currentFormScope = formId || 'active';
+        this.logger.stepComplete(step, maxSteps, `🎯 Focused on form: ${this.currentFormScope}`);
+        return { success: true, message: `Focused on form ${this.currentFormScope} (next snapshot will contain scoped form DOM)`, stateChanged: true };
+      }
+      case 'unfocus_form': {
+        this.currentFormScope = undefined;
+        this.logger.stepComplete(step, maxSteps, `🌐 Unfocused form (returned to full page DOM)`);
+        return { success: true, message: `Unfocused form — returned to full page scope`, stateChanged: true };
       }
       case 'done':
         return {

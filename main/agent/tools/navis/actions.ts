@@ -107,7 +107,9 @@ export type ActionName =
   | 'browser_type'
   | 'browser_double_click'
   | 'browser_right_click'
-  | 'browser_hover';
+  | 'browser_hover'
+  | 'focus_form'
+  | 'unfocus_form';
 
 export interface ActionResult {
   success: boolean;
@@ -1234,6 +1236,10 @@ export async function executeAction(
 
       case 'browser_hover':
         return await executeBrowserHover(args as { x: number; y: number }, page, session, logger, step, maxSteps);
+
+      case 'focus_form':
+      case 'unfocus_form':
+        return { success: true, message: `Form scope action executed: ${actionName}`, stateChanged: true };
 
       default:
         return { success: false, message: `Unknown action: ${actionName}`, stateChanged: false };

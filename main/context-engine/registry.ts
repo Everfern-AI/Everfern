@@ -1,13 +1,14 @@
 /**
  * EverFern Desktop — Context Engine Registry
  *
- * Adapted from openclaw/src/context-engine/registry.ts
- *
  * Factory-based registry for pluggable context engine implementations.
  * Engines are registered by ID and resolved per-session.
  */
 
 import type { ContextEngine } from './types';
+import { DefaultContextEngine } from './default';
+import { CompactingContextEngine } from './compacting';
+import { VectorContextEngine, HybridContextEngine } from './vector';
 
 export type ContextEngineFactory = () => ContextEngine;
 
@@ -15,6 +16,12 @@ export type ContextEngineFactory = () => ContextEngine;
 
 const registry = new Map<string, ContextEngineFactory>();
 let _defaultId = 'default';
+
+// Initialize default engines
+registry.set('default', () => new DefaultContextEngine());
+registry.set('compacting', () => new CompactingContextEngine());
+registry.set('vector', () => new VectorContextEngine());
+registry.set('hybrid', () => new HybridContextEngine());
 
 // ── Registration ─────────────────────────────────────────────────────
 
