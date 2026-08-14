@@ -1502,5 +1502,34 @@ export function registerSystemHandlers() {
       return { success: false, error: err.message || String(err) };
     }
   });
+
+  ipcMain.handle('system:transcribe-audio', async (event, audioBuffer: ArrayBuffer, userApiKey?: string) => {
+    try {
+      const apiKey = (userApiKey && typeof userApiKey === 'string' && userApiKey.trim()) || process.env.DEEPGRAM_API_KEY || '';
+      if (!apiKey) {
+        return { success: false, error: 'Deepgram API key not configured. Please set your API key in Settings.' };
+      }
+      const buffer = Buffer.from(audioBuffer);
+      const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${apiKey}`,
+          'Content-Type': 'audio/webm'
+        },
+        body: buffer
+      });
+      if (response.ok) {
+        const result = (await response.json()) as any;
+        const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+        return { success: true, transcript };
+      } else {
+        const errBody = await response.text().catch(() => '');
+        return { success: false, error: `Deepgram API returned status ${response.status}: ${errBody}` };
+      }
+    } catch (err: any) {
+      console.error('[Voice] Main process transcription error:', err);
+      return { success: false, error: err.message || String(err) };
+    }
+  });
 }
 

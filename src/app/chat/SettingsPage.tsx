@@ -2251,7 +2251,7 @@ export default function SettingsPage({
                             <Label>Deepgram API Key</Label>
                             <div style={{ position: 'relative', marginBottom: 8 }}>
                                 <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
-                                <Input type="password" placeholder="6366f3... (Leave empty to use EverFern Cloud key)" value={voiceDeepgramKey} onChange={e => setVoiceDeepgramKey(e.target.value)} style={{ paddingLeft: 40 }} />
+                                <Input type="password" placeholder="Enter Deepgram API key (or leave empty for EverFern Cloud)" value={voiceDeepgramKey} onChange={e => setVoiceDeepgramKey(e.target.value)} style={{ paddingLeft: 40 }} />
                             </div>
                             <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 4 }}>Leave blank to use EverFern Cloud Deepgram, or enter your custom key from <a href="https://console.deepgram.com" target="_blank" rel="noopener" style={{ color: 'var(--color-text-primary)', textDecoration: 'underline' }}>Deepgram Console</a></p>
                         </motion.div>
