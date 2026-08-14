@@ -25,8 +25,11 @@ export const act = defineTool({
       'set_date',
       'right_click',
       'hybrid_click',
+      'focus_form',
+      'unfocus_form',
     ]),
     ref: z.string().optional().describe('Target element ref, e.g. "e12".'),
+    formId: z.string().optional().describe('Target form ID for focus_form (e.g. "form_1").'),
     text: z.string().optional().describe('Text for type/smart_type or click_text.'),
     target: z.string().optional().describe('Target text for smart_click/smart_type.'),
     value: z.string().optional().describe('Value for fill/select/upload.'),
@@ -67,6 +70,8 @@ export const act = defineTool({
       set_date: 'set_date',
       right_click: 'right_click',
       hybrid_click: 'hybrid_click',
+      focus_form: 'focus_form',
+      unfocus_form: 'unfocus_form',
     };
 
     const actionName = kindToAction[args.kind];
@@ -76,6 +81,7 @@ export const act = defineTool({
 
     const actionArgs: Record<string, unknown> = {};
     if (args.ref !== undefined) actionArgs.ref = args.ref;
+    if (args.formId !== undefined) actionArgs.formId = args.formId;
     if (args.text !== undefined) actionArgs.text = args.text;
     if (args.target !== undefined) actionArgs.target = args.target;
     if (args.value !== undefined) actionArgs.value = args.value;

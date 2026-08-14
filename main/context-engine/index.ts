@@ -9,6 +9,9 @@ export type {
   AssembleResult,
   CompactResult,
   IngestResult,
+  CompactionOptions,
+  DistillationOptions,
+  DAGNodeState,
 } from './types';
 
 export {
@@ -21,4 +24,12 @@ export {
 export type { ContextEngineFactory } from './registry';
 
 export { DefaultContextEngine } from './default';
+export {
+  CompactingContextEngine,
+  distillToolOutput,
+  stripThinkingBlocks,
+  summarizeTurnHistory,
+  formatDAGNodeSummary,
+  estimateMessageTokens,
+} from './compacting';
 export { VectorContextEngine, HybridContextEngine, getContextEngineStats } from './vector';

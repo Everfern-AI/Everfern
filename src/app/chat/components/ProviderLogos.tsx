@@ -38,8 +38,8 @@ const HuggingFaceLogo = ({ size = 16 }: { size?: number }) => (
     <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="HuggingFace Logo" width={size} height={size} className="grayscale opacity-90" />
 );
 
-const EverFernBglessLogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={size} height={size} />
+const EverFernBglessLogo = ({ size = 16, isDark = false }: { size?: number; isDark?: boolean }) => (
+    <Image unoptimized src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="" width={size} height={size} />
 );
 
 const MiniMaxLogo = ({ size = 16 }: { size?: number }) => (

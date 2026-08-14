@@ -217,13 +217,22 @@ export class NavisExtensionOrchestrator {
           ? `\n\nVISION: You have access to a screenshot. If DOM refs are insufficient, set current_state.request_vision=true to get a visual screenshot with bounding boxes.`
           : '';
 
+        let formSummary = '';
+        if (Array.isArray(pageState.forms) && pageState.forms.length > 0) {
+          formSummary = `\nDETECTED FORMS (Token Saver: use action "focus_form" with formId to isolate a form):\n` +
+            pageState.forms.map(f => `- [ID: ${f.id}] "${f.name}" (${f.inputCount} inputs)${f.isFocused ? ' [FOCUSED]' : ''}`).join('\n') + '\n';
+        }
+        if (pageState.scopedForm) {
+          formSummary += `\n🎯 CURRENTLY SCOPED TO FORM: "${pageState.scopedForm.name}" (ID: ${pageState.scopedForm.id}) — To return to full page, use action "unfocus_form".\n`;
+        }
+
         const userPrompt = `TASK: ${task}
 STEP: ${steps}/${maxSteps} ${stuckWarning}
 
 PAGE STATE:
 URL: ${pageState.url}
 TITLE: ${pageState.title}
-
+${formSummary}
 DOM REFS (use these for interactions):
 ${refsFormatted}
 

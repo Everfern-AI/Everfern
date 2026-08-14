@@ -1887,6 +1887,10 @@ export class AIClient {
         throw new Error(`[${this.config.provider}] HTTP ${res.status}: ${errorMsg}. No vision capability for this model. Please select a valid vision endpoint.`);
       }
 
+      if (res.status === 401) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : '401 Unauthorized: Please sign in to your EverFern Cloud account.');
+      }
+
       // Daily usage limit reached (EverFern Cloud) — surface a clean message.
       if (res.status === 429) {
         throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
@@ -2160,6 +2164,9 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      if (res.status === 401) {
+        throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : '401 Unauthorized: Please sign in to your EverFern Cloud account.');
+      }
       // Daily usage limit reached (EverFern Cloud) — surface a clean message.
       if (res.status === 429) {
         throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : 'You have used your daily limit. Your usage resets at midnight.');
@@ -2758,7 +2765,11 @@ export class AIClient {
       model: req.model ?? this.config.model,
       messages,
       stream: isStreaming,
-      options: { temperature: req.temperature ?? this.config.temperature },
+      options: {
+        temperature: req.temperature ?? this.config.temperature ?? 0.2,
+        num_ctx: 16384,
+        num_predict: 4096,
+      },
     };
     if (req.responseFormat === 'json') body['format'] = 'json';
 
@@ -2922,7 +2933,11 @@ export class AIClient {
       model: req.model ?? this.config.model,
       messages: this._mapOllamaMessages(req.messages),
       stream: true,
-      options: { temperature: req.temperature ?? this.config.temperature },
+      options: {
+        temperature: req.temperature ?? this.config.temperature ?? 0.2,
+        num_ctx: 16384,
+        num_predict: 4096,
+      },
     };
 
     // Pass tools to Ollama if provided (mirrors non-streaming path)
@@ -2962,14 +2977,17 @@ export class AIClient {
 
     const dec = new TextDecoder();
     const id = `ollama-${Date.now()}`;
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const text = dec.decode(value, { stream: true });
-      const lines = text.split('\n').filter(l => l.trim());
+      buffer += dec.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
+        if (!line.trim()) continue;
         try {
           const d = JSON.parse(line);
           if (d.message?.tool_calls) {
@@ -2991,7 +3009,7 @@ export class AIClient {
             model: d.model
           };
           if (d.done) return;
-        } catch { /* skip */ }
+        } catch { /* skip incomplete / non-json chunk */ }
       }
     }
   }

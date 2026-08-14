@@ -575,7 +575,7 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
     audioLevels?: number[];
     onClick: () => void;
 }) => {
-    const hasVoice = !!(voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey || voiceElevenlabsKey));
+    const hasVoice = !!(voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || voiceDeepgramKey || voiceElevenlabsKey));
     
     return (
         <button
@@ -586,22 +586,22 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
                 height: 32, borderRadius: 16,
                 padding: isRecording ? "0 12px" : "0",
                 width: isRecording ? "auto" : 32,
-                background: isRecording ? "rgba(239, 68, 68, 0.15)" : "rgba(113, 113, 113, 0.08)",
+                background: isRecording ? "rgba(239, 68, 68, 0.15)" : "var(--color-bg-subtle, rgba(113, 113, 113, 0.08))",
                 border: "none",
                 outline: "none",
-                color: isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa",
+                color: isRecording ? "#ef4444" : hasVoice ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                cursor: "pointer", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", flexShrink: 0,
+                cursor: "pointer", transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)", flexShrink: 0,
             }}
             onMouseEnter={e => {
                 if (!isRecording) {
-                    e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.07)";
-                    e.currentTarget.style.color = "#333";
+                    e.currentTarget.style.backgroundColor = "var(--color-bg-hover, rgba(0,0,0,0.07))";
+                    e.currentTarget.style.color = "var(--color-text-primary)";
                 }
             }}
             onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = isRecording ? "rgba(239,68,68,0.15)" : "rgba(113,113,113,0.08)";
-                e.currentTarget.style.color = isRecording ? "#ef4444" : hasVoice ? "#555" : "#aaa";
+                e.currentTarget.style.backgroundColor = isRecording ? "rgba(239,68,68,0.15)" : "var(--color-bg-subtle, rgba(113,113,113,0.08))";
+                e.currentTarget.style.color = isRecording ? "#ef4444" : hasVoice ? "var(--color-text-secondary)" : "var(--color-text-tertiary)";
             }}
         >
             {isRecording ? (
@@ -720,4 +720,100 @@ const RateLimitContinueButton = ({ content, onContinue }: { content: string; onC
     );
 };
 
-export { ContextTokenRing, VoiceButton, RateLimitContinueButton };
+const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: () => void }) => {
+    const { theme } = useTheme();
+    const isAuthError =
+        content.includes('401') ||
+        content.includes('Unauthorized') ||
+        content.toLowerCase().includes('sign in to your everfern cloud account') ||
+        content.toLowerCase().includes('sign in to everfern cloud');
+
+    if (!isAuthError) return null;
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+                marginTop: 20,
+                borderRadius: 'var(--radius-lg)',
+                background: 'linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-subtle) 100%)',
+                border: '1px solid var(--color-border)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                fontFamily: 'var(--font-sans)',
+            }}
+        >
+            <div style={{ 
+                height: 3, 
+                width: '100%', 
+                background: '#10b981' 
+            }} />
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                    }}>
+                        <img
+                            src={theme === 'dark' ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"}
+                            alt="EverFern"
+                            style={{ width: 24, height: 24, objectFit: 'contain' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+                            EverFern Cloud Sign In Required
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                            You need to be logged into EverFern Cloud to use this model. Sign in to continue your chat.
+                        </span>
+                    </div>
+                </div>
+
+                <button
+                    onClick={onLogin}
+                    style={{
+                        width: '100%',
+                        height: 40,
+                        borderRadius: 'var(--radius-md)',
+                        background: '#10b981',
+                        border: 'none',
+                        color: '#ffffff',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
+                        transition: 'all 0.15s ease-in-out'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.background = '#059669';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'none';
+                        e.currentTarget.style.background = '#10b981';
+                    }}
+                >
+                    Sign In with EverFern
+                </button>
+            </div>
+        </motion.div>
+    );
+};
+
+export { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton };

@@ -36,7 +36,7 @@ export default function VoiceAssistantUI({
     voiceElevenlabsKey,
     audioLevels,
 }: VoiceAssistantUIProps) {
-    const isConfigured = voiceProvider && (voiceProvider === 'local' || voiceDeepgramKey || voiceElevenlabsKey);
+    const isConfigured = voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || voiceDeepgramKey || voiceElevenlabsKey);
 
     return (
         <AnimatePresence>

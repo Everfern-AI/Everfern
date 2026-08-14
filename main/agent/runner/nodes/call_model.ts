@@ -9,6 +9,7 @@ import { createMissionIntegrator } from '../mission-integrator';
 
 import { normalizeMessages } from '../services/message-utils';
 import { captureScreen } from '../../tools/computer-use';
+import { resolveContextEngine } from '../../../context-engine';
 
 /**
  * AI-based prompt slimming decision
@@ -372,35 +373,44 @@ You do not need to use complex execution plans or tools for this interaction.`;
       return m;
     });
 
-    // Limit message history for performance (keep last 20 messages) and compress context
-    const maxMessages = 20;
-    let limitedMessages = prunedMessages;
-    if (prunedMessages.length > maxMessages) {
-      const systemPromptMsg = prunedMessages[0];
-      const droppedMessages = prunedMessages.slice(1, -maxMessages + 1);
-      const remainingMessages = prunedMessages.slice(-maxMessages + 1);
-      
-      let summaryText = '';
-      try {
-        runner.telemetry.info(`Optima: Compressing ${droppedMessages.length} older historical turns into semantic summary...`);
-        summaryText = await generateSemanticSummary(droppedMessages, client);
-      } catch (err) {
-        console.warn('[CallModel] Failed to generate semantic summary:', err);
+    // ── Unified Context Engine Assembly ─────────────────────────────────────
+    let finalMessages = prunedMessages;
+    try {
+      const contextEngine = resolveContextEngine();
+      const planSteps = (state as any).plan?.steps || state.decomposedTask?.steps;
+      const dagNodes = Array.isArray(planSteps)
+        ? planSteps.map((step: any) => ({
+            nodeId: String(step.id || step.stepId || 'node'),
+            nodeName: String(step.title || step.description || step.name || 'Step'),
+            status: (step.status || 'pending') as any,
+            summary: step.summary || step.output || step.result,
+          }))
+        : undefined;
+
+      const assembleRes = await contextEngine.assemble({
+        sessionId: state.missionId || 'default-session',
+        messages: prunedMessages,
+        model: modelUsed,
+        prompt: typeof prunedMessages[prunedMessages.length - 1]?.content === 'string'
+          ? (prunedMessages[prunedMessages.length - 1].content as string)
+          : '',
+        dagNodes,
+      });
+
+      finalMessages = assembleRes.messages;
+
+      if (assembleRes.compactionInfo?.wasCompacted) {
+        runner.telemetry.info(
+          `[ContextEngine] Compacted & assembled ${finalMessages.length} messages ` +
+          `(~${assembleRes.estimatedTokens} tokens, freed ~${assembleRes.compactionInfo.freedTokens || 0} tokens)`,
+        );
       }
-      
-      if (summaryText) {
-        const memorySummaryMsg: ChatMessage = {
-          role: 'system',
-          content: `## Compressed Session Memory (Historical Context Summary)\nBelow is a summary of the actions and changes made in earlier steps of this session:\n${summaryText}\n`
-        };
-        limitedMessages = [systemPromptMsg, memorySummaryMsg, ...remainingMessages];
-      } else {
-        limitedMessages = [systemPromptMsg, ...remainingMessages];
-      }
+    } catch (err) {
+      console.warn('[CallModel] ContextEngine assembly fallback:', err);
     }
 
     const request: ChatRequest = {
-      messages: limitedMessages,
+      messages: finalMessages,
       tools: toolDefs,
       onStreamChunk: (chunk: string) => {
         thoughtBuffer += chunk;

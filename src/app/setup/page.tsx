@@ -74,8 +74,8 @@ const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
     <Image src="/images/ai-providers/lm-studio.png" alt="LM Studio Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
-const EverFernBglessLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/logos/black-logo-withoutbg.png" alt="EverFern Cloud" width={size} height={size} className="dark:invert opacity-90" />
+const EverFernBglessLogo = ({ size = 20, isDark = false }: { size?: number; isDark?: boolean }) => (
+    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} className={isDark ? "" : "dark:invert opacity-90"} />
 );
 
 
@@ -445,7 +445,7 @@ export default function SetupPage() {
     }, []);
 
     const [engine, setEngine] = useState<"local" | "online" | "everfern" | null>(null);
-    const [voiceProvider, setVoiceProvider] = useState<"deepgram" | "elevenlabs" | "local" | null>(null);
+    const [voiceProvider, setVoiceProvider] = useState<"everfern" | "deepgram" | "elevenlabs" | "local" | null>(null);
     const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
     const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
     const [provider, setProvider] = useState<string | null>(null);
@@ -1434,6 +1434,7 @@ export default function SetupPage() {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, width: "100%", marginBottom: 32 }}>
                                 {[
                                     { id: "none", name: "Disabled", logo: () => <X size={20} />, desc: "Disable Voice Mode features." },
+                                    { id: "everfern", name: "EverFern Voice", logo: () => <EverFernBglessLogo size={20} isDark={true} />, desc: "Managed cloud STT (Deepgram Nova-2)." },
                                     { id: "local", name: "Local ASR", logo: () => <OllamaLogo size={20} />, desc: "Auto-managed local STT." },
                                     { id: "deepgram", name: "Deepgram", logo: () => <DeepgramLogo size={20} />, desc: "Online speech-to-text API." },
                                     { id: "elevenlabs", name: "ElevenLabs", logo: () => <ElevenLabsLogo size={20} />, desc: "Online speech & voice API." }
@@ -1495,11 +1496,16 @@ export default function SetupPage() {
 
                             {/* Inputs for keys */}
                             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16, marginBottom: 32 }}>
+                                {voiceProvider === "everfern" && (
+                                    <div style={{ padding: "14px 18px", borderRadius: 14, backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                                        🌿 <strong>EverFern Cloud Voice</strong> uses managed Deepgram Nova-2 with zero setup required.
+                                    </div>
+                                )}
                                 {voiceProvider === "deepgram" && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Deepgram API Key</label>
                                         <div style={{ position: "relative" }}>
-                                            <input type="password" placeholder="sk-..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
+                                            <input type="password" placeholder="Leave blank to use EverFern Cloud Deepgram key..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                 onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                 onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
@@ -1523,14 +1529,14 @@ export default function SetupPage() {
 
                             <button
                                 onClick={() => setStep(5)}
-                                disabled={(voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())}
+                                disabled={(voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())}
                                 style={{
                                     width: "100%", height: 52,
-                                    background: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? "rgba(32,30,36,0.1)" : 'var(--color-text-primary)',
-                                    color: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? 'var(--color-text-tertiary)' : 'var(--color-bg-base)',
+                                    background: (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim()) ? "rgba(32,30,36,0.1)" : 'var(--color-text-primary)',
+                                    color: (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim()) ? 'var(--color-text-tertiary)' : 'var(--color-bg-base)',
                                     borderRadius: 12, fontWeight: 600, fontSize: 14,
                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                    gap: 8, cursor: ((voiceProvider === "deepgram" && !voiceDeepgramKey.trim()) || (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())) ? "not-allowed" : "pointer", border: "none",
+                                    gap: 8, cursor: (voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim()) ? "not-allowed" : "pointer", border: "none",
                                     transition: "all 0.2s", letterSpacing: "0.01em"
                                 }}
                             >
