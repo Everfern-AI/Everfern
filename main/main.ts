@@ -84,8 +84,7 @@ import { toolApprovalStore } from './store/tool-approvals';
 // Disable GPU shader disk cache — prevents "Access is denied (0x5)" on Windows
 // when a previous Electron process left the GPUCache directory locked.
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-// Disable the net disk cache for the same reason (net\disk_cache errors).
-app.commandLine.appendSwitch('disable-application-cache');
+// NOTE: disable-application-cache is deprecated and causes grey screen on macOS — removed.
 // Suppress Chromium GPU blocklist — lets the GPU initialise even after a crash.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 

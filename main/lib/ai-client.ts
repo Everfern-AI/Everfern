@@ -672,7 +672,7 @@ export class AIClient {
       // Only attempt the dedicated vision-grounding path for models that support it.
       // Chat models like fern-1 do NOT support image input — strip images and fall through.
       const modelLower = (request.model ?? this.config.model).toLowerCase();
-      const modelSupportsVision = modelLower.includes('tars') || modelLower.startsWith('everfern-tars');
+      const modelSupportsVision = modelLower.includes('tars') || modelLower.startsWith('everfern') || modelLower.includes('qwen') || modelLower.includes('vl');
 
       if (hasImages && modelSupportsVision) {
         // Extract screenshot and objective from messages
@@ -684,7 +684,9 @@ export class AIClient {
           if (imageUrl) {
             try {
               // Use direct HTTP request to /api/chat/completions for computer use
-              const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+              const baseUrl = this.config.baseUrl || 'https://api.everfern.app/api';
+              const endpoint = baseUrl.endsWith('/api') ? `${baseUrl}/chat/completions` : (baseUrl.endsWith('/') ? `${baseUrl}api/chat/completions` : `${baseUrl}/api/chat/completions`);
+              const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -1692,8 +1694,9 @@ export class AIClient {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
-        // If local Ollama daemon is offline, fail fast immediately without noisy retries
-        if (url.includes('11434') || url.includes('localhost:11434')) {
+        // If local daemon (Ollama 11434, LM Studio 1234, local server) is offline, fail fast immediately without noisy retries
+        const isLocalEndpoint = url.includes('11434') || url.includes('1234') || url.includes('localhost') || url.includes('127.0.0.1');
+        if (isLocalEndpoint && (lastError.message.includes('fetch failed') || (lastError as any).cause?.code === 'ECONNREFUSED' || lastError.message.includes('ECONNREFUSED'))) {
           console.log(`[AIClient] Local endpoint offline (${url}), failing fast.`);
           throw lastError;
         }
@@ -2246,7 +2249,9 @@ export class AIClient {
 
   private async _openAICompatListModels(): Promise<string[]> {
     try {
-      const res = await this._fetchWithRetry(`${this.config.baseUrl}/models`, { headers: this._oaiHeaders }, 2);
+      const isLocal = this.isLocal() || this.config.provider === 'lmstudio' || this.config.baseUrl.includes('localhost') || this.config.baseUrl.includes('127.0.0.1');
+      const retries = isLocal ? 0 : 2;
+      const res = await this._fetchWithRetry(`${this.config.baseUrl}/models`, { headers: this._oaiHeaders }, retries);
       if (!res.ok) return [];
       const data = await res.json();
       const rawModels = Array.isArray(data.data)

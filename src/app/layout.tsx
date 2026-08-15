@@ -5,8 +5,15 @@ import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import UpdateNotification from "@/components/UpdateNotification";
 import { AnnouncementPopup } from "@/components/AnnouncementPopup";
+import { MaterialSymbolsLoader } from "@/components/MaterialSymbolsLoader";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  variable: "--font-figtree",
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+});
 
 const ebGaramond = EB_Garamond({
   subsets: ["latin"],
@@ -38,13 +45,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={cn("font-body", "h-full", "antialiased", ebGaramond.variable, jetbrainsMono.variable, firaCode.variable, "font-sans", geist.variable)}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={cn(
+        "font-body",
+        "h-full",
+        "antialiased",
+        ebGaramond.variable,
+        jetbrainsMono.variable,
+        firaCode.variable,
+        figtree.variable,
+        "font-sans",
+        geist.variable
+      )}
+    >
       <head>
-        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Fira+Code:wght@300..700&display=swap" rel="stylesheet" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -63,6 +79,7 @@ export default function RootLayout({
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-background text-on-surface">
         <ThemeProvider>
           {children}
+          <MaterialSymbolsLoader />
           <UpdateNotification />
           <AnnouncementPopup />
         </ThemeProvider>
@@ -70,3 +87,4 @@ export default function RootLayout({
     </html>
   );
 }
+

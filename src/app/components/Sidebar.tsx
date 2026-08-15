@@ -64,7 +64,14 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
     }, []);
 
     useEffect(() => {
+        // Guard against concurrent calls piling up if IPC is slow on Mac
+        let inFlight = false;
+        const ipcTimeout = <T,>(p: Promise<T>, ms = 3000): Promise<T | { success: false }> =>
+            Promise.race([p, new Promise<{ success: false }>(r => setTimeout(() => r({ success: false }), ms))]) as any;
+
         const fetchUsername = async () => {
+            if (inFlight) return; // skip if previous call still pending
+            inFlight = true;
             try {
                 let name = "User";
                 let avatar = null;
@@ -72,7 +79,7 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 if (sessionStr) {
                     try {
                         const session = JSON.parse(sessionStr);
-                        if (!session?.accessToken) return;
+                        if (!session?.accessToken) { inFlight = false; return; }
                         const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
                         const userRes = await fetch(`${API_URL}/api/user/me`, {
                             headers: { Authorization: `Bearer ${session.accessToken}` }
@@ -94,22 +101,24 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                     }
                 }
                 if (name === "User" && (window as any).electronAPI?.loadConfig) {
-                    const res = await (window as any).electronAPI.loadConfig();
-                    if (res.success && res.config?.userName) {
-                        name = res.config.userName;
+                    const res = await ipcTimeout((window as any).electronAPI.loadConfig());
+                    if ((res as any).success && (res as any).config?.userName) {
+                        name = (res as any).config.userName;
                     } else if ((window as any).electronAPI?.system?.getUsername) {
-                        name = await (window as any).electronAPI.system.getUsername();
+                        name = await ipcTimeout((window as any).electronAPI.system.getUsername()) as string || name;
                     }
                 }
                 setUsername(name.charAt(0).toUpperCase() + name.slice(1));
                 setAvatarUrl(avatar);
             } catch { }
+            inFlight = false;
         };
         fetchUsername();
 
         const interval = setInterval(fetchUsername, 5000);
         return () => clearInterval(interval);
     }, []);
+
     const [history, setHistory] = useState<ConversationSummary[]>([]);
 
     useEffect(() => {
