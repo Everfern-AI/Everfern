@@ -330,14 +330,24 @@ export class ChatHistoryStore {
 
       // Cleanup orphaned/stale messages ONLY if this is a full conversation save
       // (indicated by (conversation as any).isFullSave flag)
-      // This prevents deleting previous messages when doing real-time partial saves
+      // Chunk deletions into batches of 400 to prevent exceeding SQLITE_MAX_VARIABLE_NUMBER (999)
       if ((conversation as any).isFullSave !== false && savedIds.length > 0) {
-        const placeholders = savedIds.map(() => '?').join(',');
-        await dbOps.run(
-          `DELETE FROM messages
-           WHERE conversation_id = ? AND id NOT IN (${placeholders})`,
-          [conversation.id, ...savedIds]
+        const CHUNK_SIZE = 400;
+        const allCurrentRows = await dbOps.all(
+          'SELECT id FROM messages WHERE conversation_id = ?',
+          [conversation.id]
         );
+        const savedIdSet = new Set(savedIds);
+        const toDelete = allCurrentRows.map((r: any) => r.id).filter((id: string) => !savedIdSet.has(id));
+
+        for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+          const chunk = toDelete.slice(i, i + CHUNK_SIZE);
+          const placeholders = chunk.map(() => '?').join(',');
+          await dbOps.run(
+            `DELETE FROM messages WHERE conversation_id = ? AND id IN (${placeholders})`,
+            [conversation.id, ...chunk]
+          );
+        }
       } else if ((conversation as any).isFullSave !== false) {
         await dbOps.run(
           'DELETE FROM messages WHERE conversation_id = ?',

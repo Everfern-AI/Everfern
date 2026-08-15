@@ -366,17 +366,28 @@ function toContentString(content: any): string {
 
 function extractSuggestedFollowUps(content: string): { cleanContent: string; followUps: Array<{ icon: string; text: string }> } {
     if (!content) return { cleanContent: '', followUps: [] };
-    const regex = /<suggested_follow_ups>([\s\S]*?)<\/suggested_follow_ups>/i;
-    const match = content.match(regex);
+
+    // Tag pattern matching complete or partial/streaming <suggested_follow_ups> blocks
+    const tagPattern = /<(?:suggested_follow_ups|suggested_follow_up|suggested-follow-ups|suggested_questions)>([\s\S]*?)(?:<\/(?:suggested_follow_ups|suggested_follow_up|suggested-follow-ups|suggested_questions)>|$)/i;
+    const match = content.match(tagPattern);
+
+    // Strip out all suggested_follow_ups tags (whether closed or currently streaming/unclosed)
+    const cleanContent = content
+        .replace(/<(?:suggested_follow_ups|suggested_follow_up|suggested-follow-ups|suggested_questions)>[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up|suggested-follow-ups|suggested_questions)>|$)/gi, '')
+        .trim();
+
     if (!match) {
-        return { cleanContent: content, followUps: [] };
+        return { cleanContent, followUps: [] };
     }
 
-    const cleanContent = content.replace(regex, '').trim();
     let followUps: Array<{ icon: string; text: string }> = [];
 
     // Clean the inner content (strip markdown code blocks if present)
-    let innerText = match[1].trim();
+    let innerText = (match[1] || '').trim();
+    if (!innerText) {
+        return { cleanContent, followUps: [] };
+    }
+
     innerText = innerText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
 
     // Auto-fix common LLM JSON syntax errors before parsing
@@ -401,19 +412,16 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
     } catch (e) {
-        console.debug("Failed to parse suggested follow-ups JSON as a whole, attempting robust extraction:", e);
-
         // 1. Try to extract valid JSON objects using brace-matching with reset on new '{'
-        // Resetting startIdx on '{' allows us to skip unclosed/truncated JSON objects and capture subsequent valid ones.
         let startIdx = -1;
         const candidates: string[] = [];
 
         for (let i = 0; i < innerText.length; i++) {
             if (innerText[i] === '{') {
-                startIdx = i; // Reset startIdx to the newest '{'
+                startIdx = i;
             } else if (innerText[i] === '}' && startIdx !== -1) {
                 candidates.push(innerText.slice(startIdx, i + 1));
-                startIdx = -1; // Reset after finding a match
+                startIdx = -1;
             }
         }
 
@@ -431,15 +439,13 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
             }
         }
 
-        // 2. Salvage partially truncated/malformed JSON lines (e.g. unclosed quotes in fields)
+        // 2. Salvage partially truncated/malformed JSON lines
         const lines = innerText.split('\n');
         for (const line of lines) {
-            // Match: "icon": "🔊", "text": "Turn up the
             const hasIconAndText = line.match(/["']icon["']\s*:\s*["']([^"']+)["']\s*,\s*["']text["']\s*:\s*["']?([^"'\n}]+)/i);
             if (hasIconAndText) {
                 const icon = hasIconAndText[1].trim();
                 let text = hasIconAndText[2].trim();
-                // Clean up any trailing quotes or commas
                 text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
 
                 if (text && !followUps.some(f => f.text.toLowerCase() === text.toLowerCase())) {
@@ -448,7 +454,6 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
                 continue;
             }
 
-            // Match: "text": "Turn up the", "icon": "🔊"
             const hasTextAndIcon = line.match(/["']text["']\s*:\s*["']([^"']+)["']\s*,\s*["']icon["']\s*:\s*["']?([^"'\n}]+)/i);
             if (hasTextAndIcon) {
                 const textVal = hasTextAndIcon[1].trim();
@@ -475,7 +480,7 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
                     const emojiMatch = cleanLine.match(/^([\u2000-\u32FF\ud800-\udbff\udc00-\udfff\ud83c\ud83d\ud83e\u2600-\u27ff])\s*(.*)$/);
                     if (emojiMatch) {
                         followUps.push({ icon: emojiMatch[1], text: emojiMatch[2] });
-                    } else {
+                    } else if (cleanLine.length > 5 && !cleanLine.startsWith('{') && !cleanLine.startsWith('}')) {
                         followUps.push({ icon: '💬', text: cleanLine });
                     }
                 }
@@ -488,8 +493,13 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
         .map(f => {
             let text = String(f.text || '').trim();
             text = text.replace(/^["'\s,]+|["'\s,]+$/g, '').trim();
+            let icon = String(f.icon || '💬').trim();
+            // Validate icon is a small symbol or emoji, otherwise fallback to 💬
+            if (!icon || icon.length > 4) {
+                icon = '💬';
+            }
             return {
-                icon: String(f.icon || '💬').trim(),
+                icon,
                 text
             };
         })
@@ -2432,9 +2442,22 @@ export default function ChatPage() {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
                                 const final = [...prev];
-                                final[existingIdx] = assistantMsg;
+                                final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
                                 saveConversation(final);
                                 return final;
+                            }
+                            if (prev.length > 0) {
+                                const lastMsg = prev[prev.length - 1];
+                                if (lastMsg.role === 'assistant') {
+                                    const lastClean = (lastMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                    const newClean = (assistantMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                    if (lastClean === newClean && lastClean.length > 0) {
+                                        const final = [...prev];
+                                        final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
+                                        saveConversation(final);
+                                        return final;
+                                    }
+                                }
                             }
                             const final = [...prev, assistantMsg];
                             saveConversation(final);
@@ -2488,14 +2511,26 @@ export default function ChatPage() {
                         setStreamingThought("");
                         streamingContentRef.current = "";
                         streamingThoughtRef.current = "";
-                        assistantMessageIdRef.current = null;
                         setMessages(prev => {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
                                 const final = [...prev];
-                                final[existingIdx] = assistantMsg;
+                                final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
                                 saveConversation(final);
                                 return final;
+                            }
+                            if (prev.length > 0) {
+                                const lastMsg = prev[prev.length - 1];
+                                if (lastMsg.role === 'assistant') {
+                                    const lastClean = (lastMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                    const newClean = (assistantMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                    if (lastClean === newClean && lastClean.length > 0) {
+                                        const final = [...prev];
+                                        final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
+                                        saveConversation(final);
+                                        return final;
+                                    }
+                                }
                             }
                             const final = [...prev, assistantMsg];
                             saveConversation(final);
@@ -2528,9 +2563,22 @@ export default function ChatPage() {
                         const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                         if (existingIdx >= 0) {
                             const final = [...prev];
-                            final[existingIdx] = assistantMsg;
+                            final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
                             saveConversation(final);
                             return final;
+                        }
+                        if (prev.length > 0) {
+                            const lastMsg = prev[prev.length - 1];
+                            if (lastMsg.role === 'assistant') {
+                                const lastClean = (lastMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                const newClean = (assistantMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                if (lastClean === newClean && lastClean.length > 0) {
+                                    const final = [...prev];
+                                    final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
+                                    saveConversation(final);
+                                    return final;
+                                }
+                            }
                         }
                         const final = [...prev, assistantMsg];
                         saveConversation(final);
@@ -3984,9 +4032,22 @@ export default function ChatPage() {
                                 const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                                 if (existingIdx >= 0) {
                                     const final = [...prev];
-                                    final[existingIdx] = assistantMsg;
+                                    final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
                                     saveConversation(final);
                                     return final;
+                                }
+                                if (prev.length > 0) {
+                                    const lastMsg = prev[prev.length - 1];
+                                    if (lastMsg.role === 'assistant') {
+                                        const lastClean = (lastMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                        const newClean = (assistantMsg.content || '').replace(/<(?:suggested_follow_ups|suggested_follow_up)[\s\S]*?(?:<\/(?:suggested_follow_ups|suggested_follow_up)>|$)/gi, '').trim();
+                                        if (lastClean === newClean && lastClean.length > 0) {
+                                            const final = [...prev];
+                                            final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
+                                            saveConversation(final);
+                                            return final;
+                                        }
+                                    }
                                 }
                                 const final = [...prev, assistantMsg];
                                 saveConversation(final);
@@ -6424,10 +6485,19 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                             const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
                                                             const textToRender = finalStreamingContent || streamingContent;
-                                                            const isAlreadyInMessages = messages.length > 0 &&
-                                                                messages[messages.length - 1].role === "assistant" &&
-                                                                textToRender &&
-                                                                messages[messages.length - 1].content?.trim() === textToRender.trim();
+                                                            const lastAssistantMsg = messages.length > 0 && messages[messages.length - 1].role === "assistant" ? messages[messages.length - 1] : null;
+                                                            const lastAssistantClean = lastAssistantMsg ? extractSuggestedFollowUps(lastAssistantMsg.content || '').cleanContent.trim() : '';
+                                                            const currentClean = extractSuggestedFollowUps(textToRender).cleanContent.trim();
+                                                            
+                                                            const isAlreadyInMessages = !isLoading || isMessageCommittedRef.current || (
+                                                                lastAssistantMsg !== null &&
+                                                                (
+                                                                    !textToRender ||
+                                                                    lastAssistantClean === currentClean ||
+                                                                    (currentClean.length > 0 && lastAssistantClean.startsWith(currentClean)) ||
+                                                                    (lastAssistantClean.length > 0 && currentClean.startsWith(lastAssistantClean))
+                                                                )
+                                                            );
 
                                                             return (
                                                                 <>

@@ -77,22 +77,27 @@ export const SuggestedFollowUps: React.FC<SuggestedFollowUpsProps> = ({
                             e.currentTarget.style.backgroundColor = "transparent";
                         }}
                     >
-                        {item.icon && (
-                            <span style={{
-                                fontSize: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: 28,
-                                height: 28,
-                                borderRadius: "50%",
-                                backgroundColor: "var(--color-bg-subtle)",
-                                flexShrink: 0
-                            }}>
-                                {item.icon}
-                            </span>
-                        )}
-                        <span style={{ flex: 1, fontWeight: 500, lineHeight: 1.4 }}>
+                        <span style={{
+                            fontSize: 15,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 28,
+                            height: 28,
+                            borderRadius: "50%",
+                            backgroundColor: "var(--color-bg-subtle)",
+                            flexShrink: 0,
+                            userSelect: "none"
+                        }}>
+                            {item.icon || '💬'}
+                        </span>
+                        <span style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontWeight: 500,
+                            lineHeight: 1.4,
+                            wordBreak: "break-word"
+                        }}>
                             {item.text}
                         </span>
                         <svg

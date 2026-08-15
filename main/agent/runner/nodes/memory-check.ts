@@ -3,11 +3,6 @@ import { AgentRunner } from '../runner';
 import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { findMatchingSensitivePreference } from '../../learning/memory/persistent-memory';
-import { askUserTool } from '../../tools/ask-user';
-import { saveHitlRequest } from '../../../store/hitl';
-import { stateManager } from '../state-manager';
-import { interrupt, GraphInterrupt } from '@langchain/langgraph';
-import * as crypto from 'crypto';
 
 const getLatestUserText = (state: GraphStateType): string => {
   const messages = state.messages || [];
@@ -34,9 +29,6 @@ export const createMemoryCheckNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
-    const conversationId = config?.configurable?.executionContext?.conversationId || state.missionId || 'unknown';
-    const isResuming = config?.configurable?.executionContext?.isResuming;
-
     // Retrieve user query
     const userQuery = getLatestUserText(state);
     if (!userQuery) {
@@ -50,113 +42,27 @@ export const createMemoryCheckNode = (
       return { taskPhase: 'triage' as const };
     }
 
-    console.log(`[MemoryCheck] Sensitive preference matched: ${match.category} -> "${match.value}"`);
+    console.log(`[MemoryCheck] Relevant preference found: ${match.category} -> "${match.value}". Injecting seamlessly into context.`);
+    runner.telemetry.info(`Applying saved preference for ${match.category}: "${match.value}"`);
 
-    const requestId = `pref_check_${crypto.randomUUID().substring(0, 8)}`;
-    const timestamp = new Date().toISOString();
-
-    const approvalRequest = {
-      id: requestId,
-      conversationId,
-      timestamp,
-      question: `I found a saved preference for ${match.category}: "${match.value}". Do you want to proceed with this preference or switch?`,
-      details: {
-        tools: [],
-        summary: `Saved Preference: "${match.value}"`,
-        reasoning: `Sensitive preference detected for category "${match.category}".`,
-      },
-      options: ['proceed', 'switch']
-    };
-
-    if (!isResuming) {
-      if (conversationId && conversationId !== 'unknown') {
-        saveHitlRequest(approvalRequest);
-      }
-
-      // Emit tool_start for UI/telemetry
-      eventQueue?.push({
-        type: 'tool_start',
-        toolName: 'confirm_preference',
-        toolCallId: requestId,
-        toolArgs: { question: approvalRequest.question }
-      });
-
-      // Execute askUserTool
-      const hitlResult = await askUserTool.execute({
-        questions: [
-          {
-            question: `💡 Saved Preference Found\n\nI noticed you have a saved preference for **${match.category}**:\n"${match.value}"\n\nDo you want to proceed with this preference or switch to something else?`,
-            options: [
-              { label: `✅ Yes, proceed with this preference`, value: 'proceed' },
-              { label: `❌ No, switch / override this preference`, value: 'switch' }
-            ],
-            multiSelect: false
-          }
-        ]
-      }, (msg) => runner.telemetry.info(msg));
-
-      eventQueue?.push({
-        type: 'tool_call',
-        toolCall: {
-          id: requestId,
-          toolCallId: requestId,
-          toolName: 'confirm_preference',
-          args: { question: approvalRequest.question },
-          result: hitlResult,
-        },
-      } as any);
-
-      eventQueue?.push({
-        type: 'hitl_request',
-        request: approvalRequest,
-      } as any);
-
-      if (conversationId && conversationId !== 'unknown') {
-        stateManager.setInterrupted(conversationId, approvalRequest);
-      }
-    }
-
-    runner.telemetry.info('Awaiting preference confirmation from user...');
-
-    let answer: any;
-    try {
-      answer = interrupt(approvalRequest);
-    } catch (interruptErr: any) {
-      if (interruptErr && (interruptErr instanceof GraphInterrupt || interruptErr.name === 'GraphInterrupt' || interruptErr.constructor?.name === 'GraphInterrupt')) {
-        throw interruptErr;
-      }
-      console.warn('[MemoryCheck] interrupt() failed or unsupported, routing forward.');
-      return { taskPhase: 'triage' as const };
-    }
-
-    const answerStr = String(answer).toLowerCase();
-    console.log(`[MemoryCheck] User response: "${answerStr}"`);
-
-    // Process answer
-    if (answerStr.includes('proceed') || answerStr.includes('[hitl_approved]') || answerStr.includes('yes')) {
-      runner.telemetry.info(`User confirmed preference: "${match.value}"`);
-      state.messages.push({
+    // Non-blocking preference context injection:
+    // Inform the downstream nodes (Brain, Specialists, Navis) about the user's preference
+    // without interrupting the execution loop or creating artificial tool calls.
+    const messages = state.messages || [];
+    const preferencePrompt = `[SAVED_USER_PREFERENCE] The user has a saved preference for ${match.category}: "${match.value}". Respect and incorporate this preference where relevant into your plan and tool executions.`;
+    
+    // Only inject if not already present in the last system messages
+    const alreadyInjected = messages.some(m => typeof m.content === 'string' && m.content.includes(`preference for ${match.category}: "${match.value}"`));
+    if (!alreadyInjected) {
+      messages.push({
         role: 'system',
-        content: `[PREFERENCE_CONFIRMED] User confirmed they want to use their saved preference for ${match.category}: "${match.value}". Use this preference.`,
-        created_at: new Date().toISOString()
-      } as any);
-    } else {
-      runner.telemetry.info(`User decided to switch/override preference.`);
-      const cleanAnswer = String(answer).replace(/\[hitl_rejected\]/gi, '').replace(/switch/gi, '').trim();
-      
-      const overrideMsg = cleanAnswer && cleanAnswer.length > 0
-        ? `[PREFERENCE_OVERRIDDEN] User decided to switch preference. They specified: "${cleanAnswer}". Use this override instead.`
-        : `[PREFERENCE_OVERRIDDEN] User decided to switch preference. DO NOT use the saved preference "${match.value}". Ask them for their details or choose an alternative option.`;
-      
-      state.messages.push({
-        role: 'system',
-        content: overrideMsg,
+        content: preferencePrompt,
         created_at: new Date().toISOString()
       } as any);
     }
 
     return {
-      messages: state.messages,
+      messages,
       taskPhase: 'triage' as const
     };
   };

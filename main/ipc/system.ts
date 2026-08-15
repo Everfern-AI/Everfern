@@ -335,16 +335,32 @@ export function registerSystemHandlers() {
         console.log('[IPC] File >1GB, skipping WSL clone. Accessible via /mnt/c/ path.');
       }
 
+      const MAX_TEXT_PREVIEW_BYTES = 256 * 1024; // 256KB max preview
+      const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB max inline base64
+
       let mimeType = 'application/octet-stream';
       if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
         mimeType = `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`;
-        const base64 = fs.readFileSync(newFilePath).toString('base64');
-        const uri = `data:${mimeType};base64,${base64}`;
-        console.log('[IPC] Returning image file, size:', stats.size);
-        return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType, base64: uri, success: true };
+        if (stats.size <= MAX_INLINE_IMAGE_BYTES) {
+          const base64 = fs.readFileSync(newFilePath).toString('base64');
+          const uri = `data:${mimeType};base64,${base64}`;
+          console.log('[IPC] Returning inline image file, size:', stats.size);
+          return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType, base64: uri, success: true };
+        }
+        console.log('[IPC] Image too large for base64 inline, returning path reference, size:', stats.size);
+        return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType, success: true };
       } else {
-        const content = fs.readFileSync(newFilePath, 'utf-8');
-        console.log('[IPC] Returning text file, size:', stats.size);
+        let content = '';
+        if (stats.size <= MAX_TEXT_PREVIEW_BYTES) {
+          content = fs.readFileSync(newFilePath, 'utf-8');
+        } else {
+          const buffer = Buffer.alloc(MAX_TEXT_PREVIEW_BYTES);
+          const fd = fs.openSync(newFilePath, 'r');
+          fs.readSync(fd, buffer, 0, MAX_TEXT_PREVIEW_BYTES, 0);
+          fs.closeSync(fd);
+          content = buffer.toString('utf-8') + '\n\n... [File preview truncated for memory safety. Full file accessible at path]';
+        }
+        console.log('[IPC] Returning bounded text preview, original size:', stats.size);
         return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType: 'text/plain', content, success: true };
       }
     } catch (err: any) {

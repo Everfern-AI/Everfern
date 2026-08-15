@@ -235,7 +235,8 @@ function MemoryTimelineCard({
   const tname = (pill.toolName || pill.label || "").toLowerCase();
   const isRecall = tname.includes('recall') || tname.includes('search');
   const isSave = tname.includes('remember') || tname.includes('save') || tname.includes('consolidator');
-  const isUpdate = tname.includes('update') || tname.includes('profile') || tname.includes('preference');
+  const isUpdate = tname.includes('update') || tname.includes('profile');
+  const isCheck = tname.includes('check') || tname.includes('confirm');
   
   let opLabel = "Memory Access";
   let themeColor = "#10b981"; // Unified EverFern emerald green brand theme
@@ -248,6 +249,8 @@ function MemoryTimelineCard({
     opLabel = "Memory Updated";
   } else if (isRecall) {
     opLabel = "Memory Recalled";
+  } else if (isCheck) {
+    opLabel = "Preference Context";
   }
   
   if (isError) {
