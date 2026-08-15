@@ -18,9 +18,14 @@ export default function OnboardingPage() {
     let active = true;
     const checkConfig = async () => {
       if ((window as any).electronAPI?.loadConfig) {
-        const res = await (window as any).electronAPI.loadConfig();
+        // Wrap in a timeout — if the IPC bridge isn't ready yet (common on Mac at cold start)
+        // the call can hang forever keeping isChecking=true (grey screen).
+        const res = await Promise.race([
+          (window as any).electronAPI.loadConfig(),
+          new Promise<{ success: false }>((resolve) => setTimeout(() => resolve({ success: false }), 3000)),
+        ]);
         if (!active) return;
-        if (res.success && res.config) {
+        if (res.success && (res as any).config) {
           router.push("/chat");
           return;
         }
@@ -57,7 +62,8 @@ export default function OnboardingPage() {
     return () => { active = false; };
   }, [router]);
 
-  if (isChecking) return <div className="min-h-screen bg-[var(--color-bg-base)]" />;
+  // Show a solid background during the IPC check — prevents grey/transparent flash on Mac
+  if (isChecking) return <div style={{ minHeight: '100vh', background: '#111' }} />;
 
   return (
     <main

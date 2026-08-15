@@ -172,10 +172,14 @@ export interface SensitiveMatch {
 
 export function findMatchingSensitivePreference(query: string): SensitiveMatch | null {
   const graph = loadMemoryGraph();
+  if (!graph.nodes || graph.nodes.length === 0) return null;
+
   const lowerQuery = query.toLowerCase();
 
-  const isPaymentQuery = /\b(pay|billing|visa|card|credit|checkout|purchase|subscription|invoice|payments)\b/i.test(lowerQuery);
-  const isAirlineQuery = /\b(flight|airline|book|trip|delta|united|emirates|travel|american|lufthansa|singapore|airlines)\b/i.test(lowerQuery);
+  // Precise matching to avoid false positives (e.g. "ui card", "payload", "book a meeting")
+  const isPaymentQuery = /\b(payment method|credit card|billing address|visa ending|mastercard|bank account|pay via)\b/i.test(lowerQuery);
+  const isAirlineQuery = /\b(flight preference|preferred airline|fly with|airline preference|seat preference|frequent flyer)\b/i.test(lowerQuery) ||
+    (/\b(flight|airline|fly|travel)\b/i.test(lowerQuery) && /\b(prefer|always use|default to|favorite)\b/i.test(lowerQuery));
 
   if (!isPaymentQuery && !isAirlineQuery) {
     return null;
@@ -183,7 +187,7 @@ export function findMatchingSensitivePreference(query: string): SensitiveMatch |
 
   for (const node of graph.nodes) {
     if (node.type !== 'preference') continue;
-    const catLower = node.category.toLowerCase();
+    const catLower = (node.category || '').toLowerCase();
     
     if (isPaymentQuery && (catLower === 'payment' || catLower === 'payments' || catLower === 'billing')) {
       return {

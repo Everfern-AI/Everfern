@@ -84,8 +84,7 @@ import { toolApprovalStore } from './store/tool-approvals';
 // Disable GPU shader disk cache — prevents "Access is denied (0x5)" on Windows
 // when a previous Electron process left the GPUCache directory locked.
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-// Disable the net disk cache for the same reason (net\disk_cache errors).
-app.commandLine.appendSwitch('disable-application-cache');
+// NOTE: disable-application-cache is deprecated and causes grey screen on macOS — removed.
 // Suppress Chromium GPU blocklist — lets the GPU initialise even after a crash.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
@@ -251,7 +250,7 @@ function createWindow(): void {
       nodeIntegration: false,
       contextIsolation: true,
       backgroundThrottling: false,
-      webSecurity: false, // Temporarily disabled for production path debugging
+      webSecurity: true,
     },
   });
 
@@ -372,13 +371,19 @@ function createWindow(): void {
     console.log('[Window] Page finished loading');
   });
 
-  // Open external links in default browser
+  // Open external links securely in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) {
-      shell.openExternal(url);
-      return { action: 'deny' };
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(url);
+      } else {
+        console.warn('[Window] Blocked non-http external URL opening:', url);
+      }
+    } catch (err) {
+      console.warn('[Window] Blocked malformed window open URL:', url);
     }
-    return { action: 'allow' };
+    return { action: 'deny' };
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -934,8 +939,14 @@ app.on('activate', () => {
   }
 });
 
-// ── ShowUI process cleanup on quit ──────────────────────────────────
-app.on('before-quit', async () => {
+// ── Graceful shutdown & cleanup on quit ──────────────────────────────
+let isAppQuitting = false;
+app.on('before-quit', async (event) => {
+  if (isAppQuitting) return;
+  event.preventDefault();
+  isAppQuitting = true;
+  console.log('[Shutdown] Graceful app shutdown initiated...');
+
   // Stop Agent Gateway Control Plane
   try {
     const { agentGatewayServer } = require('./agent/gateway');
@@ -965,7 +976,6 @@ app.on('before-quit', async () => {
     console.error('[App] Error stopping integration services:', error);
   }
 
-
   // Stop extension bridge server
   try {
     console.log('[App] Stopping extension bridge server...');
@@ -993,7 +1003,7 @@ app.on('before-quit', async () => {
     console.error('[App] Error shutting down MCP tools:', error);
   }
 
-  // Close database connection
+  // Close database connection cleanly
   try {
     console.log('[App] Closing database connection...');
     await closeDb();
@@ -1003,7 +1013,14 @@ app.on('before-quit', async () => {
   }
 
   // Clean up system tray
-  systemTrayManager.destroy();
+  try {
+    systemTrayManager.destroy();
+  } catch (trayErr) {
+    console.error('[App] Error destroying system tray:', trayErr);
+  }
+
+  console.log('[Shutdown] Cleanup finished, exiting process.');
+  app.exit(0);
 });
 
 

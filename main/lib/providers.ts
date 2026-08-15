@@ -129,6 +129,14 @@ export const CLOUD_MODEL_MAP: Record<string, string> = {
   'gemini_3_flash_preview': 'google/gemini-3-flash-preview',
   'gemini-2.5-pro': 'google/gemini-2.5-pro',
   'gemini_2_5_pro': 'google/gemini-2.5-pro',
+
+  // EverFern Computer Use (Qwen 3 VL)
+  'everfern-tars': 'qwen/qwen3-vl-235b-a22b-instruct',
+  'everfern-tars-v1': 'qwen/qwen3-vl-235b-a22b-instruct',
+  'everfern-computer': 'qwen/qwen3-vl-235b-a22b-instruct',
+  'qwen3-vl-235b-a22b-instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
+  'qwen3_vl_235b_a22b_instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
+  'qwen/qwen3-vl-235b-a22b-instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
 };
 
 // ── Provider Metadata ────────────────────────────────────────────────

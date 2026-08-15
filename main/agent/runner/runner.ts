@@ -49,9 +49,8 @@ import { getAgentEvents, emitLifecycle } from '../infra/agent-events';
 import { sessionCreated } from '../sessions';
 
 const DEFAULT_CONFIG: AgentRunnerConfig = {
-  // Issue #4 Fix: 100000 was effectively no cap — a stuck agent could run for hours.
-  // 250 is generous enough for any real task while preventing runaway loops.
-  maxIterations: 250,
+  // Safe default iteration limit to prevent runaway token billing on stuck loops
+  maxIterations: 50,
   enableTerminal: true,
 };
 

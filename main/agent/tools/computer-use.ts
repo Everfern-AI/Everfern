@@ -1048,7 +1048,9 @@ class ComputerUseTool {
       const KEY_MAP: Record<string, string> = {
         control: "control", ctrl: "control",
         alt: "alt", shift: "shift",
-        win: "command", command: "command",
+        // On Linux/Windows the Windows key is 'super'; 'command' is macOS-only
+        win: process.platform === "darwin" ? "command" : "super",
+        command: process.platform === "darwin" ? "command" : "super",
         enter: "enter", return: "enter",
         escape: "escape", esc: "escape",
         tab: "tab", delete: "delete", del: "delete",
@@ -1795,8 +1797,10 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           `Action History:\n${historyText}\n\n` +
           `Current Screenshot:${finalTurnPrompt}`;
 
+        // Use the VLM model alias; fall back if model is a plain chat alias like "fern-1"/"everfern-1"
+        const CHAT_ONLY_ALIASES = new Set(["fern-1", "everfern-1", "fern"]);
         const modelName = this.client.provider === "everfern"
-          ? (this.model && this.model !== "fern-1" ? this.model : "everfern-tars-v1")
+          ? (this.model && !CHAT_ONLY_ALIASES.has(this.model) ? this.model : "everfern-tars-v1")
           : (this.model || "everfern-tars-v1");
 
         console.log("[ComputerUse] Querying UI-TARS model...");
@@ -1941,6 +1945,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
         let done = false;
         const dispatched: string[] = [];
+        let lastActionWasWin = false;
 
         for (const act of actions) {
           console.log(`  [EXEC] ${act}`);
@@ -1963,7 +1968,24 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             done = true;
             break;
           }
-          await sleep(0.3);
+
+          // Action-aware sleep: slow UI transitions need more time
+          const actLower = act.toLowerCase();
+          if (/hotkey.*key=.*win/i.test(act) || /hotkey.*key=.*super/i.test(act)) {
+            // Start Menu takes 600-900ms to animate open
+            await sleep(1.5);
+            lastActionWasWin = true;
+          } else if (/hotkey/i.test(act)) {
+            await sleep(0.8);
+            lastActionWasWin = false;
+          } else if (/left_double|double_click/i.test(act)) {
+            // App launch via double-click can be slow
+            await sleep(1.5);
+            lastActionWasWin = false;
+          } else {
+            await sleep(0.3);
+            lastActionWasWin = false;
+          }
         }
 
         history.push({ thought, actions: dispatched, screenshot: img });
@@ -1983,14 +2005,21 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         lastActionSig = sig;
 
         if (stuckCount >= MAX_STUCK) {
-          console.log(`\n[STUCK] Same actions repeated ${MAX_STUCK}x — pressing Escape to recover...`);
-          if (robot) {
-            robot.keyTap("escape");
-          }
+          console.log(`\n[STUCK] Same actions repeated ${MAX_STUCK}x — trying recovery (click desktop + wait)...`);
           stuckCount = 0;
+          lastActionSig = null; // reset so next different action isn't double-counted
+          // Click center of screen to dismiss any stuck menu, then wait for screen to settle
+          if (robot) {
+            const pos = robot.getMousePos();
+            robot.moveMouse(500, 500); // center
+            robot.mouseClick();
+            robot.moveMouse(pos.x, pos.y); // restore
+          }
+          await sleep(2);
         }
 
-        await sleep(1);
+        // Give the screen extra time to settle between steps
+        await sleep(lastActionWasWin ? 0.5 : 1);
       }
 
       return {
