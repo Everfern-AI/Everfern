@@ -102,12 +102,16 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                 }
                 if (name === "User" && (window as any).electronAPI?.loadConfig) {
                     const res = await ipcTimeout((window as any).electronAPI.loadConfig());
-                    if ((res as any).success && (res as any).config?.userName) {
+                    if ((res as any).success && typeof (res as any).config?.userName === "string" && (res as any).config.userName) {
                         name = (res as any).config.userName;
                     } else if ((window as any).electronAPI?.system?.getUsername) {
-                        name = await ipcTimeout((window as any).electronAPI.system.getUsername()) as string || name;
+                        const systemUsername = await ipcTimeout((window as any).electronAPI.system.getUsername());
+                        if (typeof systemUsername === "string" && systemUsername) {
+                            name = systemUsername;
+                        }
                     }
                 }
+                if (typeof name !== "string" || !name) name = "User";
                 setUsername(name.charAt(0).toUpperCase() + name.slice(1));
                 setAvatarUrl(avatar);
             } catch { }
