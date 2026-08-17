@@ -530,23 +530,34 @@ function extractWebSearches(toolCalls: ToolCallDisplay[]): Array<{
   return list;
 }
 
+function cleanThought(text: string): string {
+  return text
+    .replace(/<\/?think>/gi, "")
+    .replace(/^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊|📋)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gim, "")
+    .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System|Web Explorer)\][^\n]*/gim, "")
+    .replace(/^(?:WEB EXPLORER|DEEP RESEARCH|DATA ANALYST|CODING SPECIALIST)\s*(?:\[Phase[^\]]*\])?:?[^\n]*/gim, "")
+    .replace(/^Thought:\s*/gim, "")
+    .trim();
+}
+
 function parseReasoningSteps(thoughtText: string): ReasoningStep[] {
   if (!thoughtText || !thoughtText.trim()) return [];
 
   const clean = cleanThought(thoughtText);
   if (!clean) return [];
 
-  // Split by numbered steps, bullet points, headers, or double newlines
+  // Split by numbered steps (1. 2. 3. ...), bullet points, headers, or sections
   const sections = clean
-    .split(/(?=(?:^|\n)(?:#+|\d+\.|\*|-|[A-Z][a-zA-Z\s]+:))\n?/g)
-    .filter((s) => s.trim().length > 0);
+    .split(/(?=(?:^|\n|\s+)(?:\d+\.|\*|-|[A-Z][a-zA-Z\s]+:)\s+)/g)
+    .map(s => s.trim())
+    .filter((s) => s.length > 0);
 
   if (sections.length > 1) {
-    return sections.map((sec) => {
+    return sections.map((sec, idx) => {
       const lines = sec.trim().split("\n");
       const firstLine = lines[0].replace(/^[#*\-\d.:\s]+/, "").trim();
-      const title = firstLine.length > 40 ? `${firstLine.slice(0, 38)}…` : firstLine || "Scope";
-      const body = lines.slice(1).join("\n").trim() || firstLine;
+      const title = firstLine.length > 45 ? `${firstLine.slice(0, 42)}…` : firstLine || `Step ${idx + 1}`;
+      const body = lines.slice(1).join("\n").trim() || sec.trim();
       return { title, body };
     });
   }
@@ -556,12 +567,12 @@ function parseReasoningSteps(thoughtText: string): ReasoningStep[] {
   if (paras.length > 1) {
     return paras.map((p, idx) => {
       const lines = p.trim().split("\n");
-      const title = lines[0].slice(0, 35).trim() || `Step ${idx + 1}`;
+      const title = lines[0].slice(0, 40).trim() || `Step ${idx + 1}`;
       return { title, body: p.trim() };
     });
   }
 
-  return [{ title: "Scope", body: clean }];
+  return [{ title: "Reasoning", body: clean }];
 }
 
 function tryParseJson(text: string): any {
@@ -570,15 +581,6 @@ function tryParseJson(text: string): any {
   } catch {
     return null;
   }
-}
-
-function cleanThought(text: string): string {
-  return text
-    .replace(/<\/?think>/gi, "")
-    .replace(/^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊|📋)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gim, "")
-    .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System|Web Explorer)\][^\n]*/gim, "")
-    .replace(/^(?:WEB EXPLORER|DEEP RESEARCH|DATA ANALYST|CODING SPECIALIST)\s*(?:\[Phase[^\]]*\])?:?[^\n]*/gim, "")
-    .trim();
 }
 
 // ── Main AgentTimeline Component ──────────────────────────────────────────────
@@ -699,7 +701,27 @@ export const AgentTimeline = React.memo(({
   const webSearches = useMemo(() => extractWebSearches(toolCalls), [toolCalls]);
 
   // Extract reasoning steps
-  const rawThought = thought || reasoningContent || "";
+  const rawThought = useMemo(() => {
+    if (thought && thought.trim()) return thought;
+    if (reasoningContent && reasoningContent.trim()) return reasoningContent;
+
+    for (const tc of toolCalls) {
+      if (tc.args?.thought && typeof tc.args.thought === "string" && tc.args.thought.trim()) {
+        return tc.args.thought;
+      }
+      if (tc.args?.reasoning && typeof tc.args.reasoning === "string" && tc.args.reasoning.trim()) {
+        return tc.args.reasoning;
+      }
+      const events = tc.subAgentProgress || subAgentProgress?.get(tc.id) || [];
+      for (const ev of events) {
+        if ((ev.type === "reasoning" || ev.type === "thought") && ev.content && typeof ev.content === "string" && ev.content.trim()) {
+          return ev.content;
+        }
+      }
+    }
+    return "";
+  }, [thought, reasoningContent, toolCalls, subAgentProgress]);
+
   const reasoningSteps = useMemo(() => parseReasoningSteps(rawThought), [rawThought]);
 
   // Duration / labels calculation

@@ -2844,13 +2844,29 @@ function createToolWithClient(
       // Handle execute_actions from vision grounding
       if (args.action === 'execute_actions' && Array.isArray(args.actions)) {
         const actions = args.actions as string[];
+        const thought = (args.thought as string) || (args.reasoning as string) || "";
         try {
+          if (thought) {
+            emitEvent?.({
+              type: "reasoning",
+              toolCallId: toolCallId ?? "",
+              timestamp: new Date().toISOString(),
+              content: thought,
+            });
+          }
           // Create a temporary agent just to execute the actions
-          const tempAgent = new ComputerUseAgent(client, tool, model, "Execute actions", 0, 200, 12, toolCallId ?? "");
-          await tempAgent.dispatchAll(actions, onUpdate, emitEvent);
+          const tempAgent = new ComputerUseAgent(client, tool, model, thought || "Execute actions", 0, 200, 12, toolCallId ?? "");
+          await tempAgent.dispatchAll(actions, onUpdate, (ev: any) => {
+            emitEvent?.({
+              type: "subagent-progress",
+              toolCallId: toolCallId ?? "",
+              timestamp: new Date().toISOString(),
+              data: ev,
+            });
+          });
           const obs = await tool.captureObservation();
           const b64 = (obs.screenshot as string)?.split(",")?.[1] || "";
-          return { success: true, output: "Actions executed", base64Image: b64, data: { actions, screenshot: b64 } };
+          return { success: true, output: "Actions executed", base64Image: b64, data: { actions, thought, screenshot: b64 } };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return { success: false, output: `Failed to execute actions: ${message}` };
