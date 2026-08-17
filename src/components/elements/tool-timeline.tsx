@@ -69,9 +69,9 @@ export function ToolTimeline({
           >
             {activeLabel}
           </ShimmerLabel>
-          <ShimmerLabel className="font-normal">
+          <span className="font-normal timeline-static-shimmer text-zinc-500 dark:text-zinc-400">
             {restingLabel}
-          </ShimmerLabel>
+          </span>
         </SwapLabel>
       </CollapsibleTrigger>
       <CollapsibleContent className={cn(collapsePanel, "outline-none")}>
@@ -113,9 +113,15 @@ export function ToolTimeline({
                     {step.verb}
                   </ShimmerLabel>
                   {step.chip && (
-                    <span className={cn("text-[13px] leading-tight break-words font-normal", active ? "text-foreground/85" : "text-foreground/70")}>
+                    <ShimmerLabel
+                      active={active}
+                      className={cn(
+                        "text-[13px] leading-tight break-words font-normal",
+                        active ? "text-foreground/85" : "text-foreground/70"
+                      )}
+                    >
                       {step.chip}
-                    </span>
+                    </ShimmerLabel>
                   )}
                 </div>
               </div>

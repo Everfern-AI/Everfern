@@ -924,8 +924,12 @@ export const AgentTimeline = React.memo(({
             streaming={Boolean(isLive)}
             open={open}
             onOpenChange={setOpen}
-            restingLabel={restingLabel}
-            activeLabel={activeLabel}
+            restingLabel={
+              totalDurationSeconds > 1
+                ? `Worked for ${totalDurationSeconds}s`
+                : `Worked on ${steps.length} ${steps.length === 1 ? "step" : "steps"}`
+            }
+            activeLabel={`Working for ${elapsedSeconds}s`}
             stats={stats}
           />
         </div>

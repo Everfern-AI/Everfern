@@ -503,81 +503,118 @@ class ComputerUseTool {
     text = text.trim();
     if (!text || text.startsWith("#")) return;
 
-    // Normalize start_box format
-    const startBoxMatch = text.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
-    if (startBoxMatch) {
-      text = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
-    }
+    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
 
-    // Parse coordinates
-    const parseXy = (s: string): [number, number] | null => {
-      const parts = s.split(",");
-      if (parts.length >= 2) {
-        const m1 = parts[0].match(/-?\d+/);
-        const m2 = parts[1].match(/-?\d+/);
-        if (m1 && m2) return [parseInt(m1[0]), parseInt(m2[0])];
+    // Helper to extract (x, y) coordinates from formats like "<|box_start|>(835,138)<|box_end|>", "(835,138)", or "835, 138"
+    const extractCoords = (str: string): [number, number] | null => {
+      const m = str.match(/\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?/);
+      if (m) {
+        return [parseInt(m[1], 10), parseInt(m[2], 10)];
       }
       return null;
     };
 
-    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
-    const coords = parseXy(text);
-
-    if (coords && has(/click/i, text)) {
-      // Apply scaling logic
-      if (!robot) {
-        throw new Error(`robotjs unavailable - cannot execute click`);
-      }
-
-      const [rx, ry] = this.absoluteXy(coords);
-
-      console.log(`[ComputerUse] Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
-
-      robot.moveMouse(rx, ry);
-      robot.mouseClick("left");
-      return;
-    }
-
-    if (has(/^type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i, text)) {
-      const typeMatch = text.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
-      if (typeMatch) {
-        await this.call({ action: "type", text: typeMatch[1] });
+    // ── 1. hotkey(key='ctrl ,') or hotkey('ctrl c') or press(key='win') ──
+    const hotkeyMatch = text.match(/^(?:hotkey|press)\s*\(\s*(?:key\s*=\s*)?['"]?([\s\S]*?)['"]?\s*\)$/i);
+    if (hotkeyMatch) {
+      const rawKey = hotkeyMatch[1].trim();
+      // Handle hotkey combinations like 'ctrl ,', 'ctrl c', 'ctrl+c', 'alt+tab', 'win', 'ctrl, shift, esc'
+      const keyParts = rawKey.split(/[\s,+]+/).map(k => k.trim()).filter(Boolean);
+      if (keyParts.length > 0) {
+        await this.call({ action: "key", keys: keyParts });
         return;
       }
     }
 
-    if (has(/^press\s*\(\s*([^)]+)\s*\)\s*$/i, text)) {
-      const key = text.match(/press\s*\(\s*([^)]+)\s*\)/i)![1].trim().toLowerCase();
-      await this.call({ action: "key", keys: key.includes("+") ? key.split("+") : [key] });
+    // ── 2. Double Click (left_double or double_click) ──
+    if (has(/^(?:left_double|double_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Double Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.doubleClickAt(rx, ry);
+      } else {
+        await this.call({ action: "double_click" });
+      }
       return;
     }
 
-    // ── scroll(direction: down|up|left|right [, coordinate: [x, y]] [, amount: N]) ──
-    if (has(/^scroll\s*\(/i, text)) {
-      const dirMatch  = text.match(/direction\s*[:=]\s*["']?(up|down|left|right)["']?/i);
-      const coordMatch = text.match(/coordinate\s*[:=]\s*\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/i);
-      const amtMatch  = text.match(/(?:amount|pixels)\s*[:=]\s*(-?\d+)/i);
+    // ── 3. Right Click (right_single or right_click) ──
+    if (has(/^(?:right_single|right_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Right Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.click(rx, ry, "right");
+      } else {
+        this.click(undefined, undefined, "right");
+      }
+      return;
+    }
 
-      const direction = dirMatch ? dirMatch[1].toLowerCase() : "down";
-      const pixels    = amtMatch ? parseInt(amtMatch[1]) : 300; // default 300px = ~3 ticks
-      const isHoriz   = direction === "left" || direction === "right";
-      const sign      = (direction === "down" || direction === "right") ? pixels : -pixels;
+    // ── 4. Left Click (click or left_click) ──
+    if (has(/^(?:click|left_click|mouse_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        if (!robot) {
+          throw new Error(`robotjs unavailable - cannot execute click`);
+        }
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.moveMouse(rx, ry);
+        this.click(rx, ry, "left");
+      } else {
+        this.click(undefined, undefined, "left");
+      }
+      return;
+    }
+
+    // ── 5. Type text ──
+    const typeMatch = text.match(/^type\s*\(\s*(?:content|text)?\s*[:=]?\s*['"]?([\s\S]*?)['"]?\s*\)$/i);
+    if (typeMatch) {
+      let rawText = typeMatch[1];
+      const hasTrailingNewline = rawText.endsWith('\\n') || rawText.endsWith('\n');
+      rawText = rawText.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+      
+      const cleanType = hasTrailingNewline ? rawText.replace(/[\r\n]+$/, '') : rawText;
+      if (cleanType) {
+        await this.call({ action: "type", text: cleanType });
+      }
+      if (hasTrailingNewline) {
+        await sleep(0.1);
+        await this.call({ action: "key", keys: ["enter"] });
+      }
+      return;
+    }
+
+    // ── 6. scroll(direction: down|up|left|right [, coordinate: [x, y]] [, amount: N]) ──
+    if (has(/^scroll\s*\(/i, text)) {
+      const dirMatch = text.match(/direction\s*[:=]\s*["']?(up|down|left|right)["']?/i);
+      const amtMatch = text.match(/(?:amount|pixels)\s*[:=]\s*(-?\d+)/i);
+      const direction = dirMatch ? dirMatch[1].toLowerCase() : (text.toLowerCase().includes("up") ? "up" : "down");
+      const coords = extractCoords(text);
+      const pixels = amtMatch ? parseInt(amtMatch[1], 10) : 300;
+      const isHoriz = direction === "left" || direction === "right";
+      const sign = (direction === "down" || direction === "right") ? pixels : -pixels;
 
       const scrollParams: any = { action: isHoriz ? "hscroll" : "scroll", pixels: sign };
-      if (coordMatch) scrollParams.coordinate = [parseInt(coordMatch[1]), parseInt(coordMatch[2])];
+      if (coords) scrollParams.coordinate = coords;
 
       await this.call(scrollParams);
       return;
     }
 
-    // ── drag(startCoordinate: [x1,y1], endCoordinate: [x2,y2]) ──────────────────
+    // ── 7. drag(start_box=..., end_box=...) or drag([x1,y1], [x2,y2]) ──
     if (has(/^drag\s*\(/i, text)) {
-      const coords = [...text.matchAll(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/g)];
-      if (coords.length >= 2 && robot) {
-        const [sx, sy] = [parseInt(coords[0][1]), parseInt(coords[0][2])];
-        const [ex, ey] = [parseInt(coords[1][1]), parseInt(coords[1][2])];
+      const coordMatches = [...text.matchAll(/\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?/g)];
+      if (coordMatches.length >= 2 && robot) {
+        const p1: [number, number] = [parseInt(coordMatches[0][1], 10), parseInt(coordMatches[0][2], 10)];
+        const p2: [number, number] = [parseInt(coordMatches[1][1], 10), parseInt(coordMatches[1][2], 10)];
+        const [sx, sy] = this.absoluteXy(p1);
+        const [ex, ey] = this.absoluteXy(p2);
         robot.moveMouse(sx, sy);
         robot.mouseToggle("down", "left");
+        await sleep(0.15);
         robot.moveMouse(ex, ey);
         robot.mouseToggle("up", "left");
         console.log(`[ComputerUse] Drag from (${sx},${sy}) to (${ex},${ey})`);
@@ -587,17 +624,18 @@ class ComputerUseTool {
       return;
     }
 
-    // ── hover(coordinate: [x, y]) ────────────────────────────────────────────────
+    // ── 8. hover(coordinate: [x, y]) / mouse_move ──
     if (has(/^(?:hover|move_to|mouse_move)\s*\(/i, text)) {
-      const coordMatch = text.match(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/);
-      if (coordMatch && robot) {
-        robot.moveMouse(parseInt(coordMatch[1]), parseInt(coordMatch[2]));
-        console.log(`[ComputerUse] Hover to (${coordMatch[1]},${coordMatch[2]})`);
+      const coords = extractCoords(text);
+      if (coords && robot) {
+        const [rx, ry] = this.absoluteXy(coords);
+        this.moveMouse(rx, ry);
+        console.log(`[ComputerUse] Hover to (${rx},${ry})`);
       }
       return;
     }
 
-    // ── wait(time: N) ────────────────────────────────────────────────────────────
+    // ── 9. wait(time: N) ──
     if (has(/^wait\s*\(/i, text)) {
       const numMatch = text.match(/(\d+(?:\.\d+)?)/);
       const secs = numMatch ? parseFloat(numMatch[1]) : 1;
@@ -606,7 +644,13 @@ class ComputerUseTool {
       return;
     }
 
-    // ── screenshot() / observe() ─────────────────────────────────────────────────
+    // ── 10. finished / terminate / done / call_user ──
+    if (has(/^(?:finished|terminate|done|call_user)/i, text)) {
+      console.log(`[ComputerUse] Automation step complete: ${text}`);
+      return;
+    }
+
+    // ── 11. screenshot() / observe() ──
     if (has(/^(?:screenshot|observe|capture)\s*\(/i, text)) {
       await this.captureObservation();
       return;
@@ -1062,6 +1106,8 @@ class ComputerUseTool {
         home: "home", end: "end", pageup: "pageup", pagedown: "pagedown",
         f1: "f1", f2: "f2", f3: "f3", f4: "f4", f5: "f5", f6: "f6",
         f7: "f7", f8: "f8", f9: "f9", f10: "f10", f11: "f11", f12: "f12",
+        ",": ",", ".": ".", "/": "/", "\\": "\\", ";": ";", "'": "'",
+        "-": "-", "=": "=", "[": "[", "]": "]", "`": "`"
       };
 
       const normalizedKeys = [...keys];

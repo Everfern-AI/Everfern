@@ -589,16 +589,50 @@ export class AIClient {
   }
 
   private _parseActionsFromContent(content: string): string[] {
-    // Parse action strings from the response content
-    // Format: "action1 | action2 | action3" or just "action1"
     if (!content) return [];
 
-    const actions = content
-      .split('|')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.toLowerCase().includes('done'));
+    // Strip thinking blocks and markdown code fences
+    let clean = content.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '').trim();
+    clean = clean.replace(/^```[a-z]*\n?/gmi, '').replace(/```$/gmi, '').trim();
 
-    return actions;
+    const actions: string[] = [];
+
+    // 1. Check for Action: section
+    const actionBlockMatch = clean.match(/Action:\s*([\s\S]*?)$/i);
+    const textToScan = actionBlockMatch ? actionBlockMatch[1] : clean;
+
+    // 2. Extract structured actions (click, left_double, right_single, double_click, right_click, drag, hotkey, type, scroll, wait, finished, call_user, press, hover, etc.)
+    const actionRegex = /(click|left_double|right_single|double_click|right_click|drag|hotkey|type|scroll|wait|finished|call_user|press|hover|move_to|mouse_move|key)\s*\(([^)]*)\)/gi;
+    let match;
+    while ((match = actionRegex.exec(textToScan)) !== null) {
+      actions.push(match[0].trim());
+    }
+
+    if (actions.length > 0) {
+      return actions;
+    }
+
+    // 3. Fallback: line-by-line inspection
+    const lines = textToScan.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.toLowerCase().startsWith('thought:') || trimmed.startsWith('#')) continue;
+      if (/^[a-z0-9_]+\s*\(.*\)/i.test(trimmed)) {
+        actions.push(trimmed);
+      }
+    }
+
+    if (actions.length > 0) return actions;
+
+    // 4. Fallback: split by pipe only if no box tags are present
+    if (clean.includes('|') && !clean.includes('<|box_')) {
+      return clean
+        .split('|')
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && !s.toLowerCase().includes('done') && !s.toLowerCase().startsWith('thought:'));
+    }
+
+    return [];
   }
 
   private _maybeInjectComputerUseTools(options: any, req: ChatRequest): void {

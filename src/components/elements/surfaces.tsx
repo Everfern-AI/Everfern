@@ -62,6 +62,30 @@ export function ShimmerLabel({
             rgba(161, 161, 170, 0.75) 100%
           );
         }
+        .timeline-static-shimmer {
+          background-size: 100% auto;
+          background-image: linear-gradient(
+            90deg,
+            rgba(100, 116, 139, 0.75) 0%,
+            rgba(148, 163, 184, 0.95) 50%,
+            rgba(100, 116, 139, 0.75) 100%
+          );
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: transparent;
+        }
+        .dark .timeline-static-shimmer {
+          background-size: 100% auto;
+          background-image: linear-gradient(
+            90deg,
+            rgba(140, 140, 150, 0.7) 0%,
+            rgba(215, 215, 225, 0.95) 50%,
+            rgba(140, 140, 150, 0.7) 100%
+          );
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: transparent;
+        }
       `}</style>
     </>
   );
