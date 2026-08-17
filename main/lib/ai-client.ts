@@ -261,7 +261,7 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   anthropic: 'claude-sonnet-4-6',
   deepseek: 'deepseek-v4-pro',
   minimax: 'MiniMax-M3',
-  everfern: 'qwen/qwen3-vl-235b-a22b-instruct',
+  everfern: 'openai/gpt-5.6-luna',
   gemini: 'gemini-3.5-flash',
   ollama: 'llama3',
   'ollama-cloud': 'qwen3-vl:235b-cloud',

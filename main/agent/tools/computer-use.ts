@@ -1257,7 +1257,7 @@ class ComputerUseAgent {
   private lastY: number | null = null;
   private history: string[] = [];
 
-  private REASONER_MODEL = "qwen/qwen3-vl-235b-a22b-instruct";
+  private REASONER_MODEL = "openai/gpt-5.6-luna";
   private ACTION_MODEL = "bytedance/ui-tars-1.5-7b";
 
   private planSteps: { description: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }[] = [];

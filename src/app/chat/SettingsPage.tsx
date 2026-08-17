@@ -1219,7 +1219,7 @@ const visionProviders = [
 ];
 
 const getVisionDefaultModel = (provider: string) => {
-    if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+    if (provider === 'openrouter') return 'openai/gpt-5.6-luna';
     if (provider === 'minimax') return 'MiniMax-M3';
     if (provider === 'ollama') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';

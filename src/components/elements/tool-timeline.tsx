@@ -82,29 +82,38 @@ export function ToolTimeline({
             paddingBottom: 6,
             display: "flex",
             flexDirection: "column",
-            gap: 8,
+            gap: 0,
           }}
         >
           {take(steps, visibleSteps).map((step, index, shown) => {
             const Icon = step.icon;
             const active = streaming && index === shown.length - 1;
+            const isLast = index === shown.length - 1;
 
             return (
               <div
                 key={`${step.verb}-${step.chip}-${index}`}
-                className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-center gap-2 text-[13px] duration-200"
-                style={{ minHeight: 24 }}
+                className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200"
               >
-                <Icon className="text-foreground/45 size-3.5 shrink-0" />
-                <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap">
+                {/* Icon column with vertical connecting line */}
+                <div className="flex flex-col items-center shrink-0 w-4 self-stretch pt-0.5">
+                  <div className="flex items-center justify-center size-4 shrink-0 z-10">
+                    <Icon className={cn("size-3.5 shrink-0 transition-colors", active ? "text-foreground/90" : "text-foreground/50")} />
+                  </div>
+                  {!isLast && (
+                    <div className="w-[1.5px] flex-1 my-1 bg-zinc-300 dark:bg-zinc-700/60 rounded-full min-h-[14px]" />
+                  )}
+                </div>
+
+                <div className={cn("flex items-baseline gap-1.5 min-w-0 flex-1 flex-wrap pt-0.5", !isLast ? "pb-2.5" : "pb-0.5")}>
                   <ShimmerLabel
                     active={active}
-                    className="relative inline-block leading-none font-medium text-foreground/85 shrink-0"
+                    className="relative inline-block leading-none font-semibold text-foreground/90 shrink-0 text-[13px]"
                   >
                     {step.verb}
                   </ShimmerLabel>
                   {step.chip && (
-                    <span className="text-foreground/70 font-normal text-[13px] leading-tight break-words">
+                    <span className={cn("text-[13px] leading-tight break-words font-normal", active ? "text-foreground/85" : "text-foreground/70")}>
                       {step.chip}
                     </span>
                   )}

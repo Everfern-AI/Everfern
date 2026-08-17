@@ -130,10 +130,12 @@ export const CLOUD_MODEL_MAP: Record<string, string> = {
   'gemini-2.5-pro': 'google/gemini-2.5-pro',
   'gemini_2_5_pro': 'google/gemini-2.5-pro',
 
-  // EverFern Computer Use (Qwen 3 VL)
-  'everfern-tars': 'qwen/qwen3-vl-235b-a22b-instruct',
-  'everfern-tars-v1': 'qwen/qwen3-vl-235b-a22b-instruct',
-  'everfern-computer': 'qwen/qwen3-vl-235b-a22b-instruct',
+  // EverFern Computer Use (OpenAI GPT-5.6 Luna)
+  'gpt-5.6-luna': 'openai/gpt-5.6-luna',
+  'openai/gpt-5.6-luna': 'openai/gpt-5.6-luna',
+  'everfern-tars': 'openai/gpt-5.6-luna',
+  'everfern-tars-v1': 'openai/gpt-5.6-luna',
+  'everfern-computer': 'openai/gpt-5.6-luna',
   'qwen3-vl-235b-a22b-instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
   'qwen3_vl_235b_a22b_instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
   'qwen/qwen3-vl-235b-a22b-instruct': 'qwen/qwen3-vl-235b-a22b-instruct',

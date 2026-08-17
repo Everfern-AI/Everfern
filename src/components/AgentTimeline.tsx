@@ -74,7 +74,7 @@ export interface AgentTimelineProps {
 
 // ── Helpers to derive step verbs, chips, and icons ────────────────────────────
 
-function formatHumanAction(raw: string): { verb: string; chip: string } {
+function formatHumanAction(raw: string, prevAction?: string): { verb: string; chip: string } {
   if (!raw) return { verb: "Execute", chip: "task" };
   let text = raw.trim();
 
@@ -86,20 +86,22 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
   // If text starts with Click / Clicked / Clicking
   const clickMatch = text.match(/^(?:Click(?:ed|ing)?|Press(?:ed|ing)?\s+on)\s+(.*)/i);
   if (clickMatch) {
-    return { verb: "Click", chip: clickMatch[1] || "element on screen" };
+    const target = clickMatch[1].replace(/["']/g, "").trim();
+    return { verb: "Click", chip: target ? `"${target}" on screen` : "target UI element" };
   }
 
   // If text starts with Navigate / Navigating / Go to / Opening / Open
   const navMatch = text.match(/^(?:Navigat(?:e|ed|ing)\s+(?:to\s+)?|Go(?:ing)?\s+to\s+|Open(?:ed|ing)?\s+)(.*)/i);
   if (navMatch) {
-    const dest = navMatch[1];
+    const dest = navMatch[1].trim();
     return { verb: "Navigate", chip: dest.startsWith("to ") || dest.startsWith("http") ? dest : `to ${dest}` };
   }
 
   // If text starts with Type / Typing / Typed / Enter / Entering
   const typeActionMatch = text.match(/^(?:Typ(?:e|ed|ing)|Enter(?:ed|ing)?)\s+(?:into\s+)?(.*)/i);
   if (typeActionMatch) {
-    return { verb: "Type", chip: typeActionMatch[1] };
+    const clean = typeActionMatch[1].replace(/\\n/g, "").trim();
+    return { verb: "Type", chip: clean.startsWith('"') ? clean : `"${clean}"` };
   }
 
   // If text starts with Connect / Connecting / Connected
@@ -111,7 +113,7 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
   // If text starts with Search / Searching / Searched
   const searchMatch = text.match(/^(?:Search(?:ed|ing)?\s+(?:for\s+)?)(.*)/i);
   if (searchMatch) {
-    return { verb: "Search", chip: searchMatch[1] };
+    return { verb: "Search", chip: `for "${searchMatch[1]}"` };
   }
 
   // If text starts with Select / Selecting / Selected
@@ -123,7 +125,7 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
   // If text starts with Scroll / Scrolling / Scrolled
   const scrollActionMatch = text.match(/^(?:Scroll(?:ed|ing)?\s+(?:down|up)?\s*)(.*)/i);
   if (scrollActionMatch) {
-    return { verb: "Scroll", chip: scrollActionMatch[1] || "page" };
+    return { verb: "Scroll", chip: scrollActionMatch[1] || "view to reveal content" };
   }
 
   // hotkey(key='win') or key: win
@@ -135,12 +137,13 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
     if (key === "win" || key === "super" || key === "windows") {
       return { verb: "Open", chip: "Windows Start menu" };
     }
-    if (key.includes("ctrl") && key.includes("c")) return { verb: "Copy", chip: "selection (Ctrl+C)" };
-    if (key.includes("ctrl") && key.includes("v")) return { verb: "Paste", chip: "from clipboard (Ctrl+V)" };
-    if (key.includes("ctrl") && key.includes("a")) return { verb: "Select", chip: "all text (Ctrl+A)" };
-    if (key === "enter") return { verb: "Submit", chip: "by pressing Enter" };
-    if (key === "esc" || key === "escape") return { verb: "Dismiss", chip: "with Escape" };
-    return { verb: "Trigger", chip: `${key} shortcut` };
+    if (key.includes("ctrl") && key.includes("c")) return { verb: "Copy", chip: "selected text (Ctrl+C)" };
+    if (key.includes("ctrl") && key.includes("v")) return { verb: "Paste", chip: "clipboard content (Ctrl+V)" };
+    if (key.includes("ctrl") && key.includes("a")) return { verb: "Select", chip: "all content (Ctrl+A)" };
+    if (key === "enter") return { verb: "Submit", chip: "input with Enter key" };
+    if (key === "esc" || key === "escape") return { verb: "Dismiss", chip: "active dialog (Escape)" };
+    if (key === "tab") return { verb: "Focus", chip: "next input field (Tab)" };
+    return { verb: "Trigger", chip: `${key.toUpperCase()} keyboard shortcut` };
   }
 
   // click(start_box=...) or left_click
@@ -150,7 +153,7 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
 
   // double click
   if (text.includes("left_double") || text.includes("double_click")) {
-    return { verb: "Double-click", chip: "target element" };
+    return { verb: "Double-click", chip: "target element to open" };
   }
 
   // right click
@@ -172,7 +175,7 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
     text.match(/direction\s*=\s*['"]([^'"]*)['"]/i) ||
     text.match(/scroll.*(up|down)/i);
   if (scrollMatch) {
-    return { verb: "Scroll", chip: `${scrollMatch[1] || "down"} to view content` };
+    return { verb: "Scroll", chip: `${scrollMatch[1] || "down"} to reveal content` };
   }
 
   // screenshot / vision
@@ -181,17 +184,20 @@ function formatHumanAction(raw: string): { verb: string; chip: string } {
     text.toLowerCase().includes("screen") ||
     text.toLowerCase().includes("vision")
   ) {
-    return { verb: "Analyze", chip: "screen state" };
+    if (prevAction) {
+      return { verb: "Verify", chip: `screen updates after ${prevAction}` };
+    }
+    return { verb: "Inspect", chip: "desktop layout & active windows" };
   }
 
   // wait
   if (text.toLowerCase().includes("wait")) {
-    return { verb: "Wait", chip: "for application response" };
+    return { verb: "Wait", chip: "for UI animations to complete" };
   }
 
   // finished / complete
   if (text.toLowerCase().includes("finish") || text.toLowerCase().includes("complete")) {
-    return { verb: "Complete", chip: "task" };
+    return { verb: "Complete", chip: "desktop workflow" };
   }
 
   // Natural sentence split: handle "Press" / "Pressing" prefixes gracefully
@@ -263,9 +269,21 @@ function extractVerbAndChip(tc: ToolCallDisplay): { verb: string; chip: string; 
 
   // Command / Terminal
   if (name.includes("command") || name.includes("bash") || name.includes("terminal") || name.includes("exec") || name.includes("shell")) {
-    const cmd = String(args.CommandLine || args.command || "");
-    const chip = cmd ? (cmd.length > 32 ? `${cmd.slice(0, 30)}…` : cmd) : "command";
-    return { verb: "Run", chip, icon: Terminal };
+    const cmd = String(args.CommandLine || args.command || "").trim();
+    if (cmd) {
+      if (/^git\s+status/i.test(cmd)) return { verb: "Check", chip: "git working tree status", icon: Terminal };
+      if (/^git\s+diff/i.test(cmd)) return { verb: "Review", chip: "uncommitted git changes", icon: Terminal };
+      if (/^git\s+commit/i.test(cmd)) return { verb: "Commit", chip: "staged changes to repository", icon: Terminal };
+      if (/^git\s+add/i.test(cmd)) return { verb: "Stage", chip: "modified files for commit", icon: Terminal };
+      if (/^git\s+push/i.test(cmd)) return { verb: "Push", chip: "branch to remote repository", icon: Terminal };
+      if (/^npm\s+test|^npx\s+vitest|^pytest/i.test(cmd)) return { verb: "Run", chip: "test suite to verify functionality", icon: Terminal };
+      if (/^npx\s+tsc/i.test(cmd)) return { verb: "Type-check", chip: "TypeScript codebase", icon: Terminal };
+      if (/^npm\s+run\s+build/i.test(cmd)) return { verb: "Build", chip: "project bundle", icon: Terminal };
+      if (/^npm\s+i(?:nstall)?/i.test(cmd)) return { verb: "Install", chip: "project dependencies", icon: Terminal };
+      const chip = cmd.length > 38 ? `${cmd.slice(0, 36)}…` : cmd;
+      return { verb: "Run", chip: `\`${chip}\``, icon: Terminal };
+    }
+    return { verb: "Run", chip: "terminal command", icon: Terminal };
   }
 
   // Search / Grep
@@ -288,7 +306,7 @@ function extractVerbAndChip(tc: ToolCallDisplay): { verb: string; chip: string; 
   // Image / Vision
   if (name.includes("screenshot") || name.includes("image") || name.includes("vision")) {
     const chip = String(args.ImageName || args.imagePath || "screenshot").split(/[/\\]/).pop() || "screenshot";
-    return { verb: "Analyze", chip, icon: Eye };
+    return { verb: "Inspect", chip: "screen capture", icon: Eye };
   }
 
   // Ask / Question
@@ -556,7 +574,7 @@ function tryParseJson(text: string): any {
 
 function cleanThought(text: string): string {
   return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<\/?think>/gi, "")
     .replace(/^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊|📋)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gim, "")
     .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System|Web Explorer)\][^\n]*/gim, "")
     .replace(/^(?:WEB EXPLORER|DEEP RESEARCH|DATA ANALYST|CODING SPECIALIST)\s*(?:\[Phase[^\]]*\])?:?[^\n]*/gim, "")
@@ -616,21 +634,30 @@ export const AgentTimeline = React.memo(({
       }
 
       if (events.length > 0) {
+        let lastActionText = "";
         for (let i = 0; i < events.length; i++) {
           const ev = events[i];
           if (ev.type === "reasoning" && !ev.content) continue;
 
-          let rawContent = ev.content || (ev.action ? (ev.action.description || ev.action.type || "action") : "screen state");
+          let rawContent = ev.content || (ev.action ? (ev.action.description || ev.action.type || "action") : "");
           let icon: LucideIcon = Bot;
-          let { verb, chip } = formatHumanAction(rawContent);
+          let { verb, chip } = formatHumanAction(rawContent, lastActionText);
 
           if (ev.type === "screenshot") {
-            verb = "Observe";
-            chip = rawContent && rawContent !== "screenshot" && !rawContent.includes("data:image") && rawContent !== "workspace" ? rawContent : "screen state";
             icon = Eye;
+            if (rawContent && rawContent !== "screenshot" && !rawContent.includes("data:image") && rawContent !== "workspace") {
+              verb = "Inspect";
+              chip = rawContent;
+            } else if (lastActionText) {
+              verb = "Verify";
+              chip = `screen updates after ${lastActionText}`;
+            } else {
+              verb = "Inspect";
+              chip = "desktop layout & active windows";
+            }
           } else if (ev.type === "complete") {
             verb = "Complete";
-            chip = rawContent && rawContent !== "complete" ? rawContent : "finished task";
+            chip = rawContent && rawContent !== "complete" ? rawContent : "workflow finished";
             icon = CheckCircle;
           } else if (ev.type === "step") {
             if (!chip || chip === "step" || chip === "workspace") {
@@ -638,6 +665,10 @@ export const AgentTimeline = React.memo(({
               chip = rawContent || "action";
             }
             icon = Wrench;
+          }
+
+          if (ev.type === "action" || ev.action) {
+            lastActionText = `${verb.toLowerCase()} ${chip}`;
           }
 
           // Collapse only identical consecutive duplicates to preserve full multi-step history
@@ -741,19 +772,28 @@ export const AgentTimeline = React.memo(({
 
         const events = tc.subAgentProgress || subAgentProgress?.get(tc.id) || [];
         if (events.length > 0) {
+          let lastActionText = "";
           for (let i = 0; i < events.length; i++) {
             const ev = events[i];
             if (ev.type === "reasoning" && !ev.content) continue;
-            let rawContent = ev.content || (ev.action ? (ev.action.description || ev.action.type || "workspace action") : "workspace");
+            let rawContent = ev.content || (ev.action ? (ev.action.description || ev.action.type || "workspace action") : "");
             let icon: LucideIcon = Bot;
-            let { verb, chip } = formatHumanAction(rawContent);
+            let { verb, chip } = formatHumanAction(rawContent, lastActionText);
             if (ev.type === "screenshot") {
-              verb = "Analyze";
-              chip = rawContent && rawContent !== "screenshot" && !rawContent.includes("data:image") ? rawContent : "screen";
               icon = Eye;
+              if (rawContent && rawContent !== "screenshot" && !rawContent.includes("data:image")) {
+                verb = "Inspect";
+                chip = rawContent;
+              } else if (lastActionText) {
+                verb = "Verify";
+                chip = `screen updates after ${lastActionText}`;
+              } else {
+                verb = "Inspect";
+                chip = "desktop layout & active windows";
+              }
             } else if (ev.type === "complete") {
               verb = "Complete";
-              chip = rawContent && rawContent !== "complete" ? rawContent : "finished task";
+              chip = rawContent && rawContent !== "complete" ? rawContent : "workflow finished";
               icon = CheckCircle;
             } else if (ev.type === "step") {
               if (!chip || chip === "step" || chip === "workspace") {
@@ -761,6 +801,9 @@ export const AgentTimeline = React.memo(({
                 chip = rawContent || "step";
               }
               icon = Wrench;
+            }
+            if (ev.type === "action" || ev.action) {
+              lastActionText = `${verb.toLowerCase()} ${chip}`;
             }
             const lastStep = groupSteps[groupSteps.length - 1];
             if (!lastStep || lastStep.verb !== verb || lastStep.chip !== chip) {

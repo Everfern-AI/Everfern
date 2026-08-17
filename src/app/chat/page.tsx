@@ -2381,7 +2381,7 @@ export default function ChatPage() {
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
                 loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
-                    loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
+                    loadedVlmProvider === "openrouter" ? "openai/gpt-5.6-luna" :
                         loadedVlmProvider === "minimax" ? "MiniMax-M3" :
                             loadedVlmProvider === "openai" ? "gpt-5.5" :
                                 loadedVlmProvider === "anthropic" ? "claude-opus-4.6" :
@@ -4793,7 +4793,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
-                settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
+                settingsVlmCloudProvider === 'openrouter' ? 'openai/gpt-5.6-luna' :
                     settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
                         settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :
                             settingsVlmCloudProvider === 'anthropic' ? 'claude-opus-4.6' :
