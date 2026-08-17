@@ -86,22 +86,22 @@ function cleanDirContents(dir: string): void {
   }
 }
 
+export const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/everfern-navis/pipkiglicdhcacieghoinohgfibhkmgf?hl=en&authuser=0";
+export const FIREFOX_EXTENSION_STORE_URL = "https://addons.mozilla.org/en-US/firefox/addon/everfern-navis/";
+
 function installInstructions(target: NavisExtensionTarget, extensionPath: string): string[] {
   if (target === 'firefox') {
     return [
-      'Open Firefox and go to about:debugging#/runtime/this-firefox.',
-      'Click "Load Temporary Add-on".',
-      `Select ${path.join(extensionPath, 'manifest.json')}.`,
+      `Install from Firefox Add-ons: ${FIREFOX_EXTENSION_STORE_URL}`,
+      'Or load temporarily: Open Firefox and go to about:debugging#/runtime/this-firefox, click "Load Temporary Add-on", and select ' + path.join(extensionPath, 'manifest.json'),
       'Keep EverFern Desktop open so the extension can connect to ws://127.0.0.1:4001.',
     ];
   }
 
   return [
-    'Open chrome://extensions in Chrome, Edge, Brave, or another Chromium browser.',
-    'Enable Developer mode.',
-    'Click "Load unpacked".',
-    `Select ${extensionPath}.`,
-    'Click Details on the loaded EverFern Navis extension and ensure "Site access" is set to "On all sites" (required for screenshot capture).',
+    `Install from Chrome Web Store: ${CHROME_EXTENSION_STORE_URL}`,
+    `Or load unpacked: Open chrome://extensions in Chrome/Brave/Edge, enable Developer mode, click "Load unpacked", and select ${extensionPath}.`,
+    'Click Details on the EverFern Navis extension and ensure "Site access" is set to "On all sites" (required for automation and screenshots).',
     'Keep EverFern Desktop open so the extension can connect to ws://127.0.0.1:4001.',
   ];
 }
@@ -169,8 +169,13 @@ export async function prepareNavisMainProfileExtension(
     message: connected
       ? `Navis extension is connected in ${browserInfo?.name || target}.`
       : [
-          `Navis extension is prepared for ${browserInfo?.name || target}, but it is not connected yet. If the extension is already installed, please close all browser windows and reopen them, or try refreshing/reloading the extension in chrome://extensions.`,
-          ...instructions,
+          `The EverFern Navis browser extension is not installed or connected in ${browserInfo?.name || target}. Please install it to allow browser automation:`,
+          `\n**Installation Links:**`,
+          `- **Chrome / Edge / Brave**: [Install from Chrome Web Store](${CHROME_EXTENSION_STORE_URL})`,
+          `- **Firefox**: [Install from Firefox Add-ons](${FIREFOX_EXTENSION_STORE_URL})`,
+          `\n**Setup Instructions:**`,
+          ...instructions.map((inst, i) => `${i + 1}. ${inst}`),
+          `\nOnce installed, make sure "Site access" is set to "On all sites" in extension details, keep EverFern Desktop running, and retry the request.`,
         ].join('\n'),
   };
 }

@@ -24,6 +24,11 @@ if (process.platform === 'win32') {
   } catch (e) {
     console.error('[Startup] Failed to handle squirrel events:', e);
   }
+  try {
+    app.setAppUserModelId('com.everfern.desktop');
+  } catch (e) {
+    console.warn('[Startup] Could not set AppUserModelId:', e);
+  }
 }
 
 import * as path from 'path';
@@ -141,7 +146,8 @@ You have access to a variety of tools, including GUI automation, terminal access
 1. Be concise and professional.
 2. Use tools whenever necessary to fulfill the user's request.
 3. For GUI automation, use the 'computer_use' tool.
-4. If you are unsure about a command, ask for clarification.
+4. MANDATORY: Always describe actions and intent in clear, human-readable English sentences (e.g. "Pressing the Windows key to open Start menu", "Analyzing screenshot to locate the search bar") instead of raw technical codes or cryptic action names.
+5. If you are unsure about a command, ask for clarification.
 
 ## Terminal Commands & Environment Targets
 All terminal commands run through the terminal_execute tool. Ensure you set the correct 'target' parameter:

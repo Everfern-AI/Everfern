@@ -6,6 +6,7 @@ import { formatDuration } from '@/lib/formatDuration';
 import { useAutoCollapse } from '@/hooks/use-auto-collapse';
 import { MarkdownRenderer } from './MarkdownComponents';
 import type { ToolCallDisplay } from '../app/chat/types/index';
+import { ReasoningPanel, type ReasoningStep } from '@/components/elements/reasoning-panel';
 
 // ── Reasoning Branch Component ─────────────────────────────────────────────────
 export const ReasoningBranch = ({
@@ -504,69 +505,51 @@ export const ReasoningPane = ({
 };
 
 // ── ReasoningBlock ────────────────────────────────────────────────────────────
-// Displays raw chain-of-thought (reasoning_content) as a collapsible indented block
-// shown ABOVE the assistant's reply. Styled like a soft italic narrative.
-export const ReasoningBlock = ({ content }: { content: string }) => {
+// Displays raw chain-of-thought as ReasoningPanel
+function parseReasoningContent(text: string): ReasoningStep[] {
+    if (!text?.trim()) return [];
+    const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    if (!clean) return [];
+
+    const sections = clean.split(/(?=(?:^|\n)(?:#+|\d+\.|\*|-|[A-Z][a-zA-Z\s]+:))\n?/g).filter(s => s.trim().length > 0);
+    if (sections.length > 1) {
+        return sections.map((sec) => {
+            const lines = sec.trim().split('\n');
+            const firstLine = lines[0].replace(/^[#*\-\d.:\s]+/, '').trim();
+            const title = firstLine.length > 40 ? `${firstLine.slice(0, 38)}…` : (firstLine || 'Scope');
+            const body = lines.slice(1).join('\n').trim() || firstLine;
+            return { title, body };
+        });
+    }
+
+    const paras = clean.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    if (paras.length > 1) {
+        return paras.map((p, idx) => {
+            const lines = p.trim().split('\n');
+            const title = lines[0].slice(0, 35).trim() || `Step ${idx + 1}`;
+            return { title, body: p.trim() };
+        });
+    }
+
+    return [{ title: 'Scope', body: clean }];
+}
+
+export const ReasoningBlock = ({ content, streaming = false }: { content: string; streaming?: boolean }) => {
     const [open, setOpen] = useState(false);
     if (!content?.trim()) return null;
 
-    return (
-        <div style={{ marginBottom: 12 }}>
-            <button
-                onClick={() => setOpen(o => !o)}
-                style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '0 0 6px', color: 'var(--color-text-tertiary)',
-                }}
-            >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                    stroke='var(--color-text-tertiary)' strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                <span style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                    {open ? 'Hide reasoning' : 'Show reasoning'}
-                </span>
-                <motion.span
-                    animate={{ rotate: open ? 180 : 0 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                    style={{ display: 'flex', marginLeft: 2 }}
-                >
-                    <ChevronDownIcon width={11} height={11} color='var(--color-text-tertiary)' />
-                </motion.span>
-            </button>
+    const steps = parseReasoningContent(content);
 
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                        style={{ overflow: 'hidden' }}
-                    >
-                        <div style={{
-                            borderLeft: '2px solid var(--color-border)',
-                            paddingLeft: 14,
-                            marginLeft: 2,
-                            marginBottom: 10,
-                            maxHeight: 280,
-                            overflowY: 'auto',
-                        }}>
-                            <div style={{
-                                fontSize: 12.5,
-                                lineHeight: 1.75,
-                                color: 'var(--color-text-tertiary)',
-                                fontStyle: 'italic',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                            }}>
-                                {content}
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+    return (
+        <div style={{ marginBottom: 10 }}>
+            <ReasoningPanel
+                steps={steps}
+                visibleSteps={steps.length}
+                streaming={streaming}
+                open={open}
+                onOpenChange={setOpen}
+                restingLabel="Reasoned"
+            />
         </div>
     );
 };

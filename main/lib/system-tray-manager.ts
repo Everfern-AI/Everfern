@@ -206,22 +206,21 @@ export class SystemTrayManager {
    * Get the appropriate tray icon path for the current platform
    */
   private getTrayIconPath(): string {
-    const isDev = !app.isPackaged;
+    const candidates = [
+      path.join(app.getAppPath(), 'public', 'images', 'logos'),
+      path.join(__dirname, '..', '..', '..', 'public', 'images', 'logos'),
+      path.join(__dirname, '..', '..', 'public', 'images', 'logos'),
+      path.join(process.cwd(), 'public', 'images', 'logos'),
+      path.join(process.resourcesPath, 'public', 'images', 'logos'),
+      path.join(process.resourcesPath, 'images', 'logos'),
+    ];
 
-    // In production, extraResources (like 'public') are in process.resourcesPath
-    // In dev, they're in the project root
-    const baseDir = isDev
-      ? path.join(__dirname, '../../')
-      : process.resourcesPath;
-
-    // Platform-specific icon selection
     let iconName: string;
     switch (process.platform) {
       case 'win32':
         iconName = 'everfern.ico';
         break;
       case 'darwin':
-        // macOS prefers template images for tray icons
         iconName = 'tray-icon.png';
         break;
       case 'linux':
@@ -231,21 +230,21 @@ export class SystemTrayManager {
         iconName = 'everfern-rounded.png';
     }
 
-    // Try tray-specific icon first, fall back to general logo
-    const trayIconPath = path.join(baseDir, 'public/images/logos/tray-icon.png');
-    const fallbackIconPath = path.join(baseDir, `public/images/logos/${iconName}`);
-
-    // Use tray-specific icon if it exists, otherwise use fallback
-    if (fs.existsSync(trayIconPath)) {
-      console.log(`[SystemTray] Using tray icon: ${trayIconPath}`);
-      return trayIconPath;
-    } else if (fs.existsSync(fallbackIconPath)) {
-      console.log(`[SystemTray] Using fallback icon: ${fallbackIconPath}`);
-      return fallbackIconPath;
-    } else {
-      console.warn('[SystemTray] No suitable tray icon found, using default');
-      return fallbackIconPath; // Return path anyway, let Electron handle the error
+    for (const dir of candidates) {
+      const trayPath = path.join(dir, 'tray-icon.png');
+      if (fs.existsSync(trayPath)) {
+        console.log(`[SystemTray] Using tray icon: ${trayPath}`);
+        return trayPath;
+      }
+      const platformIconPath = path.join(dir, iconName);
+      if (fs.existsSync(platformIconPath)) {
+        console.log(`[SystemTray] Using platform icon: ${platformIconPath}`);
+        return platformIconPath;
+      }
     }
+
+    console.warn('[SystemTray] No suitable tray icon found, using default');
+    return path.join(app.getAppPath(), 'public', 'images', 'logos', iconName);
   }
 
   /**

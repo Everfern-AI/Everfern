@@ -541,7 +541,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                         {/* Header */}
                         <div style={{ padding: "24px 32px", borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                             <div>
-                                <h2 style={{ fontSize: 20, fontWeight: 600, color: colors.textPrimary, margin: 0, fontFamily: 'var(--font-serif, Georgia, serif)' }}>
+                                <h2 style={{ fontSize: 20, fontWeight: 600, color: colors.textPrimary, margin: 0, fontFamily: 'var(--font-sans)' }}>
                                     Integration Settings
                                 </h2>
                                 <p style={{ fontSize: 14, color: colors.textSecondary, margin: "4px 0 0 0" }}>

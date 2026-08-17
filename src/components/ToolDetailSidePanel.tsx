@@ -196,12 +196,14 @@ function PanelHeader({
   onClose,
   showFilePane,
   onToggleFilePane,
+  isStreaming,
 }: {
   agentName?: string;
   toolName?: string;
   onClose: () => void;
   showFilePane?: boolean;
   onToggleFilePane?: () => void;
+  isStreaming?: boolean;
 }) {
   const { Icon, label, iconSize = 16 } = getToolMeta(toolName);
 
@@ -241,6 +243,26 @@ function PanelHeader({
             }}>
               {toolName}
             </code>
+            {isStreaming && (
+              <span style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: '#10b981',
+                background: 'rgba(16,185,129,0.12)',
+                border: '1px solid rgba(16,185,129,0.3)',
+                padding: '2px 7px',
+                borderRadius: 20,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontFamily: T.sans,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+                Live
+              </span>
+            )}
           </div>
           <p style={{ fontSize: 10.5, color: T.textMuted, margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, fontFamily: T.sans }}>
             {label}
@@ -4123,13 +4145,13 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
               zIndex: 50, overflow: 'hidden', outline: 'none',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
-            animate={isDesktop ? { width: showFilePane ? 750 : 460, opacity: 1 } : { x: 0 }}
+            animate={isDesktop ? { width: showFilePane ? 620 : 380, opacity: 1 } : { x: 0 }}
             exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 36 }}
           >
             {/* Inner wrapper prevents layout reflow during animation */}
             <div style={{
-              width: isDesktop ? (showFilePane ? 750 : 460) : '100%', height: '100%',
+              width: isDesktop ? (showFilePane ? 620 : 380) : '100%', height: '100%',
               display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
             }}>
               {toolCall && (
@@ -4139,6 +4161,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
                   onClose={onClose}
                   showFilePane={showFilePane}
                   onToggleFilePane={() => setShowFilePane(v => !v)}
+                  isStreaming={toolCall.status === 'running' || toolCall.isStreaming || !toolCall.output}
                 />
               )}
 

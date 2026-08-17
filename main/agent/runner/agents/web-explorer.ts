@@ -129,7 +129,6 @@ export const createWebExplorerNode = (
     // For booking/purchasing tasks, we MUST gather required details before searching.
     if (interactiveTask && !detailsGathered && !searchInvoked && !navisInvoked) {
       console.log('[WebExplorer] Phase 0: Gathering user details for interactive task...');
-      eventQueue?.push({ type: 'thought', content: '\n📋 WEB EXPLORER [Phase 0]: Gathering required details before searching...' });
 
       const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
         runner,
@@ -176,7 +175,6 @@ export const createWebExplorerNode = (
     const directUrl = !searchInvoked && !navisInvoked ? extractDirectUrl(messages) : null;
 
     if (directUrl) {
-      eventQueue?.push({ type: 'thought', content: `\n🌐 WEB EXPLORER: Navigating directly to ${directUrl}...` });
       const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
         runner,
         toolDefs: allTools,
@@ -201,7 +199,6 @@ export const createWebExplorerNode = (
     // Use web_search to find the top sources
     if (!searchInvoked && !navisInvoked) {
       console.log('[WebExplorer] Phase 1: Starting search...');
-      eventQueue?.push({ type: 'thought', content: '\n🔍 WEB EXPLORER [Phase 1/3]: Searching for authoritative sources...' });
       const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
         runner,
         toolDefs: allTools,
@@ -257,10 +254,6 @@ export const createWebExplorerNode = (
         : buildConsolidatedNavisTask(taskText, candidates);
 
       console.log(`[WebExplorer] Phase 2: Found ${candidates.length} candidates, calling navis...`);
-      eventQueue?.push({
-        type: 'thought',
-        content: `\n🌐 WEB EXPLORER [Phase 2/3]: Investigating ${candidates.length} sources with navis (single consolidated call):\n${urlList}`
-      });
 
       const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
         runner,
@@ -301,7 +294,6 @@ export const createWebExplorerNode = (
       if (lastContent.includes('MISSION_COMPLETE')) {
         console.log('[WebExplorer] Phase 3: Research complete');
         console.log('[WebExplorer] Sub-task 3.5: Setting webExplorerComplete=true, pendingToolCalls=[], returningFromSpecialist=null');
-        eventQueue?.push({ type: 'thought', content: '\n✅ WEB EXPLORER: Research complete.' });
         return {
           webExplorerComplete: true,
           taskPhase: 'evaluating' as const,
@@ -312,7 +304,6 @@ export const createWebExplorerNode = (
       }
 
       // Not yet synthesized — let the agent compile findings
-      eventQueue?.push({ type: 'thought', content: '\n📝 WEB EXPLORER [Phase 3/3]: Synthesizing research findings...' });
       const result = await integrator.wrapNode('web_explorer', () => runAgentStep(state, {
         runner,
         toolDefs: allTools,

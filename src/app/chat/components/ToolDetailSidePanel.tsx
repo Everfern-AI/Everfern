@@ -997,11 +997,13 @@ function FileContentBody({
   content,
   mode = 'normal',
   previewError,
+  isLive = false,
 }: {
   path?: string;
   content?: string;
   mode?: 'normal' | 'add' | 'diff';
   previewError?: string;
+  isLive?: boolean;
 }) {
   const visual = getFileVisual(path || '');
   const safeContent = content || '';
@@ -1150,6 +1152,61 @@ function FileContentBody({
             ext={visual.ext}
           />
         ));
+        if (isLive) {
+          elements.push(
+            <div
+              key="live-caret"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                fontFamily: T.mono,
+                fontSize: 11.5,
+                lineHeight: '18px',
+                minWidth: 'fit-content',
+              }}
+            >
+              <div
+                style={{
+                  width: 42,
+                  flexShrink: 0,
+                  backgroundColor: EDITOR_COLORS.gutterBg,
+                  color: '#4ade80',
+                  textAlign: 'right',
+                  paddingRight: 8,
+                  userSelect: 'none',
+                  borderRight: `1px solid ${EDITOR_COLORS.border}`,
+                }}
+              >
+                {toRender.length + 1}
+              </div>
+              <div
+                style={{
+                  width: 18,
+                  flexShrink: 0,
+                  textAlign: 'center',
+                  color: '#4ade80',
+                  fontWeight: 400,
+                  userSelect: 'none',
+                }}
+              >
+                +
+              </div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, paddingLeft: 3, paddingRight: 12 }}>
+                <span
+                  style={{
+                    width: 7,
+                    height: 14,
+                    background: '#4ade80',
+                    display: 'inline-block',
+                    animation: 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                  }}
+                />
+                <span style={{ fontSize: 11, color: '#4ade80', opacity: 0.85, fontFamily: T.sans }}>Live streaming write...</span>
+              </div>
+            </div>
+          );
+        }
         if (truncated) {
           elements.push(
             <div key="trunc-msg" style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11, fontFamily: T.mono }}>
@@ -5791,6 +5848,13 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
     return lineElements;
   };
 
+  const isLive = Boolean(
+    data?.isStreaming ||
+    data?.streaming ||
+    args?.isStreaming ||
+    (!output && isWrite)
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: VS.bg }}>
       <div style={{ height: 38, display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px', borderBottom: `1px solid ${VS.border}`, flexShrink: 0 }}>
@@ -5810,6 +5874,27 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
         }}>
           {isWrite ? 'Write' : isRead ? 'Read' : 'Edit'}
         </span>
+        {isLive && (
+          <span style={{
+            fontSize: 9.5,
+            fontWeight: 600,
+            color: '#10b981',
+            background: 'rgba(16,185,129,0.12)',
+            border: '1px solid rgba(16,185,129,0.3)',
+            padding: '2px 7px',
+            borderRadius: 20,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontFamily: T.sans,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            flexShrink: 0
+          }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+            Live
+          </span>
+        )}
         {path && (
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: VS.muted, fontSize: 11, fontFamily: T.mono }}>
             {path}
@@ -5843,7 +5928,7 @@ function FileEditorView({ toolName, path, args, output, data }: { toolName: stri
       </div>
 
       {isRead || isWrite ? (
-        <FileContentBody path={path} content={newContent} mode={isWrite ? 'add' : 'normal'} />
+        <FileContentBody path={path} content={newContent} mode={isWrite ? 'add' : 'normal'} isLive={isLive && isWrite} />
       ) : (
         <div style={{ flex: 1, overflow: 'auto', background: EDITOR_COLORS.bg, paddingTop: 6, paddingBottom: 18 }}>
           {!hasRenderableContent ? (
@@ -6581,6 +6666,14 @@ export default function ToolDetailSidePanel({
   const isMac = isMacPlatform();
   const shortcutPrefix = isMac ? '⌘' : 'Ctrl';
   const imageAnalysisPayloadKey = getImageAnalysisPayloadKey(toolCall);
+  const argsPayloadKey = useMemo(() => {
+    if (!toolCall?.args) return '';
+    try {
+      return JSON.stringify(toolCall.args);
+    } catch {
+      return '';
+    }
+  }, [toolCall?.args]);
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 1024);
@@ -6695,9 +6788,10 @@ export default function ToolDetailSidePanel({
     setIsLoading(false);
   // toolCall?.id changes when a different tool call is selected.
   // toolCall?.output changes when an in-progress tool call finishes.
+  // argsPayloadKey changes in real-time as the model streams tool arguments (e.g. write file chunks).
   // Using primitives instead of the toolCall object avoids infinite loops from reference churn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, toolCall?.id, toolCall?.output, imageAnalysisPayloadKey]);
+  }, [isOpen, toolCall?.id, toolCall?.output, toolCall?.status, imageAnalysisPayloadKey, argsPayloadKey]);
 
   // Lightweight secondary effect: ONLY updates screenshots for live FERN/computer_use sessions.
   // Runs when new progress events arrive but skips the loading spinner and full re-parse.
@@ -6947,8 +7041,8 @@ export default function ToolDetailSidePanel({
 
   const activeId = activeTabId || toolCall?.id || openTabs[0]?.id;
   const isComputerUse = String(toolCall?.toolName || '').toLowerCase().includes('computer');
-  const panelWidth = isComputerUse ? 1400 : 920;
-  const panelWidthCss = isDesktop ? `min(${panelWidth}px, ${isComputerUse ? '85vw' : '54vw'})` : `min(100%, ${panelWidth}px)`;
+  const panelWidth = isComputerUse ? 680 : 420;
+  const panelWidthCss = isDesktop ? `min(${panelWidth}px, ${isComputerUse ? '55vw' : '38vw'})` : `min(100%, ${panelWidth}px)`;
   const hasBrowserTab = surfaceMode === 'browser' || Boolean(browserUrl);
   const hasCrowdedTabs = openTabs.length + (hasBrowserTab ? 1 : 0) >= 3;
 
@@ -6977,13 +7071,14 @@ export default function ToolDetailSidePanel({
               display: 'flex', flexDirection: 'column',
               overflow: 'hidden', outline: 'none', flexShrink: 0,
               zIndex: 4,
-              boxShadow: CLAY.panelShadow,
+              boxShadow: 'none',
             } : {
               position: 'fixed', right: 0, top: 0, bottom: 0,
               width: panelWidthCss,
               background: VS.bg, borderLeft: `1px solid ${VS.border}`,
               display: 'flex', flexDirection: 'column',
               zIndex: 140, overflow: 'hidden', outline: 'none',
+              boxShadow: 'none',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%', opacity: 0 }}
             animate={isDesktop ? { width: panelWidthCss, opacity: 1 } : { x: 0, opacity: 1 }}
@@ -7090,6 +7185,7 @@ export default function ToolDetailSidePanel({
                     }}>
                       {openTabs.map((tab) => {
                         const isActive = tab.id === activeId && surfaceMode === 'tool';
+                        const isTabLive = Boolean(tab.status === 'running' || tab.isStreaming || tab.streaming || (!tab.output && !tab.result));
                         return (
                         <div
                           key={tab.id}
@@ -7107,7 +7203,7 @@ export default function ToolDetailSidePanel({
                           style={{
                             height: 31,
                             minWidth: 0,
-                            maxWidth: 220,
+                            maxWidth: 240,
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8,
@@ -7128,6 +7224,28 @@ export default function ToolDetailSidePanel({
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {getToolTabLabel(tab)}
                           </span>
+                          {isTabLive && (
+                            <span
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 600,
+                                color: '#10b981',
+                                background: 'rgba(16,185,129,0.12)',
+                                border: '1px solid rgba(16,185,129,0.3)',
+                                padding: '1px 5px',
+                                borderRadius: 10,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3.5,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.04em',
+                                flexShrink: 0
+                              }}
+                            >
+                              <span style={{ width: 4.5, height: 4.5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+                              Live
+                            </span>
+                          )}
                           
                           <span
                             role="button"
@@ -7350,6 +7468,30 @@ export default function ToolDetailSidePanel({
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: VS.muted, flexShrink: 0 }}>
+                    {Boolean(toolCall?.status === 'running' || toolCall?.isStreaming || toolCall?.streaming || (!toolCall?.output && !toolCall?.result)) && (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4.5,
+                          padding: '3px 8px',
+                          borderRadius: 20,
+                          background: 'rgba(16,185,129,0.12)',
+                          border: '1px solid rgba(16,185,129,0.3)',
+                          color: '#10b981',
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          fontFamily: T.sans,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          marginRight: 4,
+                          flexShrink: 0
+                        }}
+                      >
+                        <span style={{ width: 5.5, height: 5.5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+                        Live
+                      </div>
+                    )}
                     <Maximize2 size={15} />
                     <button
                       type="button"

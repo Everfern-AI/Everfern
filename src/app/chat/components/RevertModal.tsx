@@ -214,17 +214,6 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                         justifyContent: 'space-between'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{
-                                width: '40px',
-                                height: '40px',
-                                backgroundColor: 'var(--color-warning-dim)',
-                                borderRadius: '12px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}>
-                                <ArrowPathIcon style={{ width: '20px', height: '20px', color: 'var(--color-warning)' }} />
-                            </div>
                             <div>
                                 <h2 style={{
                                     fontSize: '20px',

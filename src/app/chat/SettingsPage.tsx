@@ -24,13 +24,15 @@ import {
     BoltIcon,
     BookOpenIcon,
     CommandLineIcon,
-    PencilIcon,
     PlusIcon,
+    ExclamationTriangleIcon,
+    ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
 import Image from 'next/image';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
+import { GraphicsCardIcon } from '@phosphor-icons/react';
 
 // ── No inline logos — using Image imports instead ─────────────────────────────────────────
 
@@ -46,8 +48,9 @@ export const navCategories = [
         items: [
             { id: 'profile', label: 'Profile', icon: UserCircleIcon, keywords: 'user name avatar email account tier plan cloud support' },
             { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view' },
+            { id: 'system', label: 'System & Hardware', icon: ComputerDesktopIcon, keywords: 'system hardware gpu cpu vram memory ram specs performance tps benchmarks models compatible compatibility accelerate huggingface' },
             { id: 'keybinds', label: 'Keybindings & Shortcuts', icon: CommandLineIcon, keywords: 'keyboard shortcuts keybinds hotkeys commands ctrl cmd bind key toggle' },
-            { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon, keywords: 'dispatch remote cloud orchestration sync' },
+            { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon, keywords: 'dispatch remote cloud orchestration sync beta issues', badge: 'Beta' },
             { id: 'privacy', label: 'Privacy & Data', icon: KeyIcon, keywords: 'telemetry keys security local privacy storage' },
         ]
     },
@@ -744,9 +747,11 @@ const LinuxVMSection = () => {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                            <ComputerDesktopIcon width={20} height={20} style={{ color: 'var(--color-text-secondary)' }} />
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width={20} height={20}>
+                                <path fill="#DD4814" d="M64 3.246C30.445 3.246 3.245 30.446 3.245 64c0 33.552 27.2 60.754 60.755 60.754 33.554 0 60.755-27.202 60.755-60.754 0-33.554-27.2-60.754-60.755-60.754zm13.631 20.922a8.108 8.108 0 1114.046 8.108A8.105 8.105 0 0180.6 35.243a8.11 8.11 0 01-2.969-11.075zM64 28.763c3.262 0 6.417.453 9.414 1.281a11.357 11.357 0 005.548 8.042 11.378 11.378 0 009.725.789c5.998 5.898 9.901 13.919 10.47 22.854l-11.558.17C86.532 49.796 76.377 40.306 64 40.306a23.6 23.6 0 00-9.98 2.203L48.383 32.41A35.116 35.116 0 0164 28.763zM22.689 72.112A8.112 8.112 0 0114.576 64a8.111 8.111 0 018.113-8.113 8.113 8.113 0 010 16.225zm7.191.722A11.377 11.377 0 0034.08 64c0-3.565-1.639-6.747-4.2-8.836 2.194-8.489 7.475-15.738 14.571-20.483l5.931 9.934C44.29 48.902 40.308 55.984 40.308 64s3.981 15.098 10.074 19.383l-5.931 9.937c-7.099-4.744-12.38-11.995-14.571-20.486zm58.831 33.964a8.105 8.105 0 01-11.077-2.969c-2.241-3.877-.911-8.835 2.969-11.076 3.877-2.239 8.838-.908 11.077 2.969a8.106 8.106 0 01-2.969 11.076zm-.024-17.673a11.357 11.357 0 00-9.725.788 11.36 11.36 0 00-5.547 8.042A35.232 35.232 0 0164 99.239a35.097 35.097 0 01-15.616-3.649l5.636-10.1A23.6 23.6 0 0064 87.694c12.378 0 22.532-9.488 23.596-21.592l11.561.169c-.569 8.935-4.472 16.956-10.47 22.854z"/>
+                            </svg>
                             <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
-                                {platform === 'darwin' ? 'Docker Container' : platform === 'linux' ? 'Linux Environment' : 'Linux Subsystem'}
+                                {platform === 'darwin' ? 'Docker Container (Ubuntu)' : platform === 'linux' ? 'Linux Environment' : 'Windows Subsystem for Linux (Ubuntu)'}
                             </h3>
                             {wslStatus.installed === null ? (
                                 <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Checking...</span>
@@ -948,8 +953,34 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
     if (!isCloudUser) {
         return (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                <SectionTitle>EverFern Dispatch</SectionTitle>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <SectionTitle>EverFern Dispatch</SectionTitle>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Beta</span>
+                </div>
                 <SectionSubtitle>Control your desktop remotely from EverFern Cloud.</SectionSubtitle>
+
+                {/* Beta Warning Banner */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    padding: '14px 16px',
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    marginBottom: 20,
+                }}>
+                    <ExclamationTriangleIcon width={20} height={20} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 2 }}>
+                            Experimental Beta Feature
+                        </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                            EverFern Dispatch is currently in beta with known instability and connection issues. You may experience dropped sessions, latency, or out-of-sync states. We are actively refining remote dispatch reliability.
+                        </div>
+                    </div>
+                </div>
+
                 <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
                     <ServerIcon width={48} height={48} style={{ color: 'var(--color-text-tertiary)', margin: '0 auto 16px' }} />
                     <h3 style={{ fontSize: 18, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>EverFern Cloud Required</h3>
@@ -963,8 +994,33 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
 
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <SectionTitle>EverFern Dispatch</SectionTitle>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <SectionTitle>EverFern Dispatch</SectionTitle>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Beta</span>
+            </div>
             <SectionSubtitle>Connect your desktop to EverFern Cloud to control it remotely.</SectionSubtitle>
+
+            {/* Beta Warning Banner */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+                padding: '14px 16px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                marginBottom: 20,
+            }}>
+                <ExclamationTriangleIcon width={20} height={20} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 2 }}>
+                        Experimental Beta Feature — Known Issues & Active Development
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                        EverFern Dispatch is currently in active development and beta. You may encounter connection drops, high latency, or synchronization issues. We recommend keeping important sessions local while we work on stability improvements.
+                    </div>
+                </div>
+            </div>
 
             <Card>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1345,6 +1401,109 @@ export default function SettingsPage({
     const [vectorsData, setVectorsData] = useState<any[]>([]);
     const [loadingVectors, setLoadingVectors] = useState(false);
     const router = useRouter();
+
+    // ── Local Model Discovery & Benchmark State ──────────────────────────────
+    const [localHardwareInfo, setLocalHardwareInfo] = useState<any>(null);
+    const [installedLocalModels, setInstalledLocalModels] = useState<any[]>([]);
+    const [recommendedLocalModels, setRecommendedLocalModels] = useState<any[]>([]);
+    const [isLoadingLocalModels, setIsLoadingLocalModels] = useState<boolean>(false);
+    const [localProviderRunning, setLocalProviderRunning] = useState<boolean | null>(null);
+    const [localProviderError, setLocalProviderError] = useState<string | null>(null);
+    const [activeModelName, setActiveModelName] = useState<string>(config?.model || config?.customModel || '');
+    const [pullingLocalModel, setPullingLocalModel] = useState<string | null>(null);
+    const [pullingLocalPct, setPullingLocalPct] = useState<number>(0);
+    const [localModelTab, setLocalModelTab] = useState<'installed' | 'recommended'>('installed');
+
+    const loadLocalModelsForSection = async (prov?: string, customUrl?: string) => {
+        const curProv = prov || settingsProvider || 'ollama';
+        const curUrl = customUrl !== undefined ? customUrl : settingsApiKey;
+        setIsLoadingLocalModels(true);
+        setLocalProviderError(null);
+        try {
+            const sysApi = (window as any).electronAPI?.system;
+            if (sysApi?.getLocalModels) {
+                const res = await sysApi.getLocalModels({ provider: curProv, baseUrl: curUrl });
+                if (res) {
+                    if (res.hardware) setLocalHardwareInfo(res.hardware);
+                    setLocalProviderRunning(res.running);
+                    if (res.installedModels && Array.isArray(res.installedModels)) {
+                        setInstalledLocalModels(res.installedModels);
+                        if (res.installedModels.length === 0) setLocalModelTab('recommended');
+                    }
+                    if (res.recommendedModels && Array.isArray(res.recommendedModels)) {
+                        setRecommendedLocalModels(res.recommendedModels);
+                    }
+                    if (!res.running) {
+                        setLocalProviderError(res.error || `${curProv === 'lmstudio' ? 'LM Studio' : 'Ollama'} is not reachable.`);
+                    }
+                    return;
+                }
+            }
+        } catch (err: any) {
+            console.error('Failed to query local models in settings:', err);
+            setLocalProviderError(err?.message || 'Error querying local provider.');
+        } finally {
+            setIsLoadingLocalModels(false);
+        }
+    };
+
+    const handleSetActiveLocalModel = async (modelName: string) => {
+        setActiveModelName(modelName);
+        try {
+            if ((window as any).electronAPI?.saveConfig) {
+                const cur = (await (window as any).electronAPI.loadConfig?.())?.config || {};
+                await (window as any).electronAPI.saveConfig({
+                    ...cur,
+                    engine: 'local',
+                    provider: settingsProvider || 'ollama',
+                    model: modelName,
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                });
+            }
+            if ((window as any).electronAPI?.agent?.setProvider) {
+                await (window as any).electronAPI.agent.setProvider({
+                    provider: settingsProvider || 'ollama',
+                    model: modelName,
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                });
+            }
+        } catch (err) {
+            console.error('Failed to set active model:', err);
+        }
+    };
+
+    const handlePullModelFromSettings = async (modelTag: string) => {
+        const api = (window as any).electronAPI?.system;
+        if (!api?.ollamaPull) return;
+        setPullingLocalModel(modelTag);
+        setPullingLocalPct(0);
+        try {
+            if (api.onOllamaPullLine) {
+                api.onOllamaPullLine(({ line }: { line: string }) => {
+                    const pctMatch = line.match(/(\d+\.?\d*)%/);
+                    if (pctMatch) {
+                        setPullingLocalPct(parseFloat(pctMatch[1]));
+                    }
+                });
+            }
+            const res = await api.ollamaPull(modelTag);
+            if (res?.success) {
+                await handleSetActiveLocalModel(modelTag);
+                await loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey);
+                setLocalModelTab('installed');
+            }
+        } catch (err) {
+            console.error('Pull failed:', err);
+        } finally {
+            setPullingLocalModel(null);
+        }
+    };
+
+    useEffect(() => {
+        if (settingsEngine === 'local') {
+            loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey);
+        }
+    }, [settingsEngine, settingsProvider, settingsApiKey]);
 
     const checkEverFernLogin = (providerId: string): boolean => {
         if (providerId === 'everfern') {
@@ -2006,35 +2165,360 @@ export default function SettingsPage({
                 {settingsEngine === 'local' && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} style={{ overflow: 'hidden' }}>
                         <Card>
-                            <Label>Local Provider</Label>
-                            <Select 
-                                value={settingsProvider || 'ollama'}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setSettingsProvider(val);
-                                    if (val === 'lmstudio') setSettingsApiKey('http://localhost:1234/v1');
-                                    else if (val === 'ollama') setSettingsApiKey('http://localhost:11434');
-                                }}
-                                style={{ marginBottom: 16 }}
-                            >
-                                <option value="ollama">Ollama (Default)</option>
-                                <option value="lmstudio">LM Studio</option>
-                            </Select>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16, marginBottom: 16 }}>
+                                <div>
+                                    <Label>Local Provider</Label>
+                                    <Select 
+                                        value={settingsProvider || 'ollama'}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSettingsProvider(val);
+                                            if (val === 'lmstudio') setSettingsApiKey('http://localhost:1234/v1');
+                                            else if (val === 'ollama') setSettingsApiKey('http://localhost:11434');
+                                        }}
+                                    >
+                                        <option value="ollama">Ollama (Default)</option>
+                                        <option value="lmstudio">LM Studio</option>
+                                    </Select>
+                                </div>
 
-                            <Label>Local Server URL (Optional)</Label>
-                            <div style={{ position: 'relative' }}>
-                                <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
-                                <Input 
-                                    type="text" 
-                                    placeholder={settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
-                                    value={settingsApiKey} 
-                                    onChange={e => setSettingsApiKey(e.target.value)} 
-                                    style={{ paddingLeft: 40 }} 
-                                />
+                                <div>
+                                    <Label>Local Server URL (Optional)</Label>
+                                    <div style={{ position: 'relative' }}>
+                                        <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
+                                        <Input 
+                                            type="text" 
+                                            placeholder={settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
+                                            value={settingsApiKey} 
+                                            onChange={e => setSettingsApiKey(e.target.value)} 
+                                            style={{ paddingLeft: 40 }} 
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>
-                                Leave blank to use the default address for the selected provider. Stored locally — never sent to servers.
-                            </p>
+
+                            {/* System Hardware Spec Banner */}
+                            <div style={{
+                                display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 10,
+                                padding: 12, borderRadius: 12, backgroundColor: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)', marginBottom: 16, textAlign: 'left'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <CpuChipIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>GPU Processor</div>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {localHardwareInfo?.gpuName || 'GPU Processor'}
+                                        </div>
+                                        <div style={{ fontSize: 10.5, color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
+                                            {localHardwareInfo?.vramGB || 0} GB {localHardwareInfo?.isAppleSilicon ? 'Unified' : 'VRAM'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <CircleStackIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>System Memory</div>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                            {localHardwareInfo?.ramGB || 16} GB RAM
+                                        </div>
+                                        <div style={{ fontSize: 10.5, color: 'var(--color-text-secondary)' }}>
+                                            {localHardwareInfo?.freeRamGB || 8} GB Free
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <ServerIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>Server Status</div>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: localProviderRunning ? '#22c55e' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: localProviderRunning ? '#22c55e' : '#f59e0b' }} />
+                                            {localProviderRunning ? 'Connected' : 'Offline'}
+                                        </div>
+                                        <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
+                                            {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Offline Alert */}
+                            {(!localProviderRunning && localProviderError) && (
+                                <div style={{
+                                    padding: '12px 14px', borderRadius: 10, backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                    border: '1px solid rgba(245, 158, 11, 0.25)', textAlign: 'left', marginBottom: 16,
+                                    display: 'flex', flexDirection: 'column', gap: 6
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>
+                                            ⚠️ {settingsProvider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama service is offline"}
+                                        </span>
+                                        <button
+                                            onClick={() => loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey)}
+                                            disabled={isLoadingLocalModels}
+                                            style={{
+                                                padding: '3px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.2)',
+                                                border: '1px solid rgba(245, 158, 11, 0.3)', color: '#b45309', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                                            }}
+                                        >
+                                            <ArrowPathIcon width={12} height={12} className={isLoadingLocalModels ? "animate-spin" : ""} /> Retry
+                                        </button>
+                                    </div>
+                                    <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>
+                                        {settingsProvider === 'lmstudio'
+                                            ? "Open LM Studio -> Developer tab (<->) -> Start Server on port 1234."
+                                            : "Ensure Ollama is running in background or installed on your machine."}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Tabs Switcher */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border)', paddingBottom: 8, marginBottom: 12 }}>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                        onClick={() => setLocalModelTab('installed')}
+                                        style={{
+                                            padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                            backgroundColor: localModelTab === 'installed' ? 'var(--color-text-primary)' : 'transparent',
+                                            color: localModelTab === 'installed' ? 'var(--color-bg-base)' : 'var(--color-text-secondary)',
+                                            display: 'flex', alignItems: 'center', gap: 6
+                                        }}
+                                    >
+                                        Installed Models ({installedLocalModels.length})
+                                    </button>
+
+                                    <button
+                                        onClick={() => setLocalModelTab('recommended')}
+                                        style={{
+                                            padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                            backgroundColor: localModelTab === 'recommended' ? 'var(--color-text-primary)' : 'transparent',
+                                            color: localModelTab === 'recommended' ? 'var(--color-bg-base)' : 'var(--color-text-secondary)',
+                                            display: 'flex', alignItems: 'center', gap: 6
+                                        }}
+                                    >
+                                        ★ AI Recommended
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={() => loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey)}
+                                    disabled={isLoadingLocalModels}
+                                    style={{
+                                        background: 'none', border: 'none', color: 'var(--color-text-tertiary)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                                    }}
+                                >
+                                    <ArrowPathIcon width={12} height={12} className={isLoadingLocalModels ? "animate-spin" : ""} /> Refresh
+                                </button>
+                            </div>
+
+                            {/* Tab 1: Installed Models */}
+                            {localModelTab === 'installed' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                                    {installedLocalModels.length > 0 ? (
+                                        installedLocalModels.map(m => {
+                                            const isSelected = (activeModelName === m.name || activeModelName === m.id || activeModelName === m.model_id);
+                                            return (
+                                                <div
+                                                    key={m.id || m.name}
+                                                    style={{
+                                                        padding: '10px 12px', borderRadius: 10,
+                                                        backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                                        border: `1.5px solid ${isSelected ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
+                                                    }}
+                                                >
+                                                    <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{m.name}</span>
+                                                            <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-tertiary)' }}>
+                                                                {m.params_b}B
+                                                            </span>
+                                                            <span style={{
+                                                                fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 4,
+                                                                backgroundColor: m.status === 'full_gpu' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                                                color: m.status === 'full_gpu' ? '#16a34a' : '#d97706'
+                                                            }}>
+                                                                {m.badge}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                                            {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "⚠️ Heavy"}
+                                                        </div>
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                        {m.predicted_tps > 0 && (
+                                                            <div style={{ textAlign: 'right' }}>
+                                                                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'monospace' }}>
+                                                                    ~{m.predicted_tps} <span style={{ fontSize: 9.5, color: 'var(--color-text-tertiary)' }}>TPS</span>
+                                                                </div>
+                                                                <div style={{ fontSize: 10, color: m.isSmooth ? '#16a34a' : 'var(--color-text-secondary)' }}>
+                                                                    {m.smoothRating}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {isSelected ? (
+                                                            <span style={{
+                                                                padding: '4px 10px', borderRadius: 6, backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                                                border: '1px solid rgba(34, 197, 94, 0.3)', color: '#16a34a', fontSize: 11, fontWeight: 600
+                                                            }}>
+                                                                ✓ Active
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleSetActiveLocalModel(m.name || m.id)}
+                                                                style={{
+                                                                    padding: '4px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-subtle)',
+                                                                    border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                Set Active
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div style={{ padding: '20px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', textAlign: 'center' }}>
+                                            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>No models installed in {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}</div>
+                                            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '0 0 10px' }}>
+                                                Switch to AI Recommended to download top-performing models for your GPU in 1 click.
+                                            </p>
+                                            <button
+                                                onClick={() => setLocalModelTab('recommended')}
+                                                style={{
+                                                    padding: '5px 12px', borderRadius: 6, backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
+                                                    fontSize: 11.5, fontWeight: 600, border: 'none', cursor: 'pointer'
+                                                }}
+                                            >
+                                                View AI Recommended →
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Tab 2: AI Recommended for Your Hardware */}
+                            {localModelTab === 'recommended' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                                    {recommendedLocalModels.map(m => {
+                                        const modelTag = (m.tags && m.tags[0]) || m.name;
+                                        const isAlreadyInstalled = installedLocalModels.some(im => im.name?.toLowerCase() === modelTag.toLowerCase() || im.id?.toLowerCase() === modelTag.toLowerCase());
+                                        const isPullingThis = pullingLocalModel === modelTag;
+                                        const isTopMatch = m.status === 'full_gpu' && m.params_b <= (Number(localHardwareInfo?.vramGB || 8) >= 12 ? 14 : 7.6);
+
+                                        return (
+                                            <div
+                                                key={m.model_id || m.name}
+                                                style={{
+                                                    padding: '10px 12px', borderRadius: 10,
+                                                    backgroundColor: 'var(--color-bg-surface)',
+                                                    border: `1px solid ${isTopMatch ? 'rgba(59, 130, 246, 0.4)' : 'var(--color-border)'}`,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
+                                                }}
+                                            >
+                                                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>{m.name}</span>
+                                                        <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-tertiary)' }}>
+                                                            {m.params_b}B
+                                                        </span>
+                                                        {isTopMatch && (
+                                                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
+                                                                ★ Top Match
+                                                            </span>
+                                                        )}
+                                                        <span style={{
+                                                            fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 4,
+                                                            backgroundColor: m.status === 'full_gpu' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                                            color: m.status === 'full_gpu' ? '#16a34a' : '#d97706'
+                                                        }}>
+                                                            {m.badge}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
+                                                        {m.category} • VRAM: {m.quantized_q4_vram_gb} GB (Q4)
+                                                    </div>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'monospace' }}>
+                                                            ~{m.predicted_tps} <span style={{ fontSize: 9.5, color: 'var(--color-text-tertiary)' }}>TPS</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 10, color: m.isSmooth ? '#16a34a' : 'var(--color-text-secondary)' }}>
+                                                            {m.smoothRating}
+                                                        </div>
+                                                    </div>
+
+                                                    {settingsProvider === 'ollama' ? (
+                                                        isAlreadyInstalled ? (
+                                                            <button
+                                                                onClick={() => {
+                                                                    handleSetActiveLocalModel(modelTag);
+                                                                    setLocalModelTab('installed');
+                                                                }}
+                                                                style={{
+                                                                    padding: '4px 10px', borderRadius: 6, background: 'rgba(34, 197, 94, 0.15)',
+                                                                    border: '1px solid rgba(34, 197, 94, 0.3)', color: '#16a34a', fontSize: 11, fontWeight: 600, cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                ✓ Ready
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handlePullModelFromSettings(modelTag)}
+                                                                disabled={!!pullingLocalModel}
+                                                                style={{
+                                                                    padding: '4px 10px', borderRadius: 6, backgroundColor: 'var(--color-text-primary)',
+                                                                    color: 'var(--color-bg-base)', fontSize: 11, fontWeight: 600, border: 'none',
+                                                                    cursor: pullingLocalModel ? 'wait' : 'pointer', opacity: pullingLocalModel ? 0.6 : 1,
+                                                                    display: 'flex', alignItems: 'center', gap: 4
+                                                                }}
+                                                            >
+                                                                {isPullingThis ? `Pulling ${pullingLocalPct.toFixed(0)}%` : "Download"}
+                                                            </button>
+                                                        )
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleSetActiveLocalModel(modelTag)}
+                                                            style={{
+                                                                padding: '4px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-subtle)',
+                                                                border: '1px solid var(--color-border)', color: 'var(--color-text-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            Select
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Pull Progress Banner */}
+                            {pullingLocalModel && (
+                                <div style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', textAlign: 'left' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>Downloading {pullingLocalModel}...</span>
+                                        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>{pullingLocalPct.toFixed(1)}%</span>
+                                    </div>
+                                    <div style={{ width: '100%', height: 4, borderRadius: 999, background: 'rgba(32,30,36,0.1)', overflow: 'hidden' }}>
+                                        <motion.div animate={{ width: `${pullingLocalPct}%` }} transition={{ ease: 'linear', duration: 0.3 }} style={{ height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)' }} />
+                                    </div>
+                                </div>
+                            )}
                         </Card>
                     </motion.div>
                 )}
@@ -2202,7 +2686,7 @@ export default function SettingsPage({
                 <Label>Voice Provider</Label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
                     {[
-                        { id: 'everfern', name: 'EverFern Voice', icon: '/images/logos/everfern-withoutbg.png' },
+                        { id: 'everfern', name: 'EverFern Voice', icon: theme === 'light' ? '/images/logos/black-logo-withoutbg.png' : '/images/logos/everfern-withoutbg.png' },
                         { id: 'deepgram', name: 'Deepgram', icon: '/images/ai-providers/Deepgram.svg' },
                         { id: 'elevenlabs', name: 'ElevenLabs', icon: '/images/ai-providers/elevenlabs.svg' },
                         { id: 'local', name: 'Local (Ollama)', icon: '/images/ai-providers/ollama.svg' },
@@ -4499,8 +4983,638 @@ export default function SettingsPage({
         );
     };
 
+    // ── System & Hardware Section with Model VRAM & TPS Predictor ──────────
+    const SystemHardwareSection = () => {
+        const [hardwareInfo, setHardwareInfo] = useState<{
+            ramGB: number;
+            freeRamGB?: number;
+            usedRamGB?: number;
+            cpuModel?: string;
+            cpuCores?: number;
+            cpuSpeed?: number;
+            gpuName: string;
+            vramGB: number;
+            driverVersion?: string;
+            gpuTemp?: number;
+            isNvidia?: boolean;
+            isAppleSilicon?: boolean;
+            platform?: string;
+            arch?: string;
+            hostname?: string;
+        } | null>(null);
+
+        const [modelsList, setModelsList] = useState<any[]>([]);
+        const [isLoadingHardware, setIsLoadingHardware] = useState(false);
+        const [filterStatus, setFilterStatus] = useState<'all' | 'full_gpu' | 'cpu_offload' | 'exceeds_specs'>('all');
+        const [searchQuery, setSearchQuery] = useState('');
+        const [customModelId, setCustomModelId] = useState('');
+        const [customResult, setCustomResult] = useState<any>(null);
+        const [customError, setCustomError] = useState<string | null>(null);
+        const [isCalculatingCustom, setIsCalculatingCustom] = useState(false);
+        const [pullingModel, setPullingModel] = useState<string | null>(null);
+        const [pullProgress, setPullProgress] = useState<string>('');
+
+        const loadSystemHardware = async (searchParam?: string) => {
+            setIsLoadingHardware(true);
+            try {
+                let hw: any = null;
+                const sysApi = (window as any).electronAPI?.system;
+                if (sysApi?.detectHardware) {
+                    hw = await sysApi.detectHardware();
+                    setHardwareInfo(hw);
+                }
+
+                const vram = hw?.vramGB || 0;
+                const ram = hw?.ramGB || 16;
+                const isApple = Boolean(hw?.isAppleSilicon);
+                const gpuName = hw?.gpuName || '';
+                const activeSearch = typeof searchParam === 'string' ? searchParam : searchQuery;
+
+                // 1. Try EverFern Cloud / Local Backend APIs with full logging first
+                const candidateUrls = [
+                    process.env.NEXT_PUBLIC_API_URL,
+                    'http://127.0.0.1:5000',
+                    'http://localhost:5000',
+                    'https://api.everfern.app'
+                ].filter(Boolean) as string[];
+
+                const q = activeSearch ? `&search=${encodeURIComponent(activeSearch)}` : '';
+                for (const baseUrl of candidateUrls) {
+                    try {
+                        const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?vram_gb=${vram}&ram_gb=${ram}&is_apple_silicon=${isApple}&gpu_name=${encodeURIComponent(gpuName)}${q}`;
+                        console.log(`[EverFern Cloud] 📡 Fetching compatible models from: ${targetUrl}`);
+                        const res = await fetch(targetUrl, { headers: { 'Accept': 'application/json' } });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.models && Array.isArray(data.models) && data.models.length > 0) {
+                                console.log(`[EverFern Cloud] ✅ Successfully fetched ${data.models.length} models from EverFern Cloud (${baseUrl})`);
+                                setModelsList(data.models);
+                                setIsLoadingHardware(false);
+                                return;
+                            }
+                        } else {
+                            console.log(`[EverFern Cloud] ⚠️ Endpoint returned HTTP ${res.status} (${baseUrl})`);
+                        }
+                    } catch (e: any) {
+                        console.log(`[EverFern Cloud] ℹ️ Endpoint unreachable (${baseUrl}): ${e?.message || e}`);
+                    }
+                }
+
+                // 2. Fallback to local Electron IPC handler (if cloud unreachable)
+                if (sysApi?.getModelRequirements) {
+                    try {
+                        console.log('[EverFern] 💻 Cloud unreachable, querying native hardware analyzer via IPC...');
+                        const ipcRes = await sysApi.getModelRequirements({
+                            vramGB: vram,
+                            ramGB: ram,
+                            isAppleSilicon: isApple,
+                            gpuName,
+                            search: activeSearch
+                        });
+                        if (ipcRes?.success && Array.isArray(ipcRes.models) && ipcRes.models.length > 0) {
+                            console.log(`[EverFern] ✅ Native hardware analyzer returned ${ipcRes.models.length} compatible models via IPC.`);
+                            setModelsList(ipcRes.models);
+                            setIsLoadingHardware(false);
+                            return;
+                        }
+                    } catch (ipcErr) {
+                        console.warn('[EverFern] ⚠️ IPC query failed:', ipcErr);
+                    }
+                }
+
+                console.log('[EverFern] ℹ️ Using client fallback computation for 16 models.');
+
+                // 3. Client-side fallback computation
+                const fallbackModels = [
+                    { model_id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B", params_b: 1.2, raw_fp16_vram_gb: 2.47, quantized_q4_vram_gb: 0.88, quantized_q8_vram_gb: 1.45, min_ram_gb: 4, category: "Ultra-lightweight / Fast Edge", tags: ["llama3.2:1b"] },
+                    { model_id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B", params_b: 3.2, raw_fp16_vram_gb: 6.42, quantized_q4_vram_gb: 2.22, quantized_q8_vram_gb: 3.65, min_ram_gb: 6, category: "Compact / High Quality", tags: ["llama3.2:3b"] },
+                    { model_id: "meta-llama/Meta-Llama-3.1-8B-Instruct", name: "Llama 3.1 8B", params_b: 8.0, raw_fp16_vram_gb: 16.06, quantized_q4_vram_gb: 5.34, quantized_q8_vram_gb: 9.10, min_ram_gb: 12, category: "Standard General Purpose", tags: ["llama3.1:8b"] },
+                    { model_id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3", params_b: 7.2, raw_fp16_vram_gb: 14.50, quantized_q4_vram_gb: 4.16, quantized_q8_vram_gb: 8.20, min_ram_gb: 8, category: "Fast Instruction & Reasoning", tags: ["mistral:7b"] },
+                    { model_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct", name: "Qwen 2.5 Coder 1.5B", params_b: 1.5, raw_fp16_vram_gb: 3.08, quantized_q4_vram_gb: 1.08, quantized_q8_vram_gb: 1.78, min_ram_gb: 4, category: "Fast Coding Specialist", tags: ["qwen2.5-coder:1.5b"] },
+                    { model_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.08, quantized_q8_vram_gb: 8.65, min_ram_gb: 10, category: "Flagship Coding Specialist", tags: ["qwen2.5-coder:7b"] },
+                    { model_id: "Qwen/Qwen2.5-Coder-14B-Instruct", name: "Qwen 2.5 Coder 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.75, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Heavy Coding & Autonomous", tags: ["qwen2.5-coder:14b"] },
+                    { model_id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", params_b: 32.5, raw_fp16_vram_gb: 65.00, quantized_q4_vram_gb: 20.40, quantized_q8_vram_gb: 36.20, min_ram_gb: 32, category: "State-of-the-Art Coding", tags: ["qwen2.5-coder:32b"] },
+                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", name: "DeepSeek R1 1.5B", params_b: 1.8, raw_fp16_vram_gb: 3.56, quantized_q4_vram_gb: 1.25, quantized_q8_vram_gb: 2.05, min_ram_gb: 4, category: "Compact Reasoning", tags: ["deepseek-r1:1.5b"] },
+                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", name: "DeepSeek R1 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.15, quantized_q8_vram_gb: 8.65, min_ram_gb: 12, category: "Advanced Reasoning", tags: ["deepseek-r1:7b"] },
+                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", name: "DeepSeek R1 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.80, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Deep Reasoning Specialist", tags: ["deepseek-r1:14b"] },
+                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", name: "DeepSeek R1 32B", params_b: 32.8, raw_fp16_vram_gb: 65.60, quantized_q4_vram_gb: 21.20, quantized_q8_vram_gb: 36.80, min_ram_gb: 32, category: "Top-tier Math & Logic Reasoning", tags: ["deepseek-r1:32b"] },
+                    { model_id: "google/gemma-2-2b-it", name: "Gemma 2 2B", params_b: 2.6, raw_fp16_vram_gb: 5.22, quantized_q4_vram_gb: 1.78, quantized_q8_vram_gb: 2.95, min_ram_gb: 6, category: "Lightweight Google Research", tags: ["gemma2:2b"] },
+                    { model_id: "google/gemma-2-9b-it", name: "Gemma 2 9B", params_b: 9.2, raw_fp16_vram_gb: 18.48, quantized_q4_vram_gb: 6.12, quantized_q8_vram_gb: 10.40, min_ram_gb: 12, category: "High Accuracy General Purpose", tags: ["gemma2:9b"] },
+                    { model_id: "microsoft/phi-4", name: "Phi-4 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.70, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Microsoft Synthetic Reasoning", tags: ["phi4:14b"] },
+                    { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b"] }
+                ];
+
+                const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
+                const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
+
+                const computed = fallbackModels.map(m => {
+                    const q4 = m.quantized_q4_vram_gb;
+                    let status: 'full_gpu' | 'cpu_offload' | 'exceeds_specs' = 'exceeds_specs';
+                    let badge = 'Cloud Required';
+                    let predicted_tps = 0;
+
+                    if (effectiveVram >= q4) {
+                        status = 'full_gpu';
+                        badge = 'Full GPU';
+                        predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
+                    } else if ((effectiveVram + (ram * 0.5)) >= q4 && ram >= m.min_ram_gb) {
+                        status = 'cpu_offload';
+                        badge = 'CPU Offload';
+                        predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
+                    }
+
+                    return {
+                        ...m,
+                        status,
+                        badge,
+                        predicted_tps,
+                        fits_in_vram: effectiveVram >= q4,
+                        fits_in_ram: ram >= m.min_ram_gb
+                    };
+                });
+
+                if (activeSearch) {
+                    const q = activeSearch.toLowerCase();
+                    setModelsList(computed.filter(m => m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || (m.tags && m.tags.some(t => t.toLowerCase().includes(q)))));
+                } else {
+                    setModelsList(computed);
+                }
+            } catch (err) {
+                console.error('Failed to load hardware:', err);
+            } finally {
+                setIsLoadingHardware(false);
+            }
+        };
+
+        useEffect(() => {
+            loadSystemHardware();
+        }, []);
+
+        // Debounce search across local IPC and backend
+        useEffect(() => {
+            const timer = setTimeout(() => {
+                loadSystemHardware(searchQuery);
+            }, 300);
+            return () => clearTimeout(timer);
+        }, [searchQuery]);
+
+        const handleCalculateCustomModel = async () => {
+            if (!customModelId.trim()) return;
+            setIsCalculatingCustom(true);
+            setCustomResult(null);
+            setCustomError(null);
+            try {
+                const sysApi = (window as any).electronAPI?.system;
+                const vram = hardwareInfo?.vramGB || 0;
+                const ram = hardwareInfo?.ramGB || 16;
+                const isApple = Boolean(hardwareInfo?.isAppleSilicon);
+                const gpuName = hardwareInfo?.gpuName || '';
+
+                if (sysApi?.getModelRequirements) {
+                    const res = await sysApi.getModelRequirements({
+                        vramGB: vram,
+                        ramGB: ram,
+                        isAppleSilicon: isApple,
+                        gpuName,
+                        modelId: customModelId.trim()
+                    });
+                    if (res) {
+                        if (res.notFound || res.success === false) {
+                            setCustomError(res.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
+                            return;
+                        }
+                        setCustomResult(res);
+                        return;
+                    }
+                }
+
+                // Cloud / local backend lookup
+                const candidateUrls = [
+                    process.env.NEXT_PUBLIC_API_URL,
+                    'http://127.0.0.1:5000',
+                    'http://localhost:5000',
+                    'https://api.everfern.app'
+                ].filter(Boolean) as string[];
+
+                for (const baseUrl of candidateUrls) {
+                    try {
+                        const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?model=${encodeURIComponent(customModelId.trim())}`;
+                        const res = await fetch(targetUrl, { headers: { 'Accept': 'application/json' } });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.notFound || data.success === false) {
+                                setCustomError(data.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
+                                return;
+                            }
+                            const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
+                            const q4 = data.quantized_q4_vram_gb || 4.16;
+                            const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
+
+                            let status = 'exceeds_specs';
+                            let badge = 'Cloud Required';
+                            let predicted_tps = 0;
+
+                            if (effectiveVram >= q4) {
+                                status = 'full_gpu';
+                                badge = 'Full GPU';
+                                predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
+                            } else if ((effectiveVram + (ram * 0.5)) >= q4) {
+                                status = 'cpu_offload';
+                                badge = 'CPU Offload';
+                                predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
+                            }
+
+                            setCustomResult({
+                                ...data,
+                                status,
+                                badge,
+                                predicted_tps
+                            });
+                            return;
+                        }
+                    } catch (e) {}
+                }
+
+                setCustomError(`Unable to verify model "${customModelId.trim()}" on Hugging Face Hub. Please check your internet connection or verify the repository ID.`);
+            } catch (err: any) {
+                setCustomError(err?.message || 'Error communicating with model calculation service.');
+            } finally {
+                setIsCalculatingCustom(false);
+            }
+        };
+
+        const handlePullOllamaModel = async (modelTag: string) => {
+            const api = (window as any).electronAPI?.system;
+            if (!api?.ollamaPull) return;
+            setPullingModel(modelTag);
+            setPullProgress('Starting pull...');
+            try {
+                if (api.onOllamaPullLine) {
+                    api.onOllamaPullLine(({ line }: { line: string }) => {
+                        setPullProgress(line);
+                    });
+                }
+                const res = await api.ollamaPull(modelTag);
+                if (res?.success) {
+                    setPullProgress('Completed successfully');
+                } else {
+                    setPullProgress(`Failed: ${res?.error || 'Unknown error'}`);
+                }
+            } catch (err: any) {
+                setPullProgress(`Error: ${err?.message || String(err)}`);
+            } finally {
+                setTimeout(() => setPullingModel(null), 3000);
+            }
+        };
+
+        const filteredModels = modelsList.filter(m => {
+            if (filterStatus !== 'all' && m.status !== filterStatus) return false;
+            return true;
+        });
+
+        const vramGb = hardwareInfo?.vramGB || 0;
+        const ramGb = hardwareInfo?.ramGB || 16;
+        const freeRam = hardwareInfo?.freeRamGB || 8;
+
+        return (
+            <div style={{ padding: '4px 0 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <SectionTitle>System &amp; Hardware</SectionTitle>
+                    <button
+                        onClick={() => loadSystemHardware()}
+                        disabled={isLoadingHardware}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '7px 14px', borderRadius: 8,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-secondary)',
+                            fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                            transition: 'all 0.15s'
+                        }}
+                    >
+                        <ArrowPathIcon width={13} height={13} className={isLoadingHardware ? 'animate-spin' : ''} />
+                        Refresh Specs
+                    </button>
+                </div>
+                <SectionSubtitle>
+                    Inspect machine specifications, compute exact VRAM footprints with KV-cache buffers, and estimate local model execution throughput.
+                </SectionSubtitle>
+
+                {/* Hardware Overview Cards Grid with Increased Spacing and Muted Minimal Icons */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24, marginBottom: 28 }}>
+                    {/* GPU & VRAM Card */}
+                    <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{
+                                width: 42, height: 42, borderRadius: 12,
+                                backgroundColor: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'var(--color-text-secondary)',
+                                flexShrink: 0
+                            }}>
+                                <GraphicsCardIcon size={24} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                                    Graphics Processor
+                                </div>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {hardwareInfo?.gpuName || 'Detecting GPU...'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                <span>Dedicated VRAM</span>
+                                <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                    {vramGb} GB {hardwareInfo?.isAppleSilicon ? '(Unified)' : ''}
+                                </span>
+                            </div>
+                            <div style={{ width: '100%', height: 5, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 3, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                                <div style={{ width: `${Math.min(100, (vramGb / 24) * 100)}%`, height: '100%', backgroundColor: 'var(--color-text-primary)', borderRadius: 3 }} />
+                            </div>
+                        </div>
+
+                        {hardwareInfo?.driverVersion && (
+                            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                Driver: {hardwareInfo.driverVersion} {hardwareInfo.gpuTemp ? `• ${hardwareInfo.gpuTemp}°C` : ''}
+                            </div>
+                        )}
+                    </Card>
+
+                    {/* CPU & RAM Card */}
+                    <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{
+                                width: 42, height: 42, borderRadius: 12,
+                                backgroundColor: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'var(--color-text-secondary)',
+                                flexShrink: 0
+                            }}>
+                                <CpuChipIcon width={22} height={22} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                                    System CPU &amp; Memory
+                                </div>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {hardwareInfo?.cpuModel || 'CPU Processor'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                <span>System RAM</span>
+                                <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                    {ramGb} GB ({freeRam} GB Free)
+                                </span>
+                            </div>
+                            <div style={{ width: '100%', height: 5, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 3, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                                <div style={{ width: `${Math.min(100, ((ramGb - freeRam) / ramGb) * 100)}%`, height: '100%', backgroundColor: 'var(--color-text-primary)', borderRadius: 3 }} />
+                            </div>
+                        </div>
+
+                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                            {hardwareInfo?.cpuCores ? `${hardwareInfo.cpuCores} CPU Threads • ` : ''}{hardwareInfo?.arch || 'x64'} Architecture
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Custom Model VRAM & TPS Calculator */}
+                <Card style={{ padding: '24px 26px', marginBottom: 28 }}>
+                    <div style={{ marginBottom: 12 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>
+                            Hugging Face Model VRAM &amp; Throughput Calculator
+                        </h3>
+                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                            Calculate raw FP16 footprints and quantized Q4 VRAM requirements with a 15% context buffer for any repository model ID.
+                        </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16, marginBottom: 16 }}>
+                        <input
+                            type="text"
+                            placeholder="e.g., mistralai/Mistral-7B-v0.1, Qwen/Qwen2.5-Coder-7B-Instruct..."
+                            value={customModelId}
+                            onChange={e => { setCustomModelId(e.target.value); setCustomError(null); }}
+                            onKeyDown={e => { if (e.key === 'Enter') handleCalculateCustomModel(); }}
+                            style={{
+                                flex: 1, padding: '10px 14px', backgroundColor: 'var(--color-bg-subtle)',
+                                border: '1px solid var(--color-border)', borderRadius: 10,
+                                fontSize: 13, color: 'var(--color-text-primary)', outline: 'none',
+                                fontFamily: 'var(--font-mono)'
+                            }}
+                        />
+                        <button
+                            onClick={handleCalculateCustomModel}
+                            disabled={isCalculatingCustom || !customModelId.trim()}
+                            style={{
+                                padding: '10px 18px', backgroundColor: 'var(--color-text-primary)',
+                                color: 'var(--color-text-inverse)', border: 'none', borderRadius: 10,
+                                fontSize: 13, fontWeight: 600, cursor: (!customModelId.trim() || isCalculatingCustom) ? 'not-allowed' : 'pointer',
+                                opacity: (!customModelId.trim() || isCalculatingCustom) ? 0.5 : 1,
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            {isCalculatingCustom ? 'Calculating...' : 'Calculate Footprint'}
+                        </button>
+                    </div>
+
+                    {customError && (
+                        <div style={{
+                            padding: '14px 16px', borderRadius: 12,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-secondary)',
+                            fontSize: 13, lineHeight: 1.5
+                        }}>
+                            {customError}
+                        </div>
+                    )}
+
+                    {customResult && (
+                        <div style={{
+                            padding: '16px 18px', borderRadius: 12,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            display: 'flex', flexDirection: 'column', gap: 12
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                        {customResult.model || customResult.name}
+                                    </span>
+                                    {customResult.params_b && (
+                                        <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}>
+                                            {customResult.params_b}B Params
+                                        </span>
+                                    )}
+                                </div>
+                                <span style={{
+                                    fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6,
+                                    backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                                    color: 'var(--color-text-secondary)'
+                                }}>
+                                    {customResult.badge}
+                                </span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 12 }}>
+                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Raw FP16</div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.raw_fp16_vram_gb} GB</div>
+                                </div>
+                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Quantized Q8</div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.quantized_q8_vram_gb || (customResult.quantized_q4_vram_gb * 2).toFixed(2)} GB</div>
+                                </div>
+                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Quantized Q4 (+15%)</div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.quantized_q4_vram_gb} GB</div>
+                                </div>
+                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Predicted Throughput</div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                        {customResult.predicted_tps > 0 ? `~${customResult.predicted_tps} tok/s` : 'Cloud Only'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </Card>
+
+                {/* Popular Models Hardware Compatibility & TPS Table */}
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                Hardware-Compatible Models
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                {filteredModels.length} models available
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            {(['all', 'full_gpu', 'cpu_offload', 'exceeds_specs'] as const).map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setFilterStatus(tab)}
+                                    style={{
+                                        padding: '5px 12px', borderRadius: 6, fontSize: 11.5, fontWeight: 500,
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: filterStatus === tab ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
+                                        color: filterStatus === tab ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
+                                        cursor: 'pointer', transition: 'all 0.15s'
+                                    }}
+                                >
+                                    {tab === 'all' ? 'All' : tab === 'full_gpu' ? 'Full GPU' : tab === 'cpu_offload' ? 'CPU Offload' : 'Cloud Required'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <input
+                        type="text"
+                        placeholder="Search models or Hugging Face Hub (e.g. llama, coder, deepseek, mistral)..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        style={{
+                            width: '100%', padding: '10px 14px', backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)', borderRadius: 10,
+                            fontSize: 13, color: 'var(--color-text-primary)', outline: 'none',
+                            marginBottom: 16, boxSizing: 'border-box'
+                        }}
+                    />
+
+                    {pullingModel && (
+                        <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', marginBottom: 14, fontSize: 12 }}>
+                            <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Pulling {pullingModel}...</div>
+                            <div style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pullProgress}</div>
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {filteredModels.map(m => (
+                            <div
+                                key={m.model_id}
+                                style={{
+                                    padding: '14px 18px', borderRadius: 12,
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    border: '1px solid var(--color-border)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    gap: 16
+                                }}
+                            >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{m.name}</span>
+                                        <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}>
+                                            {m.params_b}B
+                                        </span>
+                                        <span style={{
+                                            fontSize: 10.5, fontWeight: 500, padding: '2px 7px', borderRadius: 5,
+                                            backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)',
+                                            color: 'var(--color-text-secondary)'
+                                        }}>
+                                            {m.badge}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                                        {m.category} • Required VRAM: <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}>{m.quantized_q4_vram_gb} GB (Q4)</span> / {m.raw_fp16_vram_gb} GB (FP16)
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                    {m.predicted_tps > 0 ? (
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                                ~{m.predicted_tps} <span style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--color-text-tertiary)' }}>tok/s</span>
+                                            </div>
+                                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
+                                                {m.status === 'full_gpu' ? 'GPU' : 'CPU Offload'}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+                                            Cloud Required
+                                        </div>
+                                    )}
+
+                                    {m.tags && m.tags[0] && (
+                                        <button
+                                            onClick={() => handlePullOllamaModel(m.tags[0].replace('ollama:', ''))}
+                                            disabled={pullingModel === m.tags[0].replace('ollama:', '')}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: 8,
+                                                backgroundColor: 'var(--color-bg-subtle)',
+                                                border: '1px solid var(--color-border)',
+                                                color: 'var(--color-text-primary)',
+                                                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                                transition: 'all 0.15s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+                                        >
+                                            {pullingModel === m.tags[0].replace('ollama:', '') ? 'Pulling...' : 'Pull (Ollama)'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const sectionContent: Record<string, React.ReactNode> = {
         general: GeneralSection(),
+        system: SystemHardwareSection(),
         keybinds: KeybindsSection(),
         openclaw: OpenClawSection(),
         profile: ProfileSection(),
@@ -4619,6 +5733,9 @@ export default function SettingsPage({
                                             } else if (id === 'profile' && isCloudUser) {
                                                 badgeText = cloudUsage?.plan ? cloudUsage.plan.toUpperCase() : 'FREE';
                                                 badgeColor = cloudUsage?.plan === 'pro' ? '#10b981' : '#a855f7';
+                                            } else if (id === 'dispatch') {
+                                                badgeText = 'BETA';
+                                                badgeColor = '#f59e0b';
                                             }
 
                                             // Find specific sub-option matched by search query
@@ -4757,14 +5874,15 @@ export default function SettingsPage({
                 {/* Right content area - Rounded floating sheet */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 32px', backgroundColor: 'var(--color-bg-base)' }}>
                     <div style={{
-                        maxWidth: 720,
+                        maxWidth: activeSection === 'system' ? 1040 : (activeSection === 'dispatch' ? 960 : 720),
                         margin: '0 auto',
                         backgroundColor: 'var(--color-bg-surface)',
                         border: '1px solid var(--color-border)',
                         borderRadius: 28,
-                        padding: '40px 52px',
+                        padding: activeSection === 'system' ? '36px 44px' : '40px 52px',
                         minHeight: '100%',
-                        boxShadow: 'var(--shadow-xs)'
+                        boxShadow: 'var(--shadow-xs)',
+                        transition: 'max-width 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
                     }}>
                         <AnimatePresence mode="wait">
                             <motion.div

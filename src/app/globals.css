@@ -405,7 +405,7 @@
   --sidebar-avatar-border: #dcdad0;
   --sidebar-limit-text: #a09e9c;
   --sidebar-project-text: #666666;
-  
+
   --sidebar-settings-bg: rgba(0, 0, 0, 0.03);
   --sidebar-settings-border: rgba(0, 0, 0, 0.05);
   --sidebar-settings-text: #717171;
@@ -853,7 +853,7 @@ a:hover {
   --sidebar-avatar-border: #333029;
   --sidebar-limit-text: #96948d;
   --sidebar-project-text: #c2c0b8;
-  
+
   --sidebar-settings-bg: rgba(255, 255, 255, 0.03);
   --sidebar-settings-border: rgba(255, 255, 255, 0.05);
   --sidebar-settings-text: #96948d;
@@ -1223,4 +1223,32 @@ a:hover {
 
 .dashboard-toast [data-icon] {
   margin-right: 0 !important;
+}
+
+/* Agent Action Shimmer Text */
+@keyframes everfernShimmerText {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.everfern-shimmer-text {
+  background: linear-gradient(90deg, #71717a 0%, #e4e4e7 45%, #71717a 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: everfernShimmerText 2.4s infinite linear;
+}
+
+:root:not(.dark) .everfern-shimmer-text {
+  background: linear-gradient(90deg, #71717a 0%, #18181b 45%, #71717a 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: everfernShimmerText 2.4s infinite linear;
 }

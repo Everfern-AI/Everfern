@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -27,13 +28,31 @@ export default function SearchPopup({
     const [searchValue, setSearchValue] = useState('');
     const [vectorResults, setVectorResults] = useState<ConversationSummary[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    useEffect(() => {
         if (isOpen) {
-            setTimeout(() => searchInputRef.current?.focus(), 100);
+            setTimeout(() => searchInputRef.current?.focus(), 80);
+        } else {
+            setSearchValue('');
         }
     }, [isOpen]);
+
+    // Close on Escape key
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     // Group conversations by date
     const groupByDate = (convs: ConversationSummary[]) => {
@@ -101,10 +120,12 @@ export default function SearchPopup({
         setSearchValue('');
     };
 
-    return (
+    if (!mounted) return null;
+
+    return createPortal(
         <AnimatePresence>
             {isOpen && (
-                <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh' }}>
                     {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
@@ -114,38 +135,37 @@ export default function SearchPopup({
                         style={{
                             position: 'fixed',
                             inset: 0,
-                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                            zIndex: 999,
+                            backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                            backdropFilter: 'blur(8px)',
+                            WebkitBackdropFilter: 'blur(8px)',
+                            zIndex: 99998,
                         }}
                     />
 
                     {/* Popup */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                        initial={{ opacity: 0, scale: 0.96, y: -10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: -10 }}
+                        transition={{ type: 'spring', damping: 24, stiffness: 320 }}
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
                         style={{
-                            position: 'fixed',
-                            inset: 0,
-                            margin: 'auto',
-                            backgroundColor: 'var(--color-bg-surface)',
+                            position: 'relative',
+                            backgroundColor: 'var(--color-bg-surface, #ffffff)',
                             borderRadius: 16,
-                            border: 'none',
-                            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.2)',
-                            zIndex: 1000,
+                            border: '1px solid var(--color-border)',
+                            boxShadow: '0 25px 60px -12px rgba(0, 0, 0, 0.35)',
+                            zIndex: 99999,
                             width: '90%',
-                            maxWidth: 520,
-                            maxHeight: '75vh',
-                            height: 'fit-content',
+                            maxWidth: 540,
+                            maxHeight: '68vh',
                             display: 'flex',
                             flexDirection: 'column',
                             overflow: 'hidden',
                         }}
                     >
                         {/* Header with search input */}
-                        <div style={{ padding: 20, paddingBottom: 12 }}>
+                        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--color-border-subtle, var(--color-border))' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <div style={{ flex: 1, position: 'relative' }}>
                                     <svg
@@ -174,38 +194,38 @@ export default function SearchPopup({
                                         onChange={(e) => setSearchValue(e.target.value)}
                                         style={{
                                             width: '100%',
-                                            height: 44,
-                                            paddingLeft: 40,
+                                            height: 42,
+                                            paddingLeft: 38,
                                             paddingRight: 12,
-                                            borderRadius: 12,
+                                            borderRadius: 10,
                                             border: '1px solid var(--color-border)',
                                             backgroundColor: 'var(--color-bg-subtle)',
-                                            fontSize: 15,
+                                            fontSize: 14,
                                             color: 'var(--color-text-primary)',
                                             outline: 'none',
                                             transition: 'border-color 0.2s',
                                         }}
-                                        onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border-strong)')}
+                                        onFocus={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border-strong, #3b82f6)')}
                                         onBlur={(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)')}
                                     />
                                 </div>
                                 <button
                                     onClick={onClose}
                                     style={{
-                                        width: 36,
-                                        height: 36,
+                                        width: 32,
+                                        height: 32,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         backgroundColor: 'transparent',
                                         border: 'none',
-                                        borderRadius: 10,
+                                        borderRadius: 8,
                                         cursor: 'pointer',
                                         color: 'var(--color-text-secondary)',
-                                        transition: 'all 0.2s',
+                                        transition: 'all 0.15s',
                                     }}
                                     onMouseEnter={(e: React.MouseEvent) => {
-                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover)';
+                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.06))';
                                         (e.currentTarget as HTMLElement).style.color = 'var(--color-text-primary)';
                                     }}
                                     onMouseLeave={(e: React.MouseEvent) => {
@@ -231,104 +251,104 @@ export default function SearchPopup({
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    Scanning vectors...
+                                    Scanning vector memory...
                                 </div>
                             )}
                         </div>
 
                         {/* Chat List */}
-                        <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
                             {groupedChats.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-tertiary)' }}>
-                                    <p style={{ fontSize: 14, margin: 0 }}>
+                                <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--color-text-tertiary)' }}>
+                                    <p style={{ fontSize: 13.5, margin: 0 }}>
                                         {searchValue ? 'No chats found' : 'No chats yet'}
                                     </p>
                                 </div>
                             ) : (
                                 groupedChats.map((group) => (
-                                    <div key={group.label} style={{ marginBottom: 16 }}>
+                                    <div key={group.label} style={{ marginBottom: 14 }}>
                                         {/* Group Label */}
                                         <div
                                             style={{
                                                 fontSize: 11,
-                                                fontWeight: 700,
+                                                fontWeight: 600,
                                                 color: 'var(--color-text-tertiary)',
                                                 textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                marginBottom: 8,
-                                                paddingLeft: 4,
+                                                letterSpacing: '0.06em',
+                                                marginBottom: 6,
+                                                paddingLeft: 6,
                                             }}
                                         >
                                             {group.label}
                                         </div>
 
                                         {/* Chats in Group */}
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                            {group.items.map((chat) => (
-                                                <motion.button
-                                                    key={chat.id}
-                                                    whileHover={{ x: 4 }}
-                                                    onClick={() => handleSelectChat(chat.id)}
-                                                    style={{
-                                                        width: '100%',
-                                                        padding: 10,
-                                                        borderRadius: 10,
-                                                        border: 'none',
-                                                        backgroundColor:
-                                                            activeConversationId === chat.id
-                                                                ? 'var(--color-bg-selected)'
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                            {group.items.map((chat) => {
+                                                const isSelected = activeConversationId === chat.id;
+                                                return (
+                                                    <button
+                                                        key={chat.id}
+                                                        onClick={() => handleSelectChat(chat.id)}
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '9px 12px',
+                                                            borderRadius: 10,
+                                                            border: 'none',
+                                                            backgroundColor: isSelected
+                                                                ? 'var(--color-bg-selected, rgba(0,0,0,0.06))'
                                                                 : 'transparent',
-                                                        cursor: 'pointer',
-                                                        textAlign: 'left',
-                                                        transition: 'all 0.2s',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: 3,
-                                                    }}
-                                                    onMouseEnter={(e: React.MouseEvent) => {
-                                                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover)';
-                                                    }}
-                                                    onMouseLeave={(e: React.MouseEvent) => {
-                                                        if (activeConversationId !== chat.id) {
-                                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                                                        } else {
-                                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-selected)';
-                                                        }
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            fontSize: 14,
-                                                            fontWeight: 500,
-                                                            color: 'var(--color-text-primary)',
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap',
+                                                            cursor: 'pointer',
+                                                            textAlign: 'left',
+                                                            transition: 'background-color 0.15s ease',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: 2,
+                                                        }}
+                                                        onMouseEnter={(e: React.MouseEvent) => {
+                                                            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.05))';
+                                                        }}
+                                                        onMouseLeave={(e: React.MouseEvent) => {
+                                                            (e.currentTarget as HTMLElement).style.backgroundColor = isSelected
+                                                                ? 'var(--color-bg-selected, rgba(0,0,0,0.06))'
+                                                                : 'transparent';
                                                         }}
                                                     >
-                                                        {chat.title || 'Untitled Chat'}
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            fontSize: 12,
-                                                            color: 'var(--color-text-secondary)',
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap',
-                                                        }}
-                                                    >
-                                                        {chat.provider}
-                                                    </div>
-                                                </motion.button>
-                                            ))}
+                                                        <div
+                                                            style={{
+                                                                fontSize: 13.5,
+                                                                fontWeight: isSelected ? 600 : 500,
+                                                                color: 'var(--color-text-primary)',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            {chat.title || 'Untitled Chat'}
+                                                        </div>
+                                                        <div
+                                                            style={{
+                                                                fontSize: 11.5,
+                                                                color: 'var(--color-text-tertiary)',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            {chat.provider}
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 ))
                             )}
                         </div>
                     </motion.div>
-                </>
+                </div>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }

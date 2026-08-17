@@ -1045,11 +1045,12 @@ function adaptTool(
         if (name === 'write') {
           const writtenPath = typeof args.path === 'string' ? path.resolve(args.path) : '';
           const bytes = typeof args.content === 'string' ? Buffer.byteLength(args.content, 'utf8') : 0;
-          console.log(`[pi-tools] [DEBUG] Write tool wrote to: ${writtenPath} (${bytes} bytes)\nContent:\n${args.content}`);
+          onUpdate?.(`Writing ${path.basename(writtenPath || 'file')} (${bytes} bytes)...`);
+          console.log(`[pi-tools] [DEBUG] Write tool wrote to: ${writtenPath} (${bytes} bytes)`);
           return {
             success: true,
             output: stripAnsi(`Success: wrote file\nPath: ${writtenPath}\nBytes: ${bytes}`),
-            data: { path: writtenPath, bytes }
+            data: { path: writtenPath, bytes, content: args.content }
           };
         }
 

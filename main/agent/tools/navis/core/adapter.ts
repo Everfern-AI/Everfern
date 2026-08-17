@@ -1,3 +1,5 @@
+
+
 /**
  * Navis — Browser Control Adapters
  *
@@ -295,6 +297,11 @@ export class ExtensionBrowserAdapter implements BrowserControlAdapter {
         this.tabCacheExpiresAt = 0;
         this.logger.tabChange(step, maxSteps, 'Closed tab');
         return normalizeResult(result, 'Closed tab', true);
+      }
+      case 'take_screenshot': {
+        const result = await bridgeServer.sendRequest('capture_screenshot', { tabId: this.activeTabId, ...args }, 15000);
+        this.logger.tabChange(step, maxSteps, 'Captured screenshot');
+        return normalizeResult(result, 'Captured screenshot', false);
       }
       case 'focus_form': {
         const formId = String(args.formId || args.id || args.target || '');

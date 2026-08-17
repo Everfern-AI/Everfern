@@ -42,6 +42,32 @@ function normalizeRequestedModel(providerType?: string, model?: string): string 
   return model;
 }
 
+function extractCleanNarrative(explicitNarrative?: string, rawThought?: string): string | undefined {
+  if (explicitNarrative && typeof explicitNarrative === 'string' && explicitNarrative.trim()) {
+    return explicitNarrative.trim();
+  }
+  if (!rawThought) return undefined;
+
+  const cleaned = rawThought
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[\s\S]*?```/gi, '')
+    .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System|Web Explorer|Deep Research)\][^\n]*/gim, '')
+    .replace(/^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊|📋)[^\n]*/gim, '')
+    .trim();
+
+  if (!cleaned) return undefined;
+
+  // Split into sentences / meaningful lines
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.startsWith('#') && !l.startsWith('-'));
+  if (!lines.length) return undefined;
+
+  // Prefer lines that express an active intent
+  const actionLine = lines.find(l => /^(?:I will|I'll|Now|Opening|Navigating|Checking|Inspecting|Searching|Updating|Writing|Creating|Running|Analyzing|Reading|Editing|Fetching|Looking)\b/i.test(l));
+  const candidate = actionLine || lines[lines.length - 1];
+
+  return candidate.replace(/^[*\s]+/, '').replace(/[.*]+$/, '').slice(0, 120).trim() || undefined;
+}
+
 export function registerAgentHandlers() {
   // Event-based channels (one-way communication via sender.send):
   // - acp:sub-agent-progress: Sub-agent progress streaming events
@@ -283,6 +309,12 @@ export function registerAgentHandlers() {
     const resolvers = getLocalExecutionResolvers();
     
     console.log(`[local-execution-response] Resolvers Map size: ${resolvers.size}. Keys:`, Array.from(resolvers.keys()));
+
+    // Dismiss any active system notification for this request
+    try {
+      const { dismissPermissionNotification } = require('../lib/permission-notification');
+      dismissPermissionNotification(response.requestId);
+    } catch {}
 
     // Resolve the specific request
     const resolver = resolvers.get(response.requestId);
@@ -660,12 +692,7 @@ export function registerAgentHandlers() {
                                     (streamEvent.toolArgs as any)?.narrative ||
                                     (streamEvent.toolArgs as any)?.thought ||
                                     (streamEvent.toolArgs as any)?.reason;
-          const cleanThought = rawThought
-            .replace(/<think>[\s\S]*?<\/think>/gi, '')
-            .replace(/```[\s\S]*?```/gi, '')
-            .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System)\][^\n]*/gim, '')
-            .trim();
-          const aiNarrative = explicitNarrative || (cleanThought ? cleanThought.split('\n').filter(Boolean).pop()?.slice(0, 120) : undefined);
+          const aiNarrative = extractCleanNarrative(explicitNarrative, rawThought);
           const toolArgs = {
             ...(streamEvent.toolArgs || {}),
             ...(aiNarrative ? { _narrative: aiNarrative } : {})
@@ -680,12 +707,7 @@ export function registerAgentHandlers() {
         } else if (streamEvent.type === 'tool_call') {
           const tcPayload = streamEvent.toolCall || {};
           const explicitNarrative = tcPayload?._narrative || tcPayload?.narrative || tcPayload?.thought || tcPayload?.args?._narrative;
-          const cleanThought = thoughtBuffer
-            .replace(/<think>[\s\S]*?<\/think>/gi, '')
-            .replace(/```[\s\S]*?```/gi, '')
-            .replace(/^\[(?:BRAIN|TRIAGE|PLANNER|DECOMPOSER|Cognitive Router|CognitiveRouter|Graph|IPC|Network|System)\][^\n]*/gim, '')
-            .trim();
-          const aiNarrative = explicitNarrative || (cleanThought ? cleanThought.split('\n').filter(Boolean).pop()?.slice(0, 120) : undefined);
+          const aiNarrative = extractCleanNarrative(explicitNarrative, thoughtBuffer);
           const enrichedToolCall = {
             ...tcPayload,
             ...(aiNarrative ? { _narrative: aiNarrative } : {}),
@@ -814,15 +836,29 @@ export function registerAgentHandlers() {
           }
           safeSend('acp:sub-agent-progress', progressPayload);
         } else if (streamEvent.type === 'local_execution_request') {
+          const req = streamEvent as any;
           // Forward local execution request to renderer
           safeSend('acp:local-execution-request', {
-            requestId: (streamEvent as any).requestId,
-            command: (streamEvent as any).command,
-            shellType: (streamEvent as any).shellType,
-            reason: (streamEvent as any).reason,
-            conversationId: (streamEvent as any).conversationId,
-            isHitlApproval: (streamEvent as any).isHitlApproval,
+            requestId: req.requestId,
+            command: req.command,
+            shellType: req.shellType,
+            reason: req.reason,
+            conversationId: req.conversationId,
+            isHitlApproval: req.isHitlApproval,
           });
+          // Show native OS notification with interactive Approve/Deny buttons
+          try {
+            const { showPermissionNotification } = require('../lib/permission-notification');
+            showPermissionNotification({
+              requestId: req.requestId,
+              shellType: req.shellType,
+              command: req.command,
+              reason: req.reason,
+              conversationId: req.conversationId,
+            });
+          } catch (notifErr) {
+            console.error('[AgentIPC] Failed to show permission notification:', notifErr);
+          }
         } else if (streamEvent.type === 'debate_event' && (streamEvent as any).debateEvent) {
           const de = (streamEvent as any).debateEvent;
           console.log('[AgentIPC] Forwarding debate event:', de.type, 'debateId:', de.debateId);

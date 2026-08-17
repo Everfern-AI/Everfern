@@ -32,8 +32,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
 
 # vercel
 .vercel
@@ -49,6 +47,8 @@ gha-creds-*.json
 .opencode/
 .vscode/
 .everfern/
+.env*.local
+scratch/
 
 dist-electron/
 *.mp4
