@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { dbOps } from '../lib/db';
+import { dismissPermissionNotification, showPermissionNotification } from '../lib/permission-notification';
+import { getLocalExecutionResolvers } from '../agent/tools/pi-tools';
 
 let agentPermissionResolver: ((granted: boolean) => void) | null = null;
 let localExecutionResponseResolver: ((response: { approved: boolean; alwaysAllow: boolean }) => void) | null = null;
@@ -304,15 +306,13 @@ export function registerAgentHandlers() {
       return;
     }
 
-    // Import here to avoid circular dependencies
-    const { getLocalExecutionResolvers } = require('../agent/tools/pi-tools');
+    // Resolvers Map
     const resolvers = getLocalExecutionResolvers();
     
     console.log(`[local-execution-response] Resolvers Map size: ${resolvers.size}. Keys:`, Array.from(resolvers.keys()));
 
     // Dismiss any active system notification for this request
     try {
-      const { dismissPermissionNotification } = require('../lib/permission-notification');
       dismissPermissionNotification(response.requestId);
     } catch {}
 
@@ -848,7 +848,6 @@ export function registerAgentHandlers() {
           });
           // Show native OS notification with interactive Approve/Deny buttons
           try {
-            const { showPermissionNotification } = require('../lib/permission-notification');
             showPermissionNotification({
               requestId: req.requestId,
               shellType: req.shellType,

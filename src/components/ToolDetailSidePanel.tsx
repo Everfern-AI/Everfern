@@ -4161,7 +4161,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
                   onClose={onClose}
                   showFilePane={showFilePane}
                   onToggleFilePane={() => setShowFilePane(v => !v)}
-                  isStreaming={toolCall.status === 'running' || toolCall.isStreaming || !toolCall.output}
+                  isStreaming={toolCall.status === 'running' || toolCall.isStreaming || (!toolCall.output && toolCall.status !== 'done' && toolCall.status !== 'error')}
                 />
               )}
 

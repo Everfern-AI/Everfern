@@ -814,6 +814,7 @@ export type ElectronAPI = {
     onToolCallChunk:       (cb: (data: { index: number; argumentsDelta: string }) => void) => void;
     onToolCallComplete:    (cb: (data: { index: number; toolName: string; arguments: Record<string, unknown> }) => void) => void;
     onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => void;
+    onLocalExecutionResolved: (cb: (data: { requestId: string; approved: boolean; alwaysAllow: boolean; conversationId?: string }) => void) => void;
     sendLocalExecutionResponse: (response: LocalExecutionResponse) => void;
     removeLocalExecutionListeners: () => void;
     onDebateStream: (cb: (event: any) => void) => void;

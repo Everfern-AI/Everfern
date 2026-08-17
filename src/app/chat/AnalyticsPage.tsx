@@ -836,8 +836,8 @@ function EmptyState() {
 
 function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
     const costLines: CostLine[] = (summary.topModels || []).map((m) => {
-        const promptTokens = Math.round((m.tokens || 0) * 0.7);
-        const compTokens = Math.round((m.tokens || 0) * 0.3);
+        const promptTokens = Math.round((m.tokens || 0) * (summary.totalTokens > 0 ? (summary.totalPromptTokens / summary.totalTokens) : 0.5));
+        const compTokens = Math.round((m.tokens || 0) * (summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) : 0.5));
         const share = summary.totalCost > 0 ? (m.cost || 0) / summary.totalCost : (1 / Math.max(1, (summary.topModels || []).length));
         return {
             model: m.model.split("/").pop() || m.model,
@@ -848,12 +848,8 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
         };
     });
 
-    const runCost = summary.avgCostPerRequest > 0 
-        ? formatCost(summary.avgCostPerRequest * Math.max(1, (summary.topModels || []).length)) 
-        : "$2.76";
-    const sessionCost = summary.totalCost > 0 
-        ? formatCost(summary.totalCost) 
-        : "$18.40";
+    const runCost = formatCost(summary.avgCostPerRequest > 0 ? summary.avgCostPerRequest : 0);
+    const sessionCost = formatCost(summary.totalCost || 0);
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -861,10 +857,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
             <CostMeter
                 runCost={runCost}
                 sessionCost={sessionCost}
-                lines={costLines.length > 0 ? costLines : [
-                    { model: "claude-3-5-sonnet", inputTokens: 42000, outputTokens: 8200, share: 0.65, cost: "$11.96" },
-                    { model: "gpt-4o", inputTokens: 18000, outputTokens: 4100, share: 0.35, cost: "$6.44" }
-                ]}
+                lines={costLines}
             />
 
             {/* Stat Cards */}

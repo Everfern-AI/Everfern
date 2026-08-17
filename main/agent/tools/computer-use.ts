@@ -2417,8 +2417,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
       trimmed.match(/type\s*\(\s*content\s*=\s*['"]([^'"]*)['"]\s*\)/i) ||
       trimmed.match(/type_text_at.*text\s*[:=]\s*['"]([^'"]*)['"]/i);
     if (typeMatch) {
-      const cleanContent = typeMatch[1].replace(/\\n/g, "").trim();
-      return cleanContent ? `Typing "${cleanContent}"` : "Typing text";
+      return "Typing text into the active field";
     }
 
     // scroll
@@ -2449,16 +2448,17 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     this.releaseAll();
     for (const action of actions) {
       const sentence = this.formatActionSentence(action);
-      console.log(`  [EXEC] ${action} (${sentence})`);
+      console.log(`  [EXEC] ${sentence}`);
       onUpdate?.(`${sentence}...`);
 
+      const safeActionName = action.split('(')[0]?.trim() || 'action';
       onProgress?.({
         type: "action",
         toolCallId: this.toolCallId,
         timestamp: new Date().toISOString(),
         stepNumber: step,
         content: sentence,
-        action: { type: action, params: {}, description: sentence },
+        action: { type: safeActionName, params: {}, description: sentence },
       });
 
       const handled = await this.dispatchAction(action);

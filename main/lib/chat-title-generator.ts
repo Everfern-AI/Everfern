@@ -49,7 +49,8 @@ function getClient(options?: TitleOptions): AIClient | null {
   if (options?.providerType) {
     const provider = options.providerType as any;
     const config = loadConfigSync();
-    const apiKey = options.apiKey || config?.keys?.[provider] || config?.apiKey || '';
+    const isCustomUrl = Boolean(options.baseUrl && !['lmstudio', 'ollama'].includes(provider));
+    const apiKey = options.apiKey || (isCustomUrl ? '' : (config?.keys?.[provider] || config?.apiKey || ''));
     const baseUrl = options.baseUrl ||
       (provider === 'lmstudio' ? (config?.lmstudioBaseUrl || 'http://localhost:1234/v1') :
        provider === 'ollama' ? (config?.ollamaBaseUrl || 'http://localhost:11434') : undefined);
@@ -94,15 +95,30 @@ function getClient(options?: TitleOptions): AIClient | null {
 async function generateTitle(conversationId: string, firstMessage: string, options?: TitleOptions): Promise<void> {
   if (!conversationId || !firstMessage || firstMessage.trim().length === 0) return;
 
+  // Cap input message to 600 chars for title prompt
+  const cleanInput = firstMessage.replace(/\[Shared folder context\][\s\S]*$/i, '').trim();
+  if (!cleanInput) {
+    try {
+      await dbOps.run(
+        `UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        ['Shared Workspace', conversationId]
+      );
+      const windows = BrowserWindow.getAllWindows();
+      for (const window of windows) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('chat:title-updated', { conversationId, title: 'Shared Workspace' });
+        }
+      }
+    } catch {}
+    return;
+  }
+  const prompt = cleanInput.slice(0, 600);
+
   const client = getClient(options);
   if (!client) {
     console.warn('[ChatTitle] No AI client available for title generation');
     return;
   }
-
-  // Cap input message to 600 chars for title prompt
-  const cleanInput = firstMessage.replace(/\[Shared folder context\][\s\S]*$/i, '').trim();
-  const prompt = cleanInput.slice(0, 600) || firstMessage.slice(0, 500);
 
   try {
     const response = await client.chat({

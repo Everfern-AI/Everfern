@@ -2,6 +2,7 @@ import { Notification, BrowserWindow, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { getLocalExecutionResolvers } from '../agent/tools/pi-tools';
+import { toolApprovalStore } from '../store/tool-approvals';
 
 // Track active notifications and shown timestamps to prevent duplicates
 const activeNotifications = new Map<string, Notification>();
@@ -106,7 +107,6 @@ export function showPermissionNotification(params: {
       // Persist policy to toolApprovalStore if alwaysAllow is true
       if (alwaysAllow && params.toolName) {
         try {
-          const { toolApprovalStore } = require('../store/tool-approvals');
           toolApprovalStore.addPolicy({
             type: 'exact',
             toolName: params.toolName,

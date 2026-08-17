@@ -23,6 +23,162 @@ function imageMimeFromPath(filePath: string): string | null {
   return map[ext] || null;
 }
 
+export const KNOWN_MODELS = [
+  { model_id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B", params_b: 1.2, raw_fp16_vram_gb: 2.47, quantized_q4_vram_gb: 0.88, quantized_q8_vram_gb: 1.45, min_ram_gb: 4, category: "Ultra-lightweight / Fast Edge", tags: ["llama3.2:1b", "llama3.2"] },
+  { model_id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B", params_b: 3.2, raw_fp16_vram_gb: 6.42, quantized_q4_vram_gb: 2.22, quantized_q8_vram_gb: 3.65, min_ram_gb: 6, category: "Compact / High Quality", tags: ["llama3.2:3b", "llama3.2"] },
+  { model_id: "meta-llama/Meta-Llama-3.1-8B-Instruct", name: "Llama 3.1 8B", params_b: 8.0, raw_fp16_vram_gb: 16.06, quantized_q4_vram_gb: 5.34, quantized_q8_vram_gb: 9.10, min_ram_gb: 12, category: "Standard General Purpose", tags: ["llama3.1:8b", "llama3.1"] },
+  { model_id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3", params_b: 7.2, raw_fp16_vram_gb: 14.50, quantized_q4_vram_gb: 4.16, quantized_q8_vram_gb: 8.20, min_ram_gb: 8, category: "Fast Instruction & Reasoning", tags: ["mistral:7b", "mistral"] },
+  { model_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct", name: "Qwen 2.5 Coder 1.5B", params_b: 1.5, raw_fp16_vram_gb: 3.08, quantized_q4_vram_gb: 1.08, quantized_q8_vram_gb: 1.78, min_ram_gb: 4, category: "Fast Coding Specialist", tags: ["qwen2.5-coder:1.5b", "qwen", "coder"] },
+  { model_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.08, quantized_q8_vram_gb: 8.65, min_ram_gb: 10, category: "Flagship Coding Specialist", tags: ["qwen2.5-coder:7b", "qwen", "coder"] },
+  { model_id: "Qwen/Qwen2.5-Coder-14B-Instruct", name: "Qwen 2.5 Coder 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.75, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Heavy Coding & Autonomous", tags: ["qwen2.5-coder:14b", "qwen", "coder"] },
+  { model_id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", params_b: 32.5, raw_fp16_vram_gb: 65.00, quantized_q4_vram_gb: 20.40, quantized_q8_vram_gb: 36.20, min_ram_gb: 32, category: "State-of-the-Art Coding", tags: ["qwen2.5-coder:32b", "qwen", "coder"] },
+  { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", name: "DeepSeek R1 1.5B", params_b: 1.8, raw_fp16_vram_gb: 3.56, quantized_q4_vram_gb: 1.25, quantized_q8_vram_gb: 2.05, min_ram_gb: 4, category: "Compact Reasoning", tags: ["deepseek-r1:1.5b", "deepseek", "reasoning"] },
+  { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", name: "DeepSeek R1 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.15, quantized_q8_vram_gb: 8.65, min_ram_gb: 12, category: "Advanced Reasoning", tags: ["deepseek-r1:7b", "deepseek", "reasoning"] },
+  { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", name: "DeepSeek R1 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.80, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Deep Reasoning Specialist", tags: ["deepseek-r1:14b", "deepseek", "reasoning"] },
+  { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", name: "DeepSeek R1 32B", params_b: 32.8, raw_fp16_vram_gb: 65.60, quantized_q4_vram_gb: 21.20, quantized_q8_vram_gb: 36.80, min_ram_gb: 32, category: "Top-tier Math & Logic Reasoning", tags: ["deepseek-r1:32b", "deepseek", "reasoning"] },
+  { model_id: "google/gemma-2-2b-it", name: "Gemma 2 2B", params_b: 2.6, raw_fp16_vram_gb: 5.22, quantized_q4_vram_gb: 1.78, quantized_q8_vram_gb: 2.95, min_ram_gb: 6, category: "Lightweight Google Research", tags: ["gemma2:2b", "gemma"] },
+  { model_id: "google/gemma-2-9b-it", name: "Gemma 2 9B", params_b: 9.2, raw_fp16_vram_gb: 18.48, quantized_q4_vram_gb: 6.12, quantized_q8_vram_gb: 10.40, min_ram_gb: 12, category: "High Accuracy General Purpose", tags: ["gemma2:9b", "gemma"] },
+  { model_id: "microsoft/phi-4", name: "Phi-4 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.70, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Microsoft Synthetic Reasoning", tags: ["phi4:14b", "phi4"] },
+  { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b", "llama"] }
+];
+
+export async function detectHardwareSpecsAsync() {
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+
+  const ramGB = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const freeRamGB = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const cpus = os.cpus() || [];
+  const cpuModel = cpus[0]?.model ? cpus[0].model.trim() : 'Generic Processor';
+  const cpuCores = cpus.length;
+  const cpuSpeed = cpus[0]?.speed || 0;
+
+  let gpuName = 'Unknown GPU';
+  let vramGB = 0;
+  let isNvidia = false;
+  let isAppleSilicon = false;
+  let driverVersion = '';
+  let gpuTemp = 0;
+
+  try {
+    if (process.platform === 'win32') {
+      try {
+        const { stdout: nvsmi } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
+        const parts = nvsmi.trim().split(',');
+        if (parts.length >= 2) {
+          gpuName = parts[0].trim();
+          const mb = parseInt(parts[1].trim(), 10);
+          if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
+          if (parts[2]) driverVersion = parts[2].trim();
+          if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
+          isNvidia = true;
+        }
+      } catch {
+        try {
+          const { stdout } = await execAsync('wmic path Win32_VideoController get AdapterRAM,Name,DriverVersion /format:list', { timeout: 3000 });
+          for (const line of stdout.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('AdapterRAM=')) {
+              const bytes = parseInt(trimmed.substring(11), 10);
+              if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
+            } else if (trimmed.startsWith('Name=')) {
+              const name = trimmed.substring(5).trim();
+              if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
+                gpuName = name;
+              }
+            } else if (trimmed.startsWith('DriverVersion=')) {
+              driverVersion = trimmed.substring(14).trim();
+            }
+          }
+          isNvidia = gpuName.toLowerCase().includes('nvidia') || gpuName.toLowerCase().includes('rtx') || gpuName.toLowerCase().includes('gtx');
+        } catch {}
+      }
+    } else if (process.platform === 'darwin') {
+      try {
+        const { stdout } = await execAsync('system_profiler SPDisplaysDataType', { timeout: 4000 });
+        isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
+        const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
+        gpuName = chipsetMatch ? chipsetMatch[1].trim() : (isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac');
+        if (isAppleSilicon) {
+          vramGB = Math.round(ramGB * 0.75 * 10) / 10;
+        } else {
+          const vramMatch = stdout.match(/VRAM \(Total\):\s*(\d+)\s*(MB|GB)/i) || stdout.match(/VRAM:\s*(\d+)\s*(MB|GB)/i);
+          if (vramMatch) {
+            const val = parseInt(vramMatch[1], 10);
+            const unit = vramMatch[2].toUpperCase();
+            vramGB = unit === 'GB' ? val : Math.round((val / 1024) * 10) / 10;
+          }
+        }
+      } catch {}
+    } else if (process.platform === 'linux') {
+      try {
+        const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
+        const parts = stdout.trim().split(',');
+        if (parts.length >= 2) {
+          gpuName = parts[0].trim();
+          const mb = parseInt(parts[1].trim(), 10);
+          if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
+          if (parts[2]) driverVersion = parts[2].trim();
+          if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
+          isNvidia = true;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return {
+    ramGB,
+    freeRamGB,
+    cpuModel,
+    cpuCores,
+    cpuSpeed,
+    gpuName,
+    vramGB,
+    isNvidia,
+    isAppleSilicon,
+    driverVersion,
+    gpuTemp
+  };
+}
+
+export function enrichModelWithHardware(m: any, hardware: { vramGB: number; ramGB: number; isAppleSilicon?: boolean }) {
+  const vram = Number(hardware.vramGB || 0);
+  const ram = Number(hardware.ramGB || 16);
+  const effectiveVram = hardware.isAppleSilicon ? Math.max(vram, ram * 0.75) : vram;
+  const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
+
+  const q4 = Number(m.quantized_q4_vram_gb || 4);
+  let status: 'full_gpu' | 'cpu_offload' | 'exceeds_specs' = 'exceeds_specs';
+  let badge = 'Cloud Required';
+  let predicted_tps = 0;
+
+  if (effectiveVram >= q4) {
+    status = 'full_gpu';
+    badge = 'Full GPU';
+    predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
+  } else if ((effectiveVram + (ram * 0.5)) >= q4 && ram >= (m.min_ram_gb || 4)) {
+    status = 'cpu_offload';
+    badge = 'CPU Offload';
+    predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
+  }
+
+  const isSmooth = predicted_tps >= 15;
+  const smoothRating = predicted_tps >= 30 ? '🚀 Ultra Smooth' : (predicted_tps >= 20 ? '⚡ Smooth & Fast' : (predicted_tps >= 10 ? '⚡ Good Performance' : '🐢 Slower CPU Offload'));
+
+  return {
+    ...m,
+    status,
+    badge,
+    predicted_tps,
+    isSmooth,
+    smoothRating,
+    fits_in_vram: effectiveVram >= q4,
+    fits_in_ram: ram >= (m.min_ram_gb || 4),
+    isRunnable: status !== 'exceeds_specs'
+  };
+}
+
 export function registerSystemHandlers() {
   ipcMain.handle('system:checkWSL', async () => {
     try {
@@ -64,17 +220,10 @@ export function registerSystemHandlers() {
       await execAsync('docker info', { timeout: 5000 });
       return true;
     } catch {
-      try {
-        const { exec } = require('child_process');
-        const { promisify } = require('util');
-        const execAsync = promisify(exec);
-        await execAsync('docker --version', { timeout: 3000 });
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   });
+
   ipcMain.handle('system:getWSLInfo', async () => {
     try {
       const { exec } = require('child_process');
@@ -88,57 +237,45 @@ export function registerSystemHandlers() {
       let uptime = 'Unknown';
       try {
         const { stdout: osRelease } = await execAsync('wsl.exe -e cat /etc/os-release', { encoding: 'utf8', timeout: 5000 });
-        const prettyNameMatch = osRelease.match(/PRETTY_NAME="([^"]+)"/);
-        if (prettyNameMatch && prettyNameMatch[1]) {
-          osName = prettyNameMatch[1];
-        } else {
-            const nameMatch = osRelease.match(/^NAME="?([^"\n]+)"?/m);
-            if (nameMatch) osName = nameMatch[1];
-        }
-      } catch (e) {
-          console.error('[getWSLInfo] Error reading os-release:', e);
-      }
-
+        const nameMatch = osRelease.match(/PRETTY_NAME="([^"]+)"/);
+        if (nameMatch) osName = nameMatch[1];
+      } catch {}
       try {
-          const { stdout: uptimeOut } = await execAsync('wsl.exe -e uptime -p', { encoding: 'utf8', timeout: 5000 });
-          if (uptimeOut) uptime = uptimeOut.trim();
-      } catch (e) {
-          console.error('[getWSLInfo] Error reading uptime:', e);
-      }
+        const { stdout: up } = await execAsync('wsl.exe -e uptime -p', { encoding: 'utf8', timeout: 5000 });
+        if (up && up.trim()) uptime = up.trim();
+      } catch {}
 
-      return { healthy: true, osName, uptime };
-    } catch {
-      return { healthy: false };
+      return {
+        healthy: true,
+        osName,
+        uptime
+      };
+    } catch (err: any) {
+      return {
+        healthy: false,
+        error: err.message
+      };
     }
   });
 
   ipcMain.handle('system:installWSL', async () => {
-    return new Promise((resolve) => {
-      const { spawn } = require('child_process');
-      const proc = spawn('powershell.exe', [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        'Start-Process wsl.exe -ArgumentList "--install -d Ubuntu --no-launch" -Verb RunAs -Wait'
-      ], { shell: false });
-
-      proc.on('close', async (code: number | null) => {
-        try {
-          const { exec } = require('child_process');
-          const { promisify } = require('util');
-          const execAsync = promisify(exec);
-          await execAsync('wsl.exe -d Ubuntu -e echo ok', { timeout: 5000 });
-          resolve({ success: true });
-        } catch {
-          resolve({ success: true, warning: 'Reboot may be required' });
-        }
-      });
-
-      proc.on('error', (err: Error) => {
-        resolve({ success: false, error: err.message });
-      });
-    });
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    try {
+      console.log('[WSL Installer] Attempting to install default Ubuntu on WSL...');
+      await execAsync('wsl.exe --install -d Ubuntu --no-launch', { timeout: 180000 });
+      return { success: true };
+    } catch (err: any) {
+      console.warn('[WSL Installer] Primary install failed, attempting elevated PowerShell install:', err);
+      try {
+        await execAsync('powershell -Command "Start-Process wsl.exe -ArgumentList \'--install -d Ubuntu --no-launch\' -Verb RunAs -Wait"', { timeout: 180000 });
+        return { success: true };
+      } catch (elevatedErr: any) {
+        console.error('[WSL Installer] Elevated install also failed:', elevatedErr);
+        return { success: false, error: elevatedErr.message || err.message };
+      }
+    }
   });
 
   ipcMain.handle('system:setupDockerUbuntu', async () => {
@@ -146,16 +283,14 @@ export function registerSystemHandlers() {
       await ensureDockerContainer();
       return { success: true };
     } catch (err: any) {
+      console.error('[Docker Installer] Container setup failed:', err);
       return { success: false, error: err.message };
     }
   });
 
-  ipcMain.handle('system:get-platform', () => {
-    return process.platform;
-  });
-
-  ipcMain.handle('system:get-username', () => {
-    return os.userInfo().username;
+  ipcMain.handle('system:toHostPath', async (_event, pathStr: string) => {
+    const { toHostPath } = require('../agent/tools/linux-vm-executor');
+    return toHostPath(pathStr);
   });
 
   ipcMain.handle('system:get-version', () => {
@@ -163,212 +298,37 @@ export function registerSystemHandlers() {
   });
 
   ipcMain.handle('system:detect-hardware', async () => {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
-
-    const ramGB = os.totalmem() / (1024 * 1024 * 1024);
-    const freeRamGB = os.freemem() / (1024 * 1024 * 1024);
-    const cpus = os.cpus() || [];
-    const cpuModel = cpus[0]?.model ? cpus[0].model.trim() : 'Generic Processor';
-    const cpuCores = cpus.length;
-    const cpuSpeed = cpus[0]?.speed || 0;
-
-    let gpuName = 'Unknown GPU';
-    let vramGB = 0;
-    let isNvidia = false;
-    let isAppleSilicon = false;
-    let driverVersion = '';
-    let gpuTemp = 0;
-
-    try {
-      if (process.platform === 'win32') {
-        // Try nvidia-smi first for accurate Nvidia stats
-        try {
-          const { stdout: nvsmi } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits');
-          const parts = nvsmi.trim().split(',');
-          if (parts.length >= 2) {
-            gpuName = parts[0].trim();
-            const mb = parseInt(parts[1].trim(), 10);
-            if (!isNaN(mb)) vramGB = mb / 1024;
-            if (parts[2]) driverVersion = parts[2].trim();
-            if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
-            isNvidia = true;
-          }
-        } catch {
-          // Fallback to WMIC or PowerShell
-          try {
-            const { stdout } = await execAsync('wmic path Win32_VideoController get AdapterRAM,Name,DriverVersion /format:list');
-            const lines = stdout.split('\n');
-            let currentVram = 0;
-            let currentName = '';
-            let currentDriver = '';
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('AdapterRAM=')) {
-                const bytes = parseInt(trimmed.substring(11), 10);
-                if (!isNaN(bytes)) {
-                  currentVram = Math.max(0, bytes / (1024 * 1024 * 1024));
-                }
-              } else if (trimmed.startsWith('Name=')) {
-                currentName = trimmed.substring(5).trim();
-              } else if (trimmed.startsWith('DriverVersion=')) {
-                currentDriver = trimmed.substring(14).trim();
-              }
-              if (currentName) {
-                if (currentVram > vramGB || !gpuName || gpuName === 'Unknown GPU') {
-                  vramGB = currentVram;
-                  gpuName = currentName;
-                  driverVersion = currentDriver;
-                  isNvidia = currentName.toLowerCase().includes('nvidia') || currentName.toLowerCase().includes('rtx') || currentName.toLowerCase().includes('gtx');
-                }
-              }
-            }
-          } catch {}
-        }
-      } else if (process.platform === 'darwin') {
-        const { stdout } = await execAsync('system_profiler SPDisplaysDataType');
-        isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
-        
-        const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
-        if (chipsetMatch) {
-          gpuName = chipsetMatch[1].trim();
-        } else {
-          gpuName = isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac';
-        }
-
-        if (isAppleSilicon) {
-          // Unified memory: 75% of total RAM is available as VRAM for Ollama / MLX
-          vramGB = ramGB * 0.75;
-        } else {
-          const vramMatch = stdout.match(/VRAM \(Total\):\s*(\d+)\s*(MB|GB)/i) || stdout.match(/VRAM:\s*(\d+)\s*(MB|GB)/i);
-          if (vramMatch) {
-            const val = parseInt(vramMatch[1], 10);
-            const unit = vramMatch[2].toUpperCase();
-            vramGB = unit === 'GB' ? val : val / 1024;
-          }
-        }
-      } else if (process.platform === 'linux') {
-        try {
-          const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits');
-          const parts = stdout.trim().split(',');
-          if (parts.length >= 2) {
-            gpuName = parts[0].trim();
-            const mb = parseInt(parts[1].trim(), 10);
-            if (!isNaN(mb)) vramGB = mb / 1024;
-            if (parts[2]) driverVersion = parts[2].trim();
-            if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
-            isNvidia = true;
-          }
-        } catch {
-          // AMD / Generic DRM info
-          try {
-            const drmDir = '/sys/class/drm';
-            if (fs.existsSync(drmDir)) {
-              const cards = fs.readdirSync(drmDir).filter(f => f.startsWith('card') && !f.includes('-'));
-              for (const card of cards) {
-                const memPath = path.join(drmDir, card, 'device/mem_info_vram_total');
-                if (fs.existsSync(memPath)) {
-                  const bytesStr = fs.readFileSync(memPath, 'utf8').trim();
-                  const bytes = parseInt(bytesStr, 10);
-                  if (!isNaN(bytes)) {
-                    vramGB = bytes / (1024 * 1024 * 1024);
-                    gpuName = 'AMD/Generic GPU';
-                    break;
-                  }
-                }
-              }
-            }
-          } catch {}
-        }
-      }
-    } catch (e) {
-      console.error('[HardwareDetection] Failed to detect GPU:', e);
-    }
-
-    return {
-      ramGB: Math.round(ramGB * 10) / 10,
-      freeRamGB: Math.round(freeRamGB * 10) / 10,
-      usedRamGB: Math.round((ramGB - freeRamGB) * 10) / 10,
-      cpuModel,
-      cpuCores,
-      cpuSpeed,
-      gpuName,
-      vramGB: Math.round(vramGB * 10) / 10,
-      driverVersion,
-      gpuTemp,
-      isNvidia,
-      isAppleSilicon,
-      platform: process.platform,
-      arch: os.arch(),
-      hostname: os.hostname(),
-    };
+    return await detectHardwareSpecsAsync();
   });
 
   ipcMain.handle('system:get-model-requirements', async (_event, params?: { vramGB?: number; ramGB?: number; isAppleSilicon?: boolean; gpuName?: string; search?: string; modelId?: string }) => {
-    const vramGB = Number(params?.vramGB ?? 0);
-    const ramGB = Number(params?.ramGB ?? 16);
-    const isAppleSilicon = Boolean(params?.isAppleSilicon);
-    const gpuName = String(params?.gpuName ?? '');
-    const search = String(params?.search ?? '').trim().toLowerCase();
-    const modelId = String(params?.modelId ?? '').trim();
+    let vramGB = Number(params?.vramGB);
+    let ramGB = Number(params?.ramGB);
+    let isAppleSilicon = Boolean(params?.isAppleSilicon);
+    let gpuName = params?.gpuName || '';
+    const search = (params?.search || '').toLowerCase().trim();
+    const modelId = params?.modelId || '';
+
+    // If hardware specs not provided, detect them asynchronously
+    if (isNaN(vramGB) || isNaN(ramGB)) {
+      const hw = await detectHardwareSpecsAsync();
+      vramGB = hw.vramGB;
+      ramGB = hw.ramGB;
+      isAppleSilicon = hw.isAppleSilicon;
+      gpuName = hw.gpuName;
+    }
 
     console.log(`\n[EverFern Desktop] [IPC:system:get-model-requirements] 🖥️ Hardware: VRAM=${vramGB}GB, RAM=${ramGB}GB, AppleSilicon=${isAppleSilicon}, GPU='${gpuName}', Search='${search}', ModelId='${modelId}'`);
 
-    const KNOWN_MODELS = [
-      { model_id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B", params_b: 1.2, raw_fp16_vram_gb: 2.47, quantized_q4_vram_gb: 0.88, quantized_q8_vram_gb: 1.45, min_ram_gb: 4, category: "Ultra-lightweight / Fast Edge", tags: ["llama3.2:1b", "llama3.2"] },
-      { model_id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B", params_b: 3.2, raw_fp16_vram_gb: 6.42, quantized_q4_vram_gb: 2.22, quantized_q8_vram_gb: 3.65, min_ram_gb: 6, category: "Compact / High Quality", tags: ["llama3.2:3b", "llama3.2"] },
-      { model_id: "meta-llama/Meta-Llama-3.1-8B-Instruct", name: "Llama 3.1 8B", params_b: 8.0, raw_fp16_vram_gb: 16.06, quantized_q4_vram_gb: 5.34, quantized_q8_vram_gb: 9.10, min_ram_gb: 12, category: "Standard General Purpose", tags: ["llama3.1:8b", "llama3.1"] },
-      { model_id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3", params_b: 7.2, raw_fp16_vram_gb: 14.50, quantized_q4_vram_gb: 4.16, quantized_q8_vram_gb: 8.20, min_ram_gb: 8, category: "Fast Instruction & Reasoning", tags: ["mistral:7b", "mistral"] },
-      { model_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct", name: "Qwen 2.5 Coder 1.5B", params_b: 1.5, raw_fp16_vram_gb: 3.08, quantized_q4_vram_gb: 1.08, quantized_q8_vram_gb: 1.78, min_ram_gb: 4, category: "Fast Coding Specialist", tags: ["qwen2.5-coder:1.5b", "qwen", "coder"] },
-      { model_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.08, quantized_q8_vram_gb: 8.65, min_ram_gb: 10, category: "Flagship Coding Specialist", tags: ["qwen2.5-coder:7b", "qwen", "coder"] },
-      { model_id: "Qwen/Qwen2.5-Coder-14B-Instruct", name: "Qwen 2.5 Coder 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.75, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Heavy Coding & Autonomous", tags: ["qwen2.5-coder:14b", "qwen", "coder"] },
-      { model_id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", params_b: 32.5, raw_fp16_vram_gb: 65.00, quantized_q4_vram_gb: 20.40, quantized_q8_vram_gb: 36.20, min_ram_gb: 32, category: "State-of-the-Art Coding", tags: ["qwen2.5-coder:32b", "qwen", "coder"] },
-      { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", name: "DeepSeek R1 1.5B", params_b: 1.8, raw_fp16_vram_gb: 3.56, quantized_q4_vram_gb: 1.25, quantized_q8_vram_gb: 2.05, min_ram_gb: 4, category: "Compact Reasoning", tags: ["deepseek-r1:1.5b", "deepseek", "reasoning"] },
-      { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", name: "DeepSeek R1 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.15, quantized_q8_vram_gb: 8.65, min_ram_gb: 12, category: "Advanced Reasoning", tags: ["deepseek-r1:7b", "deepseek", "reasoning"] },
-      { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", name: "DeepSeek R1 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.80, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Deep Reasoning Specialist", tags: ["deepseek-r1:14b", "deepseek", "reasoning"] },
-      { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", name: "DeepSeek R1 32B", params_b: 32.8, raw_fp16_vram_gb: 65.60, quantized_q4_vram_gb: 21.20, quantized_q8_vram_gb: 36.80, min_ram_gb: 32, category: "Top-tier Math & Logic Reasoning", tags: ["deepseek-r1:32b", "deepseek", "reasoning"] },
-      { model_id: "google/gemma-2-2b-it", name: "Gemma 2 2B", params_b: 2.6, raw_fp16_vram_gb: 5.22, quantized_q4_vram_gb: 1.78, quantized_q8_vram_gb: 2.95, min_ram_gb: 6, category: "Lightweight Google Research", tags: ["gemma2:2b", "gemma"] },
-      { model_id: "google/gemma-2-9b-it", name: "Gemma 2 9B", params_b: 9.2, raw_fp16_vram_gb: 18.48, quantized_q4_vram_gb: 6.12, quantized_q8_vram_gb: 10.40, min_ram_gb: 12, category: "High Accuracy General Purpose", tags: ["gemma2:9b", "gemma"] },
-      { model_id: "microsoft/phi-4", name: "Phi-4 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.70, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Microsoft Synthetic Reasoning", tags: ["phi4:14b", "phi4"] },
-      { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b", "llama"] }
-    ];
-
-    const effectiveVram = isAppleSilicon ? Math.max(vramGB, ramGB * 0.75) : vramGB;
-    const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
-
-    const enrichModel = (m: any) => {
-      const q4 = m.quantized_q4_vram_gb;
-      let status: 'full_gpu' | 'cpu_offload' | 'exceeds_specs' = 'exceeds_specs';
-      let badge = 'Cloud Required';
-      let predicted_tps = 0;
-
-      if (effectiveVram >= q4) {
-        status = 'full_gpu';
-        badge = 'Full GPU';
-        predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
-      } else if ((effectiveVram + (ramGB * 0.5)) >= q4 && ramGB >= (m.min_ram_gb || 8)) {
-        status = 'cpu_offload';
-        badge = 'CPU Offload';
-        predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
-      }
-
-      return {
-        ...m,
-        status,
-        badge,
-        predicted_tps,
-        fits_in_vram: effectiveVram >= q4,
-        fits_in_ram: ramGB >= (m.min_ram_gb || 8)
-      };
-    };
+    const hwSpecs = { vramGB, ramGB, isAppleSilicon };
 
     // If single model requested
     if (modelId) {
       const matched = KNOWN_MODELS.find(m => m.model_id.toLowerCase() === modelId.toLowerCase() || m.name.toLowerCase() === modelId.toLowerCase());
       if (matched) {
-        return { success: true, ...enrichModel(matched) };
+        return { success: true, ...enrichModelWithHardware(matched, hwSpecs) };
       }
+
       // Query Hugging Face metadata
       try {
         const https = require('https');
@@ -413,7 +373,7 @@ export function registerSystemHandlers() {
             const q8 = Math.round((paramsB * 1.0 * 1.15) * 100) / 100;
             return {
               success: true,
-              ...enrichModel({
+              ...enrichModelWithHardware({
                 model_id: modelId,
                 name: modelId.split('/').pop() || modelId,
                 params_b: paramsB,
@@ -422,7 +382,7 @@ export function registerSystemHandlers() {
                 quantized_q8_vram_gb: q8,
                 category: "Hugging Face Hub Model",
                 tags: [modelId]
-              })
+              }, hwSpecs)
             };
           }
         }
@@ -439,7 +399,7 @@ export function registerSystemHandlers() {
       };
     }
 
-    let models = KNOWN_MODELS.map(enrichModel);
+    let models = KNOWN_MODELS.map(m => enrichModelWithHardware(m, hwSpecs));
 
     if (search) {
       let filtered = models.filter(m =>
@@ -471,7 +431,7 @@ export function registerSystemHandlers() {
                 const paramsB = parseFloat((id.match(/(\d+(?:\.\d+)?)[bB]/) || ['', '7'])[1]);
                 const rawFp16 = Math.round(paramsB * 2 * 1.15 * 100) / 100;
                 const q4 = Math.round((rawFp16 / 4) * 1.15 * 100) / 100;
-                filtered.push(enrichModel({
+                filtered.push(enrichModelWithHardware({
                   model_id: id,
                   name: id.split('/').pop() || id,
                   params_b: paramsB,
@@ -480,7 +440,7 @@ export function registerSystemHandlers() {
                   quantized_q8_vram_gb: Math.round(q4 * 2 * 100) / 100,
                   category: "Hugging Face Hub Model",
                   tags: [id]
-                }));
+                }, hwSpecs));
                 seen.add(id.toLowerCase());
               }
             }

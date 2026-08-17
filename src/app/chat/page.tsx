@@ -860,7 +860,7 @@ export default function ChatPage() {
             undefined;
 
         // Construct toolCall structure expected by ToolDetailSidePanel
-        const isStreaming = tc.status === 'running' || Boolean((tc as any).isStreaming) || !tc.output;
+        const isStreaming = tc.status === 'running' || Boolean((tc as any).isStreaming) || (!tc.output && tc.status !== 'done' && tc.status !== 'error');
         return {
             id: tc.id,
             toolName: tc.toolName,
@@ -1542,6 +1542,23 @@ export default function ChatPage() {
         answeredLocalExecutionRequestIdsRef.current.clear();
     }, [activeConversationId]);
 
+    const applyToolCallApprovalStatus = useCallback((requestId: string, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean, command?: string) => {
+        const updatedToolCalls = liveToolCallsRef.current.map(tc => (
+            tc.id === requestId
+                ? {
+                    ...tc,
+                    status: approved ? "done" as const : "error" as const,
+                    output: approved
+                        ? 'Permission approved. Running local command...'
+                        : (command ? `Permission denied.\n\n${command}` : 'Permission denied.'),
+                    data: { ...(tc.data || {}), approved, alwaysAllow, allowPrefix },
+                }
+                : tc
+        ));
+        liveToolCallsRef.current = updatedToolCalls;
+        setLiveToolCalls(updatedToolCalls);
+    }, []);
+
     const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean) => {
         if (!request?.requestId || answeredLocalExecutionRequestIdsRef.current.has(request.requestId)) {
             return;
@@ -1557,21 +1574,8 @@ export default function ChatPage() {
         acpApi?.sendLocalExecutionResponse?.({ requestId: request.requestId, approved, alwaysAllow, allowPrefix: allowPrefix ?? false });
 
         setLocalExecutionRequest(current => current?.requestId === request.requestId ? null : current);
-        const updatedToolCalls = liveToolCallsRef.current.map(tc => (
-            tc.id === request.requestId
-                ? {
-                    ...tc,
-                    status: approved ? "done" as const : "error" as const,
-                    output: approved
-                        ? 'Permission approved. Running local command...'
-                        : `Permission denied.\n\n${request.command}`,
-                    data: { ...(tc.data || {}), approved, alwaysAllow, allowPrefix },
-                }
-                : tc
-        ));
-        liveToolCallsRef.current = updatedToolCalls;
-        setLiveToolCalls(updatedToolCalls);
-    }, []);
+        applyToolCallApprovalStatus(request.requestId, approved, alwaysAllow, allowPrefix, request.command);
+    }, [applyToolCallApprovalStatus]);
 
     // Persistent local execution request listener (survives stream cleanup)
     useEffect(() => {
@@ -1588,7 +1592,13 @@ export default function ChatPage() {
             }
             setLocalExecutionRequest(request);
         });
-        acpApi.onLocalExecutionResolved?.((resolved: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+        acpApi.onLocalExecutionResolved?.((resolved: { requestId: string; approved: boolean; alwaysAllow: boolean; conversationId?: string }) => {
+            if (!resolved?.requestId) return;
+            if (resolved.conversationId && resolved.conversationId !== activeConversationIdRef.current) {
+                console.log(`[Frontend] Ignoring local execution resolved for stale conversation: ${resolved.conversationId}`);
+                return;
+            }
+            answeredLocalExecutionRequestIdsRef.current.add(resolved.requestId);
             setLocalExecutionRequest((current) => {
                 if (current && current.requestId === resolved.requestId) {
                     return null;
@@ -1599,25 +1609,12 @@ export default function ChatPage() {
                 localAlwaysAllowedRef.current = true;
                 setLocalAlwaysAllowed(true);
             }
-            const updatedToolCalls = liveToolCallsRef.current.map(tc => (
-                tc.id === resolved.requestId
-                    ? {
-                        ...tc,
-                        status: resolved.approved ? "done" as const : "error" as const,
-                        output: resolved.approved
-                            ? 'Permission approved. Running local command...'
-                            : `Permission denied.`,
-                        data: { ...(tc.data || {}), approved: resolved.approved, alwaysAllow: resolved.alwaysAllow },
-                    }
-                    : tc
-            ));
-            liveToolCallsRef.current = updatedToolCalls;
-            setLiveToolCalls(updatedToolCalls);
+            applyToolCallApprovalStatus(resolved.requestId, resolved.approved, resolved.alwaysAllow);
         });
         return () => {
             acpApi?.removeLocalExecutionListeners?.();
         };
-    }, []);
+    }, [respondToLocalExecutionRequest, applyToolCallApprovalStatus]);
 
     const selectedToolCallRef = useRef<any>(null);
     selectedToolCallRef.current = selectedToolCall;
@@ -4790,7 +4787,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         if (settingsEngine === "local") {
             updated.provider = settingsProvider || "ollama";
-            updated.baseUrl = settingsApiKey?.trim() || (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
+            const trimmedKey = settingsApiKey?.trim() || '';
+            const isValidHttp = /^https?:\/\//i.test(trimmedKey);
+            updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
         }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
