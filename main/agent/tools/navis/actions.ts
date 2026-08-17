@@ -1195,6 +1195,9 @@ export async function executeAction(
       case 'wait_for_navigation':
         return await executeWaitForNavigation(args as { timeoutMs?: number; urlContains?: string }, page, logger, step, maxSteps);
 
+      case 'wait_for_dom_change':
+        return await executeWaitForDomChange(args as { text?: string; selector?: string; timeoutMs?: number }, page, logger, step, maxSteps);
+
       case 'solve_captcha':
         return await executeSolveCaptcha(page, session, logger, step, maxSteps, aiClient);
 
@@ -1510,6 +1513,40 @@ async function executeWaitForNavigation(
     message: afterUrl !== beforeUrl ? `Navigation settled at ${afterUrl}` : `Navigation wait finished at ${afterUrl}`,
     stateChanged: afterUrl !== beforeUrl,
   };
+}
+
+async function executeWaitForDomChange(
+  args: { text?: string; selector?: string; timeoutMs?: number },
+  page: Page,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  const timeoutMs = Math.min(Math.max(Number(args?.timeoutMs || 4000), 500), 15000);
+  logger?.wait(step, maxSteps, args?.text ? `DOM text "${args.text}"` : (args?.selector ? `DOM selector "${args.selector}"` : 'DOM change'));
+
+  try {
+    if (args?.text) {
+      await page.waitForFunction((text) => document.body?.innerText?.includes(text), args.text, { timeout: timeoutMs }).catch(() => null);
+    } else if (args?.selector) {
+      await page.waitForSelector(args.selector, { timeout: timeoutMs }).catch(() => null);
+    } else {
+      await page.waitForLoadState('domcontentloaded', { timeout: timeoutMs }).catch(() => null);
+    }
+    invalidateElementSnapshotCache(page);
+    return {
+      success: true,
+      message: `DOM change wait complete (${timeoutMs}ms limit)`,
+      stateChanged: true,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      message: `Wait for DOM change failed: ${errorMsg}`,
+      stateChanged: false,
+    };
+  }
 }
 
 async function executeExtractContent(
@@ -2395,7 +2432,7 @@ async function executeTakeScreenshot(
     const fullPage = Boolean(args?.full_page);
     const screenshotBuffer = await page.screenshot({ fullPage, type: 'jpeg', quality: 80 });
     const base64 = screenshotBuffer.toString('base64');
-    logger?.tabChange(step, maxSteps, `screenshot captured (${fullPage ? 'full page' : 'viewport'})`);
+    logger?.screenshot(step, maxSteps, base64);
     return {
       success: true,
       message: `Captured ${fullPage ? 'full page' : 'viewport'} screenshot`,
@@ -2405,8 +2442,9 @@ async function executeTakeScreenshot(
         fullPage,
       },
     };
-  } catch (err: any) {
-    return { success: false, message: `Screenshot failed: ${err.message}`, stateChanged: false };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, message: `Screenshot failed: ${message}`, stateChanged: false };
   }
 }
 

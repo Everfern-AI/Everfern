@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
@@ -1414,8 +1414,10 @@ export default function SettingsPage({
     const [pullingLocalModel, setPullingLocalModel] = useState<string | null>(null);
     const [pullingLocalPct, setPullingLocalPct] = useState<number>(0);
     const [localModelTab, setLocalModelTab] = useState<'installed' | 'recommended'>('installed');
+    const localModelQuerySeqRef = useRef<number>(0);
 
     const loadLocalModelsForSection = async (prov?: string, customUrl?: string) => {
+        const seq = ++localModelQuerySeqRef.current;
         const curProv = prov || settingsProvider || 'ollama';
         const curUrl = customUrl !== undefined ? customUrl : settingsApiKey;
         setIsLoadingLocalModels(true);
@@ -1424,6 +1426,7 @@ export default function SettingsPage({
             const sysApi = (window as any).electronAPI?.system;
             if (sysApi?.getLocalModels) {
                 const res = await sysApi.getLocalModels({ provider: curProv, baseUrl: curUrl });
+                if (seq !== localModelQuerySeqRef.current) return;
                 if (res) {
                     if (res.hardware) setLocalHardwareInfo(res.hardware);
                     setLocalProviderRunning(res.running);
@@ -1441,10 +1444,13 @@ export default function SettingsPage({
                 }
             }
         } catch (err: any) {
+            if (seq !== localModelQuerySeqRef.current) return;
             console.error('Failed to query local models in settings:', err);
             setLocalProviderError(err?.message || 'Error querying local provider.');
         } finally {
-            setIsLoadingLocalModels(false);
+            if (seq === localModelQuerySeqRef.current) {
+                setIsLoadingLocalModels(false);
+            }
         }
     };
 
@@ -1502,7 +1508,10 @@ export default function SettingsPage({
 
     useEffect(() => {
         if (settingsEngine === 'local') {
-            loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey);
+            const timer = setTimeout(() => {
+                loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey);
+            }, 250);
+            return () => clearTimeout(timer);
         }
     }, [settingsEngine, settingsProvider, settingsApiKey]);
 
@@ -5044,7 +5053,10 @@ export default function SettingsPage({
                     try {
                         const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?vram_gb=${vram}&ram_gb=${ram}&is_apple_silicon=${isApple}&gpu_name=${encodeURIComponent(gpuName)}${q}`;
                         console.log(`[EverFern Cloud] 📡 Fetching compatible models from: ${targetUrl}`);
-                        const res = await fetch(targetUrl, { headers: { 'Accept': 'application/json' } });
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 1500);
+                        const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                        clearTimeout(timeout);
                         if (res.ok) {
                             const data = await res.json();
                             if (data.models && Array.isArray(data.models) && data.models.length > 0) {
@@ -5200,7 +5212,10 @@ export default function SettingsPage({
                 for (const baseUrl of candidateUrls) {
                     try {
                         const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?model=${encodeURIComponent(customModelId.trim())}`;
-                        const res = await fetch(targetUrl, { headers: { 'Accept': 'application/json' } });
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 1500);
+                        const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                        clearTimeout(timeout);
                         if (res.ok) {
                             const data = await res.json();
                             if (data.notFound || data.success === false) {
@@ -5613,38 +5628,40 @@ export default function SettingsPage({
         );
     };
 
-    const sectionContent: Record<string, React.ReactNode> = {
-        general: GeneralSection(),
-        system: SystemHardwareSection(),
-        keybinds: KeybindsSection(),
-        openclaw: OpenClawSection(),
-        profile: ProfileSection(),
-        models: ModelsSection(),
-        voice: VoiceSection(),
-        vision: VisionSection(),
-        embeddings: EmbeddingsSection(),
-        memory: MemorySection(),
-        skills: SkillsSection(),
-        tools: (
-            <div>
-                <SectionTitle>Registered Tools</SectionTitle>
-                <SectionSubtitle>View all available tools registered with the autonomous agent.</SectionSubtitle>
-
-                <RegisteredToolsList />
-            </div>
-        ),
-        'tool-settings': (
-            <div>
-                <SectionTitle>Tool Settings</SectionTitle>
-                <SectionSubtitle>Configure how Web Search and Website Crawl tools operate.</SectionSubtitle>
-                <ToolSettingsSection />
-            </div>
-        ),
-        'tool-permissions': <ToolPermissionsSection />,
-        privacy: PrivacySection(),
-        dispatch: <DispatchSection isCloudUser={isCloudUser} />,
-        'linux-vm': <LinuxVMSection />,
-        help: HelpSection(),
+    const renderActiveSection = () => {
+        switch (activeSection) {
+            case 'general': return <GeneralSection />;
+            case 'system': return <SystemHardwareSection />;
+            case 'keybinds': return <KeybindsSection />;
+            case 'openclaw': return <OpenClawSection />;
+            case 'profile': return <ProfileSection />;
+            case 'models': return <ModelsSection />;
+            case 'voice': return <VoiceSection />;
+            case 'vision': return <VisionSection />;
+            case 'embeddings': return <EmbeddingsSection />;
+            case 'memory': return <MemorySection />;
+            case 'skills': return <SkillsSection />;
+            case 'tools': return (
+                <div>
+                    <SectionTitle>Registered Tools</SectionTitle>
+                    <SectionSubtitle>View all available tools registered with the autonomous agent.</SectionSubtitle>
+                    <RegisteredToolsList />
+                </div>
+            );
+            case 'tool-settings': return (
+                <div>
+                    <SectionTitle>Tool Settings</SectionTitle>
+                    <SectionSubtitle>Configure how Web Search and Website Crawl tools operate.</SectionSubtitle>
+                    <ToolSettingsSection />
+                </div>
+            );
+            case 'tool-permissions': return <ToolPermissionsSection />;
+            case 'privacy': return <PrivacySection />;
+            case 'dispatch': return <DispatchSection isCloudUser={isCloudUser} />;
+            case 'linux-vm': return <LinuxVMSection />;
+            case 'help': return <HelpSection />;
+            default: return <GeneralSection />;
+        }
     };
 
     return (
@@ -5893,7 +5910,7 @@ export default function SettingsPage({
                                 exit={{ opacity: 0, y: -6 }}
                                 transition={{ duration: 0.18 }}
                             >
-                                {sectionContent[activeSection]}
+                                {renderActiveSection()}
                             </motion.div>
                         </AnimatePresence>
                     </div>

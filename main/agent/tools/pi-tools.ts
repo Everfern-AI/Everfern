@@ -26,7 +26,7 @@ import * as os from 'os';
 
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
-let globalLocalExecutionResolvers: Map<string, (response: { approved: boolean; alwaysAllow: boolean }) => void> | null = null;
+let globalLocalExecutionResolvers: Map<string, (response: { approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => void> | null = null;
 
 // Export for testing and IPC handler access
 export function getLocalExecutionResolvers() {
@@ -1050,7 +1050,7 @@ function adaptTool(
           return {
             success: true,
             output: stripAnsi(`Success: wrote file\nPath: ${writtenPath}\nBytes: ${bytes}`),
-            data: { path: writtenPath, bytes, content: args.content }
+            data: { path: writtenPath, bytes }
           };
         }
 

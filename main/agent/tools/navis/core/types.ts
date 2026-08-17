@@ -251,6 +251,8 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { browser_right_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_right_click'], additionalProperties: false },
           { properties: { browser_hover: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_hover'], additionalProperties: false },
           { properties: { browser_type: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }, required: ['browser_type'], additionalProperties: false },
+          { properties: { focus_form: { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'], additionalProperties: false } }, required: ['focus_form'], additionalProperties: false },
+          { properties: { unfocus_form: { type: 'object', additionalProperties: false } }, required: ['unfocus_form'], additionalProperties: false },
         ],
       },
       minItems: 1,

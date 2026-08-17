@@ -7185,7 +7185,7 @@ export default function ToolDetailSidePanel({
                     }}>
                       {openTabs.map((tab) => {
                         const isActive = tab.id === activeId && surfaceMode === 'tool';
-                        const isTabLive = Boolean(tab.status === 'running' || tab.isStreaming || tab.streaming || (!tab.output && !tab.result));
+                        const isTabLive = Boolean(tab.status === 'running' || tab.isStreaming || tab.streaming || (!tab.output && !tab.result && tab.status !== 'done' && tab.status !== 'error'));
                         return (
                         <div
                           key={tab.id}
@@ -7468,7 +7468,7 @@ export default function ToolDetailSidePanel({
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: VS.muted, flexShrink: 0 }}>
-                    {Boolean(toolCall?.status === 'running' || toolCall?.isStreaming || toolCall?.streaming || (!toolCall?.output && !toolCall?.result)) && (
+                    {Boolean(toolCall?.status === 'running' || toolCall?.isStreaming || toolCall?.streaming || (!toolCall?.output && !toolCall?.result && toolCall?.status !== 'done' && toolCall?.status !== 'error')) && (
                       <div
                         style={{
                           display: 'inline-flex',
