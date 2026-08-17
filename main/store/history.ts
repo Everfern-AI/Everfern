@@ -157,7 +157,7 @@ export class ChatHistoryStore {
   }
 
   /**
-   * List all conversations.
+   * List all conversations with pinned items first.
    */
   async list(): Promise<ConversationSummary[]> {
     await this.init();
@@ -168,7 +168,7 @@ export class ChatHistoryStore {
         LEFT JOIN projects p ON c.project_id = p.id
         LEFT JOIN messages m ON c.id = m.conversation_id
         GROUP BY c.id
-        ORDER BY c.updated_at DESC
+        ORDER BY (c.is_pinned = 1 OR c.is_bookmarked = 1) DESC, c.updated_at DESC
       `);
 
       return rows.map(row => ({
@@ -178,6 +178,9 @@ export class ChatHistoryStore {
         model: row.model,
         projectId: row.project_id,
         projectName: row.projectName,
+        isPinned: row.is_pinned === 1,
+        isBookmarked: row.is_bookmarked === 1 || row.is_pinned === 1,
+        isUnread: row.is_unread === 1,
         messageCount: row.messageCount,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -185,6 +188,129 @@ export class ChatHistoryStore {
     } catch (err) {
       console.error('[History] Failed to list conversations:', err);
       return [];
+    }
+  }
+
+  /**
+   * List conversations that belong to a specific project.
+   */
+  async listByProject(projectId: string): Promise<ConversationSummary[]> {
+    await this.init();
+    try {
+      const rows = await dbOps.all(`
+        SELECT c.*, p.name as projectName, COUNT(m.id) as messageCount
+        FROM conversations c
+        LEFT JOIN projects p ON c.project_id = p.id
+        LEFT JOIN messages m ON c.id = m.conversation_id
+        WHERE c.project_id = ? OR c.project_id = (SELECT id FROM projects WHERE id = ? OR name = ? OR path = ?)
+        GROUP BY c.id
+        ORDER BY (c.is_pinned = 1 OR c.is_bookmarked = 1) DESC, c.updated_at DESC
+      `, [projectId, projectId, projectId, projectId]);
+
+      return rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        provider: row.provider,
+        model: row.model,
+        projectId: row.project_id,
+        projectName: row.projectName,
+        isPinned: row.is_pinned === 1,
+        isBookmarked: row.is_bookmarked === 1 || row.is_pinned === 1,
+        isUnread: row.is_unread === 1,
+        messageCount: row.messageCount,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (err) {
+      console.error(`[History] Failed to list conversations for project ${projectId}:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Toggle pin status for a conversation.
+   */
+  async togglePin(id: string): Promise<{ success: boolean; isPinned: boolean; error?: string }> {
+    await this.init();
+    try {
+      const row = await dbOps.get('SELECT is_pinned, is_bookmarked FROM conversations WHERE id = ?', [id]);
+      if (!row) return { success: false, isPinned: false, error: 'Conversation not found' };
+
+      const newPinned = row.is_pinned === 1 ? 0 : 1;
+      await dbOps.run('UPDATE conversations SET is_pinned = ?, is_bookmarked = ?, updated_at = ? WHERE id = ?', [
+        newPinned,
+        newPinned,
+        new Date().toISOString(),
+        id
+      ]);
+
+      return { success: true, isPinned: newPinned === 1 };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[History] Failed to toggle pin for conversation ${id}:`, msg);
+      return { success: false, isPinned: false, error: msg };
+    }
+  }
+
+  /**
+   * Toggle unread status for a conversation.
+   */
+  async toggleUnread(id: string): Promise<{ success: boolean; isUnread: boolean; error?: string }> {
+    await this.init();
+    try {
+      const row = await dbOps.get('SELECT is_unread FROM conversations WHERE id = ?', [id]);
+      if (!row) return { success: false, isUnread: false, error: 'Conversation not found' };
+
+      const newUnread = row.is_unread === 1 ? 0 : 1;
+      await dbOps.run('UPDATE conversations SET is_unread = ?, updated_at = ? WHERE id = ?', [
+        newUnread,
+        new Date().toISOString(),
+        id
+      ]);
+
+      return { success: true, isUnread: newUnread === 1 };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[History] Failed to toggle unread for conversation ${id}:`, msg);
+      return { success: false, isUnread: false, error: msg };
+    }
+  }
+
+  /**
+   * Rename a conversation title.
+   */
+  async updateTitle(id: string, title: string): Promise<{ success: boolean; error?: string }> {
+    await this.init();
+    try {
+      await dbOps.run('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?', [
+        title.trim(),
+        new Date().toISOString(),
+        id
+      ]);
+      return { success: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[History] Failed to update title for conversation ${id}:`, msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Set or remove project association for a conversation.
+   */
+  async setProject(id: string, projectId: string | null): Promise<{ success: boolean; error?: string }> {
+    await this.init();
+    try {
+      await dbOps.run('UPDATE conversations SET project_id = ?, updated_at = ? WHERE id = ?', [
+        projectId || null,
+        new Date().toISOString(),
+        id
+      ]);
+      return { success: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[History] Failed to set project for conversation ${id}:`, msg);
+      return { success: false, error: msg };
     }
   }
 
@@ -232,6 +358,9 @@ export class ChatHistoryStore {
         model: convRow.model,
         projectId: convRow.project_id,
         projectName: convRow.projectName,
+        isPinned: convRow.is_pinned === 1,
+        isBookmarked: convRow.is_bookmarked === 1 || convRow.is_pinned === 1,
+        isUnread: convRow.is_unread === 1,
         messages,
         createdAt: convRow.created_at,
         updatedAt: convRow.updated_at,
@@ -260,16 +389,22 @@ export class ChatHistoryStore {
       await dbOps.run('SAVEPOINT save_conv');
       transactionStarted = true;
 
-      // 1. Upsert Conversation — use INSERT OR REPLACE to avoid race conditions
-      // when saveConversation is called concurrently from the frontend.
+      // 1. Upsert Conversation
+      const isPinnedVal = conversation.isPinned ? 1 : (conversation.isBookmarked ? 1 : null);
+      const isBookmarkedVal = conversation.isBookmarked ? 1 : (conversation.isPinned ? 1 : null);
+      const isUnreadVal = conversation.isUnread !== undefined ? (conversation.isUnread ? 1 : 0) : null;
+
       await dbOps.run(
-        `INSERT INTO conversations (id, title, provider, model, project_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM conversations WHERE id = ?), ?), ?)
+        `INSERT INTO conversations (id, title, provider, model, project_id, is_pinned, is_bookmarked, is_unread, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, COALESCE(?, 0), COALESCE(?, 0), COALESCE(?, 0), COALESCE((SELECT created_at FROM conversations WHERE id = ?), ?), ?)
          ON CONFLICT(id) DO UPDATE SET
            title = COALESCE(excluded.title, conversations.title),
            provider = COALESCE(excluded.provider, conversations.provider),
            model = COALESCE(excluded.model, conversations.model),
            project_id = COALESCE(excluded.project_id, conversations.project_id),
+           is_pinned = COALESCE(?, conversations.is_pinned),
+           is_bookmarked = COALESCE(?, conversations.is_bookmarked),
+           is_unread = COALESCE(?, conversations.is_unread),
            updated_at = excluded.updated_at`,
         [
           conversation.id,
@@ -277,9 +412,15 @@ export class ChatHistoryStore {
           conversation.provider,
           (conversation as any).model,
           conversation.projectId || null,
+          isPinnedVal,
+          isBookmarkedVal,
+          isUnreadVal,
           conversation.id,
           conversation.createdAt || new Date().toISOString(),
           conversation.updatedAt || new Date().toISOString(),
+          isPinnedVal,
+          isBookmarkedVal,
+          isUnreadVal,
         ]
       );
 

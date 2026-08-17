@@ -18,14 +18,14 @@ import { PROVIDER_MODELS } from '../../lib/providers';
 export class AnthropicProvider implements ACPProvider {
   private apiKey = '';
   private baseUrl = 'https://api.anthropic.com';
-  private model = 'claude-sonnet-4-20250514';
+  private model = 'claude-sonnet-5';
 
   readonly info: ProviderInfo = {
     type: 'anthropic',
     name: 'Anthropic',
-    description: 'Claude 4 Sonnet, Opus, and Haiku via Anthropic API',
+    description: 'Claude 5 and 4 models via Anthropic API',
     requiresApiKey: true,
-    defaultModel: 'claude-sonnet-4-20250514',
+    defaultModel: 'claude-sonnet-5',
     isLocal: false,
   };
 

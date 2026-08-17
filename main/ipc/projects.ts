@@ -33,6 +33,23 @@ export function registerProjectsHandlers() {
     return projectsStore.create(data);
   });
 
+  ipcMain.handle('projects:update', async (_event, id: string, updates: any) => {
+    return projectsStore.update(id, updates);
+  });
+
+  ipcMain.handle('projects:toggleBookmark', async (_event, id: string) => {
+    return projectsStore.toggleBookmark(id);
+  });
+
+  ipcMain.handle('projects:openFolder', async (_event, folderPath: string) => {
+    const { shell } = require('electron');
+    if (folderPath) {
+      shell.openPath(folderPath);
+      return { success: true };
+    }
+    return { success: false, error: 'No path provided' };
+  });
+
   ipcMain.handle('projects:delete', async (_event, id: string) => {
     return projectsStore.delete(id);
   });

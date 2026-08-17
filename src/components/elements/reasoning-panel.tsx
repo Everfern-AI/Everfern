@@ -65,35 +65,23 @@ export function ReasoningPanel({
         <ChevronRightIcon className="size-3.5 shrink-0 opacity-60 transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-open/trigger:rotate-90 group-data-panel-open/trigger:rotate-90 motion-reduce:transition-none" />
       </CollapsibleTrigger>
       <CollapsibleContent className={cn(collapsePanel, "outline-none")}>
-        <ol className="flex flex-col gap-3.5 pt-3 pb-3">
+        <div className="flex flex-col gap-4 pt-3 pb-3">
           {take(steps, visibleSteps).map((step, i, shown) => {
             const active = streaming && i === shown.length - 1;
             return (
-              <li
+              <p
                 key={step.title}
-                className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both flex gap-3 duration-300"
+                className={cn(
+                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/50 text-[13px] leading-relaxed",
+                  active && "text-foreground/60"
+                )}
+                style={{ animationDelay: `${i * 40}ms` }}
               >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mt-[7px] size-[5px] shrink-0 rounded-full transition-colors duration-300",
-                    active
-                      ? "animate-pulse bg-blue-500 dark:bg-blue-400"
-                      : "bg-foreground/20",
-                  )}
-                />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-foreground/80 text-[13.5px] font-medium leading-snug">
-                    {step.title}
-                  </span>
-                  <span className="text-foreground/45 mt-1 text-[12.5px] leading-relaxed whitespace-pre-wrap">
-                    {step.body}
-                  </span>
-                </span>
-              </li>
+                {step.body || step.title}
+              </p>
             );
           })}
-        </ol>
+        </div>
       </CollapsibleContent>
     </Collapsible>
   );

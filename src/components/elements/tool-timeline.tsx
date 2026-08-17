@@ -103,14 +103,15 @@ export function ToolTimeline({
                   }
                 }}
                 className={cn(
-                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200 group/step",
-                  onStepClick ? "cursor-pointer hover:text-foreground hover:bg-foreground/[0.04] rounded-md px-1.5 -mx-1.5 py-0.5 transition-colors" : ""
+                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200 group/step relative overflow-hidden",
+                  onStepClick ? "cursor-pointer hover:text-foreground hover:bg-foreground/[0.04] rounded-md px-1.5 -mx-1.5 py-0.5 transition-colors" : "",
+                  active && "step-shimmer-active"
                 )}
                 title={onStepClick ? "Click to view tool call details" : undefined}
               >
                 {/* Icon column with vertical connecting line */}
                 <div className="flex flex-col items-center shrink-0 w-4 self-stretch pt-0.5">
-                  <div className="flex items-center justify-center size-4 shrink-0 z-10">
+                  <div className={cn("flex items-center justify-center size-4 shrink-0 z-10", active && "animate-pulse")}>
                     <Icon className={cn("size-3.5 shrink-0 transition-colors", active ? "text-foreground/90" : "text-foreground/50 group-hover/step:text-foreground/80")} />
                   </div>
                   {!isLast && (
@@ -164,6 +165,29 @@ export function ToolTimeline({
           )}
         </div>
       </CollapsibleContent>
+      <style>{`
+        @keyframes stepShimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .step-shimmer-active::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(99, 102, 241, 0.08) 25%,
+            rgba(99, 102, 241, 0.15) 50%,
+            rgba(99, 102, 241, 0.08) 75%,
+            transparent 100%
+          );
+          background-size: 200% 100%;
+          animation: stepShimmer 2s ease-in-out infinite;
+          pointer-events: none;
+          border-radius: inherit;
+        }
+      `}</style>
     </Collapsible>
   );
 }

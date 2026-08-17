@@ -183,6 +183,114 @@
   font-display: swap;
 }
 
+/* ── Loretta Serif Font Faces ─────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Loretta";
+  src: url("/fonts/loretta-light/loretta-light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Loretta";
+  src: url("/fonts/loretta-light/loretta-light.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "LorettaLight";
+  src: url("/fonts/loretta-light/loretta-light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Tiempos Serif Font Faces ────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Tiempos";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Light-BF66457a5102792.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tiempos";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Light-BF66457a5102792.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tiempos";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Medium-BF66457a50e62cd.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tiempos";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Semibold-BF66457a50f016a.otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tiempos";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Bold-BF66457a510211b.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TestTiemposFine";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Light-BF66457a5102792.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TestTiemposFine";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Light-BF66457a5102792.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TestTiemposFine";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Medium-BF66457a50e62cd.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TestTiemposFine";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Semibold-BF66457a50f016a.otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TestTiemposFine";
+  src: url("/fonts/tiempos-font-family/TestTiemposFine-Bold-BF66457a510211b.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── Design Tokens ───────────────────────────────────────────────────────── */
 
 :root {
@@ -260,7 +368,7 @@
   /* Typography System */
   --font-sans: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-branding: 'Figtree', sans-serif;
-  --font-serif: 'EB Garamond', 'Georgia', serif;
+  --font-serif: 'Loretta', 'LorettaLight', 'Tiempos', 'TestTiemposFine', 'Georgia', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* Typography Scale */

@@ -38,6 +38,10 @@ export function useSubagentTracking(conversationId: string | null) {
       return;
     }
 
+    if (event.conversationId && conversationId && event.conversationId !== conversationId) {
+      return;
+    }
+
     const subagentEvent: SubagentEvent = {
       type: event.subagentEventType,
       phase: event.phase,

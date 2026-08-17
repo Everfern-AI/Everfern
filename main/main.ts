@@ -73,7 +73,7 @@ import { listSites, readSiteFile, writeSiteFile, deleteSite } from './store/site
 import { searchChatVectors, getChatVectors, deleteChatVectors, getVectorStats, initChatVectorDb, getVectorStats as getVecStats } from './store/chat-vectors';
 import { registerContextEngine, setDefaultContextEngine } from './context-engine';
 import { VectorContextEngine } from './context-engine/vector';
-import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
+import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, listAllSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
@@ -1506,6 +1506,10 @@ ipcMain.handle('vectors:refresh-config', async () => {
 });
 
 // ── Custom Skills IPC Handlers ─────────────────────────────────────────────
+
+ipcMain.handle('skills:list-all', async () => {
+  return listAllSkills();
+});
 
 ipcMain.handle('skills:list-custom', async () => {
   return listCustomSkills();

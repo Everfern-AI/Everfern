@@ -4145,7 +4145,7 @@ export default function ToolDetailSidePanel({ isOpen, toolCall, onClose, convers
               zIndex: 50, overflow: 'hidden', outline: 'none',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
-            animate={isDesktop ? { width: showFilePane ? 620 : 380, opacity: 1 } : { x: 0 }}
+            animate={isDesktop ? { width: showFilePane ? 560 : 350, opacity: 1 } : { x: 0 }}
             exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 36 }}
           >

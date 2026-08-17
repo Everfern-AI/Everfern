@@ -3062,36 +3062,6 @@ export default function SetupPage() {
                                     {hasStarredRepo ? "Thank you! You're an absolute legend! ❤️" : "Star on GitHub (Save the dev's soul!)"}
                                     <ExternalLink size={15} style={{ opacity: 0.7 }} />
                                 </a>
-
-                                <button
-                                    onClick={() => {
-                                        try {
-                                            localStorage.setItem('everfern_star_dismissed', 'true');
-                                        } catch (err) {}
-                                        setStep(10);
-                                    }}
-                                    style={{
-                                        background: "none",
-                                        border: "none",
-                                        color: "var(--color-text-tertiary)",
-                                        fontSize: 10,
-                                        cursor: "pointer",
-                                        textDecoration: "none",
-                                        marginTop: 28,
-                                        opacity: 0.06,
-                                        transition: "opacity 0.2s, color 0.2s"
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.opacity = "0.25";
-                                        e.currentTarget.style.color = "var(--color-text-secondary)";
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.opacity = "0.06";
-                                        e.currentTarget.style.color = "var(--color-text-tertiary)";
-                                    }}
-                                >
-                                    Skip (and break a developer&apos;s heart 💔)
-                                </button>
                             </div>
                         </motion.div>
                     )}

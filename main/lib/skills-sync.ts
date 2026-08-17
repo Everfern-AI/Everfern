@@ -502,6 +502,23 @@ export function listCustomSkills(): { name: string; path: string; description: s
   return skills;
 }
 
+// ── List all skills (built-in + custom) ─────────────────────────────────
+
+export async function listAllSkills(): Promise<{ name: string; path: string; description: string }[]> {
+  try {
+    const { loadSkillsAsync } = require('../agent/runner/skills-loader');
+    const all = await loadSkillsAsync();
+    return all.map((s: any) => ({
+      name: s.name,
+      description: s.description || '',
+      path: s.path || ''
+    }));
+  } catch (err) {
+    console.error('[SkillsSync] Failed to load all skills:', err);
+    return listCustomSkills();
+  }
+}
+
 // ── Save a custom skill ────────────────────────────────────────────
 
 export interface CustomSkillData {

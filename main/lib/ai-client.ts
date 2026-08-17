@@ -445,8 +445,8 @@ export class AIClient {
       vlm: config.vlm,
     };
 
-    // Initialize OpenAI client for NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, EverFern and Ollama Cloud
-    if (config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter' || config.provider === 'minimax' || config.provider === 'everfern' || config.provider === 'ollama-cloud') {
+    // Initialize OpenAI client for OpenAI, NVIDIA NIM, DeepSeek, OpenRouter, MiniMax, EverFern and Ollama Cloud
+    if (config.provider === 'openai' || config.provider === 'nvidia' || config.provider === 'deepseek' || config.provider === 'openrouter' || config.provider === 'minimax' || config.provider === 'everfern' || config.provider === 'ollama-cloud') {
       const headers: Record<string, string> = {
         'User-Agent': 'EverFern/1.0'
       };
@@ -552,9 +552,9 @@ export class AIClient {
     const modelName = this.config.model?.toLowerCase() || '';
     const visionKeywords = ['vision', 'image', 'vl-', 'vl:', 'llava', 'minicpm', 'moondream', '-vl', 'minimax'];
     if (visionKeywords.some(kw => modelName.includes(kw))) return true;
-    if (this.config.provider === 'anthropic') return true;
-    if (this.config.provider === 'gemini') return true;
-    if (this.config.provider === 'openai' && modelName.startsWith('gpt-4')) return true;
+    if (this.config.provider === 'anthropic' || modelName.includes('claude')) return true;
+    if (this.config.provider === 'gemini' || modelName.includes('gemini')) return true;
+    if (this.config.provider === 'openai' || modelName.includes('gpt') || modelName.includes('o1') || modelName.includes('o3') || modelName.includes('computer-use')) return true;
     return false;
   }
 
@@ -2493,6 +2493,7 @@ export class AIClient {
       'Content-Type': 'application/json',
       'x-api-key': this.config.apiKey,
       'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'computer-use-2024-10-22,prompt-caching-2024-07-31,token-counting-2024-11-01',
     };
   }
 
@@ -2538,6 +2539,38 @@ export class AIClient {
             content.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.arguments });
           }
           return { role: 'assistant', content };
+        }
+        // Message with image parts or text array
+        if (Array.isArray(m.content)) {
+          const contentBlocks = m.content.map(c => {
+            if (c.type === 'image_url' && c.image_url?.url) {
+              const url = c.image_url.url;
+              const match = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                return {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: match[1],
+                    data: match[2]
+                  }
+                };
+              }
+              return {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/png',
+                  data: url.replace(/^data:image\/[a-z]+;base64,/, '')
+                }
+              };
+            }
+            if (c.type === 'text') {
+              return { type: 'text', text: c.text };
+            }
+            return c;
+          });
+          return { role: m.role, content: contentBlocks };
         }
         return m;
       }),

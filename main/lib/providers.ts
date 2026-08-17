@@ -1,16 +1,8 @@
 /**
- * EverFern Desktop — Unified Provider Registry
+ * EverFern Desktop - Unified Provider Registry
  *
  * Single source of truth for all provider metadata and model lists.
- * Zero runtime dependencies — importable from both main process and renderer.
- *
- * Usage:
- *   import { PROVIDER_REGISTRY, getModelsForProvider, getAllModelsFlat } from '../lib/providers';
-/**
- * EverFern Desktop — Unified Provider Registry
- *
- * Single source of truth for all provider metadata and model lists.
- * Zero runtime dependencies — importable from both main process and renderer.
+ * Zero runtime dependencies - importable from both main process and renderer.
  *
  * Usage:
  *   import { PROVIDER_REGISTRY, getModelsForProvider, getAllModelsFlat } from '../lib/providers';
@@ -18,22 +10,44 @@
 
 import type { ProviderType } from '../acp/types';
 
-// ── Model Lists ──────────────────────────────────────────────────────
+// -- Model Lists ------------------------------------------------------
 
 export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   openai: [
-    'gpt-5.5-pro',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+
     'gpt-5.5',
-    'gpt-5.4-pro',
+    'gpt-5.5-pro',
     'gpt-5.4',
+    'gpt-5.4-pro',
     'gpt-5.4-mini',
     'gpt-5.4-nano',
+
+    'gpt-4.5-preview',
+    'gpt-4o',
+    'gpt-4o-mini',
+
+    'o1',
+    'o3-mini',
+
+    'computer-use-preview',
   ],
+
   anthropic: [
+    // Current flagship models
     'claude-fable-5',
+    'claude-opus-5',
+    'claude-sonnet-5',
+
+    // Current previous-generation models
     'claude-opus-4-8',
+    'claude-opus-4-7',
+    'claude-opus-4-6',
     'claude-sonnet-4-6',
     'claude-haiku-4-5-20251001',
+    'claude-haiku-4-5',
   ],
   deepseek: [
     'deepseek-v4-flash',
@@ -95,26 +109,50 @@ export const CLOUD_MODEL_MAP: Record<string, string> = {
   // Anthropic
   'claude-fable-5': 'anthropic/claude-fable-5',
   'claude_fable_5': 'anthropic/claude-fable-5',
+  'claude-opus-5': 'anthropic/claude-opus-5',
+  'claude_opus_5': 'anthropic/claude-opus-5',
+  'claude-sonnet-5': 'anthropic/claude-sonnet-5',
+  'claude_sonnet_5': 'anthropic/claude-sonnet-5',
   'claude-opus-4-8': 'anthropic/claude-opus-4.8',
   'claude_opus_4_8': 'anthropic/claude-opus-4.8',
+  'claude-opus-4-7': 'anthropic/claude-opus-4.7',
+  'claude_opus_4_7': 'anthropic/claude-opus-4.7',
+  'claude-opus-4-6': 'anthropic/claude-opus-4.6',
+  'claude_opus_4_6': 'anthropic/claude-opus-4.6',
   'claude-sonnet-4-6': 'anthropic/claude-sonnet-4.6',
   'claude_sonnet_4_6': 'anthropic/claude-sonnet-4.6',
   'claude-haiku-4-5-20251001': 'anthropic/claude-haiku-4.5',
+  'claude-haiku-4-5': 'anthropic/claude-haiku-4.5',
   'claude_haiku_4_5': 'anthropic/claude-haiku-4.5',
   
   // OpenAI
-  'gpt-5.5-pro': 'openai/gpt-5.5-pro',
-  'gpt_5_5_pro': 'openai/gpt-5.5-pro',
+  'gpt-5.6-sol': 'openai/gpt-5.6-sol',
+  'gpt_5_6_sol': 'openai/gpt-5.6-sol',
+  'gpt-5.6-terra': 'openai/gpt-5.6-terra',
+  'gpt_5_6_terra': 'openai/gpt-5.6-terra',
+  'gpt-5.6-luna': 'openai/gpt-5.6-luna',
+  'gpt_5_6_luna': 'openai/gpt-5.6-luna',
   'gpt-5.5': 'openai/gpt-5.5',
   'gpt_5_5': 'openai/gpt-5.5',
-  'gpt-5.4-pro': 'openai/gpt-5.4-pro',
-  'gpt_5_4_pro': 'openai/gpt-5.4-pro',
+  'gpt-5.5-pro': 'openai/gpt-5.5-pro',
+  'gpt_5_5_pro': 'openai/gpt-5.5-pro',
   'gpt-5.4': 'openai/gpt-5.4',
   'gpt_5_4': 'openai/gpt-5.4',
+  'gpt-5.4-pro': 'openai/gpt-5.4-pro',
+  'gpt_5_4_pro': 'openai/gpt-5.4-pro',
   'gpt-5.4-mini': 'openai/gpt-5.4-mini',
   'gpt_5_4_mini': 'openai/gpt-5.4-mini',
   'gpt-5.4-nano': 'openai/gpt-5.4-nano',
   'gpt_5_4_nano': 'openai/gpt-5.4-nano',
+  'gpt-4.5-preview': 'openai/gpt-4.5-preview',
+  'gpt_4_5_preview': 'openai/gpt-4.5-preview',
+  'gpt-4o': 'openai/gpt-4o',
+  'gpt_4o': 'openai/gpt-4o',
+  'gpt-4o-mini': 'openai/gpt-4o-mini',
+  'gpt_4o_mini': 'openai/gpt-4o-mini',
+  'o1': 'openai/o1',
+  'o3-mini': 'openai/o3-mini',
+  'computer-use-preview': 'openai/computer-use',
 
   // Google Gemini
   'gemini-3.5-flash': 'google/gemini-3.5-flash',
@@ -131,8 +169,6 @@ export const CLOUD_MODEL_MAP: Record<string, string> = {
   'gemini_2_5_pro': 'google/gemini-2.5-pro',
 
   // EverFern Computer Use (OpenAI GPT-5.6 Luna)
-  'gpt-5.6-luna': 'openai/gpt-5.6-luna',
-  'openai/gpt-5.6-luna': 'openai/gpt-5.6-luna',
   'everfern-tars': 'openai/gpt-5.6-luna',
   'everfern-tars-v1': 'openai/gpt-5.6-luna',
   'everfern-computer': 'openai/gpt-5.6-luna',
@@ -141,7 +177,7 @@ export const CLOUD_MODEL_MAP: Record<string, string> = {
   'qwen/qwen3-vl-235b-a22b-instruct': 'qwen/qwen3-vl-235b-a22b-instruct',
 };
 
-// ── Provider Metadata ────────────────────────────────────────────────
+// -- Provider Metadata ------------------------------------------------
 
 export interface ProviderMeta {
   type: ProviderType;
@@ -153,7 +189,7 @@ export interface ProviderMeta {
   defaultModel: string;
   engine: 'local' | 'online' | 'everfern';
   baseUrl?: string;
-  enabled?: boolean;  // Whether the provider is configured and available
+  enabled?: boolean;
 }
 
 export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
@@ -175,7 +211,7 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     image: '/images/ai-providers/claude.svg',
     requiresApiKey: true,
     isLocal: false,
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'claude-sonnet-5',
     engine: 'online',
     baseUrl: 'https://api.anthropic.com',
   },
@@ -248,29 +284,18 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
   everfern: {
     type: 'everfern',
     name: 'EverFern Cloud',
-    description: 'Managed frontier models optimized for EverFern',
+    description: 'Managed models & AI agents powered by EverFern',
     image: '/images/logos/black-logo-withoutbg.png',
     requiresApiKey: false,
     isLocal: false,
     defaultModel: 'fern-1',
     engine: 'everfern',
-    baseUrl: 'https://api.everfern.app/api',
-  },
-  openrouter: {
-    type: 'openrouter',
-    name: 'OpenRouter',
-    description: 'A unified API to access dozens of top open and closed source models',
-    image: '/images/ai-providers/openrouter.svg',
-    requiresApiKey: true,
-    isLocal: false,
-    defaultModel: 'openai/gpt-oss-120b',
-    engine: 'online',
-    baseUrl: 'https://openrouter.ai/api/v1',
+    baseUrl: 'https://api.everfern.app',
   },
   nvidia: {
     type: 'nvidia',
-    name: 'Nvidia NIM',
-    description: 'High-performance inference microservices via Nvidia API',
+    name: 'NVIDIA NIM',
+    description: 'Enterprise models accelerated by NVIDIA NIM',
     image: '/images/ai-providers/nvidia.svg',
     requiresApiKey: true,
     isLocal: false,
@@ -278,45 +303,40 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     engine: 'online',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
   },
+  openrouter: {
+    type: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified API for 100+ models from top providers',
+    image: '/images/ai-providers/openrouter.svg',
+    requiresApiKey: true,
+    isLocal: false,
+    defaultModel: 'openrouter/free',
+    engine: 'online',
+    baseUrl: 'https://openrouter.ai/api/v1',
+  },
 };
 
-// ── Flat Model Entry ─────────────────────────────────────────────────
-
-export interface FlatModelEntry {
-  id: string;       // model ID passed to API calls
-  name: string;     // human-readable display name
-  provider: string; // display name of provider
-  providerType: ProviderType;
-  size?: number;
-  parameterSize?: string;
-}
-
-/**
- * Returns static model list for a given provider type.
- * For local providers (ollama/lmstudio) returns [] — fetch dynamically at runtime.
- */
 export function getModelsForProvider(type: ProviderType): string[] {
   return PROVIDER_MODELS[type] ?? [];
 }
 
-/**
- * Returns a flat list of all models across all non-local providers,
- * suitable for populating the model selector dropdown.
- */
+export interface FlatModelEntry {
+  id: string;
+  name: string;
+  provider: string;
+  providerType: ProviderType;
+  description?: string;
+}
+
 export function getAllModelsFlat(): FlatModelEntry[] {
   const result: FlatModelEntry[] = [];
   for (let [type, models] of Object.entries(PROVIDER_MODELS) as [ProviderType, string[]][]) {
-    // Legacy alias normalization
-    if ((type as string) === 'google') type = 'gemini';
-
     const meta = PROVIDER_REGISTRY[type];
-    if (!meta) continue;
-
-    for (const modelId of models) {
+    for (let model of models) {
       result.push({
-        id: modelId,
-        name: formatModelName(modelId),
-        provider: meta.name,
+        id: model,
+        name: formatModelDisplayName(model, type),
+        provider: meta?.name ?? type,
         providerType: type,
       });
     }
@@ -324,79 +344,46 @@ export function getAllModelsFlat(): FlatModelEntry[] {
   return result;
 }
 
-/**
- * Get models for the active engine/provider config.
- * Handles the engine → providerType mapping.
- */
-export function getModelsForConfig(engine: string, provider?: string): FlatModelEntry[] {
-  let providerType: ProviderType;
-
-  if (engine === 'online' && provider) {
-    providerType = provider as ProviderType;
-  } else if (engine === 'local') {
-    // Return both ollama and lmstudio entries (will be merged with dynamic list)
-    return [];
-  } else {
-    providerType = (engine as ProviderType) || 'everfern';
-  }
-
-  const meta = PROVIDER_REGISTRY[providerType];
-  // Normalization for legacy IDs
-  if (!meta && (providerType as string) === 'google') {
-    const geminiMeta = PROVIDER_REGISTRY['gemini'];
-    if (geminiMeta) return getModelsForConfig(engine, 'gemini');
-  }
-  if (!meta) return [];
-
-  return getModelsForProvider(providerType).map(modelId => ({
-    id: modelId,
-    name: formatModelName(modelId),
-    provider: meta.name,
-    providerType,
-  }));
+export function requiresApiKey(type: ProviderType): boolean {
+  return PROVIDER_REGISTRY[type]?.requiresApiKey ?? false;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
-export function formatModelName(id: string): string {
-  const knownNames: Record<string, string> = {
-    'gpt-4o': 'GPT-4o',
-    'gpt-4o-mini': 'GPT-4o mini',
-    'gpt-4-turbo': 'GPT-4 Turbo',
-    'o1-preview': 'o1 Preview',
-    'o1-mini': 'o1 mini',
-    'o3-mini': 'o3 mini',
-    'claude-sonnet-4-20250514': 'Claude Sonnet 4',
-    'claude-opus-4-5': 'Claude Opus 4.5',
-    'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
-    'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
-    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
-    'deepseek-v4-flash': 'DeepSeek V4 Flash',
-    'deepseek-v4-pro': 'DeepSeek V4 Pro',
-    'minimax-m2.7': 'MiniMax M2.7',
-    'minimax-m2.5': 'MiniMax M2.5',
-    'MiniMax-M3': 'MiniMax 3',
-    'gemini-3.5-flash': 'Gemini 3.5 Flash',
-    'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
-    'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
-    'gemini-3-flash-preview': 'Gemini 3 Flash',
-    'gemini-2.5-pro': 'Gemini 2.5 Pro',
-    'gemini-2.5-flash': 'Gemini 2.5 Flash',
-    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-    'fern-1': 'Fern-1',
-    'qwen/qwen3.5-122b-a10b': 'Qwen 3.5 122B (NIM)', // thinking model
-    'mistralai/mistral-small-4-119b-2603': 'Mistral Small (NIM)',
-    'z-ai/glm5': 'GLM 5 (NIM)',
-    'meta/llama-3.1-405b-instruct': 'Llama 3.1 405B (NIM)',
-    'meta/llama-3.1-70b-instruct': 'Llama 3.1 70B (NIM)',
-    'nvidia/llama-3.1-nemotron-70b-instruct': 'Nemotron 70B (NIM)',
-    'meta/llama-3.3-70b-instruct': 'Llama 3.3 70B (NIM)',
-    'meta/llama-3.2-90b-vision-instruct': 'Llama 3.2 90B Vision (NIM)',
-    'google/gemma-4-31b-it': 'Gemma 4 31B (NIM)',
-    'qwen3-vl:235b-cloud': 'Qwen3 VL 235B (Cloud)',
-    'kimi-k2.6:cloud': 'Kimi K2.6 (Cloud)',
-    'glm-5.1:cloud': 'GLM 5.1 (Cloud)',
-    'gemma4:31b-cloud': 'Gemma 4 31B (Cloud)',
-  };
-  return knownNames[id] ?? id;
+export function isLocalProvider(type: ProviderType): boolean {
+  return PROVIDER_REGISTRY[type]?.isLocal ?? false;
 }
+
+export function getDefaultModel(type: ProviderType): string {
+  return PROVIDER_REGISTRY[type]?.defaultModel ?? '';
+}
+
+export function getAllProviders(): ProviderMeta[] {
+  return Object.values(PROVIDER_REGISTRY);
+}
+
+export function getProviderMeta(type: ProviderType): ProviderMeta | undefined {
+  return PROVIDER_REGISTRY[type];
+}
+
+export function getProvidersByEngine(engine: 'local' | 'online' | 'everfern'): ProviderMeta[] {
+  return Object.values(PROVIDER_REGISTRY).filter(p => p.engine === engine);
+}
+
+export function isEverFernCloudModel(modelId: string): boolean {
+  return modelId === 'fern-1' || modelId === 'everfern-tars-v1' || modelId === 'everfern-computer';
+}
+
+export function formatModelDisplayName(modelId: string, provider: ProviderType): string {
+  if (provider === 'everfern') {
+    if (modelId === 'fern-1') return 'EverFern-1 (Default)';
+  }
+  return modelId;
+}
+
+export function formatModelName(modelId: string, provider?: ProviderType): string {
+  if (!modelId) return '';
+  if (provider) {
+    return formatModelDisplayName(modelId, provider);
+  }
+  return modelId;
+}
+

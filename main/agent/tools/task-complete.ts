@@ -26,7 +26,6 @@ export const taskCompleteTool: AgentTool = {
       summary: {
         type: 'string',
         description: 'A brief summary of everything completed in this task.',
-        required: true,
       },
     },
     required: ['summary'],

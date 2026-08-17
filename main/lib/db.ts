@@ -73,6 +73,9 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
         provider TEXT,
         model TEXT,
         project_id TEXT,
+        is_pinned INTEGER DEFAULT 0,
+        is_bookmarked INTEGER DEFAULT 0,
+        is_unread INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -119,6 +122,8 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
         name TEXT NOT NULL,
         instructions TEXT,
         path TEXT NOT NULL,
+        is_pinned INTEGER DEFAULT 0,
+        is_bookmarked INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -183,7 +188,10 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
         const requiredColumns = [
           { name: 'project_id', type: 'TEXT' },
           { name: 'provider', type: 'TEXT' },
-          { name: 'model', type: 'TEXT' }
+          { name: 'model', type: 'TEXT' },
+          { name: 'is_pinned', type: 'INTEGER DEFAULT 0' },
+          { name: 'is_bookmarked', type: 'INTEGER DEFAULT 0' },
+          { name: 'is_unread', type: 'INTEGER DEFAULT 0' }
         ];
 
         for (const col of requiredColumns) {
@@ -222,27 +230,36 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
       console.warn('[DB] Migration safety check failed for messages:', err.message);
     }
 
-    // Safety: Add missing columns to scheduled_tasks (migration support)
+    // Safety: Add missing columns to projects (migration support)
     try {
-      const columns = await dbAllPromise(db, "PRAGMA table_info(scheduled_tasks)");
+      const columns = await dbAllPromise(db, "PRAGMA table_info(projects)");
       if (columns) {
         const requiredColumns = [
-          { name: 'name', type: 'TEXT' },
-          { name: 'pattern', type: 'TEXT' },
-          { name: 'starts_at', type: 'DATETIME' },
-          { name: 'last_run', type: 'DATETIME' },
-          { name: 'next_run', type: 'DATETIME' },
-          { name: 'ends_at', type: 'DATETIME' }
+          { name: 'instructions', type: 'TEXT' },
+          { name: 'path', type: 'TEXT' },
+          { name: 'is_pinned', type: 'INTEGER DEFAULT 0' },
+          { name: 'is_bookmarked', type: 'INTEGER DEFAULT 0' }
         ];
 
         for (const col of requiredColumns) {
           if (!columns.some(c => c.name === col.name)) {
-            await dbRunPromise(db, `ALTER TABLE scheduled_tasks ADD COLUMN ${col.name} ${col.type}`);
+            await dbRunPromise(db, `ALTER TABLE projects ADD COLUMN ${col.name} ${col.type}`);
           }
         }
       }
     } catch (err: any) {
-      console.warn('[DB] Migration safety check failed for scheduled_tasks:', err.message);
+      console.warn('[DB] Migration safety check failed for projects:', err.message);
+    }
+
+    // Safety: Create indexes on migrated columns AFTER columns are guaranteed to exist
+    try {
+      await dbExecPromise(db, `
+        CREATE INDEX IF NOT EXISTS idx_conversations_project_id ON conversations(project_id);
+        CREATE INDEX IF NOT EXISTS idx_conversations_is_pinned ON conversations(is_pinned);
+        CREATE INDEX IF NOT EXISTS idx_projects_is_pinned ON projects(is_pinned);
+      `);
+    } catch (err: any) {
+      console.warn('[DB] Failed to create migrated column indexes:', err.message);
     }
 
     // Set instance before running migrations so dbOps can use it

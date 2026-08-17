@@ -69,13 +69,13 @@ export function CostMeter({
           <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
             {runCost}
           </span>
-          <span style={{ fontSize: 13, fontFamily: "var(--font-mono, monospace)", color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "var(--font-sans, sans-serif)", color: "var(--color-text-secondary)" }}>
             this run
           </span>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "baseline" }}>
-          <span style={{ fontSize: 13, fontFamily: "var(--font-mono, monospace)", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-            {sessionCost} session
+          <span style={{ fontSize: 13, fontWeight: 600, fontFamily: "var(--font-mono, monospace)", color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+            {sessionCost} <span style={{ fontWeight: 500, color: "var(--color-text-secondary)" }}>session</span>
           </span>
         </div>
       </div>
@@ -142,9 +142,10 @@ export function CostMeter({
               </span>
               <span
                 style={{
-                  fontSize: 11.5,
+                  fontSize: 12,
+                  fontWeight: 500,
                   fontFamily: "var(--font-mono, monospace)",
-                  color: "var(--color-text-tertiary)",
+                  color: "var(--color-text-secondary)",
                   flexShrink: 0,
                 }}
               >

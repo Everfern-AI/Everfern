@@ -438,13 +438,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Chat History ───────────────────────────────────────────────
   history: {
-    list:       ()                => ipcRenderer.invoke('history:list'),
-    load:       (id: string)     => ipcRenderer.invoke('history:load', id),
-    save:       (conv: any)      => ipcRenderer.invoke('history:save', conv),
-    delete:     (id: string)     => ipcRenderer.invoke('history:delete', id),
-    search:     (query: string, limit?: number) => ipcRenderer.invoke('history:search', query, limit),
-    backfill:   ()                => ipcRenderer.invoke('history:backfill'),
-    getVectors: (limit?: number)  => ipcRenderer.invoke('history:get-vectors', limit),
+    list:          ()                => ipcRenderer.invoke('history:list'),
+    listByProject: (projectId: string) => ipcRenderer.invoke('history:listByProject', projectId),
+    load:          (id: string)     => ipcRenderer.invoke('history:load', id),
+    save:          (conv: any)      => ipcRenderer.invoke('history:save', conv),
+    delete:        (id: string)     => ipcRenderer.invoke('history:delete', id),
+    togglePin:     (id: string)     => ipcRenderer.invoke('history:togglePin', id),
+    toggleUnread:  (id: string)     => ipcRenderer.invoke('history:toggleUnread', id),
+    updateTitle:   (id: string, title: string) => ipcRenderer.invoke('history:updateTitle', id, title),
+    setProject:    (id: string, projectId: string | null) => ipcRenderer.invoke('history:setProject', id, projectId),
+    search:        (query: string, limit?: number) => ipcRenderer.invoke('history:search', query, limit),
+    backfill:      ()                => ipcRenderer.invoke('history:backfill'),
+    getVectors:    (limit?: number)  => ipcRenderer.invoke('history:get-vectors', limit),
     // HITL persistence — check for pending approval requests on load
     hitl: {
       getPending: (conversationId: string) => ipcRenderer.invoke('hitl:get-pending', conversationId),
@@ -459,7 +464,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getGraph: () => ipcRenderer.invoke('memory:get-graph'),
     deleteNode: (id: string) => ipcRenderer.invoke('memory:delete-node', id),
     exportZip: () => ipcRenderer.invoke('memory:export-zip'),
-    importMerge: () => ipcRenderer.invoke('memory:import-merge-graph'),
+    importMergeGraph: () => ipcRenderer.invoke('memory:import-merge-graph'),
+  },
+
+  // ── Skills ───────────────────────────────────────────────────────
+  skills: {
+    listAll: () => ipcRenderer.invoke('skills:list-all'),
+    listCustom: () => ipcRenderer.invoke('skills:list-custom'),
+    saveCustom: (data: { name: string; description: string; content: string }) => ipcRenderer.invoke('skills:save-custom', data),
+    deleteCustom: (name: string) => ipcRenderer.invoke('skills:delete-custom', name),
+    getCustomPath: () => ipcRenderer.invoke('skills:get-custom-path'),
   },
 
   // ── Artifacts ────────────────────────────────────────────────
@@ -482,6 +496,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   projects: {
     list:   () => ipcRenderer.invoke('projects:list'),
     create: (data: { name: string; instructions?: string; path: string, files?: string[] }) => ipcRenderer.invoke('projects:create', data),
+    update: (id: string, updates: any) => ipcRenderer.invoke('projects:update', id, updates),
+    toggleBookmark: (id: string) => ipcRenderer.invoke('projects:toggleBookmark', id),
+    openFolder: (folderPath: string) => ipcRenderer.invoke('projects:openFolder', folderPath),
     delete: (id: string) => ipcRenderer.invoke('projects:delete', id),
     getDefaultPath: () => ipcRenderer.invoke('projects:getDefaultPath'),
     getEverfernPath: () => ipcRenderer.invoke('projects:getEverfernPath'),
@@ -832,22 +849,36 @@ export type ElectronAPI = {
     delete: (id: string)        => Promise<{ success: boolean; error?: string }>;
   };
   history: {
-    list:       () => Promise<any[]>;
-    load:       (id: string) => Promise<any>;
-    save:       (conv: any)  => Promise<{ success: boolean; error?: string }>;
-    delete:     (id: string) => Promise<{ success: boolean; error?: string }>;
-    search:     (query: string, limit?: number) => Promise<any[]>;
-    backfill:   () => Promise<{ success: boolean; count?: number; error?: string; message?: string }>;
-    getVectors: (limit?: number) => Promise<any[]>;
+    list:          () => Promise<any[]>;
+    listByProject: (projectId: string) => Promise<any[]>;
+    load:          (id: string) => Promise<any>;
+    save:          (conv: any)  => Promise<{ success: boolean; error?: string }>;
+    delete:        (id: string) => Promise<{ success: boolean; error?: string }>;
+    togglePin:     (id: string) => Promise<{ success: boolean; isPinned?: boolean; error?: string }>;
+    toggleUnread:  (id: string) => Promise<{ success: boolean; isUnread?: boolean; error?: string }>;
+    updateTitle:   (id: string, title: string) => Promise<{ success: boolean; error?: string }>;
+    setProject:    (id: string, projectId: string | null) => Promise<{ success: boolean; error?: string }>;
+    search:        (query: string, limit?: number) => Promise<any[]>;
+    backfill:      () => Promise<{ success: boolean; count?: number; error?: string; message?: string }>;
+    getVectors:    (limit?: number) => Promise<any[]>;
     hitl: {
       getPending: (conversationId: string) => Promise<any | null>;
       resolve:    (conversationId: string, requestId: string, approved: boolean) => Promise<{ success: boolean; error?: string }>;
     };
   };
   memory: {
-    saveDirect: (content: string, metadata?: string) => Promise<{ success: boolean; output: string }>;
-    getGraph: () => Promise<any>;
+    getGraph: () => Promise<{ nodes: any[]; edges: any[] }>;
     deleteNode: (id: string) => Promise<{ success: boolean; error?: string }>;
+    exportZip: () => Promise<{ success: boolean; filePath?: string; error?: string; reason?: string }>;
+    importMergeGraph: () => Promise<{ success: boolean; mergedNodesCount?: number; error?: string; reason?: string }>;
+    saveDirect: (content: string, metadata?: string) => Promise<{ success: boolean; id?: string; error?: string }>;
+  };
+  skills: {
+    listAll: () => Promise<{ name: string; description: string; path: string }[]>;
+    listCustom: () => Promise<{ name: string; description: string; path: string }[]>;
+    saveCustom: (data: { name: string; description: string; content: string }) => Promise<{ success: boolean; error?: string }>;
+    deleteCustom: (name: string) => Promise<{ success: boolean; error?: string }>;
+    getCustomPath: () => Promise<string>;
   };
   artifacts: {
     list:   (chatId?: string) => Promise<any[]>;
@@ -864,6 +895,9 @@ export type ElectronAPI = {
   projects: {
     list:   () => Promise<any[]>;
     create: (data: { name: string; instructions?: string; path: string, files?: string[] }) => Promise<{ success: boolean; project?: any; error?: string }>;
+    update: (id: string, updates: any) => Promise<{ success: boolean; project?: any; error?: string }>;
+    toggleBookmark: (id: string) => Promise<{ success: boolean; isBookmarked?: boolean; error?: string }>;
+    openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
     delete: (id: string) => Promise<{ success: boolean; error?: string }>;
     getDefaultPath: () => Promise<string>;
     getEverfernPath: () => Promise<string>;
@@ -902,12 +936,6 @@ export type ElectronAPI = {
   db: {
     checkConnection: () => Promise<{ success: boolean; details?: string; error?: string }>;
     checkVectors: () => Promise<{ success: boolean; count?: number; details?: string; error?: string }>;
-  };
-  skills: {
-    listCustom: () => Promise<{ name: string; description: string; path: string }[]>;
-    saveCustom: (data: { name: string; description: string; content: string }) => Promise<{ success: boolean; error?: string }>;
-    deleteCustom: (name: string) => Promise<{ success: boolean; error?: string }>;
-    getCustomPath: () => Promise<string>;
   };
   debug: {
     getLastEvent: () => Promise<any>;
@@ -979,6 +1007,7 @@ export type ElectronAPI = {
     getConfigs: (workspaceRoot?: string) => Promise<{ soul: string; agents: string }>;
     saveConfigs: (configs: { soul?: string; agents?: string; workspaceRoot?: string }) => Promise<{ success: boolean; error?: string }>;
   };
+
   toolApprovals: {
     getPolicies: () => Promise<Array<{ id: string; type: 'exact' | 'prefix'; toolName: string; pattern: string; createdAt: string }>>;
     addPolicy: (policy: { type: 'exact' | 'prefix'; toolName: string; pattern: string }) => Promise<any>;

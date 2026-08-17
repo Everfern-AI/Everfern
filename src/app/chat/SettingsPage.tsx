@@ -33,7 +33,38 @@ import { ToolSettingsSection } from './components/ToolSettingsSection';
 import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
 import Image from 'next/image';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import { GraphicsCardIcon } from '@phosphor-icons/react';
+import { 
+    GraphicsCardIcon,
+    Brain,
+    Lightbulb,
+    DownloadSimple,
+    Export,
+    ShareNetwork,
+    Sparkle,
+    Info,
+    FileText,
+    Trash,
+    MagnifyingGlassPlus,
+    MagnifyingGlassMinus,
+    ArrowsCounterClockwise,
+    CircleNotch,
+    Plus,
+    TreeStructure,
+    Graph,
+    Globe,
+    CheckCircle,
+    SlidersHorizontal,
+    Lightning,
+    Heart,
+    ListDashes,
+    MagnifyingGlass,
+    ArrowSquareOut,
+    Check,
+    X,
+    Repeat,
+    Database,
+    Tag,
+} from '@phosphor-icons/react';
 
 // ── No inline logos — using Image imports instead ─────────────────────────────────────────
 
@@ -63,7 +94,7 @@ export const navCategories = [
             { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon, keywords: 'vision tars image screen browser OCR screenshot desktop' },
             { id: 'voice', label: 'Voice Mode', icon: MicrophoneIcon, keywords: 'speech voice whisper stt tts audio mic microphone speech-to-text' },
             { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon, keywords: 'vector index embedding model semantics RAG database pinecone' },
-            { id: 'memory', label: 'Memory Graph', icon: LightBulbIcon, keywords: 'brain memory knowledge graph facts nodes context remember' },
+            { id: 'memory', label: 'Memory Graph', icon: (props: any) => <Brain size={20} {...props} />, keywords: 'brain memory knowledge graph facts nodes context remember' },
         ]
     },
     {
@@ -2037,6 +2068,9 @@ export default function SettingsPage({
         dailyCostUsd: number;
         plan?: string;
         tier?: string;
+        visionRequests10Days?: number;
+        visionRequestsLimit?: number;
+        visionModelDowngraded?: boolean;
     } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -2231,24 +2265,53 @@ export default function SettingsPage({
         }
     };
 
+    // Cache cloud data to reduce API calls
+    const cloudDataCacheRef = useRef<{ data: any; timestamp: number } | null>(null);
+    const CLOUD_DATA_CACHE_MS = 30000; // 30 seconds cache
+
     useEffect(() => {
+        // Only fetch cloud data when settings are open
+        if (!isOpen) return;
+
         const fetchCloudData = async () => {
             try {
                 const sessionStr = localStorage.getItem('everfern_cloud_session');
-                if (!sessionStr) return;
+                if (!sessionStr) {
+                    setIsCloudUser(false);
+                    setCloudUsage(null);
+                    setCloudEmail('');
+                    return;
+                }
                 const session = JSON.parse(sessionStr);
-                if (!session?.user || !session?.accessToken) return;
-                
+                if (!session?.user || !session?.accessToken) {
+                    setIsCloudUser(false);
+                    setCloudUsage(null);
+                    setCloudEmail('');
+                    return;
+                }
+
+                // Check cache first
+                const now = Date.now();
+                if (cloudDataCacheRef.current && (now - cloudDataCacheRef.current.timestamp) < CLOUD_DATA_CACHE_MS) {
+                    setCloudUsage(cloudDataCacheRef.current.data);
+                    setIsCloudUser(true);
+                    setCloudEmail(session.user?.email || '');
+                    return;
+                }
+
+                // Skip if page is not visible
+                if (typeof document !== 'undefined' && document.hidden) return;
+
                 setIsCloudUser(true);
                 setCloudEmail(session.user?.email || '');
-                
+
                 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app').replace(/\/$/, '');
                 const res = await fetch(`${apiUrl}/api/user/me`, {
                     headers: { 'Authorization': `Bearer ${session.accessToken}` }
                 });
                 if (!res.ok) return;
                 const data = await res.json();
-                setCloudUsage({
+                const usageData = {
                     dailyUsed: data.dailyUsed ?? 0,
                     dailyLimit: data.dailyLimit ?? 0,
                     inputTokensUsed: data.inputTokensUsed ?? 0,
@@ -2258,22 +2321,63 @@ export default function SettingsPage({
                     dailyCostUsd: data.dailyCostUsd ?? 0,
                     plan: (data.plan || data.tier || "free").toLowerCase(),
                     tier: (data.tier || data.plan || "free").toLowerCase(),
-                });
+                    visionRequests10Days: data.visionRequests10Days ?? 0,
+                    visionRequestsLimit: data.visionRequestsLimit ?? 5,
+                    visionModelDowngraded: data.visionModelDowngraded ?? false,
+                };
+
+                // Update cache
+                cloudDataCacheRef.current = { data: usageData, timestamp: now };
+                setCloudUsage(usageData);
             } catch (e) {
                 console.error('Failed to fetch cloud data', e);
             }
         };
-        fetchCloudData();
-        const interval = setInterval(fetchCloudData, 5000);
-        return () => clearInterval(interval);
-    }, []);
 
-    const handleSignOut = () => {
+        fetchCloudData();
+        // Poll every 60 seconds instead of 5 seconds, and only when visible
+        const interval = setInterval(fetchCloudData, 60000);
+
+        // Resume polling when page becomes visible
+        const handleVisibilityChange = () => {
+            if (!document.hidden) fetchCloudData();
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [isOpen]);
+
+    const handleSignOut = async () => {
         localStorage.removeItem('everfern_cloud_session');
         localStorage.removeItem('everfern_auth_token');
-        if ((window as any).electronAPI?.saveConfig) {
-            (window as any).electronAPI.saveConfig({});
+
+        // Immediately update UI state
+        setIsCloudUser(false);
+        setCloudEmail('');
+        setCloudUsage(null);
+
+        // Clear cloud-specific fields from config without destroying everything
+        try {
+            if ((window as any).electronAPI?.loadConfig) {
+                const res = await (window as any).electronAPI.loadConfig();
+                if (res?.success && res?.config) {
+                    const cfg = { ...res.config };
+                    if (cfg.provider === 'everfern') {
+                        delete cfg.provider;
+                        delete cfg.apiKey;
+                    }
+                    if ((window as any).electronAPI?.saveConfig) {
+                        await (window as any).electronAPI.saveConfig(cfg);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to clear cloud config:', err);
         }
+
         router.push('/auth');
     };
 
@@ -2740,6 +2844,64 @@ export default function SettingsPage({
                                     </div>
                                 </div>
                                 <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '14px 0 0' }}>Usage resets daily at midnight.</p>
+                            </div>
+                        )}
+
+                        {/* Vision Usage Section */}
+                        {cloudUsage && (
+                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--color-border-subtle)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Vision & Computer Use (10 days)</span>
+                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                                        {cloudUsage.visionRequests10Days ?? 0} / {cloudUsage.visionRequestsLimit ?? 5} requests
+                                    </span>
+                                </div>
+                                <div style={{ width: '100%', height: 6, backgroundColor: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        width: `${Math.min(100, ((cloudUsage.visionRequests10Days ?? 0) / (cloudUsage.visionRequestsLimit ?? 5)) * 100)}%`,
+                                        height: '100%',
+                                        backgroundColor: (cloudUsage.visionModelDowngraded) ? '#f59e0b' : '#6366f1',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                                {cloudUsage.visionModelDowngraded && (
+                                    <div style={{
+                                        marginTop: 12,
+                                        padding: '10px 12px',
+                                        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                                        borderRadius: 8,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <path d="M12 8v4M12 16h.01"/>
+                                        </svg>
+                                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                            Using cost-optimized vision model. <button
+                                                onClick={() => {
+                                                    if ((window as any).electronAPI?.system?.openExternal) {
+                                                        (window as any).electronAPI.system.openExternal('https://everfern.app/pricing');
+                                                    } else {
+                                                        window.open('https://everfern.app/pricing', '_blank');
+                                                    }
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: '#f59e0b',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline'
+                                                }}
+                                            >Upgrade</button> for higher quality
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -4348,7 +4510,7 @@ export default function SettingsPage({
                 try {
                     await document.fonts.ready;
                     await Promise.all([
-                        document.fonts.load('bold 36px "EB Garamond"'),
+                        document.fonts.load('bold 36px "Lora"'),
                         document.fonts.load('500 18px "Figtree"'),
                         document.fonts.load('bold 36px "Figtree"'),
                         document.fonts.load('16px "JetBrains Mono"')
@@ -4824,65 +4986,51 @@ export default function SettingsPage({
                 if (currentSegment.length > 0) {
                     segments.push({ pts: currentSegment, isFront: !!currentIsFront });
                 }
-
-                segments.forEach(seg => {
-                    paths.push({
-                        path: getPathString(seg.pts),
-                        isFront: seg.isFront
-                    });
-                });
+                segments.forEach(s => paths.push({ path: getPathString(s.pts), isFront: s.isFront }));
             });
 
-            // Longitude circles
-            const longDivisions = [0, 30, 60, 90, 120, 150];
-            longDivisions.forEach(angleDeg => {
-                const phi = (angleDeg * Math.PI) / 180;
+            // Longitude meridians
+            const lats = [-60, -30, 0, 30, 60];
+            lats.forEach(lat => {
+                const latRad = (lat * Math.PI) / 180;
+                const r = Math.cos(latRad) * R;
+                const y = Math.sin(latRad) * R;
 
                 const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
                 let currentSegment: { x: number; y: number }[] = [];
                 let currentIsFront: boolean | null = null;
 
-                const steps = 64;
-                for (let j = 0; j <= steps; j++) {
-                    const theta = (j / steps) * 2 * Math.PI;
-                    const px = R * Math.cos(theta) * Math.cos(phi);
-                    const py = R * Math.sin(theta);
-                    const pz = R * Math.cos(theta) * Math.sin(phi);
+                const steps = 48;
+                for (let i = 0; i <= steps; i++) {
+                    const lonRad = (i / steps) * 2 * Math.PI;
+                    const x = Math.cos(lonRad) * r;
+                    const z = Math.sin(lonRad) * r;
 
-                    const rot = rotate3D(px, py, pz, yaw, pitch);
-                    const isFront = rot.z >= -10;
-
-                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+                    const rot = rotate3D(x, y, z, yaw, pitch);
+                    const isFront = rot.z >= 0;
+                    const pt = { x: 300 + rot.x, y: 200 + rot.y };
 
                     if (currentIsFront === null) {
                         currentIsFront = isFront;
-                        currentSegment.push(screenPt);
+                        currentSegment.push(pt);
                     } else if (currentIsFront === isFront) {
-                        currentSegment.push(screenPt);
+                        currentSegment.push(pt);
                     } else {
-                        currentSegment.push(screenPt);
                         segments.push({ pts: currentSegment, isFront: currentIsFront });
-                        currentSegment = [screenPt];
                         currentIsFront = isFront;
+                        currentSegment = [pt];
                     }
                 }
                 if (currentSegment.length > 0) {
                     segments.push({ pts: currentSegment, isFront: !!currentIsFront });
                 }
-
-                segments.forEach(seg => {
-                    paths.push({
-                        path: getPathString(seg.pts),
-                        isFront: seg.isFront
-                    });
-                });
+                segments.forEach(s => paths.push({ path: getPathString(s.pts), isFront: s.isFront }));
             });
 
             return paths;
         };
 
         const gridPaths = getGlobeGridPaths(rotationRef.current.yaw, rotationRef.current.pitch);
-
         const sortedEdges = React.useMemo(() => {
             return filteredEdges.map(edge => {
                 const posU = nodePositions[edge.source];
@@ -4911,13 +5059,26 @@ export default function SettingsPage({
 
         return (
             <div>
-                {/* Title row + action buttons */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
                     <div>
                         <SectionTitle>Memory Graph</SectionTitle>
                         <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: 'var(--shadow-sm)'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+                            onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                        >
+                            <Plus size={15} weight="bold" />
+                            Add Memory
+                        </button>
                         <button
                             onClick={handleImportMerge}
                             disabled={!!isBusy}
@@ -4932,24 +5093,26 @@ export default function SettingsPage({
                             onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                             onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
-                            {isBusy === 'import' ? '⏳' : '📥'} {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
+                            {isBusy === 'import' ? <CircleNotch size={15} className="animate-spin" /> : <DownloadSimple size={15} weight="bold" />}
+                            {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
                         </button>
                         <button
                             onClick={handleExport}
                             disabled={!!isBusy || graph.nodes.length === 0}
                             title="Export your full memory graph as a ZIP file (includes linked markdown files)"
                             style={{
-                                padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 12.5, fontWeight: 600,
                                 cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
                                 opacity: (isBusy === 'export' || graph.nodes.length === 0) ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                                boxShadow: 'var(--shadow-sm)'
+                                boxShadow: 'var(--shadow-xs)'
                             }}
-                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
-                            {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
+                            {isBusy === 'export' ? <CircleNotch size={15} className="animate-spin" /> : <Export size={15} weight="bold" />}
+                            {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
                         </button>
                         <button
                             onClick={handleShareMemoryGraph}
@@ -4966,46 +5129,67 @@ export default function SettingsPage({
                             onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
                             onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                         >
-                            {isBusy === 'share' ? '⏳' : '✨'} {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
+                            {isBusy === 'share' ? <CircleNotch size={15} className="animate-spin" /> : <ShareNetwork size={15} weight="bold" />}
+                            {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
                         </button>
                     </div>
                 </div>
 
-                {/* Help tip */}
                 <div style={{
-                    background: 'linear-gradient(135deg, var(--color-accent-dim) 0%, var(--color-navis-active-bg) 100%)',
-                    border: '1px solid var(--color-accent)',
+                    background: 'linear-gradient(135deg, var(--color-accent-dim, rgba(59, 130, 246, 0.08)) 0%, var(--color-navis-active-bg, rgba(59, 130, 246, 0.04)) 100%)',
+                    border: '1px solid var(--color-accent, #3b82f6)',
                     borderRadius: 12, padding: '12px 16px', marginBottom: 20,
-                    display: 'flex', gap: 10, alignItems: 'flex-start'
+                    display: 'flex', gap: 12, alignItems: 'flex-start'
                 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
+                    <Lightbulb size={20} weight="duotone" color="var(--color-accent, #3b82f6)" style={{ flexShrink: 0, marginTop: 2 }} />
                     <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark)', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark, #2563eb)', marginBottom: 3 }}>How Memory Works</p>
                         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
-                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable — click any node to see full details.
-                            Use <strong>Export ZIP</strong> to back up your memory, and <strong>Import &amp; Merge</strong> to restore or combine memories from another device.
+                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable on the 3D globe — click any node to see its full details.
+                            Use <strong>Export ZIP</strong> to back up your memory, <strong>Import &amp; Merge</strong> to restore across devices, or <strong>Add Memory</strong> to record facts directly.
                         </p>
                     </div>
                 </div>
 
-                {/* Summary counters */}
-                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
                     {[
-                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: 'var(--color-success)' },
-                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: 'var(--color-success)' },
-                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: 'var(--color-info)' },
-                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: 'var(--color-text-tertiary)' }
-                    ].map(stat => (
-                        <div key={stat.label} style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stat.color }} />
-                            <strong>{stat.count}</strong> {stat.label}
-                        </div>
-                    ))}
+                        { id: 'preference', label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, icon: Heart, iconColor: '#f43f5e', bg: 'rgba(244, 63, 94, 0.1)' },
+                        { id: 'habit', label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, icon: Lightning, iconColor: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+                        { id: 'fact', label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, icon: Info, iconColor: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
+                        { id: 'file', label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, icon: FileText, iconColor: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' }
+                    ].map(stat => {
+                        const IconComponent = stat.icon;
+                        const isCurrent = filterType === stat.id;
+                        return (
+                            <div
+                                key={stat.label}
+                                onClick={() => setFilterType(prev => prev === stat.id ? 'all' : stat.id)}
+                                style={{
+                                    fontSize: 12.5,
+                                    color: isCurrent ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '6px 12px',
+                                    borderRadius: 10,
+                                    border: isCurrent ? '1px solid var(--color-text-primary)' : '1px solid var(--color-border)',
+                                    backgroundColor: isCurrent ? 'var(--color-bg-hover)' : 'var(--color-bg-surface)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                <div style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: stat.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconComponent size={13} weight="fill" color={stat.iconColor} />
+                                </div>
+                                <span style={{ fontWeight: 600 }}>{stat.count}</span>
+                                <span>{stat.label}</span>
+                            </div>
+                        );
+                    })}
                 </div>
 
-                {/* Filters, Search, and Mode Toggle */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {[
                             { id: 'all', label: 'All' },
                             { id: 'preference', label: 'Preferences' },
@@ -5034,87 +5218,117 @@ export default function SettingsPage({
                     </div>
 
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <Input
-                            placeholder="Search..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            style={{ height: 34, padding: '4px 12px', borderRadius: 8, fontSize: 13, width: 150 }}
-                        />
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <MagnifyingGlass size={14} style={{ position: 'absolute', left: 10, color: 'var(--color-text-tertiary)' }} />
+                            <Input
+                                placeholder="Search memories..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                style={{ height: 34, padding: '4px 12px 4px 30px', borderRadius: 8, fontSize: 13, width: 180 }}
+                            />
+                        </div>
                         <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
                             <button
                                 onClick={() => setViewMode('graph')}
+                                title="Graph visualization"
                                 style={{
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
                                     backgroundColor: viewMode === 'graph' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
                                     color: viewMode === 'graph' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5
                                 }}
                             >
-                                Graph
+                                <Graph size={14} weight="bold" />
+                                <span>Graph</span>
                             </button>
                             <button
                                 onClick={() => setViewMode('list')}
+                                title="List view"
                                 style={{
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
                                     backgroundColor: viewMode === 'list' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
                                     color: viewMode === 'list' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5
                                 }}
                             >
-                                List
+                                <ListDashes size={14} weight="bold" />
+                                <span>List</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Main View Area */}
                 {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)' }}>Loading Memory Graph...</div>
+                    <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                        <CircleNotch size={28} className="animate-spin" color="var(--color-accent, #3b82f6)" />
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>Loading Memory Graph...</span>
+                    </div>
                 ) : graph.nodes.length === 0 ? (
-                    <Card style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
-                        <span style={{ fontSize: 40 }}>🧠</span>
-                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
-                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>As you chat with the agent and state your airline, payment, or general preferences, EverFern will automatically compile them here.</p>
+                    <Card style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <Brain size={52} weight="duotone" color="var(--color-accent, #3b82f6)" />
+                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
+                        <p style={{ fontSize: 13, margin: '0 0 20px', lineHeight: 1.5, maxWidth: 440 }}>
+                            As you chat with EverFern, your preferences, coding habits, and facts are automatically remembered. You can also manually add memories right now.
+                        </p>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: 10, border: 'none',
+                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 13, fontWeight: 600,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: 'var(--shadow-sm)'
+                            }}
+                        >
+                            <Plus size={14} weight="bold" />
+                            Add First Memory
+                        </button>
                     </Card>
                 ) : (
                     <div style={{ display: 'flex', gap: 20, minHeight: 400 }}>
-                        {/* Graph/List container */}
                         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                             {viewMode === 'graph' ? (
                                 <div style={{ position: 'relative' }}>
-                                {/* Zoom controls */}
-                                <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    {[
-                                        { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
-                                        { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
-                                        { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
-                                    ].map(btn => (
-                                        <button
-                                            key={btn.label}
-                                            title={btn.title}
-                                            onClick={btn.onClick}
-                                            style={{
-                                                width: 28, height: 28, borderRadius: 8, border: '1px solid var(--color-border)',
-                                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-secondary)', fontSize: 14,
-                                                fontWeight: 600, cursor: 'pointer', display: 'flex',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                boxShadow: 'var(--shadow-xs)', transition: 'all 0.15s'
-                                            }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                                        >
-                                            {btn.label}
-                                        </button>
-                                    ))}
-                                    <div style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
-                                </div>
-                                <svg
+                                    <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {[
+                                            { icon: MagnifyingGlassPlus, title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
+                                            { icon: MagnifyingGlassMinus, title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
+                                            { icon: ArrowsCounterClockwise, title: 'Reset zoom & orientation', onClick: () => { setZoom(1); rotationRef.current = { yaw: 0, pitch: 0.2 }; updateRotatedPositions(); } },
+                                        ].map((btn, idx) => {
+                                            const IconComp = btn.icon;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    title={btn.title}
+                                                    onClick={btn.onClick}
+                                                    style={{
+                                                        width: 28, height: 28, borderRadius: 8, border: '1px solid var(--color-border)',
+                                                        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-secondary)', fontSize: 14,
+                                                        fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                                        alignItems: 'center', justifyContent: 'center',
+                                                        boxShadow: 'var(--shadow-xs)', transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                                                >
+                                                    <IconComp size={14} weight="bold" />
+                                                </button>
+                                            );
+                                        })}
+                                        <div style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
+                                    </div>
+                                    <svg
                                         ref={svgRef}
                                         width="100%"
                                         height="400"
@@ -5128,6 +5342,7 @@ export default function SettingsPage({
                                             borderRadius: 20,
                                             backgroundColor: globeBg100,
                                             boxShadow: 'var(--shadow-md)',
+                                            cursor: 'grab'
                                         }}
                                     >
                                         <defs>
@@ -5135,13 +5350,11 @@ export default function SettingsPage({
                                                 <stop offset="0%" stopColor={globeBg0} stopOpacity="0.8" />
                                                 <stop offset="100%" stopColor={globeBg100} stopOpacity="1" />
                                             </radialGradient>
-                                            
                                             <radialGradient id="globe-shading" cx="50%" cy="50%" r="50%">
                                                 <stop offset="85%" stopColor={globeShading} stopOpacity="0" />
                                                 <stop offset="98%" stopColor={globeShading} stopOpacity="0.75" />
                                                 <stop offset="100%" stopColor={globeShading} stopOpacity="0.95" />
                                             </radialGradient>
-
                                             <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
                                                 <feGaussianBlur stdDeviation="2.5" result="blur" />
                                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -5152,304 +5365,101 @@ export default function SettingsPage({
                                             </filter>
                                         </defs>
                                         <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
-
-                                        {/* 1. Back Globe Grid Lines */}
                                         <g opacity="0.3" pointerEvents="none">
                                             {gridPaths.filter(p => !p.isFront).map((gp, idx) => (
-                                                <path
-                                                    key={`bg-grid-back-${idx}`}
-                                                    d={gp.path}
-                                                    fill="none"
-                                                    stroke={gridStrokeBack}
-                                                    strokeWidth="0.75"
-                                                    strokeDasharray="2,2"
-                                                />
+                                                <path key={`bg-grid-back-${idx}`} d={gp.path} fill="none" stroke={gridStrokeBack} strokeWidth="0.75" strokeDasharray="2,2" />
                                             ))}
                                         </g>
-
-                                        {/* 2. Back Hub lines (root to back nodes) */}
                                         {backHubNodes.map(node => {
                                             const targetPos = nodePositions[node.id];
                                             const rootPos = nodePositions['__user__'];
                                             if (!targetPos || !rootPos) return null;
-                                            return (
-                                                <line
-                                                    key={`hub-back-${node.id}`}
-                                                    x1={rootPos.x}
-                                                    y1={rootPos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={hubStrokeBack}
-                                                    strokeWidth="0.5"
-                                                />
-                                            );
+                                            return <line key={`hub-back-${node.id}`} x1={rootPos.x} y1={rootPos.y} x2={targetPos.x} y2={targetPos.y} stroke={hubStrokeBack} strokeWidth="0.5" />;
                                         })}
-
-                                        {/* 3. Back Regular Edges */}
                                         {backEdges.map((edge, idx) => {
                                             const sourcePos = nodePositions[edge.source];
                                             const targetPos = nodePositions[edge.target];
                                             if (!sourcePos || !targetPos) return null;
-                                            return (
-                                                <line
-                                                    key={`edge-back-${idx}`}
-                                                    x1={sourcePos.x}
-                                                    y1={sourcePos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={edgeStrokeBack}
-                                                    strokeWidth="0.75"
-                                                    strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'}
-                                                />
-                                            );
+                                            return <line key={`edge-back-${idx}`} x1={sourcePos.x} y1={sourcePos.y} x2={targetPos.x} y2={targetPos.y} stroke={edgeStrokeBack} strokeWidth="0.75" strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'} />;
                                         })}
-
-                                        {/* 4. Back Nodes */}
                                         {backNodes.map(node => {
                                             const pos = nodePositions[node.id];
                                             if (!pos) return null;
-
-                                            const isSelected = selectedNode?.id === node.id;
-                                            const isHovered = hoveredNodeId === node.id;
-                                            const isFocused = isSelected || isHovered;
-
                                             let nodeColor = 'var(--color-text-tertiary)';
-                                            if (node.type === 'preference') {
-                                                nodeColor = 'var(--color-success)';
-                                            } else if (node.type === 'habit') {
-                                                nodeColor = 'var(--color-success)';
-                                            } else if (node.type === 'fact') {
-                                                nodeColor = 'var(--color-info)';
-                                            }
-
+                                            if (node.type === 'preference') nodeColor = '#f43f5e';
+                                            else if (node.type === 'habit') nodeColor = '#10b981';
+                                            else if (node.type === 'fact') nodeColor = '#3b82f6';
+                                            else if (node.type === 'file') nodeColor = '#a855f7';
                                             const zDepth = pos.z;
                                             const op = 0.15 + 0.25 * ((zDepth + 140) / 140);
-                                            const size = 3;
-
                                             return (
-                                                <g
-                                                    key={node.id}
-                                                    transform={`translate(${pos.x}, ${pos.y})`}
-                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    <circle
-                                                        data-node-id={node.id}
-                                                        r={isFocused ? size * 1.5 : size}
-                                                        fill={nodeColor}
-                                                        opacity={op}
-                                                        stroke="var(--color-border)"
-                                                        strokeWidth={0.5}
-                                                        style={{ transition: 'all 0.15s ease' }}
-                                                    />
+                                                <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`} onClick={() => setSelectedNode(node)} onMouseEnter={() => setHoveredNodeId(node.id)} onMouseLeave={() => setHoveredNodeId(null)} style={{ cursor: 'pointer' }}>
+                                                    <circle data-node-id={node.id} r={3} fill={nodeColor} opacity={op} stroke="var(--color-border)" strokeWidth={0.5} style={{ transition: 'all 0.15s ease' }} />
                                                 </g>
                                             );
                                         })}
-
-                                        {/* Globe atmosphere & shading overlay */}
                                         <circle cx="300" cy="200" r="140" fill="url(#globe-shading)" pointerEvents="none" />
                                         <circle cx="300" cy="200" r="140" fill="none" stroke={gridStrokeFront} strokeWidth="1" pointerEvents="none" />
-
-                                        {/* 5. Front Globe Grid Lines */}
                                         <g opacity="0.3" pointerEvents="none">
                                             {gridPaths.filter(p => p.isFront).map((gp, idx) => (
-                                                <path
-                                                    key={`bg-grid-front-${idx}`}
-                                                    d={gp.path}
-                                                    fill="none"
-                                                    stroke={gridStrokeFront}
-                                                    strokeWidth="0.75"
-                                                />
+                                                <path key={`bg-grid-front-${idx}`} d={gp.path} fill="none" stroke={gridStrokeFront} strokeWidth="0.75" />
                                             ))}
                                         </g>
-
-                                        {/* 6. Root User Hub Node (center z=0) */}
                                         {(() => {
                                             const rootPos = nodePositions['__user__'];
                                             if (!rootPos || filteredNodes.length === 0) return null;
                                             const isHovered = hoveredNodeId === '__user__';
                                             return (
-                                                <g 
-                                                    key="__user__" 
-                                                    transform={`translate(${rootPos.x}, ${rootPos.y})`} 
-                                                    style={{ cursor: 'pointer' }}
-                                                    onMouseEnter={() => setHoveredNodeId('__user__')}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                >
-                                                    <motion.circle 
-                                                        r="16" 
-                                                        fill="var(--color-success-dim)" 
-                                                        stroke="var(--color-success-dim)" 
-                                                        strokeWidth="1" 
-                                                        animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
-                                                        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-                                                    />
-                                                    <circle
-                                                        r={isHovered ? 8 : 6}
-                                                        fill="var(--color-success)"
-                                                        filter="url(#glow-strong)"
-                                                        stroke={nodeBorder}
-                                                        strokeWidth="1.5"
-                                                        style={{ transition: 'all 0.2s ease' }}
-                                                    />
-                                                    {isHovered && (
-                                                        <g transform="translate(0, -20)" style={{ pointerEvents: 'none', zIndex: 100 }}>
-                                                            <rect
-                                                                x="-45"
-                                                                y="-14"
-                                                                width="90"
-                                                                height="18"
-                                                                rx="6"
-                                                                fill={tooltipBg}
-                                                                stroke={tooltipBorder}
-                                                                strokeWidth="1"
-                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
-                                                            />
-                                                            <text
-                                                                textAnchor="middle"
-                                                                dy="-2"
-                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
-                                                            >
-                                                                EverFern Brain
-                                                            </text>
-                                                        </g>
-                                                    )}
+                                                <g key="__user__" transform={`translate(${rootPos.x}, ${rootPos.y})`} style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredNodeId('__user__')} onMouseLeave={() => setHoveredNodeId(null)}>
+                                                    <motion.circle r="16" fill="var(--color-accent-dim, rgba(59, 130, 246, 0.2))" stroke="var(--color-accent, #3b82f6)" strokeWidth="1" animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }} />
+                                                    <circle r={isHovered ? 8 : 6} fill="var(--color-accent, #3b82f6)" filter="url(#glow-strong)" stroke={nodeBorder} strokeWidth="1.5" style={{ transition: 'all 0.2s ease' }} />
                                                 </g>
                                             );
                                         })()}
-
-                                        {/* 7. Front Hub lines (root to front nodes) */}
                                         {frontHubNodes.map(node => {
                                             const targetPos = nodePositions[node.id];
                                             const rootPos = nodePositions['__user__'];
                                             if (!targetPos || !rootPos) return null;
-                                            return (
-                                                <line
-                                                    key={`hub-front-${node.id}`}
-                                                    x1={rootPos.x}
-                                                    y1={rootPos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={hubStrokeFront}
-                                                    strokeWidth="0.75"
-                                                />
-                                            );
+                                            return <line key={`hub-front-${node.id}`} x1={rootPos.x} y1={rootPos.y} x2={targetPos.x} y2={targetPos.y} stroke={hubStrokeFront} strokeWidth="0.75" />;
                                         })}
-
-                                        {/* 8. Front Regular Edges */}
                                         {frontEdges.map((edge, idx) => {
                                             const sourcePos = nodePositions[edge.source];
                                             const targetPos = nodePositions[edge.target];
                                             if (!sourcePos || !targetPos) return null;
-                                            return (
-                                                <line
-                                                    key={`edge-front-${idx}`}
-                                                    x1={sourcePos.x}
-                                                    y1={sourcePos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={edgeStrokeFront}
-                                                    strokeWidth="1.25"
-                                                    strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'}
-                                                />
-                                            );
+                                            return <line key={`edge-front-${idx}`} x1={sourcePos.x} y1={sourcePos.y} x2={targetPos.x} y2={targetPos.y} stroke={edgeStrokeFront} strokeWidth="1.25" strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'} />;
                                         })}
-
-                                        {/* 9. Front Nodes */}
                                         {frontNodes.map(node => {
                                             const pos = nodePositions[node.id];
                                             if (!pos) return null;
-
                                             const isSelected = selectedNode?.id === node.id;
                                             const isHovered = hoveredNodeId === node.id;
                                             const isFocused = isSelected || isHovered;
-
                                             let nodeColor = 'var(--color-text-tertiary)';
                                             let useGlow = false;
-
-                                            if (node.type === 'preference') {
-                                                nodeColor = 'var(--color-success)';
-                                                useGlow = true;
-                                            } else if (node.type === 'habit') {
-                                                nodeColor = 'var(--color-success)';
-                                                useGlow = true;
-                                            } else if (node.type === 'fact') {
-                                                nodeColor = 'var(--color-info)';
-                                                useGlow = true;
-                                            }
-
+                                            if (node.type === 'preference') { nodeColor = '#f43f5e'; useGlow = true; }
+                                            else if (node.type === 'habit') { nodeColor = '#10b981'; useGlow = true; }
+                                            else if (node.type === 'fact') { nodeColor = '#3b82f6'; useGlow = true; }
+                                            else if (node.type === 'file') { nodeColor = '#a855f7'; useGlow = true; }
                                             const zDepth = pos.z;
                                             const op = 0.5 + 0.5 * (zDepth / 140);
                                             const size = isFocused ? 7 : 5;
-
-                                            const labelText = node.category.length > 20 ? `${node.category.slice(0, 17)}...` : node.category;
+                                            const labelText = node.category?.length > 20 ? `${node.category.slice(0, 17)}...` : (node.category || node.name || 'Memory');
                                             const tooltipWidth = Math.max(70, labelText.length * 6.5);
-
                                             return (
-                                                <g
-                                                    key={node.id}
-                                                    transform={`translate(${pos.x}, ${pos.y})`}
-                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    {isSelected && (
-                                                        <circle
-                                                            r="12"
-                                                            fill="none"
-                                                            stroke="var(--color-border-strong)"
-                                                            strokeWidth="1.5"
-                                                            strokeDasharray="2,2"
-                                                        />
-                                                    )}
-
-                                                    {isHovered && (
-                                                        <circle
-                                                            r="10"
-                                                            fill="none"
-                                                            stroke="var(--color-success-dim)"
-                                                            strokeWidth="2"
-                                                        />
-                                                    )}
-
-                                                    <circle
-                                                        data-node-id={node.id}
-                                                        r={size}
-                                                        fill={nodeColor}
-                                                        opacity={op}
-                                                        filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'}
-                                                        stroke={nodeBorder}
-                                                        strokeWidth={isFocused ? 1.5 : 1}
-                                                        style={{ transition: 'all 0.15s ease' }}
-                                                    />
-
+                                                <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`} onClick={() => setSelectedNode(node)} onMouseEnter={() => setHoveredNodeId(node.id)} onMouseLeave={() => setHoveredNodeId(null)} style={{ cursor: 'pointer' }}>
+                                                    {isSelected && <circle r="12" fill="none" stroke="var(--color-border-strong, #3b82f6)" strokeWidth="1.5" strokeDasharray="2,2" />}
+                                                    {isHovered && <circle r="10" fill="none" stroke="var(--color-accent-dim, rgba(59, 130, 246, 0.3))" strokeWidth="2" />}
+                                                    <circle data-node-id={node.id} r={size} fill={nodeColor} opacity={op} filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'} stroke={nodeBorder} strokeWidth={isFocused ? 1.5 : 1} style={{ transition: 'all 0.15s ease' }} />
                                                     {isFocused && (
                                                         <g transform="translate(0, -18)" style={{ pointerEvents: 'none', zIndex: 100 }}>
-                                                            <rect
-                                                                x={-tooltipWidth / 2}
-                                                                y="-13"
-                                                                width={tooltipWidth}
-                                                                height={18}
-                                                                rx="6"
-                                                                fill={tooltipBg}
-                                                                stroke={tooltipBorder}
-                                                                strokeWidth="1"
-                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
-                                                            />
-                                                            <text
-                                                                textAnchor="middle"
-                                                                dy="-1"
-                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
-                                                            >
-                                                                {labelText}
-                                                            </text>
+                                                            <rect x={-tooltipWidth / 2} y="-13" width={tooltipWidth} height={18} rx="6" fill={tooltipBg} stroke={tooltipBorder} strokeWidth="1" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }} />
+                                                            <text textAnchor="middle" dy="-1" style={{ fontSize: 9.5, fontWeight: 600, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}>{labelText}</text>
                                                         </g>
                                                     )}
                                                 </g>
-                                             );
-                                         })}
-                                     </svg>
+                                            );
+                                        })}
+                                    </svg>
                                 </div>
                             ) : (
                                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 20, backgroundColor: 'var(--color-bg-surface)', maxHeight: 400 }}>
@@ -5464,47 +5474,24 @@ export default function SettingsPage({
                                         </thead>
                                         <tbody>
                                             {filteredNodes.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
-                                                        No matching memories found.
-                                                    </td>
-                                                </tr>
+                                                <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>No matching memories found.</td></tr>
                                             ) : (
                                                 filteredNodes.map(node => {
                                                     const isSelected = selectedNode?.id === node.id;
+                                                    let badgeBg = 'var(--color-bg-subtle)';
+                                                    let badgeColor = 'var(--color-text-secondary)';
+                                                    if (node.type === 'preference') { badgeBg = 'rgba(244, 63, 94, 0.1)'; badgeColor = '#f43f5e'; }
+                                                    else if (node.type === 'habit') { badgeBg = 'rgba(16, 185, 129, 0.1)'; badgeColor = '#10b981'; }
+                                                    else if (node.type === 'fact') { badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeColor = '#3b82f6'; }
+                                                    else if (node.type === 'file') { badgeBg = 'rgba(168, 85, 247, 0.1)'; badgeColor = '#a855f7'; }
                                                     return (
-                                                        <tr
-                                                            key={node.id}
-                                                            onClick={() => setSelectedNode(node)}
-                                                            style={{
-                                                                borderBottom: '1px solid var(--color-border-subtle)',
-                                                                cursor: 'pointer',
-                                                                backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent',
-                                                                transition: 'background-color 0.15s'
-                                                            }}
-                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
-                                                            onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                                                        >
+                                                        <tr key={node.id} onClick={() => setSelectedNode(node)} style={{ borderBottom: '1px solid var(--color-border-subtle)', cursor: 'pointer', backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent', transition: 'background-color 0.15s' }} onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }} onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}>
                                                             <td style={{ padding: '12px 16px' }}>
-                                                                <span style={{
-                                                                    padding: '2px 6px',
-                                                                    borderRadius: 8,
-                                                                    fontSize: 11,
-                                                                    fontWeight: 600,
-                                                                    textTransform: 'capitalize',
-                                                                    backgroundColor: node.type === 'preference' ? 'var(--color-warning-dim)' : node.type === 'habit' ? 'var(--color-success-dim)' : node.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
-                                                                    color: node.type === 'preference' ? 'var(--color-warning)' : node.type === 'habit' ? 'var(--color-success)' : node.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
-                                                                }}>
-                                                                    {node.type}
-                                                                </span>
+                                                                <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, textTransform: 'capitalize', backgroundColor: badgeBg, color: badgeColor }}>{node.type}</span>
                                                             </td>
-                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: 'var(--color-text-primary)' }}>{node.category}</td>
-                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {node.value}
-                                                            </td>
-                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
-                                                                {node.linkedFile || node.name || ''}
-                                                            </td>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: 'var(--color-text-primary)' }}>{node.category || node.name}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.value}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>{node.linkedFile || node.name || ''}</td>
                                                         </tr>
                                                     );
                                                 })
@@ -5514,118 +5501,45 @@ export default function SettingsPage({
                                 </div>
                             )}
                         </div>
-
-                        {/* Details Sidebar panel */}
-                        <div style={{ width: 240, flexShrink: 0 }}>
+                        <div style={{ width: 260, flexShrink: 0 }}>
                             <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg-surface)', margin: 0 }}>
                                 {selectedNode ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
                                         <div>
-                                            <span style={{
-                                                padding: '3px 8px',
-                                                borderRadius: 12,
-                                                fontSize: 10,
-                                                fontWeight: 700,
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                backgroundColor: selectedNode.type === 'preference' ? 'var(--color-warning-dim)' : selectedNode.type === 'habit' ? 'var(--color-success-dim)' : selectedNode.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
-                                                color: selectedNode.type === 'preference' ? 'var(--color-warning)' : selectedNode.type === 'habit' ? 'var(--color-success)' : selectedNode.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
-                                            }}>
-                                                {selectedNode.type}
-                                            </span>
-                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>
-                                                {selectedNode.name || selectedNode.category}
-                                            </h3>
-                                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
-                                                ID: {selectedNode.id.split('_').slice(-1)[0]}
-                                            </span>
+                                            <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', backgroundColor: selectedNode.type === 'preference' ? 'rgba(244, 63, 94, 0.1)' : selectedNode.type === 'habit' ? 'rgba(16, 185, 129, 0.1)' : selectedNode.type === 'fact' ? 'rgba(59, 130, 246, 0.1)' : 'var(--color-bg-subtle)', color: selectedNode.type === 'preference' ? '#f43f5e' : selectedNode.type === 'habit' ? '#10b981' : selectedNode.type === 'fact' ? '#3b82f6' : 'var(--color-text-secondary)' }}>{selectedNode.type}</span>
+                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>{selectedNode.name || selectedNode.category}</h3>
+                                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>ID: {selectedNode.id.split('_').slice(-1)[0]}</span>
                                         </div>
-                                        
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
                                             <div>
                                                 <Label>Value</Label>
-                                                <div style={{
-                                                    padding: 10,
-                                                    backgroundColor: 'var(--color-bg-subtle)',
-                                                    border: '1px solid var(--color-border)',
-                                                    borderRadius: 10,
-                                                    fontSize: 13,
-                                                    lineHeight: 1.4,
-                                                    color: 'var(--color-text-primary)',
-                                                    wordBreak: 'break-word',
-                                                    maxHeight: 150,
-                                                    overflowY: 'auto'
-                                                }}>
-                                                    {selectedNode.value}
-                                                </div>
+                                                <div style={{ padding: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 10, fontSize: 13, lineHeight: 1.4, color: 'var(--color-text-primary)', wordBreak: 'break-word', maxHeight: 150, overflowY: 'auto' }}>{selectedNode.value}</div>
                                             </div>
-
                                             {selectedNode.metadata && (
                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                    {selectedNode.metadata.created && (
-                                                        <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>
-                                                    )}
-                                                    {selectedNode.metadata.lastUpdated && (
-                                                        <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>
-                                                    )}
+                                                    {selectedNode.metadata.created && <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>}
+                                                    {selectedNode.metadata.lastUpdated && <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>}
                                                 </div>
                                             )}
                                         </div>
-
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
                                             {(selectedNode.linkedFile || selectedNode.type === 'file') && (
-                                                <button
-                                                    onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)}
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        backgroundColor: 'var(--color-bg-surface)',
-                                                        color: 'var(--color-text-primary)',
-                                                        border: '1px solid var(--color-border)',
-                                                        borderRadius: 10,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: 6,
-                                                        transition: 'all 0.15s'
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
-                                                >
-                                                    📄 Open File
+                                                <button onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)} style={{ padding: '8px 12px', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}>
+                                                    <FileText size={15} weight="bold" />
+                                                    <span>Open File</span>
                                                 </button>
                                             )}
                                             {selectedNode.type !== 'file' && (
-                                                <button
-                                                    onClick={() => handleDeleteNode(selectedNode.id)}
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        backgroundColor: 'var(--color-error-dim)',
-                                                        color: 'var(--color-error)',
-                                                        border: '1px solid var(--color-error-dim)',
-                                                        borderRadius: 10,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: 6,
-                                                        transition: 'all 0.15s'
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.14)'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
-                                                >
-                                                    🗑️ Forget Memory
+                                                <button onClick={() => handleDeleteMemory(selectedNode.id)} style={{ padding: '8px 12px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', border: '1px solid var(--color-error)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}>
+                                                    <Trash size={15} weight="bold" />
+                                                    <span>Forget Memory</span>
                                                 </button>
                                             )}
                                         </div>
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '40px 10px' }}>
-                                        <span style={{ fontSize: 32, marginBottom: 12 }}>🧠</span>
+                                        <Brain size={32} weight="duotone" style={{ marginBottom: 12, opacity: 0.5 }} />
                                         <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>
                                             Click on a node in the graph or a row in the list to view its details.
                                         </p>

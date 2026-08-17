@@ -633,9 +633,21 @@ const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceEleven
     );
 };
 
-const RateLimitContinueButton = ({ content, onContinue }: { content: string; onContinue: () => void }) => {
+const RateLimitContinueButton = ({ content }: { content: string; onContinue?: () => void }) => {
     const { theme } = useTheme();
     if (!content.includes('Rate Limit Reached') && !content.includes('429') && !content.toLowerCase().includes('rate limit')) return null;
+
+    const handleUpgrade = () => {
+        try {
+            if ((window as any).electronAPI?.shell?.openExternal) {
+                (window as any).electronAPI.shell.openExternal('https://everfern.app/pricing');
+            } else {
+                window.open('https://everfern.app/pricing', '_blank');
+            }
+        } catch {
+            window.open('https://everfern.app/pricing', '_blank');
+        }
+    };
 
     return (
         <motion.div
@@ -689,7 +701,7 @@ const RateLimitContinueButton = ({ content, onContinue }: { content: string; onC
                 </div>
 
                 <button
-                    onClick={onContinue}
+                    onClick={handleUpgrade}
                     style={{
                         width: '100%',
                         height: 40,
@@ -716,8 +728,8 @@ const RateLimitContinueButton = ({ content, onContinue }: { content: string; onC
                         e.currentTarget.style.background = theme === 'dark' ? '#ffffff' : '#1c1917';
                     }}
                 >
-                    <PlayIcon width={14} height={14} strokeWidth={2.5} />
-                    Resume Mission
+                    <SparklesIcon width={15} height={15} />
+                    Upgrade Plan
                 </button>
             </div>
         </motion.div>

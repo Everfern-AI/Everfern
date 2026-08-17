@@ -142,6 +142,9 @@ export interface Conversation {
   model?: string;
   projectId?: string;
   projectName?: string;
+  isPinned?: boolean;
+  isBookmarked?: boolean;
+  isUnread?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,7 +156,11 @@ export interface ConversationSummary {
   model?: string;
   projectId?: string;
   projectName?: string;
+  isPinned?: boolean;
+  isBookmarked?: boolean;
+  isUnread?: boolean;
   messageCount: number;
   createdAt: string;
   updatedAt: string;
 }
+

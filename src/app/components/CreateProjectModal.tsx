@@ -41,7 +41,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
             // Fetch default path
             (async () => {
-                const isWin = navigator.userAgent.toLowerCase().includes('windows');
+                const isWin = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('windows');
                 let defaultPath = isWin ? 'C:\\Users\\testuser\\Documents\\Everfern\\Projects' : '~/Documents/Everfern/Projects';
                 try {
                     if ((window as any).electronAPI?.projects?.getDefaultPath) {
@@ -52,7 +52,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                     console.error('Failed to get default path via IPC', e);
                 }
                 setBasePath(defaultPath);
-                setPath(defaultPath);
+                setPath(prev => {
+                    if (pathEditedRef.current && prev) return prev;
+                    if (name.trim()) {
+                        const separator = defaultPath.includes('\\') ? '\\' : '/';
+                        const safeName = name.trim().replace(/[^a-zA-Z0-9-_ ]/g, '').trim();
+                        return `${defaultPath}${separator}${safeName || name.trim()}`;
+                    }
+                    return defaultPath;
+                });
             })();
         }
     }, [isOpen]);
@@ -80,9 +88,20 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                 if (selectedPath) {
                     setPath(selectedPath);
                     pathEditedRef.current = true;
+                    if (!name) {
+                        const parts = selectedPath.split(/[\\/]/).filter(Boolean);
+                        if (parts.length > 0) setName(parts[parts.length - 1]);
+                    }
                 }
-            } else {
-                alert('Please restart your development server (npm run dev) to enable folder selection.');
+            } else if ((window as any).electronAPI?.system?.openFolderPicker) {
+                const folder = await (window as any).electronAPI.system.openFolderPicker();
+                if (folder && folder.success && folder.path) {
+                    setPath(folder.path);
+                    pathEditedRef.current = true;
+                    if (!name && folder.name) {
+                        setName(folder.name);
+                    }
+                }
             }
         } catch (err) {
             console.error('Failed to select folder:', err);
@@ -96,8 +115,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                 if (selectedFiles && selectedFiles.length > 0) {
                     setFiles(prev => [...prev, ...selectedFiles].filter((v, i, a) => a.indexOf(v) === i));
                 }
-            } else {
-                alert('Please restart your development server (npm run dev) to enable file selection.');
+            } else if ((window as any).electronAPI?.system?.openFilePicker) {
+                const file = await (window as any).electronAPI.system.openFilePicker({ filters: [] });
+                if (file && file.success && file.path) {
+                    setFiles(prev => [...prev, file.path].filter((v, i, a) => a.indexOf(v) === i));
+                }
             }
         } catch (err) {
             console.error('Failed to select files:', err);
@@ -114,20 +136,52 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
     };
 
     const handleCreate = async () => {
-        if (!name || !path) return;
+        const trimmedName = name.trim();
+        if (!trimmedName) return;
         setIsCreating(true);
         try {
+            const separator = (basePath && basePath.includes('\\')) ? '\\' : '/';
+            const safeName = trimmedName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim();
+            const fallbackPath = basePath ? `${basePath}${separator}${safeName || trimmedName}` : trimmedName;
+            const finalPath = (path.trim() && path.trim() !== basePath) ? path.trim() : fallbackPath;
+
             if ((window as any).electronAPI?.projects?.create) {
-                const newProject = await (window as any).electronAPI.projects.create({
-                    name,
-                    path,
-                    instructions,
+                const res = await (window as any).electronAPI.projects.create({
+                    name: trimmedName,
+                    path: finalPath,
+                    instructions: instructions.trim() || undefined,
                     files
                 });
-                onCreated(newProject.project || newProject);
+                const createdProject = res?.project || (res?.success ? res : null);
+                if (createdProject && (createdProject.id || createdProject.name)) {
+                    onCreated(createdProject);
+                    setName('');
+                    setInstructions('');
+                    setPath('');
+                    setFiles([]);
+                    onClose();
+                } else if (res && !res.success) {
+                    alert(`Failed to create project: ${res.error || 'Unknown error'}`);
+                }
+            } else {
+                const fallbackProj = {
+                    id: crypto.randomUUID(),
+                    name: trimmedName,
+                    path: finalPath,
+                    instructions: instructions.trim() || undefined,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                onCreated(fallbackProj);
+                setName('');
+                setInstructions('');
+                setPath('');
+                setFiles([]);
+                onClose();
             }
         } catch (err) {
             console.error('Failed to create project:', err);
+            alert(`Failed to create project: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             setIsCreating(false);
         }
@@ -320,16 +374,16 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                                 </button>
                                 <button
                                     onClick={handleCreate}
-                                    disabled={!name || !path || isCreating}
+                                    disabled={!name.trim() || isCreating}
                                     style={{
                                         padding: '10px 20px',
                                         borderRadius: 10,
-                                        backgroundColor: (!name || !path || isCreating) ? 'var(--color-border)' : 'var(--color-text-primary)',
-                                        color: (!name || !path || isCreating) ? 'var(--color-text-tertiary)' : 'var(--color-bg-surface)',
+                                        backgroundColor: (!name.trim() || isCreating) ? 'var(--color-border)' : 'var(--color-text-primary)',
+                                        color: (!name.trim() || isCreating) ? 'var(--color-text-tertiary)' : 'var(--color-bg-surface)',
                                         fontSize: 14,
                                         fontWeight: 600,
                                         border: 'none',
-                                        cursor: (!name || !path || isCreating) ? 'not-allowed' : 'pointer',
+                                        cursor: (!name.trim() || isCreating) ? 'not-allowed' : 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 8

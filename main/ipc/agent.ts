@@ -517,8 +517,10 @@ export function registerAgentHandlers() {
           return value;
         }));
         if (safeData && typeof safeData === 'object' && !Array.isArray(safeData)) {
-          safeData.conversationId = request.conversationId;
-          if (request.assistantMessageId) {
+          if (!safeData.conversationId) {
+            safeData.conversationId = request.conversationId;
+          }
+          if (!safeData.assistantMessageId && request.assistantMessageId) {
             safeData.assistantMessageId = request.assistantMessageId;
           }
         }
