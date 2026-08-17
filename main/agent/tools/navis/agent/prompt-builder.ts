@@ -17,7 +17,7 @@ OPERATING MODE: DOM-FIRST. You receive live DOM snapshots with interactive eleme
 - Requesting vision costs an extra AI call — use it sparingly and only when it will actually help.
 
 Complete the task with actions and return strict JSON.
-Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, open_tab, switch_tab, close_tab, done.`;
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, select_option, hover, scroll_down, scroll_up, wait, wait_for_navigation, wait_for_dom_change, upload_file, take_screenshot, extract_content, open_tab, switch_tab, close_tab, done.`;
 
 const SECURITY_GUIDELINE = `
 

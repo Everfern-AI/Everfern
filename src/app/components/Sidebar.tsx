@@ -288,7 +288,6 @@ export default function Sidebar({ isOpen, onToggle, activeConversationId, active
                         { icon: MagnifyingGlassIcon, label: "Search" },
                         { icon: BriefcaseIcon, label: "Customize" },
                         { icon: LinkIcon, label: "Integrations" },
-                        { icon: ChatBubbleLeftRightIcon, label: "Chats" },
                         { icon: ArchiveBoxIcon, label: "Projects" },
                         { icon: SquaresPlusIcon, label: "Artifacts" },
                         { icon: CodeBracketIcon, label: "Code" },

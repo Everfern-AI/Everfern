@@ -23,6 +23,7 @@
   },
   "registries": {
     "@agents-ui": "https://livekit.com/ui/r/{name}.json",
-    "@tool-ui": "https://www.tool-ui.com/r/{name}.json"
+    "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
+    "@assistant-ui": "https://r.assistant-ui.com/{name}.json"
   }
 }

@@ -135,15 +135,18 @@ const GEMINI_SYSTEM_PROMPT = `You are operating a Windows computer.
 * You can open an app from anywhere. The icon doesn't have to currently be on screen.
 * Unless explicitly told otherwise, make sure to save any changes you make.
 * If text is cut off or incomplete, scroll or click into the element to get the full text before providing an answer.
-* IMPORTANT: Complete the given task EXACTLY as stated. DO NOT make any assumptions that completing a similar task is correct.  If you can't find what you're looking for, SCROLL to find it.
-* If you want to edit some text, ONLY USE THE \`type_text_at\` tool.
+* IMPORTANT: Complete the given task EXACTLY as stated. DO NOT make any assumptions that completing a similar task is correct. If you can't find what you're looking for, SCROLL to find it.
+* MANDATORY: In your reasoning, describe your action as a complete, natural English sentence (e.g. "Opening the Windows Start menu to search for Spotify", "Analyzing the screen to locate the search input", "Typing the application name into the search bar", "Clicking on the target result") instead of raw action codes or single-word commands like "Press" or "Key".
+* To open an application (e.g. Spotify, Discord, Chrome, VS Code), use the Start Menu (hotkey 'win', type the app name, press Enter) or execute commands. NEVER refuse or ask the user "Would you like me to...". Always execute the action.
+* If you want to edit some text, ONLY USE THE 'type_text_at' tool.
 * The given task may already be completed. If so, there is no need to do anything.`;
 
 // Compact prompt for GPT-5.4 — saves ~200 tokens per turn vs the full Gemini prompt
 const GPT5_SYSTEM_PROMPT = `You are a Windows desktop automation agent. Use the provided tools to complete the task.
 Rules:
+- In your reasoning, describe your action as a complete, natural English sentence (e.g. "Opening the Windows Start menu to search for the application", "Analyzing the screen to find the play button") instead of raw action codes or single-word "Press" commands.
 - Use scroll_document/scroll_at if content may be below the fold before concluding something is missing.
-- Open apps using the Start menu (key: win) if not visible on screen.
+- Open apps using the Start menu (key: win, type app name, press Enter) if not visible on screen. NEVER ask the user "Would you like me to try executing...". Always perform the action.
 - Save changes unless explicitly told not to.
 - Do nothing if the task is already complete.
 - To answer the user, output ONLY the answer text (no tools, no formatting).`;
@@ -1048,15 +1051,17 @@ class ComputerUseTool {
       const KEY_MAP: Record<string, string> = {
         control: "control", ctrl: "control",
         alt: "alt", shift: "shift",
-        // On Linux/Windows the Windows key is 'super'; 'command' is macOS-only
-        win: process.platform === "darwin" ? "command" : "super",
-        command: process.platform === "darwin" ? "command" : "super",
+        // In robotjs (macOS, Windows, Linux), the OS meta/Win/Cmd key is 'command'
+        win: "command", windows: "command", super: "command", meta: "command",
+        command: "command", cmd: "command",
         enter: "enter", return: "enter",
         escape: "escape", esc: "escape",
         tab: "tab", delete: "delete", del: "delete",
         backspace: "backspace", space: "space",
         up: "up", down: "down", left: "left", right: "right",
         home: "home", end: "end", pageup: "pageup", pagedown: "pagedown",
+        f1: "f1", f2: "f2", f3: "f3", f4: "f4", f5: "f5", f6: "f6",
+        f7: "f7", f8: "f8", f9: "f9", f10: "f10", f11: "f11", f12: "f12",
       };
 
       const normalizedKeys = [...keys];
@@ -2371,18 +2376,89 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     return null;
   }
 
+  formatActionSentence(action: string): string {
+    if (!action) return "Executing action...";
+    const trimmed = action.trim();
+
+    // hotkey
+    const hotkeyMatch =
+      trimmed.match(/hotkey\s*\(\s*key\s*=\s*['"]([^'"]*)['"]\s*\)/i) ||
+      trimmed.match(/key\s*[:=]\s*['"]?([a-zA-Z0-9+_ -]+)['"]?/i);
+    if (hotkeyMatch) {
+      const key = hotkeyMatch[1].toLowerCase().trim();
+      if (key === "win" || key === "super" || key === "windows") {
+        return "Pressing the Windows key to open Start menu";
+      }
+      if (key.includes("ctrl") && key.includes("c")) return "Copying selection with Ctrl+C";
+      if (key.includes("ctrl") && key.includes("v")) return "Pasting clipboard with Ctrl+V";
+      if (key.includes("ctrl") && key.includes("a")) return "Selecting all with Ctrl+A";
+      if (key === "enter") return "Pressing Enter";
+      if (key === "esc" || key === "escape") return "Pressing Escape";
+      return `Pressing shortcut '${hotkeyMatch[1]}'`;
+    }
+
+    // click
+    if (trimmed.includes("click") || trimmed.includes("left_single") || trimmed.includes("left_click")) {
+      return "Clicking target element on screen";
+    }
+
+    // double click
+    if (trimmed.includes("left_double") || trimmed.includes("double_click")) {
+      return "Double-clicking target element";
+    }
+
+    // right click
+    if (trimmed.includes("right_single") || trimmed.includes("right_click")) {
+      return "Right-clicking target element";
+    }
+
+    // type
+    const typeMatch =
+      trimmed.match(/type\s*\(\s*content\s*=\s*['"]([^'"]*)['"]\s*\)/i) ||
+      trimmed.match(/type_text_at.*text\s*[:=]\s*['"]([^'"]*)['"]/i);
+    if (typeMatch) {
+      const cleanContent = typeMatch[1].replace(/\\n/g, "").trim();
+      return cleanContent ? `Typing "${cleanContent}"` : "Typing text";
+    }
+
+    // scroll
+    const scrollMatch = trimmed.match(/scroll.*(up|down)/i) || trimmed.match(/direction\s*=\s*['"]([^'"]*)['"]/i);
+    if (scrollMatch) {
+      return `Scrolling ${scrollMatch[1] || "down"} on screen`;
+    }
+
+    // wait
+    if (/wait\s*\(/i.test(trimmed)) {
+      return "Waiting for application to respond";
+    }
+
+    // finished
+    if (/finished\s*\(/i.test(trimmed)) {
+      return "Completed automation workflow";
+    }
+
+    // screenshot
+    if (/screenshot/i.test(trimmed)) {
+      return "Analyzing screen to inspect application state";
+    }
+
+    return trimmed;
+  }
+
   async dispatchAll(actions: string[], onUpdate?: any, onProgress?: any, step?: number) {
     this.releaseAll();
     for (const action of actions) {
-      console.log(`  [EXEC] ${action}`);
-      onUpdate?.(`Executing ${action}...`);
+      const sentence = this.formatActionSentence(action);
+      console.log(`  [EXEC] ${action} (${sentence})`);
+      onUpdate?.(`${sentence}...`);
 
       onProgress?.({
         type: "action",
         toolCallId: this.toolCallId,
         timestamp: new Date().toISOString(),
         stepNumber: step,
-        action: { type: action, params: {}, description: action },
+        content: sentence,
+        action: { type: action, params: {}, description: sentence },
       });
 
       const handled = await this.dispatchAction(action);

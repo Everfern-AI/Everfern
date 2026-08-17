@@ -104,6 +104,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
     getVersion:     () => ipcRenderer.invoke('system:get-version'),
     detectHardware: () => ipcRenderer.invoke('system:detect-hardware'),
+    getModelRequirements: (params?: { vramGB?: number; ramGB?: number; isAppleSilicon?: boolean; gpuName?: string; search?: string; modelId?: string }) => ipcRenderer.invoke('system:get-model-requirements', params),
+    getLocalModels: (params?: { provider?: string; baseUrl?: string }) => ipcRenderer.invoke('system:get-local-models', params),
     checkForUpdates: () => ipcRenderer.invoke('system:check-for-updates'),
     onUpdateAvailable: (cb: (info: any) => void) => ipcRenderer.on('update-available', (_e, info) => cb(info)),
     onUpdateDownloaded: (cb: (info: any) => void) => ipcRenderer.on('update-downloaded', (_e, info) => cb(info)),
@@ -365,6 +367,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => {
       ipcRenderer.on('acp:local-execution-request', (_e, data) => cb(data));
     },
+    onLocalExecutionResolved: (cb: (data: { requestId: string; approved: boolean; alwaysAllow: boolean }) => void) => {
+      ipcRenderer.on('acp:local-execution-resolved', (_e, data) => cb(data));
+    },
     sendLocalExecutionResponse: (response: LocalExecutionResponse) => {
       if (response?.requestId && sentLocalExecutionResponses.has(response.requestId)) {
         return;
@@ -377,6 +382,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     removeLocalExecutionListeners: () => {
       ipcRenderer.removeAllListeners('acp:local-execution-request');
+      ipcRenderer.removeAllListeners('acp:local-execution-resolved');
     },
 
     // Debate Stream Events
@@ -560,8 +566,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Chat Title ─────────────────────────────────────────────────────
   chat: {
-    generateTitle: (conversationId: string, firstMessage: string) =>
-      ipcRenderer.invoke('chat:generate-title', conversationId, firstMessage),
+    generateTitle: (conversationId: string, firstMessage: string, options?: any) =>
+      ipcRenderer.invoke('chat:generate-title', conversationId, firstMessage, options),
     onTitleUpdated: (cb: (data: { conversationId: string; title: string }) => void) => {
       ipcRenderer.on('chat:title-updated', (_e, data) => cb(data));
     },
@@ -694,6 +700,9 @@ export type ElectronAPI = {
     setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;
     toHostPath:     (pathStr: string) => Promise<string>;
     getVersion:     () => Promise<string>;
+    detectHardware: () => Promise<any>;
+    getModelRequirements: (params?: any) => Promise<any>;
+    getLocalModels: (params?: { provider?: string; baseUrl?: string }) => Promise<{ success: boolean; running: boolean; provider: string; baseUrl: string; hardware: any; installedModels: any[]; recommendedModels: any[]; error?: string }>;
     checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string; notes?: string; error?: string }>;
     startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => Promise<{ success: boolean; error?: string }>;
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => Promise<{ success: boolean; session?: any; error?: string }>;
@@ -957,7 +966,7 @@ export type ElectronAPI = {
     deleteSynthesized: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
   chat: {
-    generateTitle: (conversationId: string, firstMessage: string) => Promise<{ queued: boolean }>;
+    generateTitle: (conversationId: string, firstMessage: string, options?: any) => Promise<{ queued: boolean }>;
   };
   screenshot: {
     /** Load a screenshot from disk by absolute path. Returns { base64, dataUrl } or { error }. */

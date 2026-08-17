@@ -35,12 +35,13 @@ export function EverFernCloudLimitNotice() {
     );
 }
 
-export function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void }) {
+export function EverFernCloudUsageBanner({ onUpgrade, plan = 'free' }: { onUpgrade: () => void; plan?: string }) {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
+    const isPaid = plan === 'pro' || plan === 'max';
 
     const handleUpgradeClick = () => {
-        const pricingUrl = 'https://everfern.app/pricing';
+        const pricingUrl = isPaid ? 'https://everfern.app/pricing' : 'https://everfern.app/pricing';
         if ((window as any).electronAPI?.system?.openExternal) {
             (window as any).electronAPI.system.openExternal(pricingUrl);
         } else if ((window as any).electronAPI?.shell?.openExternal) {
@@ -67,7 +68,7 @@ export function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void 
                 fontFamily: 'var(--font-sans)',
                 letterSpacing: '-0.01em',
             }}>
-                You are out of free <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted', cursor: 'default' }}>messages</span> until 12:00 AM
+                You are out of {isPaid ? 'daily' : 'free'} <span style={{ textDecoration: 'underline', textDecorationStyle: 'dotted', cursor: 'default' }}>messages</span> until 12:00 AM
             </span>
             <button
                 type="button"
@@ -88,7 +89,7 @@ export function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void 
                 onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
             >
-                Upgrade
+                {isPaid ? (plan === 'pro' ? 'Upgrade to Max' : 'Manage Plan') : 'Upgrade'}
             </button>
         </div>
     );
@@ -97,10 +98,12 @@ export function EverFernCloudUsageBanner({ onUpgrade }: { onUpgrade: () => void 
 export function PromptWrapper({
     isCloudUsageOver,
     onUpgrade,
+    plan = 'free',
     children,
 }: {
     isCloudUsageOver: boolean;
     onUpgrade: () => void;
+    plan?: string;
     children: React.ReactNode;
 }) {
     const { theme } = useTheme();
@@ -121,7 +124,7 @@ export function PromptWrapper({
             flexDirection: "column",
             boxSizing: "border-box",
         }}>
-            <EverFernCloudUsageBanner onUpgrade={onUpgrade} />
+            <EverFernCloudUsageBanner onUpgrade={onUpgrade} plan={plan} />
             <div style={{ width: "100%" }}>
                 {children}
             </div>

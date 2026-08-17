@@ -49,7 +49,7 @@ import { NAVIS_DECISION_SCHEMA, type NavisOptions, type NavisResult } from './co
 const FALLBACK_SYSTEM_PROMPT = `You are Navis, a high-speed AI browser agent. Your goal is to complete the task as FAST as possible.
 Prioritize moving through pages and taking actions over long analysis. If a page seems irrelevant, navigate to a new URL immediately.
 Respond with valid JSON: {"current_state":{"evaluation_previous_goal":"Success|Failed|Unknown","memory":"track progress","next_goal":"immediate action"},"action":[{"action_name":{params}}]}
-Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, scroll_down, scroll_up, wait, wait_for_navigation, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
+Actions: go_to_url, go_back, click_element, click_text, smart_click, input_text, smart_type, press_key, select_option, hover, scroll_down, scroll_up, wait, wait_for_navigation, wait_for_dom_change, upload_file, take_screenshot, extract_content, extract, open_tab, switch_tab, close_tab, done.`;
 
 const FALLBACK_NEXT_STEP_PROMPT = `What should I do next?
 Current URL: {url_placeholder}

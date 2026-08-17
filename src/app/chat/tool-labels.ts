@@ -132,33 +132,45 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     }
 
     case 'web_search': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const query = typeof args?.query === 'string' ? args.query.trim() : '';
-      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: query ? `Searching for "${truncate(query, 60)}"` : 'Searching web', color: '#3b82f6' };
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : query ? `Searching for "${truncate(query, 60)}"` : 'Searching web';
+      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#3b82f6' };
     }
 
     case 'web_fetch': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const url = typeof args?.url === 'string' ? args.url.trim() : '';
-      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label: url ? `Fetching ${truncate(url, 60)}` : 'Fetching URL', color: '#3b82f6' };
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : url ? `Fetching ${truncate(url, 60)}` : 'Fetching URL';
+      return { icon: React.createElement('img', { src: '/assets/tool-search.svg', width: 16, height: 16, className: 'opacity-80' }), label, color: '#3b82f6' };
     }
 
     case 'search_mcp_registry': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const keyword = typeof args?.keyword === 'string'
         ? args.keyword.trim()
         : typeof args?.query === 'string'
           ? args.query.trim()
           : '';
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : keyword ? `Searching MCP registry: ${truncate(keyword, 60)}` : 'Searching MCP registry';
       return {
         icon: React.createElement(Cog6ToothIcon, { width: 16, height: 16 }),
-        label: keyword ? `Searching MCP registry: ${truncate(keyword, 60)}` : 'Searching MCP registry',
+        label,
         color: '#06b6d4'
       };
     }
 
     case 'show_user_url': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const url = typeof args?.url === 'string' ? args.url.trim() : '';
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : url ? `Opening ${truncate(url, 60)}` : 'Opening browser';
       return {
         icon: React.createElement('img', { src: '/assets/tool-browser.svg', width: 16, height: 16, className: 'opacity-80' }),
-        label: url ? `Opening ${truncate(url, 60)}` : 'Opening browser',
+        label,
         color: '#3b82f6'
       };
     }
@@ -174,8 +186,11 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
 
     case 'read_file':
     case 'view_file': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const path = extractPath(args);
-      return { icon: React.createElement(BookOpenIcon, { width: 16, height: 16 }), label: path ? `Reading ${basename(path)}` : 'Reading file', color: '#64748b' };
+      const label = explicitNarrative ? truncate(explicitNarrative, 85) : path ? `Reading ${basename(path)}` : 'Reading file';
+      return { icon: React.createElement(BookOpenIcon, { width: 16, height: 16 }), label, color: '#64748b' };
     }
 
     case 'write_file':
@@ -187,12 +202,14 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
     case 'replace':
     case 'replace_file_content':
     case 'multi_replace_file_content': {
+      const explicitNarrative = typeof args?._narrative === 'string' && args._narrative.trim() ? args._narrative.trim() :
+                                typeof args?.narrative === 'string' && args.narrative.trim() ? args.narrative.trim() : '';
       const path = extractPath(args);
       const isMulti = toolName === 'multi_file_edit' || toolName === 'multi_replace_file_content' || Array.isArray(args?.files) || Array.isArray(args?.ReplacementChunks);
       const isEdit = ['edit_file', 'edit', 'replace', 'replace_file_content', 'multi_file_edit', 'multi_replace_file_content'].includes(toolName);
       const fileCount = isMulti && Array.isArray(args?.files) ? args.files.length : (isMulti && Array.isArray(args?.ReplacementChunks) ? args.ReplacementChunks.length : 0);
-      let label = path ? `${isEdit ? 'Editing' : 'Writing'} ${basename(path)}` : `${isEdit ? 'Editing' : 'Writing'} file`;
-      if (isMulti && !path) {
+      let label = explicitNarrative ? truncate(explicitNarrative, 85) : path ? `${isEdit ? 'Editing' : 'Writing'} ${basename(path)}` : `${isEdit ? 'Editing' : 'Writing'} file`;
+      if (!explicitNarrative && isMulti && !path) {
         label = fileCount ? `Multi-editing ${fileCount} block${fileCount === 1 ? '' : 's'}` : 'Multi-editing file';
       }
       return {
@@ -201,7 +218,6 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
         ),
         label,
         color: '#f59e0b',
-        // Enhanced file operation display
         useEnhancedCard: true,
         operation: isEdit ? 'edit' : 'create'
       };

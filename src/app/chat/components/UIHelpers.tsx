@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon, PlayIcon } from '@heroicons/react/24/outline';
+import { GraphicsCardIcon } from '@phosphor-icons/react';
 import { WaveformIcon } from './UIIcons';
 import { useTheme } from '@/components/ThemeProvider';
 
@@ -323,7 +324,10 @@ const ContextTokenRing = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2, fontFamily: 'var(--font-sans)' }}>
                         {/* Health status */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${dividerColor}`, paddingBottom: 6 }}>
-                            <span style={{ fontSize: 9.5, color: isDark ? 'rgba(255,255,255,0.4)' : 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Local Performance</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <GraphicsCardIcon size={14} style={{ color: '#8b5cf6' }} />
+                                <span style={{ fontSize: 9.5, color: isDark ? 'rgba(255,255,255,0.4)' : 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Local Performance</span>
+                            </div>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
                                 <motion.div
                                     animate={{ scale: [1, 1.25, 1], opacity: [1, 0.5, 1] }}
@@ -720,15 +724,35 @@ const RateLimitContinueButton = ({ content, onContinue }: { content: string; onC
     );
 };
 
-const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: () => void }) => {
+const CloudAuthLoginButton = ({
+    content,
+    onLogin,
+    providerType,
+}: {
+    content?: string | any;
+    onLogin: () => void;
+    providerType?: string;
+}) => {
     const { theme } = useTheme();
+    const rawText = typeof content === 'string' ? content : (content != null ? String(content) : '');
+    const lower = rawText.toLowerCase();
+
     const isAuthError =
-        content.includes('401') ||
-        content.includes('Unauthorized') ||
-        content.toLowerCase().includes('sign in to your everfern cloud account') ||
-        content.toLowerCase().includes('sign in to everfern cloud');
+        rawText.includes('401') ||
+        lower.includes('unauthorized') ||
+        lower.includes('unauthenticated') ||
+        lower.includes('sign in to your everfern cloud') ||
+        lower.includes('sign in to everfern cloud') ||
+        lower.includes('login in everfern cloud') ||
+        lower.includes('login to everfern cloud');
 
     if (!isAuthError) return null;
+
+    // Show if provider is EverFern Cloud or unspecified (default), OR if error message specifically mentions EverFern
+    const isEverfernError = lower.includes('everfern');
+    const isEverfernProvider = !providerType || providerType.toLowerCase() === 'everfern';
+
+    if (!isEverfernProvider && !isEverfernError) return null;
 
     return (
         <motion.div
@@ -736,7 +760,8 @@ const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             style={{
-                marginTop: 20,
+                marginTop: 16,
+                marginBottom: 8,
                 borderRadius: 'var(--radius-lg)',
                 background: 'linear-gradient(180deg, var(--color-bg-elevated) 0%, var(--color-bg-subtle) 100%)',
                 border: '1px solid var(--color-border)',
@@ -745,6 +770,7 @@ const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: 
                 display: 'flex',
                 flexDirection: 'column',
                 fontFamily: 'var(--font-sans)',
+                maxWidth: 480,
             }}
         >
             <div style={{ 
@@ -773,7 +799,7 @@ const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: 
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
-                            EverFern Cloud Sign In Required
+                            Sign in to EverFern Cloud
                         </span>
                         <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
                             You need to be logged into EverFern Cloud to use this model. Sign in to continue your chat.
@@ -809,7 +835,12 @@ const CloudAuthLoginButton = ({ content, onLogin }: { content: string; onLogin: 
                         e.currentTarget.style.background = '#10b981';
                     }}
                 >
-                    Sign In with EverFern
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                        <polyline points="10 17 15 12 10 7" />
+                        <line x1="15" y1="12" x2="3" y2="12" />
+                    </svg>
+                    Login to EverFern Cloud
                 </button>
             </div>
         </motion.div>

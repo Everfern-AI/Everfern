@@ -43,6 +43,7 @@ import {
     HandThumbDownIcon,
 } from "@heroicons/react/24/outline";
 import { CheckIcon as CheckSolidIcon } from "@heroicons/react/24/solid";
+import { GraphicsCardIcon } from "@phosphor-icons/react";
 
 // Components
 import { AgentTimeline } from "../../components/AgentTimeline";
@@ -292,6 +293,10 @@ function generateFallbackTaskTitle(toolName: string, args: Record<string, unknow
 
     // Computer use
     if (name === 'computer_use') {
+        const taskArg = String(args.task || args.action || '').trim();
+        if (taskArg) {
+            return taskArg.length > 50 ? `Desktop: ${taskArg.slice(0, 47)}...` : `Desktop: ${taskArg}`;
+        }
         return 'Desktop automation';
     }
 
@@ -536,6 +541,24 @@ export default function ChatPage() {
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+    useEffect(() => { if (activeConversationIdRef) activeConversationIdRef.current = activeConversationId; }, [activeConversationId]);
+    const conversationTitlesRef = useRef<Map<string, string>>(new Map());
+    const titleGeneratedConvsRef = useRef<Set<string>>(new Set());
+
+    // Listen for live background AI chat title generation
+    useEffect(() => {
+        const api = (window as any).electronAPI?.chat;
+        if (!api?.onTitleUpdated) return;
+        const handleTitleUpdate = (data: { conversationId: string; title: string }) => {
+            if (data?.conversationId && data?.title) {
+                conversationTitlesRef.current.set(data.conversationId, data.title);
+            }
+        };
+        api.onTitleUpdated(handleTitleUpdate);
+        return () => {
+            api.removeTitleUpdatedListener?.();
+        };
+    }, []);
     const lastAssistantIdx = useMemo(() => {
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i].role === 'assistant') {
@@ -703,8 +726,10 @@ export default function ChatPage() {
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
     const [localLimitReached, setLocalLimitReached] = useState(false);
+    const [userPlan, setUserPlan] = useState<string>('free');
     const [cloudAuthError, setCloudAuthError] = useState(false);
     const isDark = theme === 'dark';
+
 
     // Poll for EverFern Cloud usage
     useEffect(() => {
@@ -719,6 +744,9 @@ export default function ChatPage() {
                 });
                 if (userRes.ok) {
                     const userData = await userRes.json();
+                    if (userData.plan || userData.tier) {
+                        setUserPlan(String(userData.plan || userData.tier).toLowerCase());
+                    }
                     if (userData.dailyUsed !== undefined) {
                         setDailyUsed(userData.dailyUsed);
                         if (userData.dailyLimit !== undefined && userData.dailyUsed < userData.dailyLimit) {
@@ -832,6 +860,7 @@ export default function ChatPage() {
             undefined;
 
         // Construct toolCall structure expected by ToolDetailSidePanel
+        const isStreaming = tc.status === 'running' || Boolean((tc as any).isStreaming) || !tc.output;
         return {
             id: tc.id,
             toolName: tc.toolName,
@@ -839,9 +868,11 @@ export default function ChatPage() {
             output: tc.output || '',
             duration: tc.durationMs,
             status: tc.status,
+            isStreaming,
             navisReport,
             data: {
                 ...tc.data,
+                isStreaming,
                 screenshot: finalScreenshots.length > 0 ? (finalScreenshots.length === 1 ? finalScreenshots[0] : finalScreenshots) : undefined,
                 base64Image: tc.base64Image || tc.data?.base64Image,
                 results: tc.data?.results,
@@ -857,10 +888,18 @@ export default function ChatPage() {
         const fileNames = Array.isArray(data.fileNames) ? data.fileNames : [];
         const results = Array.isArray(data.results) ? data.results : [];
         const screenshot = data.screenshot;
+        let argsKey = '';
+        try {
+            argsKey = toolCall?.args ? JSON.stringify(toolCall.args) : '';
+        } catch {
+            argsKey = '';
+        }
         return [
             toolCall?.id || '',
             toolCall?.status || '',
+            toolCall?.isStreaming ? 'streaming' : 'static',
             toolCall?.output || '',
+            argsKey,
             toolCall?.duration ?? toolCall?.durationMs ?? '',
             data.imageCount ?? '',
             data.sheetCount ?? '',
@@ -1043,6 +1082,98 @@ export default function ChatPage() {
     const [settingsProvider, setSettingsProvider] = useState<string | null>(null);
     const [settingsApiKey, setSettingsApiKey] = useState("");
     const [settingsCustomModel, setSettingsCustomModel] = useState("");
+
+    // Slow local LLM hardware notice state
+    const [showLocalSlowWarning, setShowLocalSlowWarning] = useState(false);
+    const [dismissedLocalSlowWarning, setDismissedLocalSlowWarning] = useState(false);
+    const localSlowTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const isLocalModel = useMemo(() => {
+        if (!selectedModel) return false;
+        const m = selectedModel.toLowerCase();
+        const currentM = availableModels.find(opt => opt.id === selectedModel);
+        const pType = currentM?.providerType?.toLowerCase() || '';
+        return m === 'fern-1' ||
+            m.includes('ollama') ||
+            m.includes('lmstudio') ||
+            m.includes('local') ||
+            pType === 'ollama' ||
+            pType === 'lmstudio' ||
+            pType === 'local' ||
+            config?.provider === 'ollama' ||
+            config?.provider === 'lmstudio';
+    }, [selectedModel, availableModels, config?.provider]);
+
+    // Timer to detect if local model is taking too long to respond (e.g. >12s)
+    useEffect(() => {
+        if (localSlowTimerRef.current) {
+            clearTimeout(localSlowTimerRef.current);
+            localSlowTimerRef.current = null;
+        }
+
+        if (isLoading && isLocalModel && !dismissedLocalSlowWarning) {
+            localSlowTimerRef.current = setTimeout(() => {
+                setShowLocalSlowWarning(true);
+            }, 12000);
+        } else if (!isLoading) {
+            setShowLocalSlowWarning(false);
+            setDismissedLocalSlowWarning(false);
+        }
+
+        return () => {
+            if (localSlowTimerRef.current) {
+                clearTimeout(localSlowTimerRef.current);
+            }
+        };
+    }, [isLoading, isLocalModel, dismissedLocalSlowWarning]);
+
+    const handleSwitchToCloud = useCallback(async () => {
+        setShowLocalSlowWarning(false);
+        setDismissedLocalSlowWarning(true);
+
+        const sessionStr = localStorage.getItem('everfern_cloud_session') || localStorage.getItem('everfern_auth_token');
+        let session = null;
+        try {
+            if (sessionStr) session = JSON.parse(sessionStr);
+        } catch { }
+
+        const isLoggedIn = !!(session?.accessToken || session?.token || (config?.apiKey && config?.apiKey.length > 5));
+
+        if (!isLoggedIn) {
+            router.push('/auth');
+            return;
+        }
+
+        const cloudModel = availableModels.find(m =>
+            m.providerType === 'everfern' ||
+            m.provider === 'EverFern' ||
+            m.id === 'mistralai/mistral-medium-3.5-128b' ||
+            (m.providerType !== 'ollama' && m.providerType !== 'lmstudio' && m.providerType !== 'local')
+        );
+
+        if (cloudModel) {
+            setSelectedModel(cloudModel.id);
+            if ((window as any).electronAPI?.saveConfig && config) {
+                try {
+                    await (window as any).electronAPI.saveConfig({
+                        ...config,
+                        provider: cloudModel.providerType || 'everfern',
+                        customModel: cloudModel.id
+                    });
+                } catch (e) {
+                    console.error('Failed to save cloud config', e);
+                }
+            }
+        } else {
+            setShowModelSelector(true);
+        }
+    }, [availableModels, config, router]);
+
+    const handleReduceModel = useCallback(() => {
+        setShowLocalSlowWarning(false);
+        setDismissedLocalSlowWarning(true);
+        setShowModelSelector(true);
+    }, []);
     const [currentPlan, setCurrentPlan] = useState<any | null>(null);
     const [executionPlan, setExecutionPlan] = useState<{ title?: string; content: string } | null>(null);
     const [isExecutionPlanPaneOpen, setIsExecutionPlanPaneOpen] = useState<boolean>(true);
@@ -1457,6 +1588,32 @@ export default function ChatPage() {
             }
             setLocalExecutionRequest(request);
         });
+        acpApi.onLocalExecutionResolved?.((resolved: { requestId: string; approved: boolean; alwaysAllow: boolean }) => {
+            setLocalExecutionRequest((current) => {
+                if (current && current.requestId === resolved.requestId) {
+                    return null;
+                }
+                return current;
+            });
+            if (resolved.alwaysAllow) {
+                localAlwaysAllowedRef.current = true;
+                setLocalAlwaysAllowed(true);
+            }
+            const updatedToolCalls = liveToolCallsRef.current.map(tc => (
+                tc.id === resolved.requestId
+                    ? {
+                        ...tc,
+                        status: resolved.approved ? "done" as const : "error" as const,
+                        output: resolved.approved
+                            ? 'Permission approved. Running local command...'
+                            : `Permission denied.`,
+                        data: { ...(tc.data || {}), approved: resolved.approved, alwaysAllow: resolved.alwaysAllow },
+                    }
+                    : tc
+            ));
+            liveToolCallsRef.current = updatedToolCalls;
+            setLiveToolCalls(updatedToolCalls);
+        });
         return () => {
             acpApi?.removeLocalExecutionListeners?.();
         };
@@ -1827,6 +1984,8 @@ export default function ChatPage() {
         setShowSubagentPanel(false);
         setSelectedSubagentToolCall(null);
         setActiveSurface(null);
+        setShowLocalSlowWarning(false);
+        setDismissedLocalSlowWarning(false);
         subagent.reset();
 
         if (typeof sessionStorage !== 'undefined') {
@@ -3081,6 +3240,10 @@ export default function ChatPage() {
                     if (is401) {
                         setCloudAuthError(true);
                         setIsLoading(false);
+                        if (delta) {
+                            streamingContentRef.current += delta;
+                            setStreamingContent(streamingContentRef.current);
+                        }
                         return;
                     }
                 }
@@ -3161,7 +3324,6 @@ export default function ChatPage() {
         if (msgs.length === 0) return;
         // Use the ref for synchronous reads — avoids duplicate IDs when called
         // multiple times before React flushes the state update.
-        const isNewConversation = !activeConversationIdRef.current;
         let id = activeConversationIdRef.current;
         if (!id) {
             id = crypto.randomUUID();
@@ -3174,9 +3336,15 @@ export default function ChatPage() {
             : Array.isArray(firstMsgContent)
                 ? ((firstMsgContent as any[]).find((b: any) => b.type === 'text')?.text ?? '')
                 : String(firstMsgContent);
+        
+        // Preserve AI-generated title if available
+        const knownTitle = conversationTitlesRef.current.get(id);
+        const rawFallback = firstMsgText.slice(0, 60) + (firstMsgText.length > 60 ? "..." : "");
+        const conversationTitle = knownTitle || rawFallback;
+
         const conversation = {
             id,
-            title: firstMsgText.slice(0, 60) + (firstMsgText.length > 60 ? "..." : ""),
+            title: conversationTitle,
             messages: msgs.map((m, idx) => ({
                 id: m.id || crypto.randomUUID(),
                 role: m.role,
@@ -3206,14 +3374,20 @@ export default function ChatPage() {
 
         if ((window as any).electronAPI?.history?.save) await (window as any).electronAPI.history.save(conversation);
 
-        // Non-blocking: generate a smart title from the first user message
-        if (isNewConversation) {
-            const firstUserMsg = msgs.find(m => m.role === 'user');
-            if (firstUserMsg && typeof firstUserMsg.content === 'string') {
-                (window as any).electronAPI?.chat?.generateTitle?.(id, firstUserMsg.content);
-            }
+        // Non-blocking: trigger AI call in the background to give a title of the chat / rename
+        const firstUserMsg = msgs.find(m => m.role === 'user');
+        if (firstUserMsg && typeof firstUserMsg.content === 'string' && !titleGeneratedConvsRef.current.has(id)) {
+            titleGeneratedConvsRef.current.add(id);
+            const currentM = availableModels.find(m => m.id === selectedModel);
+            const providerType = currentM?.providerType || config?.provider || 'everfern';
+            const apiKey = config?.keys?.[providerType] || config?.apiKey;
+            (window as any).electronAPI?.chat?.generateTitle?.(id, firstUserMsg.content, {
+                providerType,
+                model: selectedModel,
+                apiKey,
+            });
         }
-    }, [activeConversationId, config?.provider, folderContexts, persistableToolCalls]);
+    }, [config?.apiKey, config?.keys, config?.provider, folderContexts, persistableToolCalls, selectedModel, availableModels]);
 
     const handlePlayVoiceResponse = useCallback(async (text: string) => {
         if (!voiceOutputEnabled || !voiceProvider || !voiceElevenlabsKey) return;
@@ -3926,6 +4100,11 @@ export default function ChatPage() {
                         if (is401) {
                             setCloudAuthError(true);
                             setIsLoading(false);
+                            if (delta) {
+                                accumulated += delta;
+                                streamingContentRef.current = accumulated;
+                                setStreamingContent(accumulated);
+                            }
                             return;
                         }
                     }
@@ -3994,6 +4173,15 @@ export default function ChatPage() {
                         }
                     } else {
                         api.removeStreamListeners();
+                        if (isMessageCommittedRef.current) {
+                            setStreamingContent("");
+                            setStreamingThought("");
+                            setLiveToolCalls([]);
+                            setStreamingToolCalls([]);
+                            streamingToolCallsRef.current = [];
+                            setIsLoading(false);
+                            return;
+                        }
                         isMessageCommittedRef.current = true;
 
                         let finalContent = accumulated || "";
@@ -4600,7 +4788,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             updated.workFunction = newWorkFunction;
         }
 
-        if (settingsEngine === "local") { updated.provider = "ollama"; updated.baseUrl = "http://localhost:11434"; }
+        if (settingsEngine === "local") {
+            updated.provider = settingsProvider || "ollama";
+            updated.baseUrl = settingsApiKey?.trim() || (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
+        }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
                 settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
@@ -4853,6 +5044,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     console.log('[Frontend] Stop button clicked - aborting agent');
                     (window as any).electronAPI?.acp?.stop?.();
 
+                    if (isMessageCommittedRef.current) return;
+                    isMessageCommittedRef.current = true;
+
                     // Commit the current streaming content as a stopped message
                     const stoppedContent = streamingContent || "";
                     const finalToolCalls = persistableToolCalls(
@@ -4861,7 +5055,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     );
 
                     const assistantMsg: Message = {
-                        id: crypto.randomUUID(),
+                        id: assistantMessageIdRef.current || crypto.randomUUID(),
                         role: "assistant",
                         content: stoppedContent,
                         thought: streamingThought || undefined,
@@ -4873,6 +5067,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     };
 
                     setMessages(prev => {
+                        const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
+                        if (existingIdx >= 0) {
+                            const final = [...prev];
+                            final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
+                            saveConversation(final);
+                            return final;
+                        }
                         const final = [...prev, assistantMsg];
                         saveConversation(final);
                         return final;
@@ -4880,7 +5081,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                     // Clean up state
                     setIsLoading(false);
-                    isMessageCommittedRef.current = true;
                     setStreamingContent("");
                     setStreamingThought("");
                     setLiveToolCalls([]);
@@ -5018,6 +5218,169 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 </div>
             )}
         </>
+    );
+
+    // ── Local LLM slow hardware response popup ──────────────────────────────
+    const renderLocalSlowHardwarePopup = () => (
+        <AnimatePresence>
+            {showLocalSlowWarning && (
+                <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    style={{
+                        marginBottom: 10,
+                        padding: "14px 16px",
+                        borderRadius: 14,
+                        backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.97)",
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        border: isDark ? "1px solid rgba(255, 255, 255, 0.12)" : "1px solid rgba(0, 0, 0, 0.1)",
+                        boxShadow: isDark
+                            ? "0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.25)"
+                            : "0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                        position: "relative",
+                        zIndex: 35,
+                    }}
+                >
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 10,
+                                backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.12)",
+                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#f59e0b",
+                                flexShrink: 0,
+                                marginTop: 1,
+                            }}
+                        >
+                            <GraphicsCardIcon size={32} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                                <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
+                                    Your hardware is taking longer to respond
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 10,
+                                        fontWeight: 600,
+                                        padding: "2px 7px",
+                                        borderRadius: 6,
+                                        backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.05)",
+                                        color: "var(--color-text-tertiary)",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.04em",
+                                    }}
+                                >
+                                    Local LLM
+                                </span>
+                            </div>
+                            <p style={{ fontSize: 12.5, color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                                Local model inference is taking extra time on your machine. You can reduce the AI model size, or switch to EverFern Cloud for private, high-speed responses.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowLocalSlowWarning(false);
+                                setDismissedLocalSlowWarning(true);
+                            }}
+                            style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                color: "var(--color-text-tertiary)",
+                                padding: 4,
+                                borderRadius: 6,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "var(--color-text-tertiary)"; }}
+                            title="Dismiss"
+                        >
+                            <XMarkIcon width={15} height={15} />
+                        </button>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 44, flexWrap: "wrap" }}>
+                        <button
+                            type="button"
+                            onClick={handleSwitchToCloud}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                padding: "6px 14px",
+                                borderRadius: 8,
+                                backgroundColor: "#10b981",
+                                color: "#ffffff",
+                                border: "none",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                boxShadow: "0 1px 3px rgba(16, 185, 129, 0.3)",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#059669"; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#10b981"; }}
+                        >
+                            <span>🌿</span>
+                            <span>Use EverFern Cloud</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleReduceModel}
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 500,
+                                padding: "6px 12px",
+                                borderRadius: 8,
+                                backgroundColor: isDark ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.04)",
+                                color: "var(--color-text-primary)",
+                                border: "1px solid var(--color-border)",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.08)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.04)"; }}
+                        >
+                            Reduce AI Model
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowLocalSlowWarning(false);
+                                setDismissedLocalSlowWarning(true);
+                            }}
+                            style={{
+                                fontSize: 11.5,
+                                color: "var(--color-text-tertiary)",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px 8px",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.color = "var(--color-text-secondary)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "var(--color-text-tertiary)"; }}
+                        >
+                            Keep waiting
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 
     // ── Onboarding modal ─────────────────────────────────────────────────────
@@ -5991,7 +6354,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         />
                                                     )}
 
-                                                    <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
+                                                    {renderLocalSlowHardwarePopup()}
+
+                                                    <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
                                                         {/* Progressive input container */}
                                                         <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
                                                             {renderSubagentSpawnAttachment()}
@@ -6177,7 +6542,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         style={{
                                                                             maxHeight: "calc(100vh - 280px)",
                                                                             position: "relative",
-                                                                            paddingLeft: "12px"
+                                                                            paddingLeft: "0px",
+                                                                            marginBottom: msg.content?.trim() ? "14px" : "0px",
                                                                         }}
                                                                     >
                                                                         <AgentTimeline
@@ -6294,7 +6660,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         />
                                                                     ))}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
-                                                                    <CloudAuthLoginButton content={msg.content} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
+                                                                    <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                         <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                             <UserQuestionForm
@@ -6539,6 +6905,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             height={tc.args?.height as number}
                                                                         />
                                                                     ))}
+                                                                    <RateLimitContinueButton content={streamingContent} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
+                                                                    <CloudAuthLoginButton content={streamingContent} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                 </>
                                                             );
                                                         })()}
@@ -6725,7 +7093,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     />
                                                 </div>
                                             )}
-                                            <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)}>
+
+                                            {renderLocalSlowHardwarePopup()}
+
+                                            <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
                                                 <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
                                                     {/* Memory Preference Banner */}
                                                     {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (

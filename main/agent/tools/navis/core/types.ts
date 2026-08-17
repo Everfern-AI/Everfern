@@ -166,7 +166,8 @@ export type ActionName =
   | 'browser_right_click'
   | 'browser_hover'
   | 'focus_form'
-  | 'unfocus_form';
+  | 'unfocus_form'
+  | 'take_screenshot';
 
 export interface ActionResult {
   success: boolean;
@@ -242,6 +243,7 @@ export const NAVIS_DECISION_SCHEMA = {
           { properties: { close_tab: { type: 'object', additionalProperties: false } }, required: ['close_tab'], additionalProperties: false },
           { properties: { wait_for_navigation: { type: 'object', properties: { timeoutMs: { type: 'number' }, urlContains: { type: 'string' } }, additionalProperties: false } }, required: ['wait_for_navigation'], additionalProperties: false },
           { properties: { wait_for_dom_change: { type: 'object', properties: { text: { type: 'string', description: 'Wait until this text appears on the page.' }, selector: { type: 'string', description: 'Wait until this CSS selector matches.' }, timeoutMs: { type: 'number' } }, additionalProperties: false } }, required: ['wait_for_dom_change'], additionalProperties: false },
+          { properties: { take_screenshot: { type: 'object', properties: { full_page: { type: 'boolean', description: 'Whether to capture full scrollable page.' } }, additionalProperties: false } }, required: ['take_screenshot'], additionalProperties: false },
           { properties: { done: { type: 'object', properties: { success: { type: 'boolean' }, text: { type: 'string' } }, required: ['success', 'text'], additionalProperties: false } }, required: ['done'], additionalProperties: false },
           { properties: { solve_captcha: { type: 'object', additionalProperties: false } }, required: ['solve_captcha'], additionalProperties: false },
           { properties: { browser_click: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } }, required: ['browser_click'], additionalProperties: false },

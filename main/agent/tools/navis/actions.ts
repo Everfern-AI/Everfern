@@ -109,7 +109,8 @@ export type ActionName =
   | 'browser_right_click'
   | 'browser_hover'
   | 'focus_form'
-  | 'unfocus_form';
+  | 'unfocus_form'
+  | 'take_screenshot';
 
 export interface ActionResult {
   success: boolean;
@@ -1206,6 +1207,9 @@ export async function executeAction(
 
       case 'select_option':
         return await executeSelectOption(args as any, page, session, logger, step, maxSteps);
+
+      case 'take_screenshot':
+        return await executeTakeScreenshot(args as any, page, session, logger, step, maxSteps);
 
       case 'set_date':
         return await executeSetDate(args as any, page, session, logger, step, maxSteps);
@@ -2378,3 +2382,31 @@ async function executeDragElement(
     return { success: false, message: `Drag failed: ${err.message}`, stateChanged: false };
   }
 }
+
+async function executeTakeScreenshot(
+  args: { full_page?: boolean },
+  page: Page,
+  session: BrowserSession,
+  logger?: NavisLogger,
+  step?: number,
+  maxSteps?: number,
+): Promise<ActionResult> {
+  try {
+    const fullPage = Boolean(args?.full_page);
+    const screenshotBuffer = await page.screenshot({ fullPage, type: 'jpeg', quality: 80 });
+    const base64 = screenshotBuffer.toString('base64');
+    logger?.tabChange(step, maxSteps, `screenshot captured (${fullPage ? 'full page' : 'viewport'})`);
+    return {
+      success: true,
+      message: `Captured ${fullPage ? 'full page' : 'viewport'} screenshot`,
+      stateChanged: false,
+      data: {
+        base64: `data:image/jpeg;base64,${base64}`,
+        fullPage,
+      },
+    };
+  } catch (err: any) {
+    return { success: false, message: `Screenshot failed: ${err.message}`, stateChanged: false };
+  }
+}
+
