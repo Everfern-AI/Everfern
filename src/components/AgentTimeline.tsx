@@ -630,6 +630,7 @@ export const AgentTimeline = React.memo(({
           verb: parentStep.verb,
           chip: parentStep.chip || "task",
           icon: parentStep.icon,
+          toolCall: tc,
         });
       }
 
@@ -678,6 +679,7 @@ export const AgentTimeline = React.memo(({
               verb,
               chip: chip || "action",
               icon,
+              toolCall: tc,
             });
           }
         }
@@ -807,14 +809,14 @@ export const AgentTimeline = React.memo(({
             }
             const lastStep = groupSteps[groupSteps.length - 1];
             if (!lastStep || lastStep.verb !== verb || lastStep.chip !== chip) {
-              groupSteps.push({ verb, chip: chip || "step", icon });
+              groupSteps.push({ verb, chip: chip || "step", icon, toolCall: tc });
             }
           }
         } else {
           const { verb, chip, icon } = extractVerbAndChip(tc);
           const lastStep = groupSteps[groupSteps.length - 1];
           if (!lastStep || lastStep.verb !== verb || lastStep.chip !== chip) {
-            groupSteps.push({ verb, chip: chip || "task", icon });
+            groupSteps.push({ verb, chip: chip || "task", icon, toolCall: tc });
           }
         }
       }
@@ -912,6 +914,12 @@ export const AgentTimeline = React.memo(({
                 restingLabel={bRestingLabel}
                 activeLabel={bActiveLabel}
                 stats={batch.stats}
+                onStepClick={(step) => {
+                  const targetTc = step.toolCall || (toolCalls.length > 0 ? toolCalls[0] : null);
+                  if (targetTc && onPillClick) {
+                    onPillClick(targetTc);
+                  }
+                }}
               />
             </div>
           );
@@ -931,6 +939,12 @@ export const AgentTimeline = React.memo(({
             }
             activeLabel={`Working for ${elapsedSeconds}s`}
             stats={stats}
+            onStepClick={(step) => {
+              const targetTc = step.toolCall || (toolCalls.length > 0 ? toolCalls[0] : null);
+              if (targetTc && onPillClick) {
+                onPillClick(targetTc);
+              }
+            }}
           />
         </div>
       ) : null}

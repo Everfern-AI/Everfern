@@ -15,6 +15,7 @@ export interface TimelineStep {
   verb: string;
   chip: string;
   icon: LucideIcon;
+  toolCall?: any;
 }
 
 export interface TimelineStat {
@@ -33,6 +34,7 @@ export interface ToolTimelineProps {
   activeLabel: string;
   stats: TimelineStat[];
   className?: string;
+  onStepClick?: (step: TimelineStep, index: number) => void;
 }
 
 export function ToolTimeline({
@@ -45,6 +47,7 @@ export function ToolTimeline({
   activeLabel,
   stats,
   className,
+  onStepClick,
 }: ToolTimelineProps) {
   return (
     <Collapsible
@@ -93,12 +96,22 @@ export function ToolTimeline({
             return (
               <div
                 key={`${step.verb}-${step.chip}-${index}`}
-                className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200"
+                onClick={(e) => {
+                  if (onStepClick) {
+                    e.stopPropagation();
+                    onStepClick(step, index);
+                  }
+                }}
+                className={cn(
+                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200 group/step",
+                  onStepClick ? "cursor-pointer hover:text-foreground hover:bg-foreground/[0.04] rounded-md px-1.5 -mx-1.5 py-0.5 transition-colors" : ""
+                )}
+                title={onStepClick ? "Click to view tool call details" : undefined}
               >
                 {/* Icon column with vertical connecting line */}
                 <div className="flex flex-col items-center shrink-0 w-4 self-stretch pt-0.5">
                   <div className="flex items-center justify-center size-4 shrink-0 z-10">
-                    <Icon className={cn("size-3.5 shrink-0 transition-colors", active ? "text-foreground/90" : "text-foreground/50")} />
+                    <Icon className={cn("size-3.5 shrink-0 transition-colors", active ? "text-foreground/90" : "text-foreground/50 group-hover/step:text-foreground/80")} />
                   </div>
                   {!isLast && (
                     <div className="w-[1.5px] flex-1 my-1 bg-zinc-300 dark:bg-zinc-700/60 rounded-full min-h-[14px]" />
@@ -117,7 +130,7 @@ export function ToolTimeline({
                       active={active}
                       className={cn(
                         "text-[13px] leading-tight break-words font-normal",
-                        active ? "text-foreground/85" : "text-foreground/70"
+                        active ? "text-foreground/85" : "text-foreground/70 group-hover/step:text-foreground/90"
                       )}
                     >
                       {step.chip}
