@@ -508,7 +508,7 @@ export const ReasoningPane = ({
 // Displays raw chain-of-thought as ReasoningPanel
 function parseReasoningContent(text: string): ReasoningStep[] {
     if (!text?.trim()) return [];
-    const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    const clean = text.replace(/<\/?think>/gi, "").trim();
     if (!clean) return [];
 
     const sections = clean.split(/(?=(?:^|\n)(?:#+|\d+\.|\*|-|[A-Z][a-zA-Z\s]+:))\n?/g).filter(s => s.trim().length > 0);

@@ -254,6 +254,42 @@ Always prioritize the project path for file operations.
     finalPrompt += "\n" + projectContext;
   }
 
+  // Inject Fern Persona, User Tone & Custom Instructions
+  try {
+    const configPath = path.join(osHomedir(), '.everfern', 'config.json');
+    if (fs.existsSync(configPath)) {
+      const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (userConfig) {
+        const toneMap: Record<string, string> = {
+          direct: 'Direct & Concise: Deliver clear, straightforward, and efficient answers without fluff or filler.',
+          warm: 'Warm & Friendly: Be approachable, encouraging, conversational, and empathetic while remaining highly effective.',
+          senior: 'Senior Engineer: Be architectural, pragmatic, rigorous, and production-minded with high-craft code.',
+          casual: 'Casual & Chill: Be relaxed, witty, and approachable, like collaborating with a close tech peer.',
+          creative: 'Creative & Quirky: Bring inventive, vibrant, and innovative perspectives to tasks.',
+        };
+
+        const tonePreset = userConfig.tone || 'direct';
+        const toneDesc = userConfig.customTone || toneMap[tonePreset] || toneMap.direct;
+        const customInstructions = typeof userConfig.customInstructions === 'string' ? userConfig.customInstructions.trim() : '';
+        const userContext = typeof userConfig.userContext === 'string' ? userConfig.userContext.trim() : '';
+
+        let toneBlock = `
+## FERN IDENTITY, TONE & CUSTOM INSTRUCTIONS
+- **Identity**: You are Fern. Always act and respond as Fern (EverFern). Never claim to be Claude, Anthropic, or OpenAI.
+- **Tone Directive**: ${toneDesc}`;
+        if (customInstructions) {
+          toneBlock += `\n- **Custom Response Instructions**:\n${customInstructions}`;
+        }
+        if (userContext) {
+          toneBlock += `\n- **About the User**:\n${userContext}`;
+        }
+        finalPrompt += "\n" + toneBlock;
+      }
+    }
+  } catch (err) {
+    console.error('[SystemPrompt] Failed to inject user tone/custom instructions:', err);
+  }
+
   return finalPrompt;
 }
 

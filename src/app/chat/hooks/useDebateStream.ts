@@ -13,19 +13,35 @@ interface DebateState {
   lastDebateId: string | null;
 }
 
-export function useDebateStream() {
+export function useDebateStream(conversationId?: string | null) {
   const [state, setState] = useState<DebateState>({
     currentDebate: null,
     isDebating: false,
     lastDebateId: null,
   });
 
+  const conversationIdRef = useRef<string | null>(conversationId ?? null);
+  useEffect(() => {
+    conversationIdRef.current = conversationId ?? null;
+    // Clear debate state when switching conversations
+    setState({
+      currentDebate: null,
+      isDebating: false,
+      lastDebateId: null,
+    });
+  }, [conversationId]);
+
   // Use a ref to track if listener is registered (prevents double-register)
   const listenerRef = useRef(false);
 
-  const handleDebateEvent = useCallback((event: DebateStreamEvent) => {
+  const handleDebateEvent = useCallback((event: DebateStreamEvent & { conversationId?: string }) => {
     // Safety check: skip malformed events
     if (!event || !event.type) {
+      return;
+    }
+
+    // Isolate by conversationId to prevent mixing across live chats
+    if (event.conversationId && conversationIdRef.current && event.conversationId !== conversationIdRef.current) {
       return;
     }
 
@@ -125,4 +141,3 @@ export function useDebateStream() {
     skipDebate,
   };
 }
-

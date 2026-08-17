@@ -30,6 +30,26 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
     return { success: true, message: 'Backfill started in background' };
   });
 
+  ipcMain.handle('history:listByProject', async (_event, projectId: string) => {
+    return await historyStore.listByProject(projectId);
+  });
+
+  ipcMain.handle('history:togglePin', async (_event, id: string) => {
+    return await historyStore.togglePin(id);
+  });
+
+  ipcMain.handle('history:toggleUnread', async (_event, id: string) => {
+    return await historyStore.toggleUnread(id);
+  });
+
+  ipcMain.handle('history:updateTitle', async (_event, id: string, title: string) => {
+    return await historyStore.updateTitle(id, title);
+  });
+
+  ipcMain.handle('history:setProject', async (_event, id: string, projectId: string | null) => {
+    return await historyStore.setProject(id, projectId);
+  });
+
   ipcMain.handle('history:get-vectors', async (_event, limit?: number) => {
     return await historyStore.getVectors(limit);
   });

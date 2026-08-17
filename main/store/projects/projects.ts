@@ -5,20 +5,22 @@ export interface Project {
   name: string;
   instructions?: string;
   path: string;
+  isPinned?: boolean;
+  isBookmarked?: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export class ProjectsStore {
   /**
-   * List all projects.
+   * List all projects, with pinned / bookmarked projects first.
    */
   async list(): Promise<Project[]> {
     try {
       const rows = await dbOps.all(`
         SELECT *
         FROM projects
-        ORDER BY updated_at DESC
+        ORDER BY (is_pinned = 1 OR is_bookmarked = 1) DESC, updated_at DESC
       `);
 
       return rows.map(row => ({
@@ -26,6 +28,8 @@ export class ProjectsStore {
         name: row.name,
         instructions: row.instructions,
         path: row.path,
+        isPinned: row.is_pinned === 1,
+        isBookmarked: row.is_bookmarked === 1 || row.is_pinned === 1,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));
@@ -48,6 +52,8 @@ export class ProjectsStore {
         name: row.name,
         instructions: row.instructions,
         path: row.path,
+        isPinned: row.is_pinned === 1,
+        isBookmarked: row.is_bookmarked === 1 || row.is_pinned === 1,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -67,13 +73,15 @@ export class ProjectsStore {
       const newProject: Project = {
         ...project,
         id,
+        isPinned: false,
+        isBookmarked: false,
         createdAt: now,
         updatedAt: now,
       };
 
       await dbOps.run(
-        `INSERT INTO projects (id, name, instructions, path, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO projects (id, name, instructions, path, is_pinned, is_bookmarked, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
         [
           newProject.id,
           newProject.name,
@@ -111,6 +119,60 @@ export class ProjectsStore {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[Projects] Failed to create project:`, msg);
       return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Update a project.
+   */
+  async update(id: string, updates: Partial<Project>): Promise<{ success: boolean; project?: Project; error?: string }> {
+    try {
+      const existing = await this.get(id);
+      if (!existing) return { success: false, error: 'Project not found' };
+
+      const name = updates.name !== undefined ? updates.name : existing.name;
+      const instructions = updates.instructions !== undefined ? updates.instructions : existing.instructions;
+      const path = updates.path !== undefined ? updates.path : existing.path;
+      const isPinned = updates.isPinned !== undefined ? (updates.isPinned ? 1 : 0) : (existing.isPinned ? 1 : 0);
+      const isBookmarked = updates.isBookmarked !== undefined ? (updates.isBookmarked ? 1 : 0) : (existing.isBookmarked ? 1 : 0);
+      const now = new Date().toISOString();
+
+      await dbOps.run(
+        `UPDATE projects
+         SET name = ?, instructions = ?, path = ?, is_pinned = ?, is_bookmarked = ?, updated_at = ?
+         WHERE id = ?`,
+        [name, instructions, path, isPinned, isBookmarked, now, id]
+      );
+
+      const updated = await this.get(id);
+      return { success: true, project: updated || undefined };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Projects] Failed to update project ${id}:`, msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Toggle bookmark status for a project.
+   */
+  async toggleBookmark(id: string): Promise<{ success: boolean; isBookmarked: boolean; error?: string }> {
+    try {
+      const project = await this.get(id);
+      if (!project) return { success: false, isBookmarked: false, error: 'Project not found' };
+
+      const newStatus = !project.isBookmarked;
+      const val = newStatus ? 1 : 0;
+      await dbOps.run(
+        `UPDATE projects SET is_bookmarked = ?, is_pinned = ?, updated_at = ? WHERE id = ?`,
+        [val, val, new Date().toISOString(), id]
+      );
+
+      return { success: true, isBookmarked: newStatus };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Projects] Failed to toggle bookmark for project ${id}:`, msg);
+      return { success: false, isBookmarked: false, error: msg };
     }
   }
 

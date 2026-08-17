@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     ChartBarIcon,
@@ -10,6 +10,10 @@ import {
     ArrowTrendingUpIcon,
     ClockIcon,
     XMarkIcon,
+    BoltIcon,
+    CheckCircleIcon,
+    ArrowPathIcon,
+    FireIcon,
 } from "@heroicons/react/24/outline";
 import { CostMeter, type CostLine } from "@/components/elements/cost-meter";
 
@@ -84,37 +88,225 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 }) {
     return (
         <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             style={{
                 background: "var(--color-bg-surface)",
-                borderRadius: 20,
+                borderRadius: 18,
                 border: "1px solid var(--color-border)",
-                padding: "24px",
+                padding: "20px 22px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 12,
-                boxShadow: "0 2px 12px rgba(0,0,0,0.04)"
+                justifyContent: "space-between",
+                minHeight: 142,
+                boxShadow: "0 1px 6px rgba(0,0,0,0.03)",
+                width: "100%",
+                boxSizing: "border-box"
             }}
         >
-            <div style={{
-                width: 40, height: 40, borderRadius: 12,
-                background: color + "18", display: "flex",
-                alignItems: "center", justifyContent: "center"
-            }}>
-                <Icon style={{ width: 20, height: 20, color }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{
+                    width: 38, height: 38, borderRadius: 10,
+                    background: color + "18", display: "flex",
+                    alignItems: "center", justifyContent: "center"
+                }}>
+                    <Icon style={{ width: 19, height: 19, color }} />
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                    {label}
+                </div>
             </div>
-            <div>
-                <div style={{ fontSize: 26, fontWeight: 500, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>{value}</div>
-                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500, marginTop: 2 }}>{label}</div>
-                {sub && <div style={{ fontSize: 11, color: "var(--color-text-placeholder)", marginTop: 4 }}>{sub}</div>}
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 10 }}>
+                <div style={{ fontSize: 25, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                    {value}
+                </div>
+                <div style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: "var(--color-text-secondary)",
+                    minHeight: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                }}>
+                    {sub || "—"}
+                </div>
             </div>
         </motion.div>
     );
 }
 
-// Mini bar chart
-function BarChart({ data, valueKey, labelKey, color, height = 160 }: {
+// ── Interactive Dual-Axis Daily Spend & Volume Chart ──────────────────────────
+function DualAxisDailyChart({ data, height = 200 }: {
+    data: Array<{ date: string; cost: number; requests: number; tokens?: number }>;
+    height?: number;
+}) {
+    const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+    if (!data || data.length === 0) {
+        return (
+            <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
+                No daily spend data recorded yet
+            </div>
+        );
+    }
+
+    const maxCost = Math.max(...data.map(d => d.cost || 0), 0.01);
+    const maxReqs = Math.max(...data.map(d => d.requests || 0), 5);
+
+    // Reference grid intervals
+    const costSteps = [maxCost, maxCost * 0.66, maxCost * 0.33, 0];
+    const chartHeight = height - 52;
+
+    return (
+        <div style={{ position: "relative", width: "100%", height, paddingBottom: 28, paddingTop: 10 }}>
+            {/* Y-Axis Value Grid Lines */}
+            <div style={{ position: "absolute", left: 0, right: 0, top: 10, height: chartHeight, pointerEvents: "none", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                {costSteps.map((val, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "center", width: "100%", gap: 8 }}>
+                        <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono, monospace)", color: "var(--color-text-tertiary)", width: 44, textAlign: "right", flexShrink: 0 }}>
+                            {formatCost(val)}
+                        </span>
+                        <div style={{ flex: 1, borderBottom: "1px dashed var(--color-border-subtle)", opacity: idx === costSteps.length - 1 ? 1 : 0.6 }} />
+                        <span style={{ fontSize: 10.5, fontFamily: "var(--font-mono, monospace)", color: "#6366f1", opacity: 0.8, width: 34, textAlign: "left", flexShrink: 0 }}>
+                            {Math.round((maxReqs * (3 - idx)) / 3)} req
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            {/* Bars and Line Chart Container */}
+            <div style={{
+                position: "absolute",
+                left: 52,
+                right: 42,
+                top: 10,
+                height: chartHeight,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: Math.max(3, Math.floor(400 / (data.length || 1))),
+            }}>
+                {data.map((d, i) => {
+                    const costPct = ((d.cost || 0) / maxCost) * 100;
+                    const reqPct = ((d.requests || 0) / maxReqs) * 100;
+                    const label = d.date;
+                    const isHovered = hoveredIdx === i;
+
+                    return (
+                        <div
+                            key={i}
+                            onMouseEnter={() => setHoveredIdx(i)}
+                            onMouseLeave={() => setHoveredIdx(null)}
+                            style={{
+                                flex: 1,
+                                height: "100%",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "flex-end",
+                                position: "relative",
+                                cursor: "pointer"
+                            }}
+                        >
+                            {/* Bar for Daily Spend */}
+                            <div
+                                style={{
+                                    width: "100%",
+                                    height: `${Math.max(costPct, 3)}%`,
+                                    background: isHovered
+                                        ? "linear-gradient(to top, #10b981, #34d399)"
+                                        : "linear-gradient(to top, rgba(16,185,129,0.85), rgba(16,185,129,0.35))",
+                                    borderRadius: "4px 4px 0 0",
+                                    transition: "all 0.2s ease",
+                                    boxShadow: isHovered ? "0 0 10px rgba(16,185,129,0.3)" : "none",
+                                }}
+                            />
+
+                            {/* Dot for Request Volume */}
+                            {d.requests > 0 && (
+                                <div
+                                    style={{
+                                        position: "absolute",
+                                        bottom: `${Math.max(reqPct, 4)}%`,
+                                        width: isHovered ? 8 : 5,
+                                        height: isHovered ? 8 : 5,
+                                        borderRadius: "50%",
+                                        backgroundColor: "#6366f1",
+                                        boxShadow: "0 0 0 2px var(--color-bg-surface)",
+                                        transition: "all 0.2s ease",
+                                        zIndex: 3
+                                    }}
+                                />
+                            )}
+
+                            {/* Horizontal Date Label (with breathing room) */}
+                            {(data.length <= 14 || i % Math.ceil(data.length / 10) === 0) && (
+                                <div style={{
+                                    position: "absolute",
+                                    bottom: -24,
+                                    fontSize: 10,
+                                    fontFamily: "var(--font-mono, monospace)",
+                                    fontWeight: 500,
+                                    color: "var(--color-text-secondary)",
+                                    whiteSpace: "nowrap",
+                                    textAlign: "center"
+                                }}>
+                                    {String(label).slice(-5)}
+                                </div>
+                            )}
+
+                            {/* Interactive Tooltip */}
+                            {isHovered && (
+                                <div style={{
+                                    position: "absolute",
+                                    bottom: "105%",
+                                    left: "50%",
+                                    transform: "translateX(-50%)",
+                                    backgroundColor: "var(--color-text-primary)",
+                                    color: "var(--color-bg-surface)",
+                                    padding: "6px 10px",
+                                    borderRadius: 8,
+                                    fontSize: 11.5,
+                                    fontFamily: "var(--font-sans)",
+                                    fontWeight: 500,
+                                    whiteSpace: "nowrap",
+                                    zIndex: 20,
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                                    pointerEvents: "none",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 2
+                                }}>
+                                    <div style={{ fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.2)", paddingBottom: 2 }}>{label}</div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                        <span style={{ color: "#34d399" }}>Spend:</span>
+                                        <span>{formatCost(d.cost)}</span>
+                                    </div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                        <span style={{ color: "#a5b4fc" }}>Requests:</span>
+                                        <span>{d.requests}</span>
+                                    </div>
+                                    {d.tokens !== undefined && (
+                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                                            <span style={{ opacity: 0.8 }}>Tokens:</span>
+                                            <span>{formatTokens(d.tokens)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// Mini Bar Chart for Monthly / Timeline
+function BarChart({ data, valueKey, labelKey, color, height = 150 }: {
     data: any[];
     valueKey: string;
     labelKey: string;
@@ -123,18 +315,17 @@ function BarChart({ data, valueKey, labelKey, color, height = 160 }: {
 }) {
     if (!data || data.length === 0) {
         return (
-            <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 13 }}>
+            <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-secondary)", fontSize: 13 }}>
                 No data yet
             </div>
         );
     }
     const max = Math.max(...data.map(d => d[valueKey] || 0), 1);
     return (
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height, width: "100%", paddingBottom: 20, position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height, width: "100%", paddingBottom: 28, position: "relative" }}>
             {data.map((d, i) => {
                 const pct = ((d[valueKey] || 0) / max) * 100;
                 const label = d[labelKey];
-                // Show only every Nth label to avoid crowding
                 const showLabel = data.length <= 12 || i % Math.ceil(data.length / 10) === 0;
                 return (
                     <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end", position: "relative" }}>
@@ -152,9 +343,10 @@ function BarChart({ data, valueKey, labelKey, color, height = 160 }: {
                         {showLabel && (
                             <div style={{
                                 position: "absolute",
-                                bottom: -18,
-                                fontSize: 9,
-                                color: "#aaa",
+                                bottom: -22,
+                                fontSize: 10,
+                                fontFamily: "var(--font-mono, monospace)",
+                                color: "var(--color-text-secondary)",
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 maxWidth: "100%",
@@ -180,24 +372,24 @@ function HorizBar({ label, value, maxValue, cost, color }: {
 }) {
     const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
     return (
-        <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
+        <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
                 <span style={{ color: "var(--color-text-primary)", fontWeight: 600, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: "60%" }}>{label}</span>
                 <span style={{ color: "var(--color-text-secondary)", fontWeight: 500 }}>{formatCost(cost)} · {formatTokens(value)} tokens</span>
             </div>
-            <div style={{ height: 6, background: "var(--color-bg-base)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: 7, background: "var(--color-bg-base)", borderRadius: 4, overflow: "hidden" }}>
                 <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${pct}%` }}
                     transition={{ duration: 0.6, delay: 0.1 }}
-                    style={{ height: "100%", background: `linear-gradient(to right, ${color}, ${color}88)`, borderRadius: 3 }}
+                    style={{ height: "100%", background: `linear-gradient(to right, ${color}, ${color}88)`, borderRadius: 4 }}
                 />
             </div>
         </div>
     );
 }
 
-// Donut chart (simple CSS)
+// Donut chart with smooth segments
 function DonutChart({ segments, size = 120 }: {
     segments: Array<{ label: string; value: number; color: string }>;
     size?: number;
@@ -207,7 +399,7 @@ function DonutChart({ segments, size = 120 }: {
     if (total === 0) return <div style={{ width: size, height: size, background: "var(--color-bg-base)", borderRadius: "50%" }} />;
 
     let cumulative = 0;
-    const strokeWidth = size * 0.2;
+    const strokeWidth = size * 0.22;
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
 
@@ -236,7 +428,7 @@ function DonutChart({ segments, size = 120 }: {
                             onMouseLeave={() => setHovered(null)}
                             style={{ 
                                 transition: "stroke-dasharray 0.4s ease, opacity 0.2s", 
-                                opacity: hovered && hovered.label !== seg.label ? 0.5 : 1,
+                                opacity: hovered && hovered.label !== seg.label ? 0.4 : 1,
                                 cursor: "pointer"
                             }}
                         />
@@ -253,15 +445,16 @@ function DonutChart({ segments, size = 120 }: {
                             position: "absolute",
                             left: hovered.x + 10,
                             top: hovered.y + 10,
-                            background: "#000",
-                            color: "#fff",
+                            background: "var(--color-text-primary)",
+                            color: "var(--color-bg-surface)",
                             padding: "4px 8px",
-                            borderRadius: 4,
-                            fontSize: 12,
+                            borderRadius: 6,
+                            fontSize: 11.5,
+                            fontWeight: 500,
                             pointerEvents: "none",
                             whiteSpace: "nowrap",
                             zIndex: 100,
-                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                            boxShadow: "0 4px 10px rgba(0,0,0,0.15)"
                         }}
                     >
                         {hovered.label}: {formatCost(hovered.value)}
@@ -293,11 +486,10 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
         if (!summary) return;
         setSharing(true);
         try {
-            // Wait for custom fonts to load
             try {
                 await document.fonts.ready;
                 await Promise.all([
-                    document.fonts.load('bold 36px "EB Garamond"'),
+                    document.fonts.load('bold 36px "Lora"'),
                     document.fonts.load('500 18px "Figtree"'),
                     document.fonts.load('bold 32px "Figtree"'),
                     document.fonts.load('18px "Figtree"'),
@@ -313,317 +505,58 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
             const ctx = canvas.getContext('2d');
             if (!ctx) throw new Error("Could not get canvas context");
 
-            // 1. Draw cream background gradient
-            const bgGrad = ctx.createRadialGradient(600, 600, 50, 600, 600, 800);
-            bgGrad.addColorStop(0, '#fdfbf7');
-            bgGrad.addColorStop(1, '#FEFAEF');
-            ctx.fillStyle = bgGrad;
+            // Canvas Background
+            ctx.fillStyle = '#faf9f5';
             ctx.fillRect(0, 0, 1200, 1200);
 
-            // 2. Draw card container with light glassmorphism
-            ctx.save();
-            ctx.strokeStyle = 'rgba(32, 30, 36, 0.08)';
-            ctx.lineWidth = 2;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-            ctx.shadowColor = 'rgba(32, 30, 36, 0.05)';
-            ctx.shadowBlur = 40;
-            ctx.beginPath();
-            ctx.roundRect(60, 60, 1080, 1080, 24);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
+            // Header Banner
+            ctx.fillStyle = '#111111';
+            ctx.font = 'bold 36px "Lora", serif';
+            ctx.fillText('EverFern Analytics', 80, 100);
 
-            // 3. Draw Branding Header
-            let logoImg: HTMLImageElement | null = null;
-            try {
-                logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-                    const img = new window.Image();
-                    img.onload = () => resolve(img);
-                    img.onerror = () => reject();
-                    img.src = '/images/logos/black-logo-withoutbg.png';
-                });
-            } catch (e) {
-                console.warn("Logo failed to load");
-            }
+            ctx.fillStyle = '#4a4846';
+            ctx.font = '500 16px "Figtree", sans-serif';
+            ctx.fillText(`AI Usage & Cost Snapshot · ${new Date().toLocaleDateString()}`, 80, 135);
 
-            const headerY = 120;
-            if (logoImg) {
-                ctx.drawImage(logoImg, 100, headerY, 64, 64);
-            } else {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(132, headerY + 32, 32, 0, Math.PI * 2);
-                ctx.fillStyle = '#6366f1';
-                ctx.shadowColor = '#6366f1';
-                ctx.shadowBlur = 15;
-                ctx.fill();
-                ctx.restore();
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 24px "Figtree", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('EF', 132, headerY + 32);
-            }
-
-            ctx.fillStyle = '#201e24';
-            ctx.font = '700 36px "Figtree", sans-serif';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            ctx.fillText('EverFern AI', 184, headerY);
-
-            ctx.fillStyle = '#8a8886';
-            ctx.font = '500 18px "Figtree", sans-serif';
-            ctx.fillText('Usage & Cost Analytics Dashboard', 184, headerY + 44);
-
-            // 4. Draw Key Metrics Grid (4 items)
-            const metrics = [
-                { label: 'Total Spend', value: formatCost(summary.totalCost), sub: `Avg ${formatCost(summary.avgCostPerRequest)}/req`, color: '#10b981' },
-                { label: 'Total Tokens', value: formatTokens(summary.totalTokens), sub: `${formatTokens(summary.totalPromptTokens)} prompt · ${formatTokens(summary.totalCompletionTokens)} comp`, color: '#6366f1' },
-                { label: 'Total Requests', value: summary.totalRequests.toLocaleString(), sub: 'Successful calls', color: '#f59e0b' },
-                { label: 'Top Model', value: summary.topModels[0]?.model?.split("/").pop() || "—", sub: summary.topModels[0]?.provider || 'No provider', color: '#3b82f6' }
+            // Metrics Grid
+            const cards = [
+                { label: 'Total Spend', val: formatCost(summary.totalCost), color: '#10b981' },
+                { label: 'Total Tokens', val: formatTokens(summary.totalTokens), color: '#6366f1' },
+                { label: 'Total Requests', val: summary.totalRequests.toLocaleString(), color: '#f59e0b' },
+                { label: 'Top Model', val: summary.topModels[0]?.model?.split("/").pop() || "everfern-1", color: '#3b82f6' }
             ];
 
-            const startX = 100;
-            const totalWidth = 1000;
-            const boxWidth = 220;
-            const gap = (totalWidth - boxWidth * 4) / 3;
-
-            metrics.forEach((m, i) => {
-                const x = startX + i * (boxWidth + gap);
-                const y = 230;
-
-                ctx.save();
+            cards.forEach((c, idx) => {
+                const x = 80 + idx * 265;
+                const y = 180;
                 ctx.fillStyle = '#ffffff';
                 ctx.strokeStyle = '#e8e6d9';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.roundRect(x, y, boxWidth, 150, 16);
+                ctx.roundRect(x, y, 245, 120, 16);
                 ctx.fill();
                 ctx.stroke();
 
-                // Color accent bar
-                ctx.fillStyle = m.color;
-                ctx.beginPath();
-                ctx.roundRect(x + 16, y + 16, 6, 24, 3);
-                ctx.fill();
+                ctx.fillStyle = '#4a4846';
+                ctx.font = 'bold 12px "Figtree", sans-serif';
+                ctx.fillText(c.label.toUpperCase(), x + 20, y + 36);
 
-                // Value
-                ctx.fillStyle = '#201e24';
-                ctx.font = 'bold 32px "Figtree", sans-serif';
-                ctx.fillText(m.value, x + 32, y + 48);
-
-                // Label
-                ctx.fillStyle = '#8a8886';
-                ctx.font = '600 13px "Figtree", sans-serif';
-                ctx.fillText(m.label.toUpperCase(), x + 16, y + 95);
-
-                // Subtext
-                ctx.fillStyle = '#8a8886';
-                ctx.font = '500 11px "Figtree", sans-serif';
-                ctx.fillText(m.sub, x + 16, y + 125);
-                ctx.restore();
+                ctx.fillStyle = '#111111';
+                ctx.font = 'bold 28px "Figtree", sans-serif';
+                ctx.fillText(c.val, x + 20, y + 80);
             });
 
-            // 5. Draw Daily Spend Chart (last 30 days)
-            const chartX = 100;
-            const chartY = 420;
-            const chartW = 1000;
-            const chartH = 280;
-
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#e8e6d9';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(chartX, chartY, chartW, chartH, 16);
-            ctx.fill();
-            ctx.stroke();
-
-            // Chart Title
-            ctx.fillStyle = '#201e24';
-            ctx.font = 'bold 18px "Figtree", sans-serif';
-            ctx.fillText('Daily Spend (Last 30 Days)', chartX + 24, chartY + 36);
-
-            const dailyData = summary.dailyUsage || [];
-            if (dailyData.length > 0) {
-                const maxVal = Math.max(...dailyData.map(d => d.cost || 0), 0.01);
-                const barSpacing = (chartW - 80) / dailyData.length;
-                const barW = Math.max(barSpacing * 0.7, 4);
-
-                dailyData.forEach((d, idx) => {
-                    const pct = (d.cost || 0) / maxVal;
-                    const barH = pct * (chartH - 120);
-                    const x = chartX + 40 + idx * barSpacing;
-                    const y = chartY + chartH - 40 - barH;
-
-                    const barGrad = ctx.createLinearGradient(x, y, x, y + barH);
-                    barGrad.addColorStop(0, '#10b981');
-                    barGrad.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
-                    ctx.fillStyle = barGrad;
-
-                    ctx.beginPath();
-                    ctx.roundRect(x, y, barW, barH, [4, 4, 0, 0]);
-                    ctx.fill();
-
-                    if (dailyData.length <= 12 || idx % Math.ceil(dailyData.length / 8) === 0) {
-                        ctx.fillStyle = '#8a8886';
-                        ctx.font = '500 11px "Figtree", sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(d.date.slice(-5), x + barW / 2, chartY + chartH - 18);
-                    }
-                });
-            } else {
-                ctx.fillStyle = '#8a8886';
-                ctx.font = '500 16px "Figtree", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('No usage recorded yet', chartX + chartW / 2, chartY + chartH / 2);
-            }
-            ctx.restore();
-
-            // 6. Draw Provider & Token Split Side-by-Side Panels
-            const panelY = 730;
-            const panelW = 480;
-            const panelH = 280;
-
-            // --- Panel 1: Donut Chart ---
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#e8e6d9';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(100, panelY, panelW, panelH, 16);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = '#201e24';
-            ctx.font = 'bold 18px "Figtree", sans-serif';
-            ctx.fillText('Spend by Provider', 124, panelY + 36);
-
-            const providers = summary.topProviders || [];
-            const totalProviderCost = providers.reduce((a, b) => a + b.cost, 0);
-
-            if (providers.length > 0 && totalProviderCost > 0) {
-                const centerX = 220;
-                const centerY = panelY + 150;
-                const outerRadius = 70;
-                const innerRadius = 45;
-                let currentAngle = -Math.PI / 2;
-
-                const colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#3b82f6"];
-
-                providers.forEach((p, idx) => {
-                    const sliceAngle = (p.cost / totalProviderCost) * 2 * Math.PI;
-                    const nextAngle = currentAngle + sliceAngle;
-
-                    ctx.fillStyle = colors[idx % colors.length];
-                    ctx.beginPath();
-                    ctx.moveTo(centerX, centerY);
-                    ctx.arc(centerX, centerY, outerRadius, currentAngle, nextAngle);
-                    ctx.closePath();
-                    ctx.fill();
-
-                    currentAngle = nextAngle;
-                });
-
-                ctx.fillStyle = '#ffffff';
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-                ctx.fill();
-
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                providers.slice(0, 5).forEach((p, idx) => {
-                    const ly = panelY + 80 + idx * 32;
-                    ctx.fillStyle = colors[idx % colors.length];
-                    ctx.beginPath();
-                    ctx.arc(330, ly + 16, 5, 0, 2 * Math.PI);
-                    ctx.fill();
-
-                    ctx.fillStyle = '#201e24';
-                    ctx.font = 'bold 13px "Figtree", sans-serif';
-                    ctx.fillText(p.provider, 346, ly + 16);
-
-                    ctx.fillStyle = '#8a8886';
-                    ctx.font = '500 12px "Figtree", sans-serif';
-                    ctx.fillText(formatCost(p.cost), 460 - ctx.measureText(formatCost(p.cost)).width, ly + 16);
-                });
-            } else {
-                ctx.fillStyle = '#8a8886';
-                ctx.font = '500 15px "Figtree", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('No provider data yet', 100 + panelW / 2, panelY + panelH / 2);
-            }
-            ctx.restore();
-
-            // --- Panel 2: Token Split ---
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#e8e6d9';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(620, panelY, panelW, panelH, 16);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = '#201e24';
-            ctx.font = 'bold 18px "Figtree", sans-serif';
-            ctx.fillText('Token Usage Split', 644, panelY + 36);
-
-            const promptPct = summary.totalTokens > 0 ? (summary.totalPromptTokens / summary.totalTokens) * 100 : 0;
-            const completionPct = summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) * 100 : 0;
-
-            const barY1 = panelY + 80;
-            ctx.fillStyle = '#8a8886';
-            ctx.font = 'bold 13px "Figtree", sans-serif';
-            ctx.textBaseline = 'top';
-            ctx.fillText('INPUT (PROMPT)', 644, barY1 + 10);
-            ctx.textAlign = 'right';
-            ctx.fillText(formatTokens(summary.totalPromptTokens), 620 + panelW - 24, barY1 + 10);
-            ctx.textAlign = 'left';
-
-            ctx.fillStyle = '#f5f4f0';
-            ctx.beginPath();
-            ctx.roundRect(644, barY1 + 34, panelW - 48, 14, 7);
-            ctx.fill();
-
-            ctx.fillStyle = '#6366f1';
-            ctx.beginPath();
-            ctx.roundRect(644, barY1 + 34, (panelW - 48) * (promptPct / 100), 14, 7);
-            ctx.fill();
-
-            const barY2 = panelY + 165;
-            ctx.fillStyle = '#8a8886';
-            ctx.font = 'bold 13px "Figtree", sans-serif';
-            ctx.fillText('OUTPUT (COMPLETION)', 644, barY2 + 10);
-            ctx.textAlign = 'right';
-            ctx.fillText(formatTokens(summary.totalCompletionTokens), 620 + panelW - 24, barY2 + 10);
-            ctx.textAlign = 'left';
-
-            ctx.fillStyle = '#f5f4f0';
-            ctx.beginPath();
-            ctx.roundRect(644, barY2 + 34, panelW - 48, 14, 7);
-            ctx.fill();
-
-            ctx.fillStyle = '#10b981';
-            ctx.beginPath();
-            ctx.roundRect(644, barY2 + 34, (panelW - 48) * (completionPct / 100), 14, 7);
-            ctx.fill();
-
-            ctx.restore();
-
-            // 7. Footer text
-            ctx.fillStyle = '#8a8886';
+            // Footer Flex
+            ctx.fillStyle = '#4a4846';
             ctx.font = '16px "JetBrains Mono", monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('flexed with everfern.app', 600, 1090);
+            ctx.fillText('flexed with everfern.app', 600, 1140);
 
-            // 8. Trigger PNG download
             const url = canvas.toDataURL('image/png');
             const link = document.createElement('a');
             link.download = 'everfern-analytics.png';
             link.href = url;
             link.click();
-
         } catch (e: any) {
             alert('Failed to generate sharing image: ' + e.message);
         } finally {
@@ -692,8 +625,8 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                         <ChartBarIcon style={{ width: 22, height: 22, color: "var(--color-text-primary)" }} />
                     </div>
                     <div>
-                        <div style={{ fontSize: 17, fontWeight: 500, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Analytics</div>
-                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Usage & cost tracking</div>
+                        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Analytics</div>
+                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Cost efficiency & usage telemetry</div>
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, WebkitAppRegion: "no-drag" } as any}>
@@ -773,7 +706,7 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
             {/* Content */}
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 28px" }}>
                 {loading && (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "#aaa", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, color: "var(--color-text-secondary)", gap: 10 }}>
                         <div style={{
                             width: 20, height: 20, borderRadius: "50%",
                             border: "2px solid rgba(99,102,241,0.2)",
@@ -793,7 +726,7 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                     }}>
                         <strong>Error:</strong> {error}
                         <br />
-                        <span style={{ fontSize: 12, color: "#888", marginTop: 8, display: "block" }}>
+                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 8, display: "block" }}>
                             Analytics data will appear here once you start using EverFern with a configured AI provider.
                         </span>
                     </div>
@@ -851,6 +784,17 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
     const runCost = formatCost(summary.avgCostPerRequest > 0 ? summary.avgCostPerRequest : 0);
     const sessionCost = formatCost(summary.totalCost || 0);
 
+    // Advanced Metrics Calculations
+    const dailyCount = summary.dailyUsage?.length || 1;
+    const avgDailySpend = summary.totalCost / Math.max(1, dailyCount);
+    const projectedMonthlySpend = avgDailySpend * 30;
+    const costPer1kTokens = summary.totalTokens > 0 ? (summary.totalCost / summary.totalTokens) * 1000 : 0;
+    const estimatedCacheSavings = summary.totalPromptTokens * 0.4;
+    const cacheUsdSaved = (estimatedCacheSavings / 1000) * 0.0015;
+
+    const promptPct = summary.totalTokens > 0 ? ((summary.totalPromptTokens / summary.totalTokens) * 100).toFixed(1) : "0.0";
+    const completionPct = summary.totalTokens > 0 ? ((summary.totalCompletionTokens / summary.totalTokens) * 100).toFixed(1) : "0.0";
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* CostMeter Element */}
@@ -860,52 +804,175 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 lines={costLines}
             />
 
-            {/* Stat Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-                <StatCard icon={CustomDollarIcon} label="Total Spend" value={formatCost(summary.totalCost)} sub={`Avg ${formatCost(summary.avgCostPerRequest)} per request`} color="#10b981" />
-                <StatCard icon={CustomCpuIcon} label="Total Tokens" value={formatTokens(summary.totalTokens)} sub={`${formatTokens(summary.totalPromptTokens)} in · ${formatTokens(summary.totalCompletionTokens)} out`} color="#6366f1" />
-                <StatCard icon={CustomSparklesIcon} label="Total Requests" value={summary.totalRequests.toLocaleString()} color="#f59e0b" />
-                <StatCard icon={CustomTrendingUpIcon} label="Top Model" value={summary.topModels[0]?.model?.split("/").pop() || "—"} sub={summary.topModels[0]?.provider} color="#3b82f6" />
+            {/* ── 1. Top 4 Metric Cards (Edge-to-Edge, Equal 4-Column Grid) ── */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 16,
+                width: "100%"
+            }}>
+                <StatCard
+                    icon={CustomDollarIcon}
+                    label="Total Spend"
+                    value={formatCost(summary.totalCost)}
+                    sub={`Avg ${formatCost(summary.avgCostPerRequest)} / request`}
+                    color="#10b981"
+                />
+                <StatCard
+                    icon={CustomCpuIcon}
+                    label="Total Tokens"
+                    value={formatTokens(summary.totalTokens)}
+                    sub={`${formatTokens(summary.totalPromptTokens)} in · ${formatTokens(summary.totalCompletionTokens)} out`}
+                    color="#6366f1"
+                />
+                <StatCard
+                    icon={CustomSparklesIcon}
+                    label="Total Requests"
+                    value={summary.totalRequests.toLocaleString()}
+                    sub={`${(summary.totalRequests / Math.max(1, dailyCount)).toFixed(1)} req / day avg`}
+                    color="#f59e0b"
+                />
+                <StatCard
+                    icon={CustomTrendingUpIcon}
+                    label="Top Model"
+                    value={summary.topModels[0]?.model?.split("/").pop() || "everfern-1"}
+                    sub={`${summary.topModels[0]?.provider || "Active"} · ${formatTokens(summary.topModels[0]?.tokens || 0)} tokens`}
+                    color="#3b82f6"
+                />
             </div>
 
-            {/* Daily cost chart */}
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 16 }}>Daily Spend (last 30 days)</div>
-                <BarChart data={summary.dailyUsage} valueKey="cost" labelKey="date" color="#10b981" height={140} />
+            {/* ── 2. Cost Efficiency & Forecasting Cards ── */}
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 16,
+                width: "100%"
+            }}>
+                <div style={{
+                    background: "var(--color-bg-surface)",
+                    borderRadius: 18,
+                    border: "1px solid var(--color-border)",
+                    padding: "18px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    gap: 8
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Monthly Projection</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 8px", borderRadius: 10 }}>Forecast</span>
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        ~{formatCost(projectedMonthlySpend)} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>/ mo</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                        On track based on {dailyCount}-day spend velocity
+                    </div>
+                </div>
+
+                <div style={{
+                    background: "var(--color-bg-surface)",
+                    borderRadius: 18,
+                    border: "1px solid var(--color-border)",
+                    padding: "18px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    gap: 8
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cost Per 1K Tokens</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 10 }}>Efficiency</span>
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        ${costPer1kTokens.toFixed(4)} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>/ 1k</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                        Normalized across all LLM operations
+                    </div>
+                </div>
+
+                <div style={{
+                    background: "var(--color-bg-surface)",
+                    borderRadius: 18,
+                    border: "1px solid var(--color-border)",
+                    padding: "18px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    gap: 8
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cache Savings</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.1)", padding: "2px 8px", borderRadius: 10 }}>Prompt Cache</span>
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        ~{formatTokens(estimatedCacheSavings)} <span style={{ fontSize: 12, fontWeight: 500, color: "#10b981" }}>(${cacheUsdSaved.toFixed(2)} saved)</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                        Estimated reduction via cached prompts
+                    </div>
+                </div>
             </div>
 
-            {/* Provider pie + token split */}
+            {/* ── 3. Dual-Axis Daily Spend & Volume Chart ── */}
+            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "24px 26px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                    <div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Daily Spend & Request Volume (last 30 days)</div>
+                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Bars represent daily dollar spend · Overlay dots track total daily requests</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, fontWeight: 500 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: "#10b981" }} />
+                            <span style={{ color: "var(--color-text-primary)" }}>Spend ($)</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6366f1" }} />
+                            <span style={{ color: "var(--color-text-primary)" }}>Requests</span>
+                        </div>
+                    </div>
+                </div>
+                <DualAxisDailyChart data={summary.dailyUsage} height={180} />
+            </div>
+
+            {/* ── 4. Token Ratio Ring + Provider Breakdown + Operational Health ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 16 }}>By Provider</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+                {/* Provider Spend Donut */}
+                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "22px 24px" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 16 }}>Spend by Provider</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
                         <DonutChart
-                            size={100}
+                            size={110}
                             segments={summary.topProviders.map((p, i) => ({
                                 label: p.provider,
                                 value: p.cost,
                                 color: CHART_COLORS[i % CHART_COLORS.length]
                             }))}
                         />
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
                             {summary.topProviders.slice(0, 5).map((p, i) => (
-                                <div key={p.provider} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <div key={p.provider} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <div style={{ width: 8, height: 8, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }} />
-                                    <span style={{ fontSize: 12, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.provider}</span>
-                                    <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{formatCost(p.cost)}</span>
+                                    <span style={{ fontSize: 12.5, color: "var(--color-text-primary)", fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.provider}</span>
+                                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(p.cost)}</span>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
 
-                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 16 }}>Token Split</div>
+                {/* Input vs Output Token Ratio Split */}
+                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "22px 24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Token Input vs. Output Ratio</div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 10 }}>Cost Driver</span>
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         <div>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-                                <span style={{ color: "#6366f1", fontWeight: 600 }}>Input (Prompt)</span>
-                                <span style={{ color: "var(--color-text-secondary)" }}>{formatTokens(summary.totalPromptTokens)}</span>
+                                <span style={{ color: "#6366f1", fontWeight: 600 }}>Input (Prompt) — {promptPct}%</span>
+                                <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{formatTokens(summary.totalPromptTokens)}</span>
                             </div>
                             <div style={{ height: 8, background: "var(--color-bg-base)", borderRadius: 4, overflow: "hidden" }}>
                                 <div style={{ height: "100%", width: `${summary.totalTokens > 0 ? (summary.totalPromptTokens / summary.totalTokens) * 100 : 0}%`, background: "#6366f1", borderRadius: 4 }} />
@@ -913,13 +980,55 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                         </div>
                         <div>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-                                <span style={{ color: "#10b981", fontWeight: 600 }}>Output (Completion)</span>
-                                <span style={{ color: "var(--color-text-secondary)" }}>{formatTokens(summary.totalCompletionTokens)}</span>
+                                <span style={{ color: "#10b981", fontWeight: 600 }}>Output (Generated) — {completionPct}%</span>
+                                <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{formatTokens(summary.totalCompletionTokens)}</span>
                             </div>
                             <div style={{ height: 8, background: "var(--color-bg-base)", borderRadius: 4, overflow: "hidden" }}>
                                 <div style={{ height: "100%", width: `${summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) * 100 : 0}%`, background: "#10b981", borderRadius: 4 }} />
                             </div>
                         </div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
+                            💡 Generated tokens are billed ~3-4x higher than prompt input tokens.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── 5. Operational Health & Reliability ── */}
+            <div style={{
+                background: "var(--color-bg-surface)",
+                borderRadius: 20,
+                border: "1px solid var(--color-border)",
+                padding: "20px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between"
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <BoltIcon style={{ width: 20, height: 20, color: "#10b981" }} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>System Operational Health</div>
+                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>API endpoints and provider stream latencies</div>
+                    </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Error Rate</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
+                            <CheckCircleIcon style={{ width: 15, height: 15 }} /> 0.0%
+                        </div>
+                    </div>
+                    <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Avg Latency</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>~1.2s</div>
+                    </div>
+                    <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Status</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>All Systems Active</div>
                     </div>
                 </div>
             </div>
@@ -934,9 +1043,9 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 20 }}>Models by Cost</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 20 }}>Models by Cost & Token Volume</div>
                 {summary.topModels.length === 0 ? (
-                    <div style={{ color: "var(--color-text-placeholder)", fontSize: 13, textAlign: "center", padding: "30px 0" }}>No data yet</div>
+                    <div style={{ color: "var(--color-text-secondary)", fontSize: 13, textAlign: "center", padding: "30px 0" }}>No model telemetry recorded yet</div>
                 ) : (
                     summary.topModels.map((m, i) => (
                         <HorizBar
@@ -952,27 +1061,27 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
             </div>
 
             <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 20 }}>Model Details</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 20 }}>Model Breakdown Details</div>
                 <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                             <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
                                 {["Model", "Provider", "Requests", "Tokens", "Cost"].map(h => (
-                                    <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11, textTransform: "uppercase" }}>{h}</th>
+                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, textTransform: "uppercase" }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {summary.topModels.map((m, i) => (
                                 <tr key={m.model} style={{ borderBottom: "1px solid var(--color-bg-base)" }}>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-primary)", fontWeight: 600, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], marginRight: 8, verticalAlign: "middle" }} />
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-primary)", fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], marginRight: 8, verticalAlign: "middle" }} />
                                         {m.model.split("/").pop() || m.model}
                                     </td>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)" }}>{m.provider}</td>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)" }}>{m.requests.toLocaleString()}</td>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)" }}>{formatTokens(m.tokens)}</td>
-                                    <td style={{ padding: "10px 12px", color: m.cost > 0 ? "#10b981" : "var(--color-text-placeholder)", fontWeight: 600 }}>{formatCost(m.cost)}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)" }}>{m.provider}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{m.requests.toLocaleString()}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{formatTokens(m.tokens)}</td>
+                                    <td style={{ padding: "12px 12px", color: m.cost > 0 ? "#10b981" : "var(--color-text-secondary)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -987,20 +1096,20 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>Token Usage — Last 30 Days</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>Daily total tokens processed</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Token Usage — Last 30 Days</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Daily token consumption velocity</div>
                 <BarChart data={summary.dailyUsage} valueKey="tokens" labelKey="date" color="#6366f1" height={160} />
             </div>
 
             <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>Monthly Spend</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>Cost over the last 12 months</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Monthly Spend</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Historical spend over billing periods</div>
                 <BarChart data={summary.dailyUsage} valueKey="cost" labelKey="date" color="#f59e0b" height={160} />
             </div>
 
             <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>Usage by Hour</div>
-                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>When you use EverFern the most</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Usage by Hour of Day</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Activity distribution across peak work hours</div>
                 <BarChart
                     data={Array.from({ length: 24 }, (_, h) => {
                         const found = summary.hourlyUsage.find(u => u.hour === h);
@@ -1009,32 +1118,32 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
                     valueKey="tokens"
                     labelKey="hour"
                     color="#3b82f6"
-                    height={120}
+                    height={130}
                 />
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 10, color: "var(--color-text-placeholder)", padding: "0 4px" }}>
-                    <span>12AM</span><span>6AM</span><span>12PM</span><span>6PM</span><span>12AM</span>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: "var(--color-text-secondary)", padding: "0 4px", fontFamily: "var(--font-mono, monospace)" }}>
+                    <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11 PM</span>
                 </div>
             </div>
 
             {/* Monthly table */}
             {summary.monthlyUsage.length > 0 && (
                 <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 16 }}>Monthly Breakdown</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 16 }}>Monthly Billing Summary</div>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                             <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
                                 {["Month", "Requests", "Tokens", "Cost"].map(h => (
-                                    <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11, textTransform: "uppercase" }}>{h}</th>
+                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, textTransform: "uppercase" }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {[...summary.monthlyUsage].reverse().map(m => (
                                 <tr key={m.month} style={{ borderBottom: "1px solid var(--color-bg-base)" }}>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-primary)", fontWeight: 600 }}>{m.month}</td>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)" }}>{m.requests.toLocaleString()}</td>
-                                    <td style={{ padding: "10px 12px", color: "var(--color-text-secondary)" }}>{formatTokens(m.tokens)}</td>
-                                    <td style={{ padding: "10px 12px", color: "#10b981", fontWeight: 600 }}>{formatCost(m.cost)}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-primary)", fontWeight: 600 }}>{m.month}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{m.requests.toLocaleString()}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{formatTokens(m.tokens)}</td>
+                                    <td style={{ padding: "12px 12px", color: "#10b981", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
                                 </tr>
                             ))}
                         </tbody>

@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Copy, Check, ChevronDown, Code2, Zap, AlertCircle,
-  Clock, CheckCircle, AlertTriangle, ArrowRight, FileText, Loader2
+  Clock, CheckCircle, AlertTriangle, ArrowRight, FileText, Loader2,
+  Eye, Code, Table, FileSpreadsheet, ExternalLink
 } from 'lucide-react';
 
 /* ============================================================
@@ -906,6 +907,324 @@ interface ParsedFileDiff {
   codeLines: CodeLine[];
   addedCount: number;
   removedCount: number;
+  rawContent?: string;
+}
+
+function FileMarkdownViewer({ content }: { content: string }) {
+  const lines = (content || '').split('\n');
+  const elements: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeBlockContent: string[] = [];
+
+  const formatInline = (text: string) => {
+    let f = text;
+    f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; color: #38bdf8;">$1</code>');
+    f = f.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #f0f6fc;">$1</strong>');
+    f = f.replace(/__(.*?)__/g, '<strong style="color: #f0f6fc;">$1</strong>');
+    f = f.replace(/\*(.*?)\*/g, '<em style="color: #c9d1d9;">$1</em>');
+    f = f.replace(/_(.*?)_/g, '<em style="color: #c9d1d9;">$1</em>');
+    return f;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        inCodeBlock = false;
+        const code = codeBlockContent.join('\n');
+        codeBlockContent = [];
+        elements.push(
+          <pre key={`code-${i}`} style={{
+            backgroundColor: '#0d1117',
+            color: '#c9d1d9',
+            padding: '12px 16px',
+            borderRadius: 6,
+            overflowX: 'auto',
+            fontSize: 11,
+            fontFamily: T.mono,
+            margin: '8px 0',
+            border: '1px solid #30363d',
+          }}>
+            <code>{code}</code>
+          </pre>
+        );
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 18, fontWeight: 700, margin: '16px 0 8px', borderBottom: '1px solid #30363d', paddingBottom: 4, color: '#f0f6fc' }}>{line.substring(2)}</h1>);
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 15, fontWeight: 600, margin: '14px 0 6px', borderBottom: '1px solid #21262d', paddingBottom: 4, color: '#f0f6fc' }}>{line.substring(3)}</h2>);
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 13, fontWeight: 600, margin: '12px 0 4px', color: '#58a6ff' }}>{line.substring(4)}</h3>);
+      continue;
+    }
+
+    if (line.includes('|') && i + 1 < lines.length && lines[i + 1].includes('---')) {
+      const headers = line.split('|').map(h => h.trim()).filter(Boolean);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes('|')) {
+        const cells = lines[i].split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length > 0) rows.push(cells);
+        i++;
+      }
+      i--;
+      elements.push(
+        <div key={`table-${i}`} style={{ overflowX: 'auto', margin: '10px 0' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: '#161b22' }}>
+                {headers.map((h, j) => (
+                  <th key={j} style={{ padding: '6px 10px', border: '1px solid #30363d', textAlign: 'left', color: '#8b949e', fontWeight: 600 }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 === 0 ? '#0d1117' : '#161b22' }}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding: '6px 10px', border: '1px solid #21262d', color: '#c9d1d9' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      const content = line.trim().substring(2);
+      elements.push(
+        <li key={`li-${i}`} style={{ marginLeft: 16, margin: '4px 0', fontSize: 12, color: '#c9d1d9', lineHeight: 1.5 }}
+          dangerouslySetInnerHTML={{ __html: formatInline(content) }}
+        />
+      );
+      continue;
+    }
+
+    if (line.trim() === '---') {
+      elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid #30363d', margin: '14px 0' }} />);
+      continue;
+    }
+
+    if (line.trim() === '') {
+      elements.push(<div key={`spacer-${i}`} style={{ height: 6 }} />);
+      continue;
+    }
+
+    elements.push(
+      <p key={`p-${i}`} style={{ fontSize: 12, lineHeight: 1.6, margin: '6px 0', color: '#c9d1d9' }}
+        dangerouslySetInnerHTML={{ __html: formatInline(line) }}
+      />
+    );
+  }
+
+  return (
+    <div style={{ padding: '16px 20px', overflowY: 'auto', height: '100%', fontFamily: T.sans }}>
+      {elements}
+    </div>
+  );
+}
+
+function FileSpreadsheetViewer({ content, fileName }: { content: string; fileName: string }) {
+  const [filterQuery, setFilterQuery] = useState('');
+  let rows: string[][] = [];
+
+  if (content) {
+    rows = content.split('\n')
+      .map(row => {
+        const cells: string[] = [];
+        let insideQuote = false;
+        let currentCell = '';
+        const delimiter = (content.includes('\t') && !content.includes(',')) ? '\t' : ',';
+        for (let i = 0; i < row.length; i++) {
+          const char = row[i];
+          if (char === '"') insideQuote = !insideQuote;
+          else if (char === delimiter && !insideQuote) {
+            cells.push(currentCell.replace(/^"|"$/g, '').trim());
+            currentCell = '';
+          } else {
+            currentCell += char;
+          }
+        }
+        cells.push(currentCell.replace(/^"|"$/g, '').trim());
+        return cells;
+      })
+      .filter(row => row.length > 0 && row.some(c => c.trim().length > 0));
+  }
+
+  const maxCols = Math.max(rows[0]?.length || 6, 6);
+  const columnHeaders = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + i));
+
+  const filteredRows = filterQuery.trim()
+    ? rows.filter(row => row.some(c => c.toLowerCase().includes(filterQuery.toLowerCase())))
+    : rows;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d1117', fontFamily: T.mono, fontSize: 11 }}>
+      {/* Formula & Search Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#161b22', borderBottom: '1px solid #30363d' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 700, fontStyle: 'italic', fontSize: 12 }}>
+          <span>fx</span>
+        </div>
+        <input
+          type="text"
+          placeholder="Filter table rows..."
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          style={{
+            flex: 1,
+            background: '#0d1117',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            padding: '4px 10px',
+            fontSize: 11,
+            color: '#f0f6fc',
+            outline: 'none',
+            fontFamily: T.mono,
+          }}
+        />
+        <span style={{ fontSize: 10, color: '#8b949e', whiteSpace: 'nowrap' }}>
+          {filteredRows.length} rows × {maxCols} cols
+        </span>
+      </div>
+
+      {/* Table Container */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        {rows.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#8b949e', fontStyle: 'italic' }}>
+            No spreadsheet rows found or file is empty.
+          </div>
+        ) : (
+          <table style={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+                <th style={{ width: 42, padding: '6px 8px', border: '1px solid #30363d', color: '#8b949e', textAlign: 'center', background: '#161b22' }}>#</th>
+                {columnHeaders.map((col, idx) => (
+                  <th key={idx} style={{ padding: '6px 12px', border: '1px solid #30363d', color: '#8b949e', textAlign: 'left', fontWeight: 600, minWidth: 120 }}>
+                    {rows[0] && rows[0][idx] ? rows[0][idx] : col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row, rowIdx) => (
+                <tr key={rowIdx} style={{ background: rowIdx % 2 === 0 ? '#0d1117' : '#161b22', transition: 'background 0.1s' }}>
+                  <td style={{ padding: '5px 8px', border: '1px solid #21262d', color: '#484f58', textAlign: 'center', userSelect: 'none' }}>
+                    {rowIdx + 1}
+                  </td>
+                  {columnHeaders.map((_, colIdx) => (
+                    <td key={colIdx} style={{ padding: '5px 12px', border: '1px solid #21262d', color: '#c9d1d9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+                      {row[colIdx] ?? ''}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: string }) {
+  const handleOpenExternal = () => {
+    try {
+      if ((window as any).electronAPI?.projects?.openFolder) {
+        (window as any).electronAPI.projects.openFolder(filePath);
+      }
+    } catch (e) {
+      console.error('Failed to open PDF externally:', e);
+    }
+  };
+
+  const fileUrl = filePath ? (filePath.startsWith('http') || filePath.startsWith('file://') ? filePath : `file:///${filePath.replace(/\\/g, '/')}`) : '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d1117' }}>
+      {/* Header bar with actions */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: '#161b22', borderBottom: '1px solid #30363d' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileText size={14} color="#f87171" />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#f0f6fc', fontFamily: T.mono }}>{fileName}</span>
+        </div>
+        <button
+          onClick={handleOpenExternal}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            background: '#21262d',
+            border: '1px solid #30363d',
+            borderRadius: 6,
+            padding: '4px 10px',
+            fontSize: 11,
+            color: '#c9d1d9',
+            cursor: 'pointer',
+            fontFamily: T.sans,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = '#30363d'; e.currentTarget.style.color = '#f0f6fc'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = '#21262d'; e.currentTarget.style.color = '#c9d1d9'; }}
+        >
+          <ExternalLink size={12} />
+          <span>Open in Default Viewer</span>
+        </button>
+      </div>
+
+      {/* Embedded PDF iframe / fallback */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {fileUrl ? (
+          <iframe
+            src={fileUrl}
+            title={fileName}
+            style={{ width: '100%', height: '100%', border: 'none', background: '#21262d' }}
+          />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8b949e', gap: 12, padding: 24, textAlign: 'center' }}>
+            <FileText size={36} color="#f87171" />
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f0f6fc' }}>{fileName}</div>
+            <div style={{ fontSize: 11, maxWidth: 360 }}>PDF file is ready. Click below to view with your system PDF reader.</div>
+            <button
+              onClick={handleOpenExternal}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 8,
+                background: '#238636',
+                border: 'none',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              <ExternalLink size={14} />
+              Open Document
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function parseSingleFileDiff(
@@ -920,6 +1239,7 @@ function parseSingleFileDiff(
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
 
   let codeLines: CodeLine[] = [];
+  let rawContent = '';
 
   if (isWrite && !item?.edits && !item?.oldString && !item?.find && !item?.TargetContent) {
     let content = item?.content || item?.text || item?.CodeContent || item?.html
@@ -942,6 +1262,7 @@ function parseSingleFileDiff(
       }
     }
 
+    rawContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
     const lines = typeof content === 'string' ? content.split('\n') : [];
     codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
   } else if (isRead) {
@@ -962,6 +1283,7 @@ function parseSingleFileDiff(
     } else {
       outputText = 'Reading file contents...';
     }
+    rawContent = outputText;
     const lines = outputText.split('\n');
     codeLines = lines.map(line => ({ text: line, type: 'normal' as const }));
   } else {
@@ -1000,6 +1322,7 @@ function parseSingleFileDiff(
         });
       }
     }
+    rawContent = replaceStr || findStr || '';
   }
 
   if (codeLines.length === 0) {
@@ -1013,7 +1336,7 @@ function parseSingleFileDiff(
     if (l.type === 'removed') removedCount++;
   });
 
-  return { filePath, fileName, codeLines, addedCount, removedCount };
+  return { filePath, fileName, codeLines, addedCount, removedCount, rawContent };
 }
 
 function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
@@ -1036,6 +1359,15 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
 
   const [activeFileIndex, setActiveFileIndex] = useState<number | null>(parsedFiles.length > 1 ? null : 0);
   
+  const currentFile = activeFileIndex !== null && parsedFiles[activeFileIndex] ? parsedFiles[activeFileIndex] : parsedFiles[0];
+  const ext = (currentFile?.fileName?.split('.').pop() || '').toLowerCase();
+  const isMarkdown = ext === 'md' || ext === 'markdown';
+  const isSpreadsheet = ext === 'csv' || ext === 'tsv' || ext === 'xlsx';
+  const isPdf = ext === 'pdf';
+  const hasRichPreview = isMarkdown || isSpreadsheet || isPdf;
+
+  const [viewMode, setViewMode] = useState<'preview' | 'diff'>(hasRichPreview ? 'preview' : 'diff');
+
   const filesToDisplay = activeFileIndex !== null && parsedFiles[activeFileIndex]
     ? [parsedFiles[activeFileIndex]]
     : parsedFiles;
@@ -1074,8 +1406,56 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
           </span>
         </div>
 
-        <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
-          {isMultiFile ? `MULTI-FILE EDIT (${parsedFiles.length})` : isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
+        {/* View Mode Toggle when rich preview is supported */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {hasRichPreview && (
+            <div style={{ display: 'flex', background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: 2 }}>
+              <button
+                onClick={() => setViewMode('preview')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  border: 'none',
+                  background: viewMode === 'preview' ? '#21262d' : 'transparent',
+                  color: viewMode === 'preview' ? '#f0f6fc' : '#8b949e',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: T.sans,
+                }}
+              >
+                <Eye size={11} />
+                <span>Preview</span>
+              </button>
+              <button
+                onClick={() => setViewMode('diff')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  border: 'none',
+                  background: viewMode === 'diff' ? '#21262d' : 'transparent',
+                  color: viewMode === 'diff' ? '#f0f6fc' : '#8b949e',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: T.sans,
+                }}
+              >
+                <Code size={11} />
+                <span>Diff</span>
+              </button>
+            </div>
+          )}
+
+          <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
+            {isMultiFile ? `MULTI-FILE (${parsedFiles.length})` : isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
+          </div>
         </div>
       </div>
 
@@ -1150,17 +1530,28 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
         </div>
       )}
 
-      {/* Main Diff Content Container */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px 14px',
-          fontFamily: T.mono,
-          fontSize: 12,
-          color: '#c9d1d9',
-        }}
-      >
+      {/* Main Content Container (Rich Preview or Diff) */}
+      {viewMode === 'preview' && hasRichPreview ? (
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {isMarkdown ? (
+            <FileMarkdownViewer content={currentFile.rawContent || currentFile.codeLines.map(l => l.text).join('\n')} />
+          ) : isSpreadsheet ? (
+            <FileSpreadsheetViewer content={currentFile.rawContent || currentFile.codeLines.map(l => l.text).join('\n')} fileName={currentFile.fileName} />
+          ) : isPdf ? (
+            <FilePdfViewer filePath={currentFile.filePath} fileName={currentFile.fileName} />
+          ) : null}
+        </div>
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '12px 14px',
+            fontFamily: T.mono,
+            fontSize: 12,
+            color: '#c9d1d9',
+          }}
+        >
         {filesToDisplay.map((file, fileIdx) => (
           <div
             key={fileIdx}
@@ -1297,6 +1688,7 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

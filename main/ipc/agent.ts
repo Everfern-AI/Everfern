@@ -517,8 +517,10 @@ export function registerAgentHandlers() {
           return value;
         }));
         if (safeData && typeof safeData === 'object' && !Array.isArray(safeData)) {
-          safeData.conversationId = request.conversationId;
-          if (request.assistantMessageId) {
+          if (!safeData.conversationId) {
+            safeData.conversationId = request.conversationId;
+          }
+          if (!safeData.assistantMessageId && request.assistantMessageId) {
             safeData.assistantMessageId = request.assistantMessageId;
           }
         }
@@ -850,6 +852,7 @@ export function registerAgentHandlers() {
           try {
             showPermissionNotification({
               requestId: req.requestId,
+              toolName: req.toolName || req.shellType || req.command,
               shellType: req.shellType,
               command: req.command,
               reason: req.reason,

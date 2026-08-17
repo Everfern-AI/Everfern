@@ -609,9 +609,33 @@ export default function SetupPage() {
         }
     };
 
-    const handlePullLocalModel = async (modelTag: string) => {
+    const handlePullLocalModel = async (modelTag: string, openTerminal = false) => {
         const api = (window as any).electronAPI?.system;
-        if (!api?.ollamaPull) return;
+        if (!api) return;
+        const curProv = (provider === "lmstudio" ? "lmstudio" : "ollama") as "ollama" | "lmstudio";
+
+        if (openTerminal && api.pullLocalModelTerminal) {
+            await api.pullLocalModelTerminal({ provider: curProv, modelTag });
+            setSelectedLocalModel(modelTag);
+            return;
+        }
+
+        if (curProv === "lmstudio") {
+            if (api.pullLocalModelTerminal) {
+                await api.pullLocalModelTerminal({ provider: "lmstudio", modelTag });
+                setSelectedLocalModel(modelTag);
+                return;
+            }
+        }
+
+        if (!api?.ollamaPull) {
+            if (api.pullLocalModelTerminal) {
+                await api.pullLocalModelTerminal({ provider: curProv, modelTag });
+                setSelectedLocalModel(modelTag);
+            }
+            return;
+        }
+
         setLocalPullingModel(modelTag);
         setLocalPullPct(0);
         setLocalPullLogs([]);
@@ -632,9 +656,15 @@ export default function SetupPage() {
                 setLocalModelTab("installed");
             } else {
                 setLocalPullLogs(prev => [...prev, `✗ Pull failed: ${res?.error || "Unknown error"}`]);
+                if (api.pullLocalModelTerminal) {
+                    await api.pullLocalModelTerminal({ provider: curProv, modelTag });
+                }
             }
         } catch (err: any) {
             setLocalPullLogs(prev => [...prev, `✗ Pull error: ${err?.message || String(err)}`]);
+            if (api.pullLocalModelTerminal) {
+                await api.pullLocalModelTerminal({ provider: curProv, modelTag });
+            }
         } finally {
             setLocalPullingModel(null);
         }
@@ -923,8 +953,8 @@ export default function SetupPage() {
                     const getActiveDotIndex = () => {
                         if (step <= 4) return step;
                         if (step === 5) return 5;
-                        if (step === 11) return 6;
-                        if (step === 6) return 7;
+                        if (step === 6) return 6;
+                        if (step === 11) return 7;
                         if (step === 7) return 8;
                         if (step === 8) return 9;
                         if (step === 9) return 10;
@@ -1594,7 +1624,7 @@ export default function SetupPage() {
                                     {/* Bottom Continue Action */}
                                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
                                         <button
-                                            onClick={() => setStep(11)}
+                                            onClick={() => setStep(5)}
                                             style={{
                                                 width: "100%", height: 50, background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
                                                 borderRadius: 12, fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
@@ -1604,7 +1634,7 @@ export default function SetupPage() {
                                             Continue with {selectedLocalModel || "Selected Model"} <ArrowRight size={16} strokeWidth={2.5} />
                                         </button>
                                         <button
-                                            onClick={() => setStep(11)}
+                                            onClick={() => setStep(5)}
                                             style={{ background: "none", border: "none", color: 'var(--color-text-tertiary)', fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}
                                             onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'}
                                             onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
@@ -1774,7 +1804,7 @@ export default function SetupPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                <button onClick={() => setStep(11)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+                                                <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                                     {isSaving ? "Saving..." : "Save & Continue"}
                                                 </button>
                                             </div>
@@ -1782,7 +1812,7 @@ export default function SetupPage() {
 
                                         {vlmMode === "everfern" && (
                                             <button
-                                                onClick={() => setStep(11)}
+                                                onClick={() => setStep(5)}
                                                 style={{
                                                     width: "100%", height: 52,
                                                     background: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
@@ -1797,7 +1827,7 @@ export default function SetupPage() {
                                         )}
                                     </div>
 
-                                    <button onClick={() => setStep(11)} style={{ marginTop: 24, fontSize: 13, color: 'var(--color-text-tertiary)', background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
+                                    <button onClick={() => setStep(5)} style={{ marginTop: 24, fontSize: 13, color: 'var(--color-text-tertiary)', background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
                                         Skip local AI setup & Continue
                                     </button>
                                 </>
@@ -1818,7 +1848,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(vlmMode === "local" ? 5 : 4)} />
+                                <BackButton onClick={() => setStep(6)} />
                             </div>
 
                             <div style={{ marginBottom: 36 }}>
@@ -1935,7 +1965,7 @@ export default function SetupPage() {
                             </div>
 
                             <button
-                                onClick={() => setStep(5)}
+                                onClick={() => setStep(7)}
                                 disabled={(voiceProvider === "elevenlabs" && !voiceElevenlabsKey.trim())}
                                 style={{
                                     width: "100%", height: 52,
@@ -1964,7 +1994,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(11)} />
+                                <BackButton onClick={() => setStep(4)} />
                             </div>
                             <LinuxVMSetupStep
                                 onComplete={() => setStep(6)}
@@ -2658,7 +2688,7 @@ export default function SetupPage() {
 
                             {/* Continue button */}
                             <button
-                                onClick={() => setStep(7)}
+                                onClick={() => setStep(11)}
                                 style={{
                                     width: "100%",
                                     maxWidth: 420,
@@ -2697,7 +2727,7 @@ export default function SetupPage() {
                             style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
-                                <BackButton onClick={() => setStep(6)} />
+                                <BackButton onClick={() => setStep(11)} />
                             </div>
 
                             <div style={{ textAlign: "center", marginBottom: 40 }}>
@@ -3032,36 +3062,6 @@ export default function SetupPage() {
                                     {hasStarredRepo ? "Thank you! You're an absolute legend! ❤️" : "Star on GitHub (Save the dev's soul!)"}
                                     <ExternalLink size={15} style={{ opacity: 0.7 }} />
                                 </a>
-
-                                <button
-                                    onClick={() => {
-                                        try {
-                                            localStorage.setItem('everfern_star_dismissed', 'true');
-                                        } catch (err) {}
-                                        setStep(10);
-                                    }}
-                                    style={{
-                                        background: "none",
-                                        border: "none",
-                                        color: "var(--color-text-tertiary)",
-                                        fontSize: 11,
-                                        cursor: "pointer",
-                                        textDecoration: "none",
-                                        marginTop: 28,
-                                        opacity: 0.2,
-                                        transition: "opacity 0.2s, color 0.2s"
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.opacity = "0.6";
-                                        e.currentTarget.style.color = "var(--color-text-secondary)";
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.opacity = "0.2";
-                                        e.currentTarget.style.color = "var(--color-text-tertiary)";
-                                    }}
-                                >
-                                    Skip (and break a developer&apos;s heart 💔)
-                                </button>
                             </div>
                         </motion.div>
                     )}
@@ -3472,7 +3472,7 @@ function ProviderRow({ p, onClick }: { p: { id: string; name: string; logo: any 
     );
 }
 const getVisionDefaultModel = (provider: string) => {
-    if (provider === "openrouter") return "qwen/qwen3-vl-235b-a22b-instruct";
+    if (provider === "openrouter") return "openai/gpt-5.6-luna";
     if (provider === "minimax") return "MiniMax-M3";
     if (provider === "ollama") return "qwen3-vl:235b-cloud";
     if (provider === "openai") return "gpt-5.5";

@@ -33,7 +33,38 @@ import { ToolSettingsSection } from './components/ToolSettingsSection';
 import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
 import Image from 'next/image';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import { GraphicsCardIcon } from '@phosphor-icons/react';
+import { 
+    GraphicsCardIcon,
+    Brain,
+    Lightbulb,
+    DownloadSimple,
+    Export,
+    ShareNetwork,
+    Sparkle,
+    Info,
+    FileText,
+    Trash,
+    MagnifyingGlassPlus,
+    MagnifyingGlassMinus,
+    ArrowsCounterClockwise,
+    CircleNotch,
+    Plus,
+    TreeStructure,
+    Graph,
+    Globe,
+    CheckCircle,
+    SlidersHorizontal,
+    Lightning,
+    Heart,
+    ListDashes,
+    MagnifyingGlass,
+    ArrowSquareOut,
+    Check,
+    X,
+    Repeat,
+    Database,
+    Tag,
+} from '@phosphor-icons/react';
 
 // ── No inline logos — using Image imports instead ─────────────────────────────────────────
 
@@ -63,7 +94,7 @@ export const navCategories = [
             { id: 'vision', label: 'Vision Grounding', icon: GlobeAltIcon, keywords: 'vision tars image screen browser OCR screenshot desktop' },
             { id: 'voice', label: 'Voice Mode', icon: MicrophoneIcon, keywords: 'speech voice whisper stt tts audio mic microphone speech-to-text' },
             { id: 'embeddings', label: 'Embeddings', icon: CircleStackIcon, keywords: 'vector index embedding model semantics RAG database pinecone' },
-            { id: 'memory', label: 'Memory Graph', icon: LightBulbIcon, keywords: 'brain memory knowledge graph facts nodes context remember' },
+            { id: 'memory', label: 'Memory Graph', icon: (props: any) => <Brain size={20} {...props} />, keywords: 'brain memory knowledge graph facts nodes context remember' },
         ]
     },
     {
@@ -1219,7 +1250,7 @@ const visionProviders = [
 ];
 
 const getVisionDefaultModel = (provider: string) => {
-    if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+    if (provider === 'openrouter') return 'openai/gpt-5.6-luna';
     if (provider === 'minimax') return 'MiniMax-M3';
     if (provider === 'ollama') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';
@@ -1236,6 +1267,652 @@ const getVisionDefaultBaseUrl = (provider: string) => {
     if (provider === 'anthropic') return 'https://api.anthropic.com';
     if (provider === 'nvidia') return 'https://integrate.api.nvidia.com/v1';
     return '';
+};
+
+// ── Top-level System Hardware Cache ──────────────────────────────────────────
+let _cachedHardwareInfo: any = null;
+let _cachedModelsList: any[] = [];
+
+// ── System & Hardware Section with Model VRAM & TPS Predictor (Top-Level) ─────
+const SystemHardwareSection: React.FC = () => {
+    const [hardwareInfo, setHardwareInfo] = useState<{
+        ramGB: number;
+        freeRamGB?: number;
+        usedRamGB?: number;
+        cpuModel?: string;
+        cpuCores?: number;
+        cpuSpeed?: number;
+        gpuName: string;
+        vramGB: number;
+        driverVersion?: string;
+        gpuTemp?: number;
+        isNvidia?: boolean;
+        isAppleSilicon?: boolean;
+        platform?: string;
+        arch?: string;
+        hostname?: string;
+    } | null>(_cachedHardwareInfo);
+
+    const [modelsList, setModelsList] = useState<any[]>(_cachedModelsList);
+    const [isLoadingHardware, setIsLoadingHardware] = useState(false);
+    const [filterStatus, setFilterStatus] = useState<'all' | 'full_gpu' | 'cpu_offload' | 'exceeds_specs'>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [customModelId, setCustomModelId] = useState('');
+    const [customResult, setCustomResult] = useState<any>(null);
+    const [customError, setCustomError] = useState<string | null>(null);
+    const [isCalculatingCustom, setIsCalculatingCustom] = useState(false);
+    const [pullingModel, setPullingModel] = useState<string | null>(null);
+    const [pullProgress, setPullProgress] = useState<string>('');
+    const loadHardwareSeqRef = useRef<number>(0);
+    const isFirstRenderRef = useRef<boolean>(true);
+
+    const loadSystemHardware = async (searchParam?: string, forceRefresh = false) => {
+        const seq = ++loadHardwareSeqRef.current;
+        setIsLoadingHardware(true);
+        try {
+            let hw: any = hardwareInfo || _cachedHardwareInfo;
+            const sysApi = (window as any).electronAPI?.system;
+            if (!hw || forceRefresh) {
+                if (sysApi?.detectHardware) {
+                    hw = await sysApi.detectHardware();
+                    if (seq !== loadHardwareSeqRef.current) return;
+                    _cachedHardwareInfo = hw;
+                    setHardwareInfo(hw);
+                }
+            }
+
+            const vram = hw?.vramGB || 0;
+            const ram = hw?.ramGB || 16;
+            const isApple = Boolean(hw?.isAppleSilicon);
+            const gpuName = hw?.gpuName || '';
+            const activeSearch = typeof searchParam === 'string' ? searchParam : searchQuery;
+
+            // 1. Local Electron IPC handler first for instant query
+            if (sysApi?.getModelRequirements) {
+                try {
+                    const ipcRes = await sysApi.getModelRequirements({
+                        vramGB: vram,
+                        ramGB: ram,
+                        isAppleSilicon: isApple,
+                        gpuName,
+                        search: activeSearch
+                    });
+                    if (seq !== loadHardwareSeqRef.current) return;
+                    if (ipcRes?.success && Array.isArray(ipcRes.models) && ipcRes.models.length > 0) {
+                        _cachedModelsList = ipcRes.models;
+                        setModelsList(ipcRes.models);
+                        setIsLoadingHardware(false);
+                        return;
+                    }
+                } catch (ipcErr) {
+                    console.warn('[EverFern] ⚠️ IPC query failed:', ipcErr);
+                }
+            }
+
+            // 2. EverFern Cloud / Local Backend APIs
+            const candidateUrls = [
+                process.env.NEXT_PUBLIC_API_URL,
+                'http://127.0.0.1:5000',
+                'http://localhost:5000',
+                'https://api.everfern.app'
+            ].filter(Boolean) as string[];
+
+            const q = activeSearch ? `&search=${encodeURIComponent(activeSearch)}` : '';
+            for (const baseUrl of candidateUrls) {
+                try {
+                    const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?vram_gb=${vram}&ram_gb=${ram}&is_apple_silicon=${isApple}&gpu_name=${encodeURIComponent(gpuName)}${q}`;
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 1500);
+                    const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                    clearTimeout(timeout);
+                    if (seq !== loadHardwareSeqRef.current) return;
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.models && Array.isArray(data.models) && data.models.length > 0) {
+                            _cachedModelsList = data.models;
+                            setModelsList(data.models);
+                            setIsLoadingHardware(false);
+                            return;
+                        }
+                    }
+                } catch (e: any) {}
+            }
+
+            // 3. Client-side fallback computation
+            const fallbackModels = [
+                { model_id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B", params_b: 1.2, raw_fp16_vram_gb: 2.47, quantized_q4_vram_gb: 0.88, quantized_q8_vram_gb: 1.45, min_ram_gb: 4, category: "Ultra-lightweight / Fast Edge", tags: ["llama3.2:1b"] },
+                { model_id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B", params_b: 3.2, raw_fp16_vram_gb: 6.42, quantized_q4_vram_gb: 2.22, quantized_q8_vram_gb: 3.65, min_ram_gb: 6, category: "Compact / High Quality", tags: ["llama3.2:3b"] },
+                { model_id: "meta-llama/Meta-Llama-3.1-8B-Instruct", name: "Llama 3.1 8B", params_b: 8.0, raw_fp16_vram_gb: 16.06, quantized_q4_vram_gb: 5.34, quantized_q8_vram_gb: 9.10, min_ram_gb: 12, category: "Standard General Purpose", tags: ["llama3.1:8b"] },
+                { model_id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3", params_b: 7.2, raw_fp16_vram_gb: 14.50, quantized_q4_vram_gb: 4.16, quantized_q8_vram_gb: 8.20, min_ram_gb: 8, category: "Fast Instruction & Reasoning", tags: ["mistral:7b"] },
+                { model_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct", name: "Qwen 2.5 Coder 1.5B", params_b: 1.5, raw_fp16_vram_gb: 3.08, quantized_q4_vram_gb: 1.08, quantized_q8_vram_gb: 1.78, min_ram_gb: 4, category: "Fast Coding Specialist", tags: ["qwen2.5-coder:1.5b"] },
+                { model_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.08, quantized_q8_vram_gb: 8.65, min_ram_gb: 10, category: "Flagship Coding Specialist", tags: ["qwen2.5-coder:7b"] },
+                { model_id: "Qwen/Qwen2.5-Coder-14B-Instruct", name: "Qwen 2.5 Coder 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.75, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Heavy Coding & Autonomous", tags: ["qwen2.5-coder:14b"] },
+                { model_id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", params_b: 32.5, raw_fp16_vram_gb: 65.00, quantized_q4_vram_gb: 20.40, quantized_q8_vram_gb: 36.20, min_ram_gb: 32, category: "State-of-the-Art Coding", tags: ["qwen2.5-coder:32b"] },
+                { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", name: "DeepSeek R1 1.5B", params_b: 1.8, raw_fp16_vram_gb: 3.56, quantized_q4_vram_gb: 1.25, quantized_q8_vram_gb: 2.05, min_ram_gb: 4, category: "Compact Reasoning", tags: ["deepseek-r1:1.5b"] },
+                { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", name: "DeepSeek R1 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.15, quantized_q8_vram_gb: 8.65, min_ram_gb: 12, category: "Advanced Reasoning", tags: ["deepseek-r1:7b"] },
+                { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", name: "DeepSeek R1 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.80, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Deep Reasoning Specialist", tags: ["deepseek-r1:14b"] },
+                { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", name: "DeepSeek R1 32B", params_b: 32.8, raw_fp16_vram_gb: 65.60, quantized_q4_vram_gb: 21.20, quantized_q8_vram_gb: 36.80, min_ram_gb: 32, category: "Top-tier Math & Logic Reasoning", tags: ["deepseek-r1:32b"] },
+                { model_id: "google/gemma-2-2b-it", name: "Gemma 2 2B", params_b: 2.6, raw_fp16_vram_gb: 5.22, quantized_q4_vram_gb: 1.78, quantized_q8_vram_gb: 2.95, min_ram_gb: 6, category: "Lightweight Google Research", tags: ["gemma2:2b"] },
+                { model_id: "google/gemma-2-9b-it", name: "Gemma 2 9B", params_b: 9.2, raw_fp16_vram_gb: 18.48, quantized_q4_vram_gb: 6.12, quantized_q8_vram_gb: 10.40, min_ram_gb: 12, category: "High Accuracy General Purpose", tags: ["gemma2:9b"] },
+                { model_id: "microsoft/phi-4", name: "Phi-4 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.70, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Microsoft Synthetic Reasoning", tags: ["phi4:14b"] },
+                { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b"] }
+            ];
+
+            const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
+            const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
+
+            const computed = fallbackModels.map(m => {
+                const q4 = m.quantized_q4_vram_gb;
+                let status: 'full_gpu' | 'cpu_offload' | 'exceeds_specs' = 'exceeds_specs';
+                let badge = 'Cloud Required';
+                let predicted_tps = 0;
+
+                if (effectiveVram >= q4) {
+                    status = 'full_gpu';
+                    badge = 'Full GPU';
+                    predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
+                } else if ((effectiveVram + (ram * 0.5)) >= q4 && ram >= m.min_ram_gb) {
+                    status = 'cpu_offload';
+                    badge = 'CPU Offload';
+                    predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
+                }
+
+                return {
+                    ...m,
+                    status,
+                    badge,
+                    predicted_tps,
+                    fits_in_vram: effectiveVram >= q4,
+                    fits_in_ram: ram >= m.min_ram_gb
+                };
+            });
+
+            if (seq !== loadHardwareSeqRef.current) return;
+            if (activeSearch) {
+                const q = activeSearch.toLowerCase();
+                const filtered = computed.filter(m => m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || (m.tags && m.tags.some(t => t.toLowerCase().includes(q))));
+                _cachedModelsList = filtered;
+                setModelsList(filtered);
+            } else {
+                _cachedModelsList = computed;
+                setModelsList(computed);
+            }
+        } catch (err) {
+            console.error('Failed to load hardware:', err);
+        } finally {
+            if (seq === loadHardwareSeqRef.current) {
+                setIsLoadingHardware(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (!_cachedHardwareInfo || _cachedModelsList.length === 0) {
+            loadSystemHardware();
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isFirstRenderRef.current) {
+            isFirstRenderRef.current = false;
+            return;
+        }
+        const timer = setTimeout(() => {
+            loadSystemHardware(searchQuery);
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const handleCalculateCustomModel = async () => {
+        if (!customModelId.trim()) return;
+        setIsCalculatingCustom(true);
+        setCustomResult(null);
+        setCustomError(null);
+        try {
+            const sysApi = (window as any).electronAPI?.system;
+            const vram = hardwareInfo?.vramGB || 0;
+            const ram = hardwareInfo?.ramGB || 16;
+            const isApple = Boolean(hardwareInfo?.isAppleSilicon);
+            const gpuName = hardwareInfo?.gpuName || '';
+
+            if (sysApi?.getModelRequirements) {
+                const res = await sysApi.getModelRequirements({
+                    vramGB: vram,
+                    ramGB: ram,
+                    isAppleSilicon: isApple,
+                    gpuName,
+                    modelId: customModelId.trim()
+                });
+                if (res) {
+                    if (res.notFound || res.success === false) {
+                        setCustomError(res.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
+                        return;
+                    }
+                    setCustomResult(res);
+                    return;
+                }
+            }
+
+            // Cloud / local backend lookup
+            const candidateUrls = [
+                process.env.NEXT_PUBLIC_API_URL,
+                'http://127.0.0.1:5000',
+                'http://localhost:5000',
+                'https://api.everfern.app'
+            ].filter(Boolean) as string[];
+
+            for (const baseUrl of candidateUrls) {
+                try {
+                    const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?model=${encodeURIComponent(customModelId.trim())}`;
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 1500);
+                    const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                    clearTimeout(timeout);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.notFound || data.success === false) {
+                            setCustomError(data.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
+                            return;
+                        }
+                        const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
+                        const q4 = data.quantized_q4_vram_gb || 4.16;
+                        const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
+
+                        let status = 'exceeds_specs';
+                        let badge = 'Cloud Required';
+                        let predicted_tps = 0;
+
+                        if (effectiveVram >= q4) {
+                            status = 'full_gpu';
+                            badge = 'Full GPU';
+                            predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
+                        } else if ((effectiveVram + (ram * 0.5)) >= q4) {
+                            status = 'cpu_offload';
+                            badge = 'CPU Offload';
+                            predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
+                        }
+
+                        setCustomResult({
+                            ...data,
+                            status,
+                            badge,
+                            predicted_tps
+                        });
+                        return;
+                    }
+                } catch (e) {}
+            }
+
+            setCustomError(`Unable to verify model "${customModelId.trim()}" on Hugging Face Hub. Please check your internet connection or verify the repository ID.`);
+        } catch (err: any) {
+            setCustomError(err?.message || 'Error communicating with model calculation service.');
+        } finally {
+            setIsCalculatingCustom(false);
+        }
+    };
+
+    const handlePullModel = async (modelTag: string, provider: 'ollama' | 'lmstudio' = 'ollama') => {
+        const api = (window as any).electronAPI?.system;
+        if (!api) return;
+        setPullingModel(modelTag);
+        setPullProgress('Opening terminal to pull model...');
+        try {
+            if (api.pullLocalModelTerminal) {
+                await api.pullLocalModelTerminal({ provider, modelTag });
+                setPullProgress(`Opened terminal for ${modelTag}`);
+            } else if (api.ollamaPull) {
+                await api.ollamaPull(modelTag);
+                setPullProgress(`Completed pull for ${modelTag}`);
+            }
+        } catch (err: any) {
+            setPullProgress(`Error: ${err?.message || String(err)}`);
+        } finally {
+            setTimeout(() => setPullingModel(null), 3500);
+        }
+    };
+
+    const filteredModels = modelsList.filter(m => {
+        if (filterStatus !== 'all' && m.status !== filterStatus) return false;
+        return true;
+    });
+
+    const vramGb = hardwareInfo?.vramGB || 0;
+    const ramGb = hardwareInfo?.ramGB || 16;
+    const freeRam = hardwareInfo?.freeRamGB || 8;
+
+    return (
+        <div style={{ padding: '4px 0 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <SectionTitle>System &amp; Hardware</SectionTitle>
+                <button
+                    onClick={() => loadSystemHardware(undefined, true)}
+                    disabled={isLoadingHardware}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '7px 14px', borderRadius: 8,
+                        backgroundColor: 'var(--color-bg-subtle)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text-secondary)',
+                        fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                        transition: 'all 0.15s'
+                    }}
+                >
+                    <ArrowPathIcon width={13} height={13} className={isLoadingHardware ? 'animate-spin' : ''} />
+                    Refresh Specs
+                </button>
+            </div>
+            <SectionSubtitle>
+                Inspect machine specifications, compute exact VRAM footprints with KV-cache buffers, and estimate local model execution throughput.
+            </SectionSubtitle>
+
+            {/* Hardware Overview Cards Grid with Increased Spacing and Muted Minimal Icons */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24, marginBottom: 28 }}>
+                {/* GPU & VRAM Card */}
+                <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{
+                            width: 42, height: 42, borderRadius: 12,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--color-text-secondary)',
+                            flexShrink: 0
+                        }}>
+                            <GraphicsCardIcon size={24} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                                Graphics Processor
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {hardwareInfo?.gpuName || 'Detecting GPU...'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            <span>Dedicated VRAM</span>
+                            <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                {vramGb} GB {hardwareInfo?.isAppleSilicon ? '(Unified)' : ''}
+                            </span>
+                        </div>
+                        {hardwareInfo?.driverVersion && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                <span>Driver</span>
+                                <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{hardwareInfo.driverVersion}</span>
+                            </div>
+                        )}
+                        {hardwareInfo?.gpuTemp !== undefined && hardwareInfo.gpuTemp > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                <span>Core Temperature</span>
+                                <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{hardwareInfo.gpuTemp}°C</span>
+                            </div>
+                        )}
+                    </div>
+                </Card>
+
+                {/* CPU & RAM Card */}
+                <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{
+                            width: 42, height: 42, borderRadius: 12,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--color-text-secondary)',
+                            flexShrink: 0
+                        }}>
+                            <CpuChipIcon width={24} height={24} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                                System CPU &amp; Memory
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {hardwareInfo?.cpuModel || 'Detecting CPU...'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            <span>System RAM</span>
+                            <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                {ramGb} GB {freeRam ? `(${freeRam} GB Free)` : ''}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            <span>Architecture</span>
+                            <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+                                {hardwareInfo?.cpuCores ? `${hardwareInfo.cpuCores} Cores • ` : ''}{hardwareInfo?.arch || 'x64'}
+                            </span>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Hugging Face Custom Model VRAM Calculator */}
+            <div style={{ marginTop: 24, marginBottom: 28 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+                    Hugging Face Model Requirement Calculator
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+                    Query real-time metadata from Hugging Face Hub (config.json, safetensors index) to compute exact parameter counts, KV cache size, and hardware compatibility.
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                    <input
+                        type="text"
+                        placeholder="e.g. meta-llama/Llama-3.3-70B-Instruct, deepseek-ai/DeepSeek-R1, mistralai/Mistral-Small-24B-Instruct-2501"
+                        value={customModelId}
+                        onChange={e => setCustomModelId(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleCalculateCustomModel()}
+                        style={{
+                            flex: 1, padding: '10px 14px', borderRadius: 8,
+                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'var(--font-mono)'
+                        }}
+                    />
+                    <button
+                        onClick={handleCalculateCustomModel}
+                        disabled={isCalculatingCustom || !customModelId.trim()}
+                        style={{
+                            padding: '10px 18px', borderRadius: 8,
+                            backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
+                            fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer',
+                            opacity: isCalculatingCustom || !customModelId.trim() ? 0.6 : 1,
+                            display: 'flex', alignItems: 'center', gap: 6
+                        }}
+                    >
+                        {isCalculatingCustom ? <ArrowPathIcon width={14} height={14} className="animate-spin" /> : null}
+                        Calculate Requirements
+                    </button>
+                </div>
+
+                {customError && (
+                    <div style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#ef4444', fontSize: 12 }}>
+                        {customError}
+                    </div>
+                )}
+
+                {customResult && (
+                    <Card style={{ padding: '18px 20px', marginTop: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                            <div>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                                    {customResult.name || customResult.model_id}
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                                    {customResult.model_id}
+                                </div>
+                            </div>
+                            <span style={{
+                                fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6,
+                                backgroundColor: customResult.status === 'full_gpu' ? 'rgba(34, 197, 94, 0.15)' : customResult.status === 'cpu_offload' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: customResult.status === 'full_gpu' ? '#16a34a' : customResult.status === 'cpu_offload' ? '#d97706' : '#dc2626'
+                            }}>
+                                {customResult.badge}
+                            </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, padding: '12px 14px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', marginBottom: 12 }}>
+                            <div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Parameters</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{customResult.params_b}B</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>4-Bit (Q4) VRAM</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{customResult.quantized_q4_vram_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>FP16 VRAM</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{customResult.raw_fp16_vram_gb} GB</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Estimated TPS</div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: customResult.predicted_tps > 0 ? '#16a34a' : 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                    {customResult.predicted_tps > 0 ? `~${customResult.predicted_tps} tok/s` : 'N/A'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {customResult.architecture && (
+                            <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
+                                Architecture: <span style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}>{customResult.architecture}</span>
+                                {customResult.context_length ? ` • Context Window: ${customResult.context_length.toLocaleString()} tokens` : ''}
+                            </div>
+                        )}
+                    </Card>
+                )}
+            </div>
+
+            {/* Compatible Open-Source Models List */}
+            <div style={{ marginTop: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                            Compatible Open-Source Models
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                            Real-time hardware matching with Ollama and LM Studio integration
+                        </div>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {(['all', 'full_gpu', 'cpu_offload', 'exceeds_specs'] as const).map(st => (
+                            <button
+                                key={st}
+                                onClick={() => setFilterStatus(st)}
+                                style={{
+                                    padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                                    border: 'none', cursor: 'pointer',
+                                    backgroundColor: filterStatus === st ? 'var(--color-text-primary)' : 'var(--color-bg-subtle)',
+                                    color: filterStatus === st ? 'var(--color-bg-base)' : 'var(--color-text-secondary)',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                {st === 'all' ? 'All Models' : st === 'full_gpu' ? '⚡ Full GPU' : st === 'cpu_offload' ? '⏳ CPU Offload' : '☁️ Cloud'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Search Bar */}
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                    <input
+                        type="text"
+                        placeholder="Search models by name, size (e.g. 7b, 14b, qwen, llama, deepseek)..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        style={{
+                            width: '100%', padding: '9px 12px', borderRadius: 8,
+                            backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-primary)', fontSize: 12.5
+                        }}
+                    />
+                </div>
+
+                {pullingModel && (
+                    <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', marginBottom: 14, fontSize: 12 }}>
+                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Pulling {pullingModel}...</div>
+                        <div style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pullProgress}</div>
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {filteredModels.map(m => (
+                        <div
+                            key={m.model_id}
+                            style={{
+                                padding: '14px 18px', borderRadius: 12,
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                gap: 16
+                            }}
+                        >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{m.name}</span>
+                                    <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}>
+                                        {m.params_b}B
+                                    </span>
+                                    <span style={{
+                                        fontSize: 10.5, fontWeight: 500, padding: '2px 7px', borderRadius: 5,
+                                        backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)',
+                                        color: 'var(--color-text-secondary)'
+                                    }}>
+                                        {m.badge}
+                                    </span>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                                    {m.category} • Required VRAM: <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}>{m.quantized_q4_vram_gb} GB (Q4)</span> / {m.raw_fp16_vram_gb} GB (FP16)
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                {m.predicted_tps > 0 ? (
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                                            ~{m.predicted_tps} <span style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--color-text-tertiary)' }}>tok/s</span>
+                                        </div>
+                                        <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
+                                            {m.status === 'full_gpu' ? 'GPU' : 'CPU Offload'}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+                                        Cloud Required
+                                    </div>
+                                )}
+
+                                {m.tags && m.tags[0] && (
+                                    <button
+                                        onClick={() => handlePullModel(m.tags[0].replace('ollama:', ''))}
+                                        disabled={pullingModel === m.tags[0].replace('ollama:', '')}
+                                        style={{
+                                            padding: '6px 14px', borderRadius: 8,
+                                            backgroundColor: 'var(--color-bg-subtle)',
+                                            border: '1px solid var(--color-border)',
+                                            color: 'var(--color-text-primary)',
+                                            fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                                            transition: 'all 0.15s'
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+                                    >
+                                        {pullingModel === m.tags[0].replace('ollama:', '') ? 'Pulling...' : 'Pull (Terminal)'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 export default function SettingsPage({
@@ -1391,6 +2068,9 @@ export default function SettingsPage({
         dailyCostUsd: number;
         plan?: string;
         tier?: string;
+        visionRequests10Days?: number;
+        visionRequestsLimit?: number;
+        visionModelDowngraded?: boolean;
     } | null>(null);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -1585,24 +2265,53 @@ export default function SettingsPage({
         }
     };
 
+    // Cache cloud data to reduce API calls
+    const cloudDataCacheRef = useRef<{ data: any; timestamp: number } | null>(null);
+    const CLOUD_DATA_CACHE_MS = 30000; // 30 seconds cache
+
     useEffect(() => {
+        // Only fetch cloud data when settings are open
+        if (!isOpen) return;
+
         const fetchCloudData = async () => {
             try {
                 const sessionStr = localStorage.getItem('everfern_cloud_session');
-                if (!sessionStr) return;
+                if (!sessionStr) {
+                    setIsCloudUser(false);
+                    setCloudUsage(null);
+                    setCloudEmail('');
+                    return;
+                }
                 const session = JSON.parse(sessionStr);
-                if (!session?.user || !session?.accessToken) return;
-                
+                if (!session?.user || !session?.accessToken) {
+                    setIsCloudUser(false);
+                    setCloudUsage(null);
+                    setCloudEmail('');
+                    return;
+                }
+
+                // Check cache first
+                const now = Date.now();
+                if (cloudDataCacheRef.current && (now - cloudDataCacheRef.current.timestamp) < CLOUD_DATA_CACHE_MS) {
+                    setCloudUsage(cloudDataCacheRef.current.data);
+                    setIsCloudUser(true);
+                    setCloudEmail(session.user?.email || '');
+                    return;
+                }
+
+                // Skip if page is not visible
+                if (typeof document !== 'undefined' && document.hidden) return;
+
                 setIsCloudUser(true);
                 setCloudEmail(session.user?.email || '');
-                
+
                 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.everfern.app').replace(/\/$/, '');
                 const res = await fetch(`${apiUrl}/api/user/me`, {
                     headers: { 'Authorization': `Bearer ${session.accessToken}` }
                 });
                 if (!res.ok) return;
                 const data = await res.json();
-                setCloudUsage({
+                const usageData = {
                     dailyUsed: data.dailyUsed ?? 0,
                     dailyLimit: data.dailyLimit ?? 0,
                     inputTokensUsed: data.inputTokensUsed ?? 0,
@@ -1612,22 +2321,63 @@ export default function SettingsPage({
                     dailyCostUsd: data.dailyCostUsd ?? 0,
                     plan: (data.plan || data.tier || "free").toLowerCase(),
                     tier: (data.tier || data.plan || "free").toLowerCase(),
-                });
+                    visionRequests10Days: data.visionRequests10Days ?? 0,
+                    visionRequestsLimit: data.visionRequestsLimit ?? 5,
+                    visionModelDowngraded: data.visionModelDowngraded ?? false,
+                };
+
+                // Update cache
+                cloudDataCacheRef.current = { data: usageData, timestamp: now };
+                setCloudUsage(usageData);
             } catch (e) {
                 console.error('Failed to fetch cloud data', e);
             }
         };
-        fetchCloudData();
-        const interval = setInterval(fetchCloudData, 5000);
-        return () => clearInterval(interval);
-    }, []);
 
-    const handleSignOut = () => {
+        fetchCloudData();
+        // Poll every 60 seconds instead of 5 seconds, and only when visible
+        const interval = setInterval(fetchCloudData, 60000);
+
+        // Resume polling when page becomes visible
+        const handleVisibilityChange = () => {
+            if (!document.hidden) fetchCloudData();
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [isOpen]);
+
+    const handleSignOut = async () => {
         localStorage.removeItem('everfern_cloud_session');
         localStorage.removeItem('everfern_auth_token');
-        if ((window as any).electronAPI?.saveConfig) {
-            (window as any).electronAPI.saveConfig({});
+
+        // Immediately update UI state
+        setIsCloudUser(false);
+        setCloudEmail('');
+        setCloudUsage(null);
+
+        // Clear cloud-specific fields from config without destroying everything
+        try {
+            if ((window as any).electronAPI?.loadConfig) {
+                const res = await (window as any).electronAPI.loadConfig();
+                if (res?.success && res?.config) {
+                    const cfg = { ...res.config };
+                    if (cfg.provider === 'everfern') {
+                        delete cfg.provider;
+                        delete cfg.apiKey;
+                    }
+                    if ((window as any).electronAPI?.saveConfig) {
+                        await (window as any).electronAPI.saveConfig(cfg);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to clear cloud config:', err);
         }
+
         router.push('/auth');
     };
 
@@ -2094,6 +2844,64 @@ export default function SettingsPage({
                                     </div>
                                 </div>
                                 <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '14px 0 0' }}>Usage resets daily at midnight.</p>
+                            </div>
+                        )}
+
+                        {/* Vision Usage Section */}
+                        {cloudUsage && (
+                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid var(--color-border-subtle)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Vision & Computer Use (10 days)</span>
+                                    <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                                        {cloudUsage.visionRequests10Days ?? 0} / {cloudUsage.visionRequestsLimit ?? 5} requests
+                                    </span>
+                                </div>
+                                <div style={{ width: '100%', height: 6, backgroundColor: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{
+                                        width: `${Math.min(100, ((cloudUsage.visionRequests10Days ?? 0) / (cloudUsage.visionRequestsLimit ?? 5)) * 100)}%`,
+                                        height: '100%',
+                                        backgroundColor: (cloudUsage.visionModelDowngraded) ? '#f59e0b' : '#6366f1',
+                                        borderRadius: 3,
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+                                {cloudUsage.visionModelDowngraded && (
+                                    <div style={{
+                                        marginTop: 12,
+                                        padding: '10px 12px',
+                                        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                                        borderRadius: 8,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <path d="M12 8v4M12 16h.01"/>
+                                        </svg>
+                                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                            Using cost-optimized vision model. <button
+                                                onClick={() => {
+                                                    if ((window as any).electronAPI?.system?.openExternal) {
+                                                        (window as any).electronAPI.system.openExternal('https://everfern.app/pricing');
+                                                    } else {
+                                                        window.open('https://everfern.app/pricing', '_blank');
+                                                    }
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: '#f59e0b',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline'
+                                                }}
+                                            >Upgrade</button> for higher quality
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -3702,7 +4510,7 @@ export default function SettingsPage({
                 try {
                     await document.fonts.ready;
                     await Promise.all([
-                        document.fonts.load('bold 36px "EB Garamond"'),
+                        document.fonts.load('bold 36px "Lora"'),
                         document.fonts.load('500 18px "Figtree"'),
                         document.fonts.load('bold 36px "Figtree"'),
                         document.fonts.load('16px "JetBrains Mono"')
@@ -4178,65 +4986,51 @@ export default function SettingsPage({
                 if (currentSegment.length > 0) {
                     segments.push({ pts: currentSegment, isFront: !!currentIsFront });
                 }
-
-                segments.forEach(seg => {
-                    paths.push({
-                        path: getPathString(seg.pts),
-                        isFront: seg.isFront
-                    });
-                });
+                segments.forEach(s => paths.push({ path: getPathString(s.pts), isFront: s.isFront }));
             });
 
-            // Longitude circles
-            const longDivisions = [0, 30, 60, 90, 120, 150];
-            longDivisions.forEach(angleDeg => {
-                const phi = (angleDeg * Math.PI) / 180;
+            // Longitude meridians
+            const lats = [-60, -30, 0, 30, 60];
+            lats.forEach(lat => {
+                const latRad = (lat * Math.PI) / 180;
+                const r = Math.cos(latRad) * R;
+                const y = Math.sin(latRad) * R;
 
                 const segments: { pts: { x: number; y: number }[]; isFront: boolean }[] = [];
                 let currentSegment: { x: number; y: number }[] = [];
                 let currentIsFront: boolean | null = null;
 
-                const steps = 64;
-                for (let j = 0; j <= steps; j++) {
-                    const theta = (j / steps) * 2 * Math.PI;
-                    const px = R * Math.cos(theta) * Math.cos(phi);
-                    const py = R * Math.sin(theta);
-                    const pz = R * Math.cos(theta) * Math.sin(phi);
+                const steps = 48;
+                for (let i = 0; i <= steps; i++) {
+                    const lonRad = (i / steps) * 2 * Math.PI;
+                    const x = Math.cos(lonRad) * r;
+                    const z = Math.sin(lonRad) * r;
 
-                    const rot = rotate3D(px, py, pz, yaw, pitch);
-                    const isFront = rot.z >= -10;
-
-                    const screenPt = { x: 300 + rot.x, y: 200 + rot.y };
+                    const rot = rotate3D(x, y, z, yaw, pitch);
+                    const isFront = rot.z >= 0;
+                    const pt = { x: 300 + rot.x, y: 200 + rot.y };
 
                     if (currentIsFront === null) {
                         currentIsFront = isFront;
-                        currentSegment.push(screenPt);
+                        currentSegment.push(pt);
                     } else if (currentIsFront === isFront) {
-                        currentSegment.push(screenPt);
+                        currentSegment.push(pt);
                     } else {
-                        currentSegment.push(screenPt);
                         segments.push({ pts: currentSegment, isFront: currentIsFront });
-                        currentSegment = [screenPt];
                         currentIsFront = isFront;
+                        currentSegment = [pt];
                     }
                 }
                 if (currentSegment.length > 0) {
                     segments.push({ pts: currentSegment, isFront: !!currentIsFront });
                 }
-
-                segments.forEach(seg => {
-                    paths.push({
-                        path: getPathString(seg.pts),
-                        isFront: seg.isFront
-                    });
-                });
+                segments.forEach(s => paths.push({ path: getPathString(s.pts), isFront: s.isFront }));
             });
 
             return paths;
         };
 
         const gridPaths = getGlobeGridPaths(rotationRef.current.yaw, rotationRef.current.pitch);
-
         const sortedEdges = React.useMemo(() => {
             return filteredEdges.map(edge => {
                 const posU = nodePositions[edge.source];
@@ -4265,13 +5059,26 @@ export default function SettingsPage({
 
         return (
             <div>
-                {/* Title row + action buttons */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
                     <div>
                         <SectionTitle>Memory Graph</SectionTitle>
                         <SectionSubtitle>Manage and visualize your long-term preferences, habits, and knowledge facts.</SectionSubtitle>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4, flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            style={{
+                                padding: '7px 14px', borderRadius: 10, border: 'none',
+                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: 'var(--shadow-sm)'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+                            onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                        >
+                            <Plus size={15} weight="bold" />
+                            Add Memory
+                        </button>
                         <button
                             onClick={handleImportMerge}
                             disabled={!!isBusy}
@@ -4286,24 +5093,26 @@ export default function SettingsPage({
                             onMouseEnter={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                             onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
-                            {isBusy === 'import' ? '⏳' : '📥'} {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
+                            {isBusy === 'import' ? <CircleNotch size={15} className="animate-spin" /> : <DownloadSimple size={15} weight="bold" />}
+                            {isBusy === 'import' ? 'Merging…' : 'Import & Merge'}
                         </button>
                         <button
                             onClick={handleExport}
                             disabled={!!isBusy || graph.nodes.length === 0}
                             title="Export your full memory graph as a ZIP file (includes linked markdown files)"
                             style={{
-                                padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 12.5, fontWeight: 600,
                                 cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
                                 opacity: (isBusy === 'export' || graph.nodes.length === 0) ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                                boxShadow: 'var(--shadow-sm)'
+                                boxShadow: 'var(--shadow-xs)'
                             }}
-                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
-                            {isBusy === 'export' ? '⏳' : '📦'} {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
+                            {isBusy === 'export' ? <CircleNotch size={15} className="animate-spin" /> : <Export size={15} weight="bold" />}
+                            {isBusy === 'export' ? 'Exporting…' : 'Export ZIP'}
                         </button>
                         <button
                             onClick={handleShareMemoryGraph}
@@ -4320,46 +5129,67 @@ export default function SettingsPage({
                             onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
                             onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
                         >
-                            {isBusy === 'share' ? '⏳' : '✨'} {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
+                            {isBusy === 'share' ? <CircleNotch size={15} className="animate-spin" /> : <ShareNetwork size={15} weight="bold" />}
+                            {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
                         </button>
                     </div>
                 </div>
 
-                {/* Help tip */}
                 <div style={{
-                    background: 'linear-gradient(135deg, var(--color-accent-dim) 0%, var(--color-navis-active-bg) 100%)',
-                    border: '1px solid var(--color-accent)',
+                    background: 'linear-gradient(135deg, var(--color-accent-dim, rgba(59, 130, 246, 0.08)) 0%, var(--color-navis-active-bg, rgba(59, 130, 246, 0.04)) 100%)',
+                    border: '1px solid var(--color-accent, #3b82f6)',
                     borderRadius: 12, padding: '12px 16px', marginBottom: 20,
-                    display: 'flex', gap: 10, alignItems: 'flex-start'
+                    display: 'flex', gap: 12, alignItems: 'flex-start'
                 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
+                    <Lightbulb size={20} weight="duotone" color="var(--color-accent, #3b82f6)" style={{ flexShrink: 0, marginTop: 2 }} />
                     <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark)', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark, #2563eb)', marginBottom: 3 }}>How Memory Works</p>
                         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
-                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable — click any node to see full details.
-                            Use <strong>Export ZIP</strong> to back up your memory, and <strong>Import &amp; Merge</strong> to restore or combine memories from another device.
+                            EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable on the 3D globe — click any node to see its full details.
+                            Use <strong>Export ZIP</strong> to back up your memory, <strong>Import &amp; Merge</strong> to restore across devices, or <strong>Add Memory</strong> to record facts directly.
                         </p>
                     </div>
                 </div>
 
-                {/* Summary counters */}
-                <div style={{ display: 'flex', gap: 16, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
                     {[
-                        { label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, color: 'var(--color-success)' },
-                        { label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, color: 'var(--color-success)' },
-                        { label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, color: 'var(--color-info)' },
-                        { label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, color: 'var(--color-text-tertiary)' }
-                    ].map(stat => (
-                        <div key={stat.label} style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stat.color }} />
-                            <strong>{stat.count}</strong> {stat.label}
-                        </div>
-                    ))}
+                        { id: 'preference', label: 'Preferences', count: graph.nodes.filter(n => n.type === 'preference').length, icon: Heart, iconColor: '#f43f5e', bg: 'rgba(244, 63, 94, 0.1)' },
+                        { id: 'habit', label: 'Habits', count: graph.nodes.filter(n => n.type === 'habit').length, icon: Lightning, iconColor: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+                        { id: 'fact', label: 'Facts', count: graph.nodes.filter(n => n.type === 'fact').length, icon: Info, iconColor: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
+                        { id: 'file', label: 'Files Linked', count: graph.nodes.filter(n => n.type === 'file').length, icon: FileText, iconColor: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' }
+                    ].map(stat => {
+                        const IconComponent = stat.icon;
+                        const isCurrent = filterType === stat.id;
+                        return (
+                            <div
+                                key={stat.label}
+                                onClick={() => setFilterType(prev => prev === stat.id ? 'all' : stat.id)}
+                                style={{
+                                    fontSize: 12.5,
+                                    color: isCurrent ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '6px 12px',
+                                    borderRadius: 10,
+                                    border: isCurrent ? '1px solid var(--color-text-primary)' : '1px solid var(--color-border)',
+                                    backgroundColor: isCurrent ? 'var(--color-bg-hover)' : 'var(--color-bg-surface)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                <div style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: stat.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <IconComponent size={13} weight="fill" color={stat.iconColor} />
+                                </div>
+                                <span style={{ fontWeight: 600 }}>{stat.count}</span>
+                                <span>{stat.label}</span>
+                            </div>
+                        );
+                    })}
                 </div>
 
-                {/* Filters, Search, and Mode Toggle */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {[
                             { id: 'all', label: 'All' },
                             { id: 'preference', label: 'Preferences' },
@@ -4388,87 +5218,117 @@ export default function SettingsPage({
                     </div>
 
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <Input
-                            placeholder="Search..."
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            style={{ height: 34, padding: '4px 12px', borderRadius: 8, fontSize: 13, width: 150 }}
-                        />
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <MagnifyingGlass size={14} style={{ position: 'absolute', left: 10, color: 'var(--color-text-tertiary)' }} />
+                            <Input
+                                placeholder="Search memories..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                style={{ height: 34, padding: '4px 12px 4px 30px', borderRadius: 8, fontSize: 13, width: 180 }}
+                            />
+                        </div>
                         <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
                             <button
                                 onClick={() => setViewMode('graph')}
+                                title="Graph visualization"
                                 style={{
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
                                     backgroundColor: viewMode === 'graph' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
                                     color: viewMode === 'graph' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5
                                 }}
                             >
-                                Graph
+                                <Graph size={14} weight="bold" />
+                                <span>Graph</span>
                             </button>
                             <button
                                 onClick={() => setViewMode('list')}
+                                title="List view"
                                 style={{
-                                    padding: '6px 12px',
+                                    padding: '6px 10px',
                                     fontSize: 12,
                                     fontWeight: 600,
                                     border: 'none',
                                     backgroundColor: viewMode === 'list' ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
                                     color: viewMode === 'list' ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5
                                 }}
                             >
-                                List
+                                <ListDashes size={14} weight="bold" />
+                                <span>List</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                {/* Main View Area */}
                 {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)' }}>Loading Memory Graph...</div>
+                    <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                        <CircleNotch size={28} className="animate-spin" color="var(--color-accent, #3b82f6)" />
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>Loading Memory Graph...</span>
+                    </div>
                 ) : graph.nodes.length === 0 ? (
-                    <Card style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
-                        <span style={{ fontSize: 40 }}>🧠</span>
-                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
-                        <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>As you chat with the agent and state your airline, payment, or general preferences, EverFern will automatically compile them here.</p>
+                    <Card style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <Brain size={52} weight="duotone" color="var(--color-accent, #3b82f6)" />
+                        <h3 style={{ margin: '16px 0 8px', fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
+                        <p style={{ fontSize: 13, margin: '0 0 20px', lineHeight: 1.5, maxWidth: 440 }}>
+                            As you chat with EverFern, your preferences, coding habits, and facts are automatically remembered. You can also manually add memories right now.
+                        </p>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            style={{
+                                padding: '8px 16px', borderRadius: 10, border: 'none',
+                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 13, fontWeight: 600,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                                boxShadow: 'var(--shadow-sm)'
+                            }}
+                        >
+                            <Plus size={14} weight="bold" />
+                            Add First Memory
+                        </button>
                     </Card>
                 ) : (
                     <div style={{ display: 'flex', gap: 20, minHeight: 400 }}>
-                        {/* Graph/List container */}
                         <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                             {viewMode === 'graph' ? (
                                 <div style={{ position: 'relative' }}>
-                                {/* Zoom controls */}
-                                <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    {[
-                                        { label: '+', title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
-                                        { label: '−', title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
-                                        { label: '⊙', title: 'Reset zoom', onClick: () => setZoom(1) },
-                                    ].map(btn => (
-                                        <button
-                                            key={btn.label}
-                                            title={btn.title}
-                                            onClick={btn.onClick}
-                                            style={{
-                                                width: 28, height: 28, borderRadius: 8, border: '1px solid var(--color-border)',
-                                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-secondary)', fontSize: 14,
-                                                fontWeight: 600, cursor: 'pointer', display: 'flex',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                boxShadow: 'var(--shadow-xs)', transition: 'all 0.15s'
-                                            }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                                        >
-                                            {btn.label}
-                                        </button>
-                                    ))}
-                                    <div style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
-                                </div>
-                                <svg
+                                    <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {[
+                                            { icon: MagnifyingGlassPlus, title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
+                                            { icon: MagnifyingGlassMinus, title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
+                                            { icon: ArrowsCounterClockwise, title: 'Reset zoom & orientation', onClick: () => { setZoom(1); rotationRef.current = { yaw: 0, pitch: 0.2 }; updateRotatedPositions(); } },
+                                        ].map((btn, idx) => {
+                                            const IconComp = btn.icon;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    title={btn.title}
+                                                    onClick={btn.onClick}
+                                                    style={{
+                                                        width: 28, height: 28, borderRadius: 8, border: '1px solid var(--color-border)',
+                                                        backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-secondary)', fontSize: 14,
+                                                        fontWeight: 600, cursor: 'pointer', display: 'flex',
+                                                        alignItems: 'center', justifyContent: 'center',
+                                                        boxShadow: 'var(--shadow-xs)', transition: 'all 0.15s'
+                                                    }}
+                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                                                >
+                                                    <IconComp size={14} weight="bold" />
+                                                </button>
+                                            );
+                                        })}
+                                        <div style={{ fontSize: 10, textAlign: 'center', color: 'var(--color-text-tertiary)', marginTop: 4, fontFamily: 'monospace' }}>{Math.round(zoom * 100)}%</div>
+                                    </div>
+                                    <svg
                                         ref={svgRef}
                                         width="100%"
                                         height="400"
@@ -4482,6 +5342,7 @@ export default function SettingsPage({
                                             borderRadius: 20,
                                             backgroundColor: globeBg100,
                                             boxShadow: 'var(--shadow-md)',
+                                            cursor: 'grab'
                                         }}
                                     >
                                         <defs>
@@ -4489,13 +5350,11 @@ export default function SettingsPage({
                                                 <stop offset="0%" stopColor={globeBg0} stopOpacity="0.8" />
                                                 <stop offset="100%" stopColor={globeBg100} stopOpacity="1" />
                                             </radialGradient>
-                                            
                                             <radialGradient id="globe-shading" cx="50%" cy="50%" r="50%">
                                                 <stop offset="85%" stopColor={globeShading} stopOpacity="0" />
                                                 <stop offset="98%" stopColor={globeShading} stopOpacity="0.75" />
                                                 <stop offset="100%" stopColor={globeShading} stopOpacity="0.95" />
                                             </radialGradient>
-
                                             <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
                                                 <feGaussianBlur stdDeviation="2.5" result="blur" />
                                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -4506,304 +5365,101 @@ export default function SettingsPage({
                                             </filter>
                                         </defs>
                                         <rect width="100%" height="100%" fill="url(#graph-bg)" rx="20" />
-
-                                        {/* 1. Back Globe Grid Lines */}
                                         <g opacity="0.3" pointerEvents="none">
                                             {gridPaths.filter(p => !p.isFront).map((gp, idx) => (
-                                                <path
-                                                    key={`bg-grid-back-${idx}`}
-                                                    d={gp.path}
-                                                    fill="none"
-                                                    stroke={gridStrokeBack}
-                                                    strokeWidth="0.75"
-                                                    strokeDasharray="2,2"
-                                                />
+                                                <path key={`bg-grid-back-${idx}`} d={gp.path} fill="none" stroke={gridStrokeBack} strokeWidth="0.75" strokeDasharray="2,2" />
                                             ))}
                                         </g>
-
-                                        {/* 2. Back Hub lines (root to back nodes) */}
                                         {backHubNodes.map(node => {
                                             const targetPos = nodePositions[node.id];
                                             const rootPos = nodePositions['__user__'];
                                             if (!targetPos || !rootPos) return null;
-                                            return (
-                                                <line
-                                                    key={`hub-back-${node.id}`}
-                                                    x1={rootPos.x}
-                                                    y1={rootPos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={hubStrokeBack}
-                                                    strokeWidth="0.5"
-                                                />
-                                            );
+                                            return <line key={`hub-back-${node.id}`} x1={rootPos.x} y1={rootPos.y} x2={targetPos.x} y2={targetPos.y} stroke={hubStrokeBack} strokeWidth="0.5" />;
                                         })}
-
-                                        {/* 3. Back Regular Edges */}
                                         {backEdges.map((edge, idx) => {
                                             const sourcePos = nodePositions[edge.source];
                                             const targetPos = nodePositions[edge.target];
                                             if (!sourcePos || !targetPos) return null;
-                                            return (
-                                                <line
-                                                    key={`edge-back-${idx}`}
-                                                    x1={sourcePos.x}
-                                                    y1={sourcePos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={edgeStrokeBack}
-                                                    strokeWidth="0.75"
-                                                    strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'}
-                                                />
-                                            );
+                                            return <line key={`edge-back-${idx}`} x1={sourcePos.x} y1={sourcePos.y} x2={targetPos.x} y2={targetPos.y} stroke={edgeStrokeBack} strokeWidth="0.75" strokeDasharray={edge.type === 'linked_to' ? '2,2' : 'none'} />;
                                         })}
-
-                                        {/* 4. Back Nodes */}
                                         {backNodes.map(node => {
                                             const pos = nodePositions[node.id];
                                             if (!pos) return null;
-
-                                            const isSelected = selectedNode?.id === node.id;
-                                            const isHovered = hoveredNodeId === node.id;
-                                            const isFocused = isSelected || isHovered;
-
                                             let nodeColor = 'var(--color-text-tertiary)';
-                                            if (node.type === 'preference') {
-                                                nodeColor = 'var(--color-success)';
-                                            } else if (node.type === 'habit') {
-                                                nodeColor = 'var(--color-success)';
-                                            } else if (node.type === 'fact') {
-                                                nodeColor = 'var(--color-info)';
-                                            }
-
+                                            if (node.type === 'preference') nodeColor = '#f43f5e';
+                                            else if (node.type === 'habit') nodeColor = '#10b981';
+                                            else if (node.type === 'fact') nodeColor = '#3b82f6';
+                                            else if (node.type === 'file') nodeColor = '#a855f7';
                                             const zDepth = pos.z;
                                             const op = 0.15 + 0.25 * ((zDepth + 140) / 140);
-                                            const size = 3;
-
                                             return (
-                                                <g
-                                                    key={node.id}
-                                                    transform={`translate(${pos.x}, ${pos.y})`}
-                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    <circle
-                                                        data-node-id={node.id}
-                                                        r={isFocused ? size * 1.5 : size}
-                                                        fill={nodeColor}
-                                                        opacity={op}
-                                                        stroke="var(--color-border)"
-                                                        strokeWidth={0.5}
-                                                        style={{ transition: 'all 0.15s ease' }}
-                                                    />
+                                                <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`} onClick={() => setSelectedNode(node)} onMouseEnter={() => setHoveredNodeId(node.id)} onMouseLeave={() => setHoveredNodeId(null)} style={{ cursor: 'pointer' }}>
+                                                    <circle data-node-id={node.id} r={3} fill={nodeColor} opacity={op} stroke="var(--color-border)" strokeWidth={0.5} style={{ transition: 'all 0.15s ease' }} />
                                                 </g>
                                             );
                                         })}
-
-                                        {/* Globe atmosphere & shading overlay */}
                                         <circle cx="300" cy="200" r="140" fill="url(#globe-shading)" pointerEvents="none" />
                                         <circle cx="300" cy="200" r="140" fill="none" stroke={gridStrokeFront} strokeWidth="1" pointerEvents="none" />
-
-                                        {/* 5. Front Globe Grid Lines */}
                                         <g opacity="0.3" pointerEvents="none">
                                             {gridPaths.filter(p => p.isFront).map((gp, idx) => (
-                                                <path
-                                                    key={`bg-grid-front-${idx}`}
-                                                    d={gp.path}
-                                                    fill="none"
-                                                    stroke={gridStrokeFront}
-                                                    strokeWidth="0.75"
-                                                />
+                                                <path key={`bg-grid-front-${idx}`} d={gp.path} fill="none" stroke={gridStrokeFront} strokeWidth="0.75" />
                                             ))}
                                         </g>
-
-                                        {/* 6. Root User Hub Node (center z=0) */}
                                         {(() => {
                                             const rootPos = nodePositions['__user__'];
                                             if (!rootPos || filteredNodes.length === 0) return null;
                                             const isHovered = hoveredNodeId === '__user__';
                                             return (
-                                                <g 
-                                                    key="__user__" 
-                                                    transform={`translate(${rootPos.x}, ${rootPos.y})`} 
-                                                    style={{ cursor: 'pointer' }}
-                                                    onMouseEnter={() => setHoveredNodeId('__user__')}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                >
-                                                    <motion.circle 
-                                                        r="16" 
-                                                        fill="var(--color-success-dim)" 
-                                                        stroke="var(--color-success-dim)" 
-                                                        strokeWidth="1" 
-                                                        animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }}
-                                                        transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-                                                    />
-                                                    <circle
-                                                        r={isHovered ? 8 : 6}
-                                                        fill="var(--color-success)"
-                                                        filter="url(#glow-strong)"
-                                                        stroke={nodeBorder}
-                                                        strokeWidth="1.5"
-                                                        style={{ transition: 'all 0.2s ease' }}
-                                                    />
-                                                    {isHovered && (
-                                                        <g transform="translate(0, -20)" style={{ pointerEvents: 'none', zIndex: 100 }}>
-                                                            <rect
-                                                                x="-45"
-                                                                y="-14"
-                                                                width="90"
-                                                                height="18"
-                                                                rx="6"
-                                                                fill={tooltipBg}
-                                                                stroke={tooltipBorder}
-                                                                strokeWidth="1"
-                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
-                                                            />
-                                                            <text
-                                                                textAnchor="middle"
-                                                                dy="-2"
-                                                                style={{ fontSize: 9.5, fontWeight: 700, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
-                                                            >
-                                                                EverFern Brain
-                                                            </text>
-                                                        </g>
-                                                    )}
+                                                <g key="__user__" transform={`translate(${rootPos.x}, ${rootPos.y})`} style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredNodeId('__user__')} onMouseLeave={() => setHoveredNodeId(null)}>
+                                                    <motion.circle r="16" fill="var(--color-accent-dim, rgba(59, 130, 246, 0.2))" stroke="var(--color-accent, #3b82f6)" strokeWidth="1" animate={{ scale: [1, 1.3, 1], opacity: [0.6, 0.2, 0.6] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }} />
+                                                    <circle r={isHovered ? 8 : 6} fill="var(--color-accent, #3b82f6)" filter="url(#glow-strong)" stroke={nodeBorder} strokeWidth="1.5" style={{ transition: 'all 0.2s ease' }} />
                                                 </g>
                                             );
                                         })()}
-
-                                        {/* 7. Front Hub lines (root to front nodes) */}
                                         {frontHubNodes.map(node => {
                                             const targetPos = nodePositions[node.id];
                                             const rootPos = nodePositions['__user__'];
                                             if (!targetPos || !rootPos) return null;
-                                            return (
-                                                <line
-                                                    key={`hub-front-${node.id}`}
-                                                    x1={rootPos.x}
-                                                    y1={rootPos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={hubStrokeFront}
-                                                    strokeWidth="0.75"
-                                                />
-                                            );
+                                            return <line key={`hub-front-${node.id}`} x1={rootPos.x} y1={rootPos.y} x2={targetPos.x} y2={targetPos.y} stroke={hubStrokeFront} strokeWidth="0.75" />;
                                         })}
-
-                                        {/* 8. Front Regular Edges */}
                                         {frontEdges.map((edge, idx) => {
                                             const sourcePos = nodePositions[edge.source];
                                             const targetPos = nodePositions[edge.target];
                                             if (!sourcePos || !targetPos) return null;
-                                            return (
-                                                <line
-                                                    key={`edge-front-${idx}`}
-                                                    x1={sourcePos.x}
-                                                    y1={sourcePos.y}
-                                                    x2={targetPos.x}
-                                                    y2={targetPos.y}
-                                                    stroke={edgeStrokeFront}
-                                                    strokeWidth="1.25"
-                                                    strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'}
-                                                />
-                                            );
+                                            return <line key={`edge-front-${idx}`} x1={sourcePos.x} y1={sourcePos.y} x2={targetPos.x} y2={targetPos.y} stroke={edgeStrokeFront} strokeWidth="1.25" strokeDasharray={edge.type === 'linked_to' ? '3,3' : 'none'} />;
                                         })}
-
-                                        {/* 9. Front Nodes */}
                                         {frontNodes.map(node => {
                                             const pos = nodePositions[node.id];
                                             if (!pos) return null;
-
                                             const isSelected = selectedNode?.id === node.id;
                                             const isHovered = hoveredNodeId === node.id;
                                             const isFocused = isSelected || isHovered;
-
                                             let nodeColor = 'var(--color-text-tertiary)';
                                             let useGlow = false;
-
-                                            if (node.type === 'preference') {
-                                                nodeColor = 'var(--color-success)';
-                                                useGlow = true;
-                                            } else if (node.type === 'habit') {
-                                                nodeColor = 'var(--color-success)';
-                                                useGlow = true;
-                                            } else if (node.type === 'fact') {
-                                                nodeColor = 'var(--color-info)';
-                                                useGlow = true;
-                                            }
-
+                                            if (node.type === 'preference') { nodeColor = '#f43f5e'; useGlow = true; }
+                                            else if (node.type === 'habit') { nodeColor = '#10b981'; useGlow = true; }
+                                            else if (node.type === 'fact') { nodeColor = '#3b82f6'; useGlow = true; }
+                                            else if (node.type === 'file') { nodeColor = '#a855f7'; useGlow = true; }
                                             const zDepth = pos.z;
                                             const op = 0.5 + 0.5 * (zDepth / 140);
                                             const size = isFocused ? 7 : 5;
-
-                                            const labelText = node.category.length > 20 ? `${node.category.slice(0, 17)}...` : node.category;
+                                            const labelText = node.category?.length > 20 ? `${node.category.slice(0, 17)}...` : (node.category || node.name || 'Memory');
                                             const tooltipWidth = Math.max(70, labelText.length * 6.5);
-
                                             return (
-                                                <g
-                                                    key={node.id}
-                                                    transform={`translate(${pos.x}, ${pos.y})`}
-                                                    onMouseEnter={() => setHoveredNodeId(node.id)}
-                                                    onMouseLeave={() => setHoveredNodeId(null)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    {isSelected && (
-                                                        <circle
-                                                            r="12"
-                                                            fill="none"
-                                                            stroke="var(--color-border-strong)"
-                                                            strokeWidth="1.5"
-                                                            strokeDasharray="2,2"
-                                                        />
-                                                    )}
-
-                                                    {isHovered && (
-                                                        <circle
-                                                            r="10"
-                                                            fill="none"
-                                                            stroke="var(--color-success-dim)"
-                                                            strokeWidth="2"
-                                                        />
-                                                    )}
-
-                                                    <circle
-                                                        data-node-id={node.id}
-                                                        r={size}
-                                                        fill={nodeColor}
-                                                        opacity={op}
-                                                        filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'}
-                                                        stroke={nodeBorder}
-                                                        strokeWidth={isFocused ? 1.5 : 1}
-                                                        style={{ transition: 'all 0.15s ease' }}
-                                                    />
-
+                                                <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`} onClick={() => setSelectedNode(node)} onMouseEnter={() => setHoveredNodeId(node.id)} onMouseLeave={() => setHoveredNodeId(null)} style={{ cursor: 'pointer' }}>
+                                                    {isSelected && <circle r="12" fill="none" stroke="var(--color-border-strong, #3b82f6)" strokeWidth="1.5" strokeDasharray="2,2" />}
+                                                    {isHovered && <circle r="10" fill="none" stroke="var(--color-accent-dim, rgba(59, 130, 246, 0.3))" strokeWidth="2" />}
+                                                    <circle data-node-id={node.id} r={size} fill={nodeColor} opacity={op} filter={useGlow && isFocused ? 'url(#glow-strong)' : useGlow ? 'url(#glow)' : 'none'} stroke={nodeBorder} strokeWidth={isFocused ? 1.5 : 1} style={{ transition: 'all 0.15s ease' }} />
                                                     {isFocused && (
                                                         <g transform="translate(0, -18)" style={{ pointerEvents: 'none', zIndex: 100 }}>
-                                                            <rect
-                                                                x={-tooltipWidth / 2}
-                                                                y="-13"
-                                                                width={tooltipWidth}
-                                                                height={18}
-                                                                rx="6"
-                                                                fill={tooltipBg}
-                                                                stroke={tooltipBorder}
-                                                                strokeWidth="1"
-                                                                style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }}
-                                                            />
-                                                            <text
-                                                                textAnchor="middle"
-                                                                dy="-1"
-                                                                style={{ fontSize: 9.5, fontWeight: 600, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}
-                                                            >
-                                                                {labelText}
-                                                            </text>
+                                                            <rect x={-tooltipWidth / 2} y="-13" width={tooltipWidth} height={18} rx="6" fill={tooltipBg} stroke={tooltipBorder} strokeWidth="1" style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.1))' }} />
+                                                            <text textAnchor="middle" dy="-1" style={{ fontSize: 9.5, fontWeight: 600, fill: tooltipText, userSelect: 'none', fontFamily: 'sans-serif' }}>{labelText}</text>
                                                         </g>
                                                     )}
                                                 </g>
-                                             );
-                                         })}
-                                     </svg>
+                                            );
+                                        })}
+                                    </svg>
                                 </div>
                             ) : (
                                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 20, backgroundColor: 'var(--color-bg-surface)', maxHeight: 400 }}>
@@ -4818,47 +5474,24 @@ export default function SettingsPage({
                                         </thead>
                                         <tbody>
                                             {filteredNodes.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
-                                                        No matching memories found.
-                                                    </td>
-                                                </tr>
+                                                <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)' }}>No matching memories found.</td></tr>
                                             ) : (
                                                 filteredNodes.map(node => {
                                                     const isSelected = selectedNode?.id === node.id;
+                                                    let badgeBg = 'var(--color-bg-subtle)';
+                                                    let badgeColor = 'var(--color-text-secondary)';
+                                                    if (node.type === 'preference') { badgeBg = 'rgba(244, 63, 94, 0.1)'; badgeColor = '#f43f5e'; }
+                                                    else if (node.type === 'habit') { badgeBg = 'rgba(16, 185, 129, 0.1)'; badgeColor = '#10b981'; }
+                                                    else if (node.type === 'fact') { badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeColor = '#3b82f6'; }
+                                                    else if (node.type === 'file') { badgeBg = 'rgba(168, 85, 247, 0.1)'; badgeColor = '#a855f7'; }
                                                     return (
-                                                        <tr
-                                                            key={node.id}
-                                                            onClick={() => setSelectedNode(node)}
-                                                            style={{
-                                                                borderBottom: '1px solid var(--color-border-subtle)',
-                                                                cursor: 'pointer',
-                                                                backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent',
-                                                                transition: 'background-color 0.15s'
-                                                            }}
-                                                            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
-                                                            onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                                                        >
+                                                        <tr key={node.id} onClick={() => setSelectedNode(node)} style={{ borderBottom: '1px solid var(--color-border-subtle)', cursor: 'pointer', backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent', transition: 'background-color 0.15s' }} onMouseEnter={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }} onMouseLeave={e => { if(!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}>
                                                             <td style={{ padding: '12px 16px' }}>
-                                                                <span style={{
-                                                                    padding: '2px 6px',
-                                                                    borderRadius: 8,
-                                                                    fontSize: 11,
-                                                                    fontWeight: 600,
-                                                                    textTransform: 'capitalize',
-                                                                    backgroundColor: node.type === 'preference' ? 'var(--color-warning-dim)' : node.type === 'habit' ? 'var(--color-success-dim)' : node.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
-                                                                    color: node.type === 'preference' ? 'var(--color-warning)' : node.type === 'habit' ? 'var(--color-success)' : node.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
-                                                                }}>
-                                                                    {node.type}
-                                                                </span>
+                                                                <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, textTransform: 'capitalize', backgroundColor: badgeBg, color: badgeColor }}>{node.type}</span>
                                                             </td>
-                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: 'var(--color-text-primary)' }}>{node.category}</td>
-                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {node.value}
-                                                            </td>
-                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
-                                                                {node.linkedFile || node.name || ''}
-                                                            </td>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500, color: 'var(--color-text-primary)' }}>{node.category || node.name}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.value}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>{node.linkedFile || node.name || ''}</td>
                                                         </tr>
                                                     );
                                                 })
@@ -4868,118 +5501,45 @@ export default function SettingsPage({
                                 </div>
                             )}
                         </div>
-
-                        {/* Details Sidebar panel */}
-                        <div style={{ width: 240, flexShrink: 0 }}>
+                        <div style={{ width: 260, flexShrink: 0 }}>
                             <Card style={{ height: '100%', minHeight: 380, display: 'flex', flexDirection: 'column', padding: 20, borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg-surface)', margin: 0 }}>
                                 {selectedNode ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
                                         <div>
-                                            <span style={{
-                                                padding: '3px 8px',
-                                                borderRadius: 12,
-                                                fontSize: 10,
-                                                fontWeight: 700,
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                backgroundColor: selectedNode.type === 'preference' ? 'var(--color-warning-dim)' : selectedNode.type === 'habit' ? 'var(--color-success-dim)' : selectedNode.type === 'fact' ? 'var(--color-info-dim)' : 'var(--color-bg-subtle)',
-                                                color: selectedNode.type === 'preference' ? 'var(--color-warning)' : selectedNode.type === 'habit' ? 'var(--color-success)' : selectedNode.type === 'fact' ? 'var(--color-info)' : 'var(--color-text-secondary)'
-                                            }}>
-                                                {selectedNode.type}
-                                            </span>
-                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>
-                                                {selectedNode.name || selectedNode.category}
-                                            </h3>
-                                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
-                                                ID: {selectedNode.id.split('_').slice(-1)[0]}
-                                            </span>
+                                            <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', backgroundColor: selectedNode.type === 'preference' ? 'rgba(244, 63, 94, 0.1)' : selectedNode.type === 'habit' ? 'rgba(16, 185, 129, 0.1)' : selectedNode.type === 'fact' ? 'rgba(59, 130, 246, 0.1)' : 'var(--color-bg-subtle)', color: selectedNode.type === 'preference' ? '#f43f5e' : selectedNode.type === 'habit' ? '#10b981' : selectedNode.type === 'fact' ? '#3b82f6' : 'var(--color-text-secondary)' }}>{selectedNode.type}</span>
+                                            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>{selectedNode.name || selectedNode.category}</h3>
+                                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>ID: {selectedNode.id.split('_').slice(-1)[0]}</span>
                                         </div>
-                                        
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
                                             <div>
                                                 <Label>Value</Label>
-                                                <div style={{
-                                                    padding: 10,
-                                                    backgroundColor: 'var(--color-bg-subtle)',
-                                                    border: '1px solid var(--color-border)',
-                                                    borderRadius: 10,
-                                                    fontSize: 13,
-                                                    lineHeight: 1.4,
-                                                    color: 'var(--color-text-primary)',
-                                                    wordBreak: 'break-word',
-                                                    maxHeight: 150,
-                                                    overflowY: 'auto'
-                                                }}>
-                                                    {selectedNode.value}
-                                                </div>
+                                                <div style={{ padding: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 10, fontSize: 13, lineHeight: 1.4, color: 'var(--color-text-primary)', wordBreak: 'break-word', maxHeight: 150, overflowY: 'auto' }}>{selectedNode.value}</div>
                                             </div>
-
                                             {selectedNode.metadata && (
                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                    {selectedNode.metadata.created && (
-                                                        <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>
-                                                    )}
-                                                    {selectedNode.metadata.lastUpdated && (
-                                                        <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>
-                                                    )}
+                                                    {selectedNode.metadata.created && <div>Created: {new Date(selectedNode.metadata.created).toLocaleDateString()}</div>}
+                                                    {selectedNode.metadata.lastUpdated && <div>Updated: {new Date(selectedNode.metadata.lastUpdated).toLocaleDateString()}</div>}
                                                 </div>
                                             )}
                                         </div>
-
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
                                             {(selectedNode.linkedFile || selectedNode.type === 'file') && (
-                                                <button
-                                                    onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)}
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        backgroundColor: 'var(--color-bg-surface)',
-                                                        color: 'var(--color-text-primary)',
-                                                        border: '1px solid var(--color-border)',
-                                                        borderRadius: 10,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: 6,
-                                                        transition: 'all 0.15s'
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
-                                                >
-                                                    📄 Open File
+                                                <button onClick={() => handleOpenFile(selectedNode.type === 'file' ? selectedNode.value : selectedNode.metadata?.linkedFile || selectedNode.linkedFile)} style={{ padding: '8px 12px', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}>
+                                                    <FileText size={15} weight="bold" />
+                                                    <span>Open File</span>
                                                 </button>
                                             )}
                                             {selectedNode.type !== 'file' && (
-                                                <button
-                                                    onClick={() => handleDeleteNode(selectedNode.id)}
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        backgroundColor: 'var(--color-error-dim)',
-                                                        color: 'var(--color-error)',
-                                                        border: '1px solid var(--color-error-dim)',
-                                                        borderRadius: 10,
-                                                        fontSize: 12,
-                                                        fontWeight: 600,
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: 6,
-                                                        transition: 'all 0.15s'
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.14)'}
-                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
-                                                >
-                                                    🗑️ Forget Memory
+                                                <button onClick={() => handleDeleteMemory(selectedNode.id)} style={{ padding: '8px 12px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', border: '1px solid var(--color-error)', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}>
+                                                    <Trash size={15} weight="bold" />
+                                                    <span>Forget Memory</span>
                                                 </button>
                                             )}
                                         </div>
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '40px 10px' }}>
-                                        <span style={{ fontSize: 32, marginBottom: 12 }}>🧠</span>
+                                        <Brain size={32} weight="duotone" style={{ marginBottom: 12, opacity: 0.5 }} />
                                         <p style={{ fontSize: 13, margin: 0, lineHeight: 1.5 }}>
                                             Click on a node in the graph or a row in the list to view its details.
                                         </p>
@@ -4989,641 +5549,6 @@ export default function SettingsPage({
                         </div>
                     </div>
                 )}
-            </div>
-        );
-    };
-
-    // ── System & Hardware Section with Model VRAM & TPS Predictor ──────────
-    const SystemHardwareSection = () => {
-        const [hardwareInfo, setHardwareInfo] = useState<{
-            ramGB: number;
-            freeRamGB?: number;
-            usedRamGB?: number;
-            cpuModel?: string;
-            cpuCores?: number;
-            cpuSpeed?: number;
-            gpuName: string;
-            vramGB: number;
-            driverVersion?: string;
-            gpuTemp?: number;
-            isNvidia?: boolean;
-            isAppleSilicon?: boolean;
-            platform?: string;
-            arch?: string;
-            hostname?: string;
-        } | null>(null);
-
-        const [modelsList, setModelsList] = useState<any[]>([]);
-        const [isLoadingHardware, setIsLoadingHardware] = useState(false);
-        const [filterStatus, setFilterStatus] = useState<'all' | 'full_gpu' | 'cpu_offload' | 'exceeds_specs'>('all');
-        const [searchQuery, setSearchQuery] = useState('');
-        const [customModelId, setCustomModelId] = useState('');
-        const [customResult, setCustomResult] = useState<any>(null);
-        const [customError, setCustomError] = useState<string | null>(null);
-        const [isCalculatingCustom, setIsCalculatingCustom] = useState(false);
-        const [pullingModel, setPullingModel] = useState<string | null>(null);
-        const [pullProgress, setPullProgress] = useState<string>('');
-
-        const loadSystemHardware = async (searchParam?: string) => {
-            setIsLoadingHardware(true);
-            try {
-                let hw: any = null;
-                const sysApi = (window as any).electronAPI?.system;
-                if (sysApi?.detectHardware) {
-                    hw = await sysApi.detectHardware();
-                    setHardwareInfo(hw);
-                }
-
-                const vram = hw?.vramGB || 0;
-                const ram = hw?.ramGB || 16;
-                const isApple = Boolean(hw?.isAppleSilicon);
-                const gpuName = hw?.gpuName || '';
-                const activeSearch = typeof searchParam === 'string' ? searchParam : searchQuery;
-
-                // 1. Try EverFern Cloud / Local Backend APIs with full logging first
-                const candidateUrls = [
-                    process.env.NEXT_PUBLIC_API_URL,
-                    'http://127.0.0.1:5000',
-                    'http://localhost:5000',
-                    'https://api.everfern.app'
-                ].filter(Boolean) as string[];
-
-                const q = activeSearch ? `&search=${encodeURIComponent(activeSearch)}` : '';
-                for (const baseUrl of candidateUrls) {
-                    try {
-                        const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?vram_gb=${vram}&ram_gb=${ram}&is_apple_silicon=${isApple}&gpu_name=${encodeURIComponent(gpuName)}${q}`;
-                        console.log(`[EverFern Cloud] 📡 Fetching compatible models from: ${targetUrl}`);
-                        const controller = new AbortController();
-                        const timeout = setTimeout(() => controller.abort(), 1500);
-                        const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-                        clearTimeout(timeout);
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (data.models && Array.isArray(data.models) && data.models.length > 0) {
-                                console.log(`[EverFern Cloud] ✅ Successfully fetched ${data.models.length} models from EverFern Cloud (${baseUrl})`);
-                                setModelsList(data.models);
-                                setIsLoadingHardware(false);
-                                return;
-                            }
-                        } else {
-                            console.log(`[EverFern Cloud] ⚠️ Endpoint returned HTTP ${res.status} (${baseUrl})`);
-                        }
-                    } catch (e: any) {
-                        console.log(`[EverFern Cloud] ℹ️ Endpoint unreachable (${baseUrl}): ${e?.message || e}`);
-                    }
-                }
-
-                // 2. Fallback to local Electron IPC handler (if cloud unreachable)
-                if (sysApi?.getModelRequirements) {
-                    try {
-                        console.log('[EverFern] 💻 Cloud unreachable, querying native hardware analyzer via IPC...');
-                        const ipcRes = await sysApi.getModelRequirements({
-                            vramGB: vram,
-                            ramGB: ram,
-                            isAppleSilicon: isApple,
-                            gpuName,
-                            search: activeSearch
-                        });
-                        if (ipcRes?.success && Array.isArray(ipcRes.models) && ipcRes.models.length > 0) {
-                            console.log(`[EverFern] ✅ Native hardware analyzer returned ${ipcRes.models.length} compatible models via IPC.`);
-                            setModelsList(ipcRes.models);
-                            setIsLoadingHardware(false);
-                            return;
-                        }
-                    } catch (ipcErr) {
-                        console.warn('[EverFern] ⚠️ IPC query failed:', ipcErr);
-                    }
-                }
-
-                console.log('[EverFern] ℹ️ Using client fallback computation for 16 models.');
-
-                // 3. Client-side fallback computation
-                const fallbackModels = [
-                    { model_id: "meta-llama/Llama-3.2-1B-Instruct", name: "Llama 3.2 1B", params_b: 1.2, raw_fp16_vram_gb: 2.47, quantized_q4_vram_gb: 0.88, quantized_q8_vram_gb: 1.45, min_ram_gb: 4, category: "Ultra-lightweight / Fast Edge", tags: ["llama3.2:1b"] },
-                    { model_id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B", params_b: 3.2, raw_fp16_vram_gb: 6.42, quantized_q4_vram_gb: 2.22, quantized_q8_vram_gb: 3.65, min_ram_gb: 6, category: "Compact / High Quality", tags: ["llama3.2:3b"] },
-                    { model_id: "meta-llama/Meta-Llama-3.1-8B-Instruct", name: "Llama 3.1 8B", params_b: 8.0, raw_fp16_vram_gb: 16.06, quantized_q4_vram_gb: 5.34, quantized_q8_vram_gb: 9.10, min_ram_gb: 12, category: "Standard General Purpose", tags: ["llama3.1:8b"] },
-                    { model_id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3", params_b: 7.2, raw_fp16_vram_gb: 14.50, quantized_q4_vram_gb: 4.16, quantized_q8_vram_gb: 8.20, min_ram_gb: 8, category: "Fast Instruction & Reasoning", tags: ["mistral:7b"] },
-                    { model_id: "Qwen/Qwen2.5-Coder-1.5B-Instruct", name: "Qwen 2.5 Coder 1.5B", params_b: 1.5, raw_fp16_vram_gb: 3.08, quantized_q4_vram_gb: 1.08, quantized_q8_vram_gb: 1.78, min_ram_gb: 4, category: "Fast Coding Specialist", tags: ["qwen2.5-coder:1.5b"] },
-                    { model_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.08, quantized_q8_vram_gb: 8.65, min_ram_gb: 10, category: "Flagship Coding Specialist", tags: ["qwen2.5-coder:7b"] },
-                    { model_id: "Qwen/Qwen2.5-Coder-14B-Instruct", name: "Qwen 2.5 Coder 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.75, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Heavy Coding & Autonomous", tags: ["qwen2.5-coder:14b"] },
-                    { model_id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B", params_b: 32.5, raw_fp16_vram_gb: 65.00, quantized_q4_vram_gb: 20.40, quantized_q8_vram_gb: 36.20, min_ram_gb: 32, category: "State-of-the-Art Coding", tags: ["qwen2.5-coder:32b"] },
-                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", name: "DeepSeek R1 1.5B", params_b: 1.8, raw_fp16_vram_gb: 3.56, quantized_q4_vram_gb: 1.25, quantized_q8_vram_gb: 2.05, min_ram_gb: 4, category: "Compact Reasoning", tags: ["deepseek-r1:1.5b"] },
-                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", name: "DeepSeek R1 7B", params_b: 7.6, raw_fp16_vram_gb: 15.22, quantized_q4_vram_gb: 5.15, quantized_q8_vram_gb: 8.65, min_ram_gb: 12, category: "Advanced Reasoning", tags: ["deepseek-r1:7b"] },
-                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B", name: "DeepSeek R1 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.80, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Deep Reasoning Specialist", tags: ["deepseek-r1:14b"] },
-                    { model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", name: "DeepSeek R1 32B", params_b: 32.8, raw_fp16_vram_gb: 65.60, quantized_q4_vram_gb: 21.20, quantized_q8_vram_gb: 36.80, min_ram_gb: 32, category: "Top-tier Math & Logic Reasoning", tags: ["deepseek-r1:32b"] },
-                    { model_id: "google/gemma-2-2b-it", name: "Gemma 2 2B", params_b: 2.6, raw_fp16_vram_gb: 5.22, quantized_q4_vram_gb: 1.78, quantized_q8_vram_gb: 2.95, min_ram_gb: 6, category: "Lightweight Google Research", tags: ["gemma2:2b"] },
-                    { model_id: "google/gemma-2-9b-it", name: "Gemma 2 9B", params_b: 9.2, raw_fp16_vram_gb: 18.48, quantized_q4_vram_gb: 6.12, quantized_q8_vram_gb: 10.40, min_ram_gb: 12, category: "High Accuracy General Purpose", tags: ["gemma2:9b"] },
-                    { model_id: "microsoft/phi-4", name: "Phi-4 14B", params_b: 14.7, raw_fp16_vram_gb: 29.40, quantized_q4_vram_gb: 9.70, quantized_q8_vram_gb: 16.50, min_ram_gb: 16, category: "Microsoft Synthetic Reasoning", tags: ["phi4:14b"] },
-                    { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b"] }
-                ];
-
-                const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
-                const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
-
-                const computed = fallbackModels.map(m => {
-                    const q4 = m.quantized_q4_vram_gb;
-                    let status: 'full_gpu' | 'cpu_offload' | 'exceeds_specs' = 'exceeds_specs';
-                    let badge = 'Cloud Required';
-                    let predicted_tps = 0;
-
-                    if (effectiveVram >= q4) {
-                        status = 'full_gpu';
-                        badge = 'Full GPU';
-                        predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
-                    } else if ((effectiveVram + (ram * 0.5)) >= q4 && ram >= m.min_ram_gb) {
-                        status = 'cpu_offload';
-                        badge = 'CPU Offload';
-                        predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
-                    }
-
-                    return {
-                        ...m,
-                        status,
-                        badge,
-                        predicted_tps,
-                        fits_in_vram: effectiveVram >= q4,
-                        fits_in_ram: ram >= m.min_ram_gb
-                    };
-                });
-
-                if (activeSearch) {
-                    const q = activeSearch.toLowerCase();
-                    setModelsList(computed.filter(m => m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || (m.tags && m.tags.some(t => t.toLowerCase().includes(q)))));
-                } else {
-                    setModelsList(computed);
-                }
-            } catch (err) {
-                console.error('Failed to load hardware:', err);
-            } finally {
-                setIsLoadingHardware(false);
-            }
-        };
-
-        useEffect(() => {
-            loadSystemHardware();
-        }, []);
-
-        // Debounce search across local IPC and backend
-        useEffect(() => {
-            const timer = setTimeout(() => {
-                loadSystemHardware(searchQuery);
-            }, 300);
-            return () => clearTimeout(timer);
-        }, [searchQuery]);
-
-        const handleCalculateCustomModel = async () => {
-            if (!customModelId.trim()) return;
-            setIsCalculatingCustom(true);
-            setCustomResult(null);
-            setCustomError(null);
-            try {
-                const sysApi = (window as any).electronAPI?.system;
-                const vram = hardwareInfo?.vramGB || 0;
-                const ram = hardwareInfo?.ramGB || 16;
-                const isApple = Boolean(hardwareInfo?.isAppleSilicon);
-                const gpuName = hardwareInfo?.gpuName || '';
-
-                if (sysApi?.getModelRequirements) {
-                    const res = await sysApi.getModelRequirements({
-                        vramGB: vram,
-                        ramGB: ram,
-                        isAppleSilicon: isApple,
-                        gpuName,
-                        modelId: customModelId.trim()
-                    });
-                    if (res) {
-                        if (res.notFound || res.success === false) {
-                            setCustomError(res.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
-                            return;
-                        }
-                        setCustomResult(res);
-                        return;
-                    }
-                }
-
-                // Cloud / local backend lookup
-                const candidateUrls = [
-                    process.env.NEXT_PUBLIC_API_URL,
-                    'http://127.0.0.1:5000',
-                    'http://localhost:5000',
-                    'https://api.everfern.app'
-                ].filter(Boolean) as string[];
-
-                for (const baseUrl of candidateUrls) {
-                    try {
-                        const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/system/model-requirements?model=${encodeURIComponent(customModelId.trim())}`;
-                        const controller = new AbortController();
-                        const timeout = setTimeout(() => controller.abort(), 1500);
-                        const res = await fetch(targetUrl, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-                        clearTimeout(timeout);
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (data.notFound || data.success === false) {
-                                setCustomError(data.error || `Model repository "${customModelId.trim()}" was not found on Hugging Face Hub.`);
-                                return;
-                            }
-                            const effectiveVram = isApple ? Math.max(vram, ram * 0.75) : vram;
-                            const q4 = data.quantized_q4_vram_gb || 4.16;
-                            const bw = effectiveVram >= 8 ? 360 : (effectiveVram >= 4 ? 240 : 45);
-
-                            let status = 'exceeds_specs';
-                            let badge = 'Cloud Required';
-                            let predicted_tps = 0;
-
-                            if (effectiveVram >= q4) {
-                                status = 'full_gpu';
-                                badge = 'Full GPU';
-                                predicted_tps = Math.round((bw / Math.max(q4, 0.5)) * 0.75 * 10) / 10;
-                            } else if ((effectiveVram + (ram * 0.5)) >= q4) {
-                                status = 'cpu_offload';
-                                badge = 'CPU Offload';
-                                predicted_tps = Math.round((35 / Math.max(q4, 0.5)) * 0.65 * 10) / 10;
-                            }
-
-                            setCustomResult({
-                                ...data,
-                                status,
-                                badge,
-                                predicted_tps
-                            });
-                            return;
-                        }
-                    } catch (e) {}
-                }
-
-                setCustomError(`Unable to verify model "${customModelId.trim()}" on Hugging Face Hub. Please check your internet connection or verify the repository ID.`);
-            } catch (err: any) {
-                setCustomError(err?.message || 'Error communicating with model calculation service.');
-            } finally {
-                setIsCalculatingCustom(false);
-            }
-        };
-
-        const handlePullOllamaModel = async (modelTag: string) => {
-            const api = (window as any).electronAPI?.system;
-            if (!api?.ollamaPull) return;
-            setPullingModel(modelTag);
-            setPullProgress('Starting pull...');
-            try {
-                if (api.onOllamaPullLine) {
-                    api.onOllamaPullLine(({ line }: { line: string }) => {
-                        setPullProgress(line);
-                    });
-                }
-                const res = await api.ollamaPull(modelTag);
-                if (res?.success) {
-                    setPullProgress('Completed successfully');
-                } else {
-                    setPullProgress(`Failed: ${res?.error || 'Unknown error'}`);
-                }
-            } catch (err: any) {
-                setPullProgress(`Error: ${err?.message || String(err)}`);
-            } finally {
-                setTimeout(() => setPullingModel(null), 3000);
-            }
-        };
-
-        const filteredModels = modelsList.filter(m => {
-            if (filterStatus !== 'all' && m.status !== filterStatus) return false;
-            return true;
-        });
-
-        const vramGb = hardwareInfo?.vramGB || 0;
-        const ramGb = hardwareInfo?.ramGB || 16;
-        const freeRam = hardwareInfo?.freeRamGB || 8;
-
-        return (
-            <div style={{ padding: '4px 0 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <SectionTitle>System &amp; Hardware</SectionTitle>
-                    <button
-                        onClick={() => loadSystemHardware()}
-                        disabled={isLoadingHardware}
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '7px 14px', borderRadius: 8,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-secondary)',
-                            fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                            transition: 'all 0.15s'
-                        }}
-                    >
-                        <ArrowPathIcon width={13} height={13} className={isLoadingHardware ? 'animate-spin' : ''} />
-                        Refresh Specs
-                    </button>
-                </div>
-                <SectionSubtitle>
-                    Inspect machine specifications, compute exact VRAM footprints with KV-cache buffers, and estimate local model execution throughput.
-                </SectionSubtitle>
-
-                {/* Hardware Overview Cards Grid with Increased Spacing and Muted Minimal Icons */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24, marginBottom: 28 }}>
-                    {/* GPU & VRAM Card */}
-                    <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                            <div style={{
-                                width: 42, height: 42, borderRadius: 12,
-                                backgroundColor: 'var(--color-bg-subtle)',
-                                border: '1px solid var(--color-border)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: 'var(--color-text-secondary)',
-                                flexShrink: 0
-                            }}>
-                                <GraphicsCardIcon size={24} />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-                                    Graphics Processor
-                                </div>
-                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {hardwareInfo?.gpuName || 'Detecting GPU...'}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                                <span>Dedicated VRAM</span>
-                                <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                                    {vramGb} GB {hardwareInfo?.isAppleSilicon ? '(Unified)' : ''}
-                                </span>
-                            </div>
-                            <div style={{ width: '100%', height: 5, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 3, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-                                <div style={{ width: `${Math.min(100, (vramGb / 24) * 100)}%`, height: '100%', backgroundColor: 'var(--color-text-primary)', borderRadius: 3 }} />
-                            </div>
-                        </div>
-
-                        {hardwareInfo?.driverVersion && (
-                            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                Driver: {hardwareInfo.driverVersion} {hardwareInfo.gpuTemp ? `• ${hardwareInfo.gpuTemp}°C` : ''}
-                            </div>
-                        )}
-                    </Card>
-
-                    {/* CPU & RAM Card */}
-                    <Card style={{ padding: '24px 26px', margin: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                            <div style={{
-                                width: 42, height: 42, borderRadius: 12,
-                                backgroundColor: 'var(--color-bg-subtle)',
-                                border: '1px solid var(--color-border)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: 'var(--color-text-secondary)',
-                                flexShrink: 0
-                            }}>
-                                <CpuChipIcon width={22} height={22} />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
-                                    System CPU &amp; Memory
-                                </div>
-                                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {hardwareInfo?.cpuModel || 'CPU Processor'}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                                <span>System RAM</span>
-                                <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                                    {ramGb} GB ({freeRam} GB Free)
-                                </span>
-                            </div>
-                            <div style={{ width: '100%', height: 5, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 3, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-                                <div style={{ width: `${Math.min(100, ((ramGb - freeRam) / ramGb) * 100)}%`, height: '100%', backgroundColor: 'var(--color-text-primary)', borderRadius: 3 }} />
-                            </div>
-                        </div>
-
-                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                            {hardwareInfo?.cpuCores ? `${hardwareInfo.cpuCores} CPU Threads • ` : ''}{hardwareInfo?.arch || 'x64'} Architecture
-                        </div>
-                    </Card>
-                </div>
-
-                {/* Custom Model VRAM & TPS Calculator */}
-                <Card style={{ padding: '24px 26px', marginBottom: 28 }}>
-                    <div style={{ marginBottom: 12 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>
-                            Hugging Face Model VRAM &amp; Throughput Calculator
-                        </h3>
-                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                            Calculate raw FP16 footprints and quantized Q4 VRAM requirements with a 15% context buffer for any repository model ID.
-                        </p>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10, marginTop: 16, marginBottom: 16 }}>
-                        <input
-                            type="text"
-                            placeholder="e.g., mistralai/Mistral-7B-v0.1, Qwen/Qwen2.5-Coder-7B-Instruct..."
-                            value={customModelId}
-                            onChange={e => { setCustomModelId(e.target.value); setCustomError(null); }}
-                            onKeyDown={e => { if (e.key === 'Enter') handleCalculateCustomModel(); }}
-                            style={{
-                                flex: 1, padding: '10px 14px', backgroundColor: 'var(--color-bg-subtle)',
-                                border: '1px solid var(--color-border)', borderRadius: 10,
-                                fontSize: 13, color: 'var(--color-text-primary)', outline: 'none',
-                                fontFamily: 'var(--font-mono)'
-                            }}
-                        />
-                        <button
-                            onClick={handleCalculateCustomModel}
-                            disabled={isCalculatingCustom || !customModelId.trim()}
-                            style={{
-                                padding: '10px 18px', backgroundColor: 'var(--color-text-primary)',
-                                color: 'var(--color-text-inverse)', border: 'none', borderRadius: 10,
-                                fontSize: 13, fontWeight: 600, cursor: (!customModelId.trim() || isCalculatingCustom) ? 'not-allowed' : 'pointer',
-                                opacity: (!customModelId.trim() || isCalculatingCustom) ? 0.5 : 1,
-                                transition: 'all 0.15s'
-                            }}
-                        >
-                            {isCalculatingCustom ? 'Calculating...' : 'Calculate Footprint'}
-                        </button>
-                    </div>
-
-                    {customError && (
-                        <div style={{
-                            padding: '14px 16px', borderRadius: 12,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-secondary)',
-                            fontSize: 13, lineHeight: 1.5
-                        }}>
-                            {customError}
-                        </div>
-                    )}
-
-                    {customResult && (
-                        <div style={{
-                            padding: '16px 18px', borderRadius: 12,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            display: 'flex', flexDirection: 'column', gap: 12
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                                        {customResult.model || customResult.name}
-                                    </span>
-                                    {customResult.params_b && (
-                                        <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}>
-                                            {customResult.params_b}B Params
-                                        </span>
-                                    )}
-                                </div>
-                                <span style={{
-                                    fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6,
-                                    backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)',
-                                    color: 'var(--color-text-secondary)'
-                                }}>
-                                    {customResult.badge}
-                                </span>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 12 }}>
-                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Raw FP16</div>
-                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.raw_fp16_vram_gb} GB</div>
-                                </div>
-                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Quantized Q8</div>
-                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.quantized_q8_vram_gb || (customResult.quantized_q4_vram_gb * 2).toFixed(2)} GB</div>
-                                </div>
-                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Quantized Q4 (+15%)</div>
-                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>{customResult.quantized_q4_vram_gb} GB</div>
-                                </div>
-                                <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)' }}>
-                                    <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10, textTransform: 'uppercase', marginBottom: 2 }}>Predicted Throughput</div>
-                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                                        {customResult.predicted_tps > 0 ? `~${customResult.predicted_tps} tok/s` : 'Cloud Only'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </Card>
-
-                {/* Popular Models Hardware Compatibility & TPS Table */}
-                <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <div>
-                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                                Hardware-Compatible Models
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
-                                {filteredModels.length} models available
-                            </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                            {(['all', 'full_gpu', 'cpu_offload', 'exceeds_specs'] as const).map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => setFilterStatus(tab)}
-                                    style={{
-                                        padding: '5px 12px', borderRadius: 6, fontSize: 11.5, fontWeight: 500,
-                                        border: '1px solid var(--color-border)',
-                                        backgroundColor: filterStatus === tab ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
-                                        color: filterStatus === tab ? 'var(--color-text-inverse)' : 'var(--color-text-secondary)',
-                                        cursor: 'pointer', transition: 'all 0.15s'
-                                    }}
-                                >
-                                    {tab === 'all' ? 'All' : tab === 'full_gpu' ? 'Full GPU' : tab === 'cpu_offload' ? 'CPU Offload' : 'Cloud Required'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <input
-                        type="text"
-                        placeholder="Search models or Hugging Face Hub (e.g. llama, coder, deepseek, mistral)..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        style={{
-                            width: '100%', padding: '10px 14px', backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)', borderRadius: 10,
-                            fontSize: 13, color: 'var(--color-text-primary)', outline: 'none',
-                            marginBottom: 16, boxSizing: 'border-box'
-                        }}
-                    />
-
-                    {pullingModel && (
-                        <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', marginBottom: 14, fontSize: 12 }}>
-                            <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>Pulling {pullingModel}...</div>
-                            <div style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pullProgress}</div>
-                        </div>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {filteredModels.map(m => (
-                            <div
-                                key={m.model_id}
-                                style={{
-                                    padding: '14px 18px', borderRadius: 12,
-                                    backgroundColor: 'var(--color-bg-surface)',
-                                    border: '1px solid var(--color-border)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    gap: 16
-                                }}
-                            >
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>{m.name}</span>
-                                        <span style={{ fontSize: 10.5, padding: '1px 6px', borderRadius: 4, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}>
-                                            {m.params_b}B
-                                        </span>
-                                        <span style={{
-                                            fontSize: 10.5, fontWeight: 500, padding: '2px 7px', borderRadius: 5,
-                                            backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)',
-                                            color: 'var(--color-text-secondary)'
-                                        }}>
-                                            {m.badge}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                                        {m.category} • Required VRAM: <span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}>{m.quantized_q4_vram_gb} GB (Q4)</span> / {m.raw_fp16_vram_gb} GB (FP16)
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                                    {m.predicted_tps > 0 ? (
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                                                ~{m.predicted_tps} <span style={{ fontSize: 10.5, fontWeight: 400, color: 'var(--color-text-tertiary)' }}>tok/s</span>
-                                            </div>
-                                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
-                                                {m.status === 'full_gpu' ? 'GPU' : 'CPU Offload'}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
-                                            Cloud Required
-                                        </div>
-                                    )}
-
-                                    {m.tags && m.tags[0] && (
-                                        <button
-                                            onClick={() => handlePullOllamaModel(m.tags[0].replace('ollama:', ''))}
-                                            disabled={pullingModel === m.tags[0].replace('ollama:', '')}
-                                            style={{
-                                                padding: '6px 14px', borderRadius: 8,
-                                                backgroundColor: 'var(--color-bg-subtle)',
-                                                border: '1px solid var(--color-border)',
-                                                color: 'var(--color-text-primary)',
-                                                fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                                                transition: 'all 0.15s'
-                                            }}
-                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
-                                        >
-                                            {pullingModel === m.tags[0].replace('ollama:', '') ? 'Pulling...' : 'Pull (Ollama)'}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
             </div>
         );
     };

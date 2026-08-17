@@ -156,7 +156,8 @@ function ClickRipple({ xPct, yPct, type, onDone }: {
 
 /* ─── Gradient overlay bar (like Navis) ──────────────────────────── */
 
-function GradientOverlayBar({ task, active }: { task: string; active: boolean }) {
+function GradientOverlayBar({ task, active, exiting }: { task: string; active: boolean; exiting?: boolean }) {
+  const isVisible = active && !exiting;
   return (
     <>
       {/* Top gradient fade — like Navis */}
@@ -166,8 +167,9 @@ function GradientOverlayBar({ task, active }: { task: string; active: boolean })
         height: 80,
         background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 100%)',
         pointerEvents: 'none',
-        opacity: active ? 1 : 0,
-        transition: 'opacity 0.4s ease',
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(-20px)',
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
         zIndex: 100,
       }} />
 
@@ -178,8 +180,9 @@ function GradientOverlayBar({ task, active }: { task: string; active: boolean })
         height: 100,
         background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
         pointerEvents: 'none',
-        opacity: active ? 1 : 0,
-        transition: 'opacity 0.4s ease',
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(20px)',
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
         zIndex: 100,
         display: 'flex',
         alignItems: 'flex-end',
@@ -205,9 +208,9 @@ function GradientOverlayBar({ task, active }: { task: string; active: boolean })
           overflow: 'hidden',
           whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
-          opacity: active ? 1 : 0,
-          transform: active ? 'translateY(0)' : 'translateY(8px)',
-          transition: 'opacity 0.35s ease, transform 0.35s ease',
+          opacity: isVisible ? 1 : 0,
+          transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.96)',
+          transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
         }}>
           {/* Pulsing Fern dot */}
           <div style={{
@@ -215,7 +218,7 @@ function GradientOverlayBar({ task, active }: { task: string; active: boolean })
             borderRadius: '50%',
             background: '#6366f1',
             flexShrink: 0,
-            animation: active ? 'pulse-dot 1.4s ease-in-out infinite' : 'none',
+            animation: isVisible ? 'pulse-dot 1.4s ease-in-out infinite' : 'none',
           }} />
           <span style={{ color: 'rgba(255,255,255,0.38)', marginRight: 2, flexShrink: 0 }}>Fern</span>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{task}</span>
@@ -235,6 +238,8 @@ export default function ComputerOverlayPage() {
   });
   const [ripples, setRipples] = useState<ClickRipple[]>([]);
   const [overlay, setOverlay] = useState<OverlayState>({ active: false, task: '' });
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const [overlayExiting, setOverlayExiting] = useState(false);
   const rippleIdRef = useRef(0);
   const clickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Physical screen size from main process (robotjs coords are in physical pixels)
@@ -295,9 +300,22 @@ export default function ComputerOverlayPage() {
       if (data.screenWidth && data.screenHeight) {
         screenSizeRef.current = { w: data.screenWidth, h: data.screenHeight };
       }
-      setOverlay(data);
-      if (!data.active) {
+      
+      if (data.active && !overlay.active) {
+        // Entrance animation
+        setOverlayExiting(false);
+        setOverlayVisible(true);
+        setOverlay(data);
+      } else if (!data.active && overlay.active) {
+        // Exit animation
+        setOverlayExiting(true);
+        setTimeout(() => {
+          setOverlayVisible(false);
+          setOverlayExiting(false);
+        }, 400);
         setCursor(prev => ({ ...prev, visible: false }));
+      } else {
+        setOverlay(data);
       }
     });
 
@@ -316,6 +334,8 @@ export default function ComputerOverlayPage() {
   const isClickAction = cursor.actionType === 'click' || cursor.actionType === 'left_click'
     || cursor.actionType === 'right_click' || cursor.actionType === 'double_click'
     || cursor.actionType === 'triple_click';
+
+  const showOverlay = overlay.active || overlayVisible || overlayExiting;
 
   return (
     <>
@@ -343,12 +363,15 @@ export default function ComputerOverlayPage() {
         }
       `}</style>
 
-      {/* Full-screen container */}
+      {/* Full-screen container with entrance/exit animation */}
       <div style={{
         position: 'fixed', inset: 0,
         background: 'transparent',
         pointerEvents: 'none',
         overflow: 'hidden',
+        opacity: showOverlay ? 1 : 0,
+        transform: showOverlay ? 'scale(1)' : 'scale(1.02)',
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}>
         {/* ── Cursor — removed per user request to use the OS cursor everywhere ── */}
 
@@ -364,7 +387,7 @@ export default function ComputerOverlayPage() {
         ))}
 
         {/* ── Gradient overlay + task banner (like Navis) ── */}
-        <GradientOverlayBar task={overlay.task || ''} active={overlay.active} />
+        <GradientOverlayBar task={overlay.task || ''} active={overlay.active} exiting={overlayExiting} />
       </div>
     </>
   );

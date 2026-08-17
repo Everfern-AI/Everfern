@@ -41,9 +41,14 @@ import {
     BriefcaseIcon,
     HandThumbUpIcon,
     HandThumbDownIcon,
+    ArrowLeftIcon,
+    EllipsisVerticalIcon,
+    BookmarkIcon,
+    ChatBubbleLeftIcon,
+    FolderIcon,
+    PencilSquareIcon,
 } from "@heroicons/react/24/outline";
-import { CheckIcon as CheckSolidIcon } from "@heroicons/react/24/solid";
-import { GraphicsCardIcon } from "@phosphor-icons/react";
+import { CheckIcon as CheckSolidIcon, BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 
 // Components
 import { AgentTimeline } from "../../components/AgentTimeline";
@@ -80,12 +85,14 @@ import AnalyticsPage from './AnalyticsPage';
 import RevertModal from './components/RevertModal';
 import MessageFeedbackModal from './components/MessageFeedbackModal';
 import ProjectsPage from '../components/ProjectsPage';
+import CreateProjectModal from '../components/CreateProjectModal';
 import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from './components/ToolDetailSidePanel';
 import FileViewerModal from './components/FileViewerModal';
 import { SubagentPanel } from './components/SubagentPanel';
 import { ToolCallDetailPane, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
+import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
 
 
 // Extracted components
@@ -579,18 +586,94 @@ export default function ChatPage() {
     const [folderContexts, setFolderContexts] = useState<FolderContext[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const bypassLoadingRef = useRef(false);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [folderHover, setFolderHover] = useState(false);
     const [tooltipState, setTooltipState] = useState<{ visible: boolean; x: number; y: number; content: string }>({ visible: false, x: 0, y: 0, content: "" });
     const [viewingFile, setViewingFile] = useState<{ name: string; path: string } | null>(null);
 
     const [showArtifacts, setShowArtifacts] = useState(false);
     const [selectedArtifactName, setSelectedArtifactName] = useState<string | null>(null);
+    const [showVisionDowngradeNotice, setShowVisionDowngradeNotice] = useState(false);
     const [showPlanViewer, setShowPlanViewer] = useState(false);
     const [planViewerContent, setPlanViewerContent] = useState("");
     const [showTasksPanel, setShowTasksPanel] = useState(false);
     const [panelTasks, setPanelTasks] = useState<{ description: string; status: 'pending' | 'in_progress' | 'completed' }[]>([]);
     const [tasksFilePath, setTasksFilePath] = useState<string | undefined>(undefined);
+
+    // ── Slash Command Menu State ─────────────────────────────────────────
+    const [skillsList, setSkillsList] = useState<{ name: string; description: string; path?: string }[]>([
+        { name: 'morning', description: 'Briefing and morning routine planner' },
+        { name: 'skill-creator', description: 'Create and customize new AI skills' },
+        { name: 'docx', description: 'Word document creator and editor' },
+        { name: 'pdf', description: 'PDF document reader and processor' },
+        { name: 'xlsx', description: 'Excel spreadsheet and table specialist' },
+        { name: 'data-analysis', description: 'Statistical analysis and data modeling' },
+        { name: 'frontend-design', description: 'Modern UI/UX design and components' },
+        { name: 'charts', description: 'Interactive data charts and visual plots' },
+        { name: 'csv', description: 'CSV data parsing and processing' },
+        { name: 'json', description: 'JSON structure analysis and conversion' },
+        { name: 'pptx', description: 'Presentation and slides generator' },
+        { name: 'image-viewer', description: 'Image preview and visual inspections' },
+    ]);
+    const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+    const [selectedSkill, setSelectedSkill] = useState<{ id: string; name: string } | null>(null);
+
+    // Load available skills from backend
+    useEffect(() => {
+        (async () => {
+            try {
+                if ((window as any).electronAPI?.skills?.listAll) {
+                    const list = await (window as any).electronAPI.skills.listAll();
+                    if (Array.isArray(list) && list.length > 0) {
+                        setSkillsList(prev => {
+                            const existingNames = new Set(list.map((s: any) => s.name?.toLowerCase()));
+                            const customAdded = prev.filter(p => !existingNames.has(p.name?.toLowerCase()));
+                            return [...list, ...customAdded];
+                        });
+                    }
+                } else if ((window as any).electronAPI?.skills?.listCustom) {
+                    const custom = await (window as any).electronAPI.skills.listCustom();
+                    if (Array.isArray(custom) && custom.length > 0) {
+                        setSkillsList(prev => [...custom, ...prev.filter(p => !custom.some((c: any) => c.name === p.name))]);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load skills for slash menu:', e);
+            }
+        })();
+    }, []);
+
+    const isSlashActive = inputValue.startsWith('/');
+    const slashFilter = isSlashActive ? inputValue.slice(1).trim().toLowerCase() : '';
+
+    const slashItems = useMemo(() => {
+        const defaultActions = [
+            {
+                id: 'add-files',
+                name: 'add-files',
+                description: 'Open file picker',
+                type: 'action' as const,
+            }
+        ];
+
+        const skillActions = skillsList.map(s => ({
+            id: s.name,
+            name: s.name,
+            description: s.description || 'Skill procedure',
+            type: 'skill' as const,
+        }));
+
+        const all = [...defaultActions, ...skillActions];
+        if (!slashFilter) return all;
+        return all.filter(item => 
+            item.name.toLowerCase().includes(slashFilter) || 
+            item.description.toLowerCase().includes(slashFilter)
+        );
+    }, [skillsList, slashFilter]);
+
+    useEffect(() => {
+        setSlashSelectedIndex(0);
+    }, [slashFilter]);
 
     // Poll for task.md to update TasksPanel
     useEffect(() => {
@@ -670,7 +753,12 @@ export default function ChatPage() {
             }
         };
         fetchTasks();
-        const interval = setInterval(fetchTasks, 4000);
+        // Poll every 30 seconds instead of 4 seconds, and only when page is visible
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                fetchTasks();
+            }
+        }, 30000);
         return () => clearInterval(interval);
     }, [activeConversationId]);
 
@@ -721,8 +809,86 @@ export default function ChatPage() {
     const [notification, setNotification] = useState<{ id: string; title: string } | null>(null);
     const [projects, setProjects] = useState<any[]>([]);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+    const [showProjectMenu, setShowProjectMenu] = useState(false);
     const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+    const [projectConversations, setProjectConversations] = useState<any[]>([]);
+    const [projectFiles, setProjectFiles] = useState<string[]>([]);
+    const [projectInstructions, setProjectInstructions] = useState<string>('');
+    const [isEditingInstructions, setIsEditingInstructions] = useState(false);
+    const [instructionsInput, setInstructionsInput] = useState('');
     const { theme } = useTheme();
+
+    // Fetch conversation history for project recents
+    useEffect(() => {
+        const loadHistory = async () => {
+            if ((window as any).electronAPI?.history?.list) {
+                try {
+                    const list = await (window as any).electronAPI.history.list();
+                    setProjectConversations(list || []);
+                } catch (e) {}
+            }
+        };
+        loadHistory();
+        // Poll every 30 seconds instead of 5 seconds, and only when page is visible
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                loadHistory();
+            }
+        }, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Synchronize instructions and files when active project changes
+    useEffect(() => {
+        if (folderContexts.length > 0) {
+            const p = projects.find(proj => proj.id === folderContexts[0].id || proj.name === folderContexts[0].name || proj.path === folderContexts[0].path);
+            if (p?.instructions) {
+                setProjectInstructions(p.instructions);
+                setInstructionsInput(p.instructions);
+            } else {
+                setProjectInstructions('');
+                setInstructionsInput('');
+            }
+            if (folderContexts[0].path && (window as any).electronAPI?.projects?.listFiles) {
+                (window as any).electronAPI.projects.listFiles(folderContexts[0].path).then((res: any) => {
+                    if (res?.files) setProjectFiles(res.files);
+                }).catch(() => {});
+            }
+        }
+    }, [folderContexts, projects]);
+
+    const handleAddProjectFiles = async () => {
+        if ((window as any).electronAPI?.projects?.selectFiles) {
+            try {
+                const selected = await (window as any).electronAPI.projects.selectFiles();
+                if (selected && selected.length > 0) {
+                    setProjectFiles(prev => [...prev, ...selected]);
+                }
+            } catch (e) {
+                console.error("Failed to select files:", e);
+            }
+        }
+    };
+
+    const formatRelativeTime = (dateStr?: string) => {
+        if (!dateStr) return '';
+        try {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now.getTime() - date.getTime();
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins} ${diffMins === 1 ? 'min' : 'mins'} ago`;
+            if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+            if (diffDays < 7) return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+            return date.toLocaleDateString();
+        } catch {
+            return '';
+        }
+    };
     const [dailyUsed, setDailyUsed] = useState<number | null>(null);
     const [dailyLimit, setDailyLimit] = useState<number | null>(null);
     const [localLimitReached, setLocalLimitReached] = useState(false);
@@ -760,7 +926,12 @@ export default function ChatPage() {
             }
         };
         fetchUsage();
-        const interval = setInterval(fetchUsage, 5000);
+        // Poll every 60 seconds instead of 5 seconds, and only when page is visible
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                fetchUsage();
+            }
+        }, 60000);
         return () => clearInterval(interval);
     }, []);
 
@@ -999,7 +1170,12 @@ export default function ChatPage() {
             }
         };
         fetchProjects();
-        const interval = setInterval(fetchProjects, 5000);
+        // Poll every 30 seconds instead of 5 seconds, and only when page is visible
+        const interval = setInterval(() => {
+            if (typeof document === 'undefined' || !document.hidden) {
+                fetchProjects();
+            }
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 
@@ -1090,18 +1266,22 @@ export default function ChatPage() {
 
     const isLocalModel = useMemo(() => {
         if (!selectedModel) return false;
-        const m = selectedModel.toLowerCase();
         const currentM = availableModels.find(opt => opt.id === selectedModel);
-        const pType = currentM?.providerType?.toLowerCase() || '';
-        return m === 'fern-1' ||
-            m.includes('ollama') ||
-            m.includes('lmstudio') ||
-            m.includes('local') ||
-            pType === 'ollama' ||
+        const pType = (currentM?.providerType || config?.provider || '').toLowerCase();
+        const cloudProviders = ['everfern', 'openrouter', 'openai', 'anthropic', 'google', 'gemini', 'minimax', 'deepseek', 'groq', 'together', 'mistral'];
+        
+        // If current provider/model is cloud, it is NEVER a local model
+        if (cloudProviders.includes(pType) || (currentM as any)?.isCloud) {
+            return false;
+        }
+
+        const m = selectedModel.toLowerCase();
+        return pType === 'ollama' ||
             pType === 'lmstudio' ||
             pType === 'local' ||
-            config?.provider === 'ollama' ||
-            config?.provider === 'lmstudio';
+            m === 'fern-1' ||
+            m.startsWith('ollama:') ||
+            m.startsWith('lmstudio:');
     }, [selectedModel, availableModels, config?.provider]);
 
     // Timer to detect if local model is taking too long to respond (e.g. >12s)
@@ -2116,6 +2296,10 @@ export default function ChatPage() {
                         setEmbeddingModel(res.config.embedding.model || "qwen/qwen3-embedding-8b");
                         setEmbeddingApiKey(res.config.embedding.apiKey || "");
                     }
+                    // Check if vision model is downgraded
+                    if (res.config.vlm?.downgraded || res.config.visionModelDowngraded) {
+                        setShowVisionDowngradeNotice(true);
+                    }
                     if (!res.config.userName) setShowOnboarding(true);
                 } else {
                     setShowOnboarding(true);
@@ -2155,9 +2339,15 @@ export default function ChatPage() {
                 }));
                 const finalModels = (formatted.length > 0 ? formatted : [
                     { id: "mistralai/mistral-medium-3.5-128b", name: "Mistral Medium 3.5 (EverFern Cloud)", provider: "EverFern", providerType: "everfern", logo: EverFernBglessLogo },
+                    { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
+                    { id: "gpt-5.5", name: "GPT-5.5", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
+                    { id: "gpt-5.4", name: "GPT-5.4", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
                     { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
+                    { id: "claude-fable-5", name: "Claude Fable 5", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
+                    { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
+                    { id: "claude-opus-5", name: "Claude Opus 5", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
+                    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
                     { id: "openrouter/free", name: "OpenRouter Free", provider: "OpenRouter", providerType: "openrouter", logo: OpenRouterLogo },
-                    { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic", providerType: "anthropic", logo: AnthropicLogo },
                     { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "Google Gemini", providerType: "gemini", logo: GeminiLogo },
                     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", provider: "Google Gemini", providerType: "gemini", logo: GeminiLogo },
                     { id: "google/gemma-4-31b-it", name: "Gemma 4 31B IT", provider: "NVIDIA NIM", providerType: "nvidia", logo: NvidiaLogo },
@@ -2381,7 +2571,7 @@ export default function ChatPage() {
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
                 loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
-                    loadedVlmProvider === "openrouter" ? "qwen/qwen3-vl-235b-a22b-instruct" :
+                    loadedVlmProvider === "openrouter" ? "openai/gpt-5.6-luna" :
                         loadedVlmProvider === "minimax" ? "MiniMax-M3" :
                             loadedVlmProvider === "openai" ? "gpt-5.5" :
                                 loadedVlmProvider === "anthropic" ? "claude-opus-4.6" :
@@ -3509,7 +3699,9 @@ export default function ChatPage() {
             await loadPromiseRef.current;
         }
         console.log('[Frontend handleSend] CALLED - Starting new message send', { skipAddUserMessage });
-        const textToUse = typeof overrideValue === 'string' ? overrideValue : inputValue;
+        const textToUse = typeof overrideValue === 'string'
+            ? overrideValue
+            : (selectedSkill ? `/skill ${selectedSkill.name} ${inputValue}`.trim() : inputValue);
         if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || (isLoading && !bypassLoadingRef.current)) return;
         bypassLoadingRef.current = false;
 
@@ -3540,7 +3732,10 @@ export default function ChatPage() {
             setActiveConversationId(currentConvId);
         }
 
-        if (typeof overrideValue !== 'string') setInputValue("");
+        if (typeof overrideValue !== 'string') {
+            setInputValue("");
+            setSelectedSkill(null);
+        }
         setAttachments([]);
 
         // Keep project context if it exists
@@ -4571,9 +4766,165 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         }, 50);
     }, [hitlRequest, messages, saveConversation, selectedModel, availableModels, pursueGoalMode, folderContexts, activeConversationId, handleSend]);
 
+    const handleSelectSlashItem = useCallback((item: { id: string; name: string; type: 'action' | 'skill' }) => {
+        if (item.id === 'add-files') {
+            setInputValue('');
+            handleAttachment('document');
+        } else if (item.type === 'skill') {
+            setSelectedSkill({ id: item.id, name: item.name });
+            setInputValue('');
+            setTimeout(() => textareaRef.current?.focus(), 10);
+        }
+    }, [handleAttachment]);
+
+    const renderSelectedSkillBadge = () => {
+        if (!selectedSkill) return null;
+        return (
+            <span
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 8px',
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+                    color: '#2563eb',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    fontFamily: 'var(--font-sans)',
+                    userSelect: 'none',
+                    lineHeight: 1.2,
+                }}
+            >
+                <span>/{selectedSkill.name}</span>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedSkill(null);
+                        textareaRef.current?.focus();
+                    }}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: '#2563eb',
+                        opacity: 0.7,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
+                >
+                    <XMarkIcon width={12} height={12} strokeWidth={2.5} />
+                </button>
+            </span>
+        );
+    };
+
+    const renderSlashMenu = () => {
+        if (!isSlashActive || slashItems.length === 0) return null;
+
+        return (
+            <div
+                style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: 20,
+                    marginBottom: 8,
+                    width: 280,
+                    maxHeight: 240,
+                    backgroundColor: 'var(--color-bg-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 16,
+                    boxShadow: '0 12px 36px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08)',
+                    padding: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                    zIndex: 100,
+                    overflowY: 'auto',
+                    backdropFilter: 'blur(12px)',
+                }}
+            >
+                {slashItems.map((item, idx) => {
+                    const isSelected = idx === slashSelectedIndex;
+                    return (
+                        <div
+                            key={item.id}
+                            onClick={() => handleSelectSlashItem(item)}
+                            onMouseEnter={() => setSlashSelectedIndex(idx)}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '8px 12px',
+                                borderRadius: 10,
+                                cursor: 'pointer',
+                                backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'transparent',
+                                transition: 'all 0.1s ease',
+                            }}
+                        >
+                            <div style={{ color: isSelected ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center' }}>
+                                {item.id === 'add-files' ? (
+                                    <PaperClipIcon width={16} height={16} />
+                                ) : (
+                                    <DocumentTextIcon width={16} height={16} />
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+                                    {item.name}
+                                </div>
+                                {item.description && (
+                                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                                        {item.description}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (inputValue.startsWith('/') && slashItems.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSlashSelectedIndex(prev => (prev + 1) % slashItems.length);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSlashSelectedIndex(prev => (prev - 1 + slashItems.length) % slashItems.length);
+                return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                const selectedItem = slashItems[slashSelectedIndex] || slashItems[0];
+                if (selectedItem) {
+                    handleSelectSlashItem(selectedItem);
+                }
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                setInputValue('');
+                return;
+            }
+        }
+
+        if (e.key === 'Backspace' && inputValue === '' && selectedSkill) {
+            e.preventDefault();
+            setSelectedSkill(null);
+            return;
+        }
+
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    }, [handleSend]);
+    }, [inputValue, slashItems, slashSelectedIndex, handleSelectSlashItem, handleSend, selectedSkill]);
 
     const handleNewChat = () => {
         conversationSwitchSeqRef.current += 1;
@@ -4793,7 +5144,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
-                settingsVlmCloudProvider === 'openrouter' ? 'qwen/qwen3-vl-235b-a22b-instruct' :
+                settingsVlmCloudProvider === 'openrouter' ? 'openai/gpt-5.6-luna' :
                     settingsVlmCloudProvider === 'minimax' ? 'MiniMax-M3' :
                         settingsVlmCloudProvider === 'openai' ? 'gpt-5.5' :
                             settingsVlmCloudProvider === 'anthropic' ? 'claude-opus-4.6' :
@@ -4822,8 +5173,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 baseUrl: (shouldOmitBaseUrl ? undefined : settingsVlmCloudUrl.trim()) || undefined,
                 apiKey: finalCloudKey
             };
+        } else {
+            // Local VLM mode - explicitly save with engine "local"
+            updated.vlm = {
+                engine: "local",
+                provider: "ollama",
+                model: "qwen3-vl:2b",
+                baseUrl: "http://localhost:11434"
+            };
         }
-        else if (config?.vlm) { updated.vlm = config.vlm; }
         if (voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
         // Embedding config
         updated.embedding = { provider: embeddingProvider, model: embeddingModel, apiKey: embeddingApiKey };
@@ -5252,17 +5610,16 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 width: 36,
                                 height: 36,
                                 borderRadius: 10,
-                                backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.12)",
-                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                backgroundColor: "transparent",
+                                border: "none",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                color: "#f59e0b",
                                 flexShrink: 0,
                                 marginTop: 1,
                             }}
                         >
-                            <GraphicsCardIcon size={32} />
+                            <img src="/3d-icons/computer-front-color.png" alt="GPU" style={{ width: 32, height: 32, objectFit: "contain" }} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -5325,17 +5682,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 fontWeight: 600,
                                 padding: "6px 14px",
                                 borderRadius: 8,
-                                backgroundColor: "#10b981",
-                                color: "#ffffff",
-                                border: "none",
+                                backgroundColor: isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)",
+                                color: isDark ? "#ffffff" : "#000000",
+                                border: isDark ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0.15)",
                                 cursor: "pointer",
                                 transition: "all 0.15s ease",
-                                boxShadow: "0 1px 3px rgba(16, 185, 129, 0.3)",
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#059669"; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#10b981"; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.14)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)"; }}
                         >
-                            <span>🌿</span>
                             <span>Use EverFern Cloud</span>
                         </button>
                         <button
@@ -6217,224 +6572,625 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 />
                             </div>
                         ) : (
-                            <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-                                <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px" }}>
-                                    <div style={{ maxWidth: isToolDetailOpen ? 620 : 800, margin: "0 auto", padding: isToolDetailOpen ? "0 22px" : "0 32px" }}>
+                            <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" }}>
+                                <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
+                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 880 : 1160) : (isToolDetailOpen ? 640 : 860), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
 
                                         {/* ── Empty / Home State ── */}
                                         {isEmpty && (
-                                            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
-                                                style={{ marginTop: "14vh", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", width: "100%", maxWidth: 740 }}>
-                                                {/* {folderContexts.length === 0 && (
-                                                <div style={{ marginBottom: 26, textAlign: "center" }}>
-                                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 8, backgroundColor: "rgba(0, 0, 0, 0.04)", border: "1px solid rgba(0, 0, 0, 0.08)", color: "#717171", fontSize: 13 }}>
-                                                        <span>Free plan</span>
-                                                        <span style={{ opacity: 0.5 }}>·</span>
-                                                        <button type="button" style={{ background: "transparent", border: "none", color: "#4a4846", cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline" }} onClick={() => setShowSettings(true)}>Upgrade</button>
-                                                    </div>
-                                                </div>
-                                            )} */}
+                                            <>
                                                 {folderContexts.length > 0 ? (
-                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-                                                        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 44, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
-                                                            {folderContexts[0].name}
-                                                        </h1>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                            <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="Favorite"
-                                                                onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
-                                                                onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
-                                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                                                            </button>
-                                                            <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 6, display: "flex", borderRadius: 8 }} title="More options"
-                                                                onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
-                                                                onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
-                                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
-                                                        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
-                                                            {randomGreeting}
-                                                        </h1>
-                                                    </div>
-                                                )}
-
-                                                {/* ── Empty state composer ── */}
-                                                <div style={{ width: "100%", maxWidth: 740 }}>
-                                                    {/* Memory Preference Banner */}
-                                                    {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
-                                                        <motion.div
-                                                            initial={{ opacity: 0, y: -8 }}
-                                                            animate={{ opacity: 1, y: 0 }}
-                                                            exit={{ opacity: 0, y: -8 }}
-                                                            transition={{ duration: 0.2 }}
-                                                            style={{
-                                                                marginBottom: 10,
-                                                                padding: "12px 14px",
-                                                                backgroundColor: "#faf9f7",
-                                                                border: "1px solid #e8e6d9",
-                                                                borderLeft: "3px solid #6366f1",
-                                                                borderRadius: 10,
-                                                                display: "flex",
-                                                                flexDirection: "column",
-                                                                gap: 8,
+                                                    /* ── Dedicated Project View Layout ── */
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 10 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        transition={{ type: "spring", duration: 0.6 }}
+                                                        style={{ width: "100%", display: "flex", flexDirection: "column", padding: "8px 0 24px" }}
+                                                    >
+                                                        {/* Top Breadcrumb: All projects */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setFolderContexts([]);
+                                                                setContextItems([]);
+                                                                setShowProjectsPage(true);
                                                             }}
+                                                            style={{
+                                                                display: "inline-flex",
+                                                                alignItems: "center",
+                                                                gap: 6,
+                                                                fontSize: 13,
+                                                                fontWeight: 500,
+                                                                color: "var(--color-text-secondary)",
+                                                                background: "none",
+                                                                border: "none",
+                                                                cursor: "pointer",
+                                                                padding: "4px 0",
+                                                                marginBottom: 20,
+                                                                alignSelf: "flex-start",
+                                                                transition: "color 0.15s"
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
+                                                            onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-secondary)"}
                                                         >
-                                                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-                                                                    <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
-                                                                    <path d="M12 8v4M12 16h.01" />
-                                                                </svg>
-                                                                <div style={{ flex: 1 }}>
-                                                                    <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
-                                                                        From your previous preferences
+                                                            <ArrowLeftIcon width={14} height={14} />
+                                                            All projects
+                                                        </button>
+
+                                                        {/* 2-Column Project Grid */}
+                                                        <div style={{ display: "flex", flexDirection: "row", gap: 32, alignItems: "flex-start", width: "100%" }}>
+                                                            {/* Left Main Column: Title, Composer, Recents */}
+                                                            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                                                                {/* Project Header Row */}
+                                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                                                                    <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 30, fontWeight: 500, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
+                                                                        {folderContexts[0].name}
+                                                                    </h1>
+                                                                    {(() => {
+                                                                        const activeProjectObj = projects.find(p => p.id === folderContexts[0]?.id || p.name === folderContexts[0]?.name || p.path === folderContexts[0]?.path);
+                                                                        const isProjectBookmarked = activeProjectObj?.isBookmarked || activeProjectObj?.isPinned;
+
+                                                                        const handleToggleProjectBookmark = async () => {
+                                                                            if (!activeProjectObj?.id) return;
+                                                                            try {
+                                                                                if ((window as any).electronAPI?.projects?.toggleBookmark) {
+                                                                                    const res = await (window as any).electronAPI.projects.toggleBookmark(activeProjectObj.id);
+                                                                                    if (res?.success) {
+                                                                                        const list = await (window as any).electronAPI.projects.list();
+                                                                                        setProjects(list || []);
+                                                                                    }
+                                                                                }
+                                                                            } catch (e) {
+                                                                                console.error("Failed to toggle project bookmark:", e);
+                                                                            }
+                                                                        };
+
+                                                                        const handleOpenProjectFolder = async () => {
+                                                                            setShowProjectMenu(false);
+                                                                            if (folderContexts[0]?.path && (window as any).electronAPI?.projects?.openFolder) {
+                                                                                await (window as any).electronAPI.projects.openFolder(folderContexts[0].path);
+                                                                            }
+                                                                        };
+
+                                                                        const handleDeleteActiveProject = async () => {
+                                                                            setShowProjectMenu(false);
+                                                                            if (!activeProjectObj?.id) return;
+                                                                            if (window.confirm(`Are you sure you want to delete project "${folderContexts[0]?.name}"?`)) {
+                                                                                try {
+                                                                                    if ((window as any).electronAPI?.projects?.delete) {
+                                                                                        await (window as any).electronAPI.projects.delete(activeProjectObj.id);
+                                                                                        setFolderContexts([]);
+                                                                                        setContextItems([]);
+                                                                                        setShowProjectsPage(true);
+                                                                                        const list = await (window as any).electronAPI.projects.list();
+                                                                                        setProjects(list || []);
+                                                                                    }
+                                                                                } catch (e) {
+                                                                                    console.error("Failed to delete project:", e);
+                                                                                }
+                                                                            }
+                                                                        };
+
+                                                                        return (
+                                                                            <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}>
+                                                                                {/* 3 Dots Menu Button */}
+                                                                                <div style={{ position: "relative" }}>
+                                                                                    <button 
+                                                                                        type="button" 
+                                                                                        onClick={() => setShowProjectMenu(prev => !prev)}
+                                                                                        style={{ 
+                                                                                            background: showProjectMenu ? "var(--color-bg-hover)" : "none", 
+                                                                                            border: "none", 
+                                                                                            cursor: "pointer", 
+                                                                                            color: "var(--color-text-tertiary)", 
+                                                                                            padding: 6, 
+                                                                                            display: "flex", 
+                                                                                            borderRadius: 8,
+                                                                                            transition: "background-color 0.15s"
+                                                                                        }} 
+                                                                                        title="More options"
+                                                                                        onMouseEnter={e => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                                                                                        onMouseLeave={e => { if (!showProjectMenu) e.currentTarget.style.background = "none"; }}>
+                                                                                        <EllipsisVerticalIcon width={18} height={18} />
+                                                                                    </button>
+
+                                                                                    {showProjectMenu && (
+                                                                                        <div style={{
+                                                                                            position: "absolute",
+                                                                                            top: "100%",
+                                                                                            right: 0,
+                                                                                            marginTop: 6,
+                                                                                            backgroundColor: "var(--color-bg-surface, #ffffff)",
+                                                                                            border: "1px solid var(--color-border, #e5e5e5)",
+                                                                                            borderRadius: 12,
+                                                                                            boxShadow: "0 10px 28px rgba(0,0,0,0.14)",
+                                                                                            padding: 6,
+                                                                                            minWidth: 180,
+                                                                                            zIndex: 100,
+                                                                                            display: "flex",
+                                                                                            flexDirection: "column",
+                                                                                            gap: 2,
+                                                                                        }}>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={handleOpenProjectFolder}
+                                                                                                style={{
+                                                                                                    display: "flex",
+                                                                                                    alignItems: "center",
+                                                                                                    gap: 10,
+                                                                                                    padding: "7px 10px",
+                                                                                                    border: "none",
+                                                                                                    background: "transparent",
+                                                                                                    borderRadius: 8,
+                                                                                                    fontSize: 13,
+                                                                                                    color: "var(--color-text-primary)",
+                                                                                                    cursor: "pointer",
+                                                                                                    textAlign: "left",
+                                                                                                }}
+                                                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                                                                                            >
+                                                                                                <FolderIcon width={16} height={16} />
+                                                                                                <span>Open in Explorer</span>
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => {
+                                                                                                    setShowProjectMenu(false);
+                                                                                                    setIsEditingInstructions(true);
+                                                                                                }}
+                                                                                                style={{
+                                                                                                    display: "flex",
+                                                                                                    alignItems: "center",
+                                                                                                    gap: 10,
+                                                                                                    padding: "7px 10px",
+                                                                                                    border: "none",
+                                                                                                    background: "transparent",
+                                                                                                    borderRadius: 8,
+                                                                                                    fontSize: 13,
+                                                                                                    color: "var(--color-text-primary)",
+                                                                                                    cursor: "pointer",
+                                                                                                    textAlign: "left",
+                                                                                                }}
+                                                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                                                                                            >
+                                                                                                <PencilSquareIcon width={16} height={16} />
+                                                                                                <span>Edit Instructions</span>
+                                                                                            </button>
+                                                                                            <div style={{ height: 1, backgroundColor: "var(--color-border-subtle, #f0f0f0)", margin: "3px 0" }} />
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={handleDeleteActiveProject}
+                                                                                                style={{
+                                                                                                    display: "flex",
+                                                                                                    alignItems: "center",
+                                                                                                    gap: 10,
+                                                                                                    padding: "7px 10px",
+                                                                                                    border: "none",
+                                                                                                    background: "transparent",
+                                                                                                    borderRadius: 8,
+                                                                                                    fontSize: 13,
+                                                                                                    color: "#dc2626",
+                                                                                                    cursor: "pointer",
+                                                                                                    textAlign: "left",
+                                                                                                }}
+                                                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(220, 38, 38, 0.08)"}
+                                                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                                                                                            >
+                                                                                                <TrashIcon width={16} height={16} color="#dc2626" />
+                                                                                                <span>Delete Project</span>
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Bookmark / Pin Button */}
+                                                                                <button 
+                                                                                    type="button" 
+                                                                                    onClick={handleToggleProjectBookmark}
+                                                                                    style={{ 
+                                                                                        background: isProjectBookmarked ? "rgba(245, 158, 11, 0.12)" : "none", 
+                                                                                        border: "none", 
+                                                                                        cursor: "pointer", 
+                                                                                        color: isProjectBookmarked ? "#f59e0b" : "var(--color-text-tertiary)", 
+                                                                                        padding: 6, 
+                                                                                        display: "flex", 
+                                                                                        borderRadius: 8,
+                                                                                        transition: "all 0.15s"
+                                                                                    }} 
+                                                                                    title={isProjectBookmarked ? "Unpin project" : "Pin project"}
+                                                                                    onMouseEnter={e => { if (!isProjectBookmarked) e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                                                                                    onMouseLeave={e => { if (!isProjectBookmarked) e.currentTarget.style.background = "none"; }}>
+                                                                                    {isProjectBookmarked ? (
+                                                                                        <BookmarkSolidIcon width={18} height={18} color="#f59e0b" />
+                                                                                    ) : (
+                                                                                        <BookmarkIcon width={18} height={18} />
+                                                                                    )}
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+
+                                                                {/* Project Composer Card */}
+                                                                <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
+                                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
+                                                                        {renderSubagentSpawnAttachment()}
+                                                                        {renderAttachmentStrip()}
+                                                                        {isRecording && recordingSource === 'button' ? (
+                                                                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
+                                                                                {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
+                                                                                    <div
+                                                                                        key={i}
+                                                                                        style={{
+                                                                                            width: 4,
+                                                                                            height: Math.max(6, level * 0.5),
+                                                                                            borderRadius: 2,
+                                                                                            backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                                            transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                                                                                        }}
+                                                                                        className="waveform-bar"
+                                                                                    />
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{ position: "relative", width: "100%" }}>
+                                                                                {renderSlashMenu()}
+                                                                                {selectedSkill && (
+                                                                                    <div style={{ padding: "16px 24px 0", display: "flex", alignItems: "center" }}>
+                                                                                        {renderSelectedSkillBadge()}
+                                                                                    </div>
+                                                                                )}
+                                                                                <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={inputValue.startsWith('/') ? "/ Type to filter" : "How can I help you today?"} rows={1}
+                                                                                    disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                                                    className="placeholder-[var(--color-text-placeholder)]"
+                                                                                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: "var(--color-text-primary)", lineHeight: 1.5, padding: selectedSkill ? "8px 24px 20px" : "20px 24px", minHeight: selectedSkill ? 50 : 70, maxHeight: 240 }} />
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-surface) 80%)", pointerEvents: "none", borderRadius: "0 0 18px 18px", zIndex: 1 }} />
+                                                                        <div style={{ flex: 1 }} />
+                                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 20px 16px", position: "relative", zIndex: 2 }}>
+                                                                            {renderComposerLeftActions()}
+                                                                            {renderComposerRightActions(false)}
+                                                                        </div>
                                                                     </div>
-                                                                    <div style={{ fontSize: 13, color: "#4a4846", lineHeight: 1.55 }}>
-                                                                        {memoryPreferenceBanner.preference}
+                                                                </PromptWrapper>
+
+                                                                {/* Recents Section */}
+                                                                <div style={{ marginTop: 24, display: "flex", flexDirection: "column" }}>
+                                                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: 8, paddingLeft: 4 }}>
+                                                                        Recents
+                                                                    </div>
+                                                                    {(() => {
+                                                                        const activeProjId = folderContexts[0]?.id;
+                                                                        const activeProjName = folderContexts[0]?.name?.toLowerCase();
+                                                                        const activeProjPath = folderContexts[0]?.path;
+                                                                        const filteredRecents = projectConversations.filter(c => {
+                                                                            if (activeProjId && c.projectId === activeProjId) return true;
+                                                                            if (activeProjPath && c.projectId === activeProjPath) return true;
+                                                                            if (activeProjName && c.projectName && c.projectName.toLowerCase() === activeProjName) return true;
+                                                                            return false;
+                                                                        });
+
+                                                                        if (filteredRecents.length === 0) {
+                                                                            return (
+                                                                                <div style={{ padding: "12px 6px", fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                                                                                    No conversations in this project yet. Start typing above.
+                                                                                </div>
+                                                                            );
+                                                                        }
+
+                                                                        return (
+                                                                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                                                                {filteredRecents.map((item) => (
+                                                                                    <div
+                                                                                        key={item.id}
+                                                                                        onClick={() => handleSelectConversation(item.id)}
+                                                                                        style={{
+                                                                                            display: "flex",
+                                                                                            alignItems: "center",
+                                                                                            justifyContent: "space-between",
+                                                                                            padding: "10px 12px",
+                                                                                            borderRadius: 10,
+                                                                                            cursor: "pointer",
+                                                                                            transition: "background 0.15s"
+                                                                                        }}
+                                                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                                                                                    >
+                                                                                        <div style={{ display: "flex", alignItems: "center", gap: 10, overflow: "hidden", minWidth: 0 }}>
+                                                                                            <ChatBubbleLeftIcon width={16} height={16} style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }} />
+                                                                                            <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                                                                {item.title || "Untitled Conversation"}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: 16 }}>
+                                                                                            {formatRelativeTime(item.updatedAt)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Right Column: Project Side Card */}
+                                                            <div style={{ width: 350, flexShrink: 0, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                                                                {/* Instructions Section */}
+                                                                <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
+                                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                                                        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Instructions</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setIsEditingInstructions(v => !v)}
+                                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4, display: "flex", borderRadius: 6 }}
+                                                                            title="Add instructions"
+                                                                            onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
+                                                                            onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
+                                                                        >
+                                                                            <PlusIcon width={16} height={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                    {isEditingInstructions ? (
+                                                                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                                                                            <textarea
+                                                                                value={instructionsInput}
+                                                                                onChange={e => setInstructionsInput(e.target.value)}
+                                                                                placeholder="Add instructions for this project..."
+                                                                                rows={3}
+                                                                                style={{ width: "100%", padding: "8px 10px", fontSize: 12.5, borderRadius: 8, border: "1px solid var(--color-border)", background: "var(--color-bg-subtle)", color: "var(--color-text-primary)", resize: "vertical", outline: "none" }}
+                                                                            />
+                                                                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setIsEditingInstructions(false)}
+                                                                                    style={{ padding: "4px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--color-border)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}
+                                                                                >
+                                                                                    Cancel
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setProjectInstructions(instructionsInput);
+                                                                                        setIsEditingInstructions(false);
+                                                                                    }}
+                                                                                    style={{ padding: "4px 10px", fontSize: 12, borderRadius: 6, border: "none", background: "var(--color-text-primary)", color: "var(--color-bg-base)", cursor: "pointer" }}
+                                                                                >
+                                                                                    Save
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div style={{ fontSize: 12.5, color: "var(--color-text-tertiary)", lineHeight: 1.45 }}>
+                                                                            {projectInstructions || "Add instructions to tailor Claude's responses"}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Divider */}
+                                                                <div style={{ height: 1, backgroundColor: "var(--color-border)" }} />
+
+                                                                {/* Files Section */}
+                                                                <div style={{ padding: "18px 20px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+                                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                                                        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Files</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={handleAddProjectFiles}
+                                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4, display: "flex", borderRadius: 6 }}
+                                                                            title="Add files"
+                                                                            onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
+                                                                            onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
+                                                                        >
+                                                                            <PlusIcon width={16} height={16} />
+                                                                        </button>
+                                                                    </div>
+
+                                                                    {/* Inset Well */}
+                                                                    <div style={{ backgroundColor: "var(--color-bg-subtle)", borderRadius: 12, padding: "26px 16px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 12 }}>
+                                                                        <svg width="64" height="48" viewBox="0 0 64 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                                            <rect x="26" y="4" width="28" height="34" rx="5" fill="var(--color-bg-surface)" stroke="var(--color-border-strong)" strokeWidth="1.2" strokeDasharray="3 3" />
+                                                                            <path d="M31 11h14M31 16h18M31 21h12" stroke="var(--color-text-tertiary)" strokeWidth="1.2" strokeLinecap="round" opacity="0.6" />
+                                                                            <rect x="18" y="8" width="28" height="34" rx="5" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="1.2" />
+                                                                            <path d="M23 15h14M23 20h18M23 25h12" stroke="var(--color-text-tertiary)" strokeWidth="1.2" strokeLinecap="round" opacity="0.7" />
+                                                                            <rect x="10" y="12" width="28" height="34" rx="5" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="1.2" />
+                                                                            <path d="M15 19h14M15 24h18M15 29h10" stroke="var(--color-text-tertiary)" strokeWidth="1.2" strokeLinecap="round" opacity="0.8" />
+                                                                            <circle cx="34" cy="38" r="7" fill="var(--color-bg-elevated)" stroke="var(--color-border)" strokeWidth="1.2" />
+                                                                            <path d="M34 35v6M31 38h6" stroke="var(--color-text-secondary)" strokeWidth="1.2" strokeLinecap="round" />
+                                                                        </svg>
+                                                                        <div style={{ fontSize: 12.5, color: "var(--color-text-tertiary)", lineHeight: 1.45, maxWidth: 220 }}>
+                                                                            Add PDFs, documents, or other text to reference in this project.
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
-                                                                    style={{ background: "none", border: "none", cursor: "pointer", color: "#b5b2aa", padding: 2, flexShrink: 0 }}
-                                                                >
-                                                                    <XMarkIcon width={14} height={14} />
-                                                                </button>
                                                             </div>
-                                                            <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                        </div>
+                                                    </motion.div>
+                                                ) : (
+                                                    /* ── Standard Home State ── */
+                                                    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
+                                                        style={{ margin: "auto 0", width: "100%", maxWidth: 860, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28, width: "100%" }}>
+                                                            <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 38, fontWeight: 300, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em", textAlign: "center" }}>
+                                                                {randomGreeting}
+                                                            </h1>
+                                                        </div>
+
+                                                        {/* ── Empty state composer ── */}
+                                                        <div style={{ width: "100%", maxWidth: 860 }}>
+                                                            {/* Memory Preference Banner */}
+                                                            {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0, y: -8 }}
+                                                                    animate={{ opacity: 1, y: 0 }}
+                                                                    exit={{ opacity: 0, y: -8 }}
+                                                                    transition={{ duration: 0.2 }}
                                                                     style={{
-                                                                        fontSize: 12, fontWeight: 500,
-                                                                        padding: "4px 12px", borderRadius: 6,
-                                                                        backgroundColor: "#6366f1", color: "#fff",
-                                                                        border: "none", cursor: "pointer",
+                                                                        marginBottom: 10,
+                                                                        padding: "12px 14px",
+                                                                        backgroundColor: "#faf9f7",
+                                                                        border: "1px solid #e8e6d9",
+                                                                        borderLeft: "3px solid #6366f1",
+                                                                        borderRadius: 10,
+                                                                        display: "flex",
+                                                                        flexDirection: "column",
+                                                                        gap: 8,
                                                                     }}
                                                                 >
-                                                                    Continue this way
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
-                                                                        setInputValue("I'd like to do this differently — ");
-                                                                        setTimeout(() => textareaRef.current?.focus(), 50);
-                                                                    }}
-                                                                    style={{
-                                                                        fontSize: 12, fontWeight: 500,
-                                                                        padding: "4px 12px", borderRadius: 6,
-                                                                        backgroundColor: "transparent", color: "#4a4846",
-                                                                        border: "1px solid #e8e6d9", cursor: "pointer",
-                                                                    }}
-                                                                >
-                                                                    Do it differently
-                                                                </button>
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-
-                                                    {/* User Question Form (single or multiple questions) */}
-                                                    {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
-                                                        <UserQuestionForm
-                                                            questions={activeUserQuestions}
-                                                            onSubmit={handleQuestionSubmit}
-                                                            previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                        />
-                                                    )}
-
-                                                    {/* HITL Approval Form */}
-                                                    {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
-                                                        <HitlApprovalForm
-                                                            request={hitlRequest}
-                                                            onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                            onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                        />
-                                                    )}
-
-                                                    {renderLocalSlowHardwarePopup()}
-
-                                                    <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                        {/* Progressive input container */}
-                                                        <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible" }}>
-                                                            {renderSubagentSpawnAttachment()}
-                                                            {renderAttachmentStrip()}
-                                                            {isRecording && recordingSource === 'button' ? (
-                                                                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
-                                                                    {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
-                                                                        <div
-                                                                            key={i}
+                                                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                                                            <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" />
+                                                                            <path d="M12 8v4M12 16h.01" />
+                                                                        </svg>
+                                                                        <div style={{ flex: 1 }}>
+                                                                            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                                From your previous preferences
+                                                                            </div>
+                                                                            <div style={{ fontSize: 13, color: "#4a4846", lineHeight: 1.55 }}>
+                                                                                {memoryPreferenceBanner.preference}
+                                                                            </div>
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
+                                                                            style={{ background: "none", border: "none", cursor: "pointer", color: "#b5b2aa", padding: 2, flexShrink: 0 }}
+                                                                        >
+                                                                            <XMarkIcon width={14} height={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                    <div style={{ display: "flex", gap: 6, paddingLeft: 22 }}>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null)}
                                                                             style={{
-                                                                                width: 4,
-                                                                                height: Math.max(6, level * 0.5),
-                                                                                borderRadius: 2,
-                                                                                backgroundColor: "var(--color-accent, #3b82f6)",
-                                                                                transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                                                                                fontSize: 12, fontWeight: 500,
+                                                                                padding: "4px 12px", borderRadius: 6,
+                                                                                backgroundColor: "#6366f1", color: "#fff",
+                                                                                border: "none", cursor: "pointer",
                                                                             }}
-                                                                            className="waveform-bar"
-                                                                        />
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                                    activeUserQuestions.length > 0
-                                                                        ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
-                                                                        : showHitlApproval
-                                                                            ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
-                                                                            : "How can I help you today?"
-                                                                } rows={1}
-                                                                    disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                                    className="placeholder-[var(--color-text-placeholder)]"
-                                                                    style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "20px 24px", minHeight: 70, maxHeight: 240 }} />
+                                                                        >
+                                                                            Continue this way
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setMemoryPreferenceBanner(b => b ? { ...b, dismissed: true } : null);
+                                                                                setInputValue("I'd like to do this differently — ");
+                                                                                setTimeout(() => textareaRef.current?.focus(), 50);
+                                                                            }}
+                                                                            style={{
+                                                                                fontSize: 12, fontWeight: 500,
+                                                                                padding: "4px 12px", borderRadius: 6,
+                                                                                backgroundColor: "transparent", color: "#4a4846",
+                                                                                border: "1px solid #e8e6d9", cursor: "pointer",
+                                                                            }}
+                                                                        >
+                                                                            Do it differently
+                                                                        </button>
+                                                                    </div>
+                                                                </motion.div>
                                                             )}
 
-                                                            {/* Progressive fade at the bottom of the textarea */}
-                                                            <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 16px 16px", zIndex: 1 }} />
-                                                            <div style={{ flex: 1 }} />
-                                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
-                                                                {renderComposerLeftActions()}
-                                                                {renderComposerRightActions(false)}
+                                                            {/* User Question Form (single or multiple questions) */}
+                                                            {activeUserQuestions.length > 0 && !isNavisQuestion(activeUserQuestions) && (
+                                                                <UserQuestionForm
+                                                                    questions={activeUserQuestions}
+                                                                    onSubmit={handleQuestionSubmit}
+                                                                    previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
+                                                                />
+                                                            )}
+
+                                                            {/* HITL Approval Form */}
+                                                            {showHitlApproval && hitlRequest && !isNavisHitl(hitlRequest) && (
+                                                                <HitlApprovalForm
+                                                                    request={hitlRequest}
+                                                                    onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
+                                                                    onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
+                                                                />
+                                                            )}
+
+                                                            {renderLocalSlowHardwarePopup()}
+
+                                                            <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
+                                                                {/* Progressive input container */}
+                                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
+                                                                    {renderSubagentSpawnAttachment()}
+                                                                    {renderAttachmentStrip()}
+                                                                    {isRecording && recordingSource === 'button' ? (
+                                                                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 60, padding: "0 20px" }}>
+                                                                            {(audioLevels.length > 0 ? audioLevels : new Array(25).fill(15)).map((level, i) => (
+                                                                                <div
+                                                                                    key={i}
+                                                                                    style={{
+                                                                                        width: 4,
+                                                                                        height: Math.max(6, level * 0.5),
+                                                                                        borderRadius: 2,
+                                                                                        backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                                        transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                                                                                    }}
+                                                                                    className="waveform-bar"
+                                                                                />
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div style={{ position: "relative", width: "100%" }}>
+                                                                            {renderSlashMenu()}
+                                                                            {selectedSkill && (
+                                                                                <div style={{ padding: "16px 24px 0", display: "flex", alignItems: "center" }}>
+                                                                                    {renderSelectedSkillBadge()}
+                                                                                </div>
+                                                                            )}
+                                                                            <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
+                                                                                inputValue.startsWith('/')
+                                                                                    ? "/ Type to filter"
+                                                                                    : activeUserQuestions.length > 0
+                                                                                        ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                                        : showHitlApproval
+                                                                                            ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                                            : "How can I help you today?"
+                                                                            } rows={1}
+                                                                                disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
+                                                                                className="placeholder-[var(--color-text-placeholder)]"
+                                                                                style={{ width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-tertiary)" : "var(--color-text-primary)", lineHeight: 1.5, padding: selectedSkill ? "8px 24px 20px" : "20px 24px", minHeight: selectedSkill ? 50 : 70, maxHeight: 240 }} />
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Progressive fade at the bottom of the textarea */}
+                                                                    <div style={{ position: "absolute", bottom: 52, left: 0, right: 0, height: 60, background: "linear-gradient(to bottom, var(--color-bg-subtle-transparent), var(--color-bg-subtle) 80%)", pointerEvents: "none", borderRadius: "0 0 18px 18px", zIndex: 1 }} />
+                                                                    <div style={{ flex: 1 }} />
+                                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", position: "relative", zIndex: 2 }}>
+                                                                        {renderComposerLeftActions()}
+                                                                        {renderComposerRightActions(false)}
+                                                                    </div>
+                                                                </div>
+                                                            </PromptWrapper>
+                                                            {renderShortcutsLegend()}
+
+                                                            {/* Quick prompt chips */}
+                                                            <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                                                                {[
+                                                                    { label: "Code", prompt: "Write a Python script that ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
+                                                                    { label: "Write", prompt: "Draft an email to my manager explaining ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
+                                                                    { label: "Learn", prompt: "Explain how the following concept works: ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
+                                                                    { label: "Life stuff", prompt: "Create a weekly meal planner for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
+                                                                    { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
+                                                                ].map(c => (
+                                                                    <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
+                                                                        style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
+                                                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                                                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-primary)"; }}>
+                                                                        <span style={{ display: 'flex' }}>{c.icon}</span>
+                                                                        <span style={{ fontWeight: 400 }}>{c.label}</span>
+                                                                    </button>
+                                                                ))}
                                                             </div>
                                                         </div>
-                                                    </PromptWrapper>
-                                                    {renderShortcutsLegend()}
-
-                                                    {/* Quick prompt chips — hidden when a project is selected */}
-                                                    {folderContexts.length === 0 && (
-                                                        <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                                                            {[
-                                                                { label: "Code", prompt: "Write a Python script that ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> },
-                                                                { label: "Write", prompt: "Draft an email to my manager explaining ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg> },
-                                                                { label: "Learn", prompt: "Explain how the following concept works: ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 14v7M22 9l-10 5L2 9l10-5 10 5z"></path><path d="M6 11v5a6 3 0 0 0 12 0v-5"></path></svg> },
-                                                                { label: "Life stuff", prompt: "Create a weekly meal planner for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"></path></svg> },
-                                                                { label: "Fern's choice", prompt: "Suggest some fun developer productivity tips for ", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4M12 2v2M4.2 6.2l1.4 1.4M18.4 18.4l1.4 1.4M19.8 6.2l-1.4 1.4M5.6 18.4l-1.4 1.4M22 12h-2M4 12H2M12 6a5 5 0 0 0-3 8.7V17h6v-2.3A5 5 0 0 0 12 6z"></path></svg> },
-                                                            ].map(c => (
-                                                                <button key={c.label} type="button" onClick={() => { setInputValue(prev => prev || c.prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
-                                                                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, backgroundColor: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", fontSize: 13, cursor: "pointer", transition: "all 0.1s" }}
-                                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
-                                                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--color-text-primary)"; }}>
-                                                                    <span style={{ display: 'flex' }}>{c.icon}</span>
-                                                                    <span style={{ fontWeight: 400 }}>{c.label}</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {/* Project mode empty state cue */}
-                                                    {folderContexts.length > 0 && (
-                                                        <div style={{ marginTop: 60, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                                                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                                                                <line x1="9" y1="10" x2="15" y2="10" />
-                                                                <line x1="9" y1="14" x2="13" y2="14" />
-                                                            </svg>
-                                                            <p style={{ fontSize: 15, color: "var(--color-text-primary)", margin: 0, fontWeight: 500, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
-                                                                Give EverFern a task and it'll pick up your project context automatically.
-                                                            </p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </motion.div>
+                                                    </motion.div>
+                                                )}
+                                            </>
                                         )}
 
                                         {/* Plan Review Card */}
@@ -7017,7 +7773,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                 {/* ── Non-empty bottom composer ── */}
                                 {!isEmpty && (
-                                    <div style={{ padding: "0 24px 12px", width: "100%", maxWidth: 848, margin: "0 auto", position: "relative", zIndex: 50 }}>
+                                    <div style={{ padding: "0 24px 12px", width: "100%", maxWidth: 880, margin: "0 auto", position: "relative", zIndex: 50 }}>
                                         <AnimatePresence>
                                             {showPermissionModal && (
                                                 <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} transition={{ duration: 0.2 }} style={{ width: "96%", maxWidth: 840, margin: "0 auto", position: "relative", zIndex: 1 }}>
@@ -7068,7 +7824,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             )}
                                         </AnimatePresence>
 
-                                        <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 620 : 860, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+                                        <div style={{ width: "100%", maxWidth: isToolDetailOpen ? 640 : 880, margin: "0 auto 8px auto", padding: isToolDetailOpen ? "0 12px" : "0 16px", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                                             {/* Task 7.4: Local Execution Permission Card — above input */}
                                             {localExecutionRequest && (
                                                 <div style={{ padding: '0 0 12px' }}>
@@ -7096,7 +7852,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             {renderLocalSlowHardwarePopup()}
 
                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 16, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible" }}>
+                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
                                                     {/* Memory Preference Banner */}
                                                     {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                         <motion.div
@@ -7194,20 +7950,26 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                     {renderSubagentSpawnAttachment()}
                                                     {renderAttachmentStrip()}
-                                                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                                    <div style={{ display: "flex", flexDirection: "column", gap: 0, position: "relative" }}>
+                                                        {renderSlashMenu()}
+                                                        {selectedSkill && (
+                                                            <div style={{ padding: "12px 20px 0", display: "flex", alignItems: "center" }}>
+                                                                {renderSelectedSkillBadge()}
+                                                            </div>
+                                                        )}
                                                         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, paddingRight: 12 }}>
                                                             <textarea ref={textareaRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder={
-                                                                activeUserQuestions.length > 0
-                                                                    ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
-                                                                    : showHitlApproval
-                                                                        ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
-                                                                        : "How can I help you today?"
+                                                                inputValue.startsWith('/')
+                                                                    ? "/ Type to filter"
+                                                                    : activeUserQuestions.length > 0
+                                                                        ? (isNavisQuestion(activeUserQuestions) ? "Please answer the question in the chat history above" : "Please answer the question above")
+                                                                        : showHitlApproval
+                                                                            ? (isNavisHitl(hitlRequest) ? "Please respond to the security check in the chat history above" : "Please approve or reject the operation above")
+                                                                            : "How can I help you today?"
                                                             } rows={1}
                                                                 disabled={activeUserQuestions.length > 0 || !!showHitlApproval}
-                                                                style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: "16px 20px", minHeight: 50, maxHeight: 240 }} />
+                                                                style={{ flex: 1, width: "100%", background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 16, color: (activeUserQuestions.length > 0 || showHitlApproval) ? "var(--color-text-placeholder)" : "var(--color-text-primary)", lineHeight: 1.5, padding: selectedSkill ? "8px 20px 16px" : "16px 20px", minHeight: selectedSkill ? 40 : 50, maxHeight: 240 }} />
                                                         </div>
-
-
                                                     </div>
                                                     {(isRecording || voiceLoading || voiceTranscript) && (
                                                         <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -7235,41 +7997,25 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         )}
 
                         {/* Right Sidebar — panel switcher and content */}
-                        <div style={{ width: 380, flexShrink: 0, display: isToolDetailOpen || isComputerPaneOpen ? "none" : "flex", flexDirection: "column", overflowY: "auto", padding: "16px 16px", gap: 16 }}>
+                        {(!isEmpty && !isToolDetailOpen && !isComputerPaneOpen && (subagent.isActive || selectedSubagentToolCall || (panelTasks && panelTasks.length > 0) || (executionPlan && isExecutionPlanPaneOpen))) && (
+                            <div style={{ width: 380, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto", padding: "16px 16px", gap: 16 }}>
 
-                            {/* Tab switcher for panels */}
-                            {(subagent.isActive || selectedSubagentToolCall) && (
-                                <div style={{
-                                    display: "flex",
-                                    gap: 8,
-                                    borderBottom: "1px solid var(--color-border)",
-                                    paddingBottom: 12,
-                                    marginBottom: 8
-                                }}>
-                                    <button
-                                        onClick={() => { setShowSubagentPanel(true); setSelectedSubagentToolCall(null); }}
-                                        style={{
-                                            padding: "6px 12px",
-                                            borderRadius: 6,
-                                            border: "none",
-                                            background: showSubagentPanel && !selectedSubagentToolCall ? "var(--color-bg-selected)" : "transparent",
-                                            cursor: "pointer",
-                                            fontSize: 12,
-                                            fontWeight: 600,
-                                            color: "var(--color-text-secondary)",
-                                            transition: "all 0.2s"
-                                        }}
-                                    >
-                                        Agents
-                                    </button>
-                                    {selectedSubagentToolCall && (
+                                {/* Tab switcher for panels */}
+                                {(subagent.isActive || selectedSubagentToolCall) && (
+                                    <div style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        borderBottom: "1px solid var(--color-border)",
+                                        paddingBottom: 12,
+                                        marginBottom: 8
+                                    }}>
                                         <button
-                                            onClick={() => setShowSubagentPanel(false)}
+                                            onClick={() => { setShowSubagentPanel(true); setSelectedSubagentToolCall(null); }}
                                             style={{
                                                 padding: "6px 12px",
                                                 borderRadius: 6,
                                                 border: "none",
-                                                background: !showSubagentPanel ? "var(--color-bg-selected)" : "transparent",
+                                                background: showSubagentPanel && !selectedSubagentToolCall ? "var(--color-bg-selected)" : "transparent",
                                                 cursor: "pointer",
                                                 fontSize: 12,
                                                 fontWeight: 600,
@@ -7277,210 +8023,81 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 transition: "all 0.2s"
                                             }}
                                         >
-                                            Tool Details
+                                            Agents
                                         </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Subagent Panel or Tool Call Detail */}
-                            {subagent.isActive && showSubagentPanel ? (
-                                <SubagentPanel
-                                    coordination={subagent.coordination || {
-                                        phase: 'exploration',
-                                        currentAgent: '',
-                                        completedPhases: [],
-                                        sharedContext: {}
-                                    }}
-                                    phases={subagent.phases}
-                                />
-                            ) : selectedSubagentToolCall ? (
-                                <ToolCallDetailPane
-                                    toolCall={selectedSubagentToolCall}
-                                    onClose={() => setSelectedSubagentToolCall(null)}
-                                />
-                            ) : null}
-
-                            {/* Instructions card */}
-                            {!(subagent.isActive && showSubagentPanel) && !selectedSubagentToolCall ? (
-                                <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setInstructionsExpanded(!instructionsExpanded)}
-                                        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
-                                    >
-                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Instructions</span>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: instructionsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9" /></svg>
-                                        </div>
-                                    </button>
-                                    <AnimatePresence>
-                                        {instructionsExpanded && (
-                                            <motion.div
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: "auto", opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.2 }}
-                                                style={{ overflow: "hidden" }}
+                                        {selectedSubagentToolCall && (
+                                            <button
+                                                onClick={() => setShowSubagentPanel(false)}
+                                                style={{
+                                                    padding: "6px 12px",
+                                                    borderRadius: 6,
+                                                    border: "none",
+                                                    color: "var(--color-text-secondary)",
+                                                    transition: "all 0.2s"
+                                                }}
                                             >
-                                                <div style={{ padding: "0 20px 20px" }}>
-                                                    <textarea
-                                                        value={instructions}
-                                                        onChange={(e) => setInstructions(e.target.value)}
-                                                        placeholder="Add tone, formatting, or rules to guide how EverFern works."
-                                                        rows={3}
-                                                        style={{ width: "100%", resize: "none", border: "none", outline: "none", fontSize: 13, color: instructions ? "var(--color-text-secondary)" : "var(--color-text-placeholder)", lineHeight: 1.6, background: "transparent", fontFamily: "var(--font-sans)", fontStyle: instructions ? "normal" : "italic" }}
-                                                    />
-                                                </div>
-                                            </motion.div>
+                                                Tool Details
+                                            </button>
                                         )}
-                                    </AnimatePresence>
-                                </div>
-                            ) : null}
-
-                            {/* Scheduled card */}
-                            <ScheduledTasksPanel
-                                projectId={folderContexts[0]?.path}
-                                onAddTask={() => setShowScheduledTaskModal(true)}
-                                refreshTrigger={scheduledTasksRefreshTrigger}
-                            />
-                            {/* Project Tasks card */}
-
-                            <TasksPanel tasks={panelTasks} path={tasksFilePath} />
-
-
-                            {/* Context card */}
-                            <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 10, overflow: "hidden", boxShadow: '0 1px 4px rgba(0,0,0,0.02)' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => setContextExpanded(!contextExpanded)}
-                                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px", background: "none", border: "none", cursor: "pointer" }}
-                                >
-                                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Context</span>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: contextExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9" /></svg>
                                     </div>
-                                </button>
+                                )}
+
+                                {/* Subagent Panel or Tool Call Detail */}
+                                {subagent.isActive && showSubagentPanel ? (
+                                    <SubagentPanel
+                                        coordination={subagent.coordination || {
+                                            phase: 'exploration',
+                                            currentAgent: '',
+                                            completedPhases: [],
+                                            sharedContext: {}
+                                        }}
+                                        phases={subagent.phases}
+                                    />
+                                ) : selectedSubagentToolCall ? (
+                                    <ToolCallDetailPane
+                                        toolCall={selectedSubagentToolCall}
+                                        onClose={() => setSelectedSubagentToolCall(null)}
+                                    />
+                                ) : null}
+
+                                {/* Project Tasks card */}
+                                <TasksPanel tasks={panelTasks} path={tasksFilePath} />
+
+                                {/* Execution Plan pane (conditional) */}
                                 <AnimatePresence>
-                                    {contextExpanded && (
-                                        <motion.div
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: "auto", opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            transition={{ duration: 0.2 }}
-                                            style={{ overflow: "hidden" }}
-                                        >
-                                            <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-                                                {/* Project context row */}
-                                                {folderContexts.length > 0 ? (
-                                                    <div>
-                                                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Project</p>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-text-secondary)" stroke="none"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
-                                                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderContexts[0].name}</span>
-                                                            <button type="button" onClick={() => setFolderContexts([])} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 0, display: "flex" }}>
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>No project selected. Use the Project dropdown in the composer.</p>
-                                                )}
-
-                                                {/* Memory row */}
-                                                <div>
-                                                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Memory</p>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, padding: "8px 10px" }}>
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-10a2 2 0 1 0 2 2 2 2 0 0 0-2-2z" /></svg>
-                                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>Memory</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Decorative Illustration */}
-                                                <svg viewBox="0 0 540 170" width="100%" height="auto" style={{ marginTop: 4, borderRadius: 10 }}>
-                                                    <defs>
-                                                        <filter id="shadow">
-                                                            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#00000020" />
-                                                        </filter>
-                                                    </defs>
-
-                                                    {/* Background */}
-                                                    <rect width="540" height="170" rx="12" fill="var(--color-border-subtle)" />
-
-                                                    {/* Card 1 — placed, left */}
-                                                    <rect x="30" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)" />
-                                                    <rect x="44" y="50" width="55" height="6" rx="2" fill="var(--color-border-strong)" />
-                                                    <rect x="44" y="63" width="77" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="44" y="75" width="65" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="44" y="87" width="72" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="44" y="99" width="50" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="44" y="111" width="60" height="5" rx="2" fill="var(--color-border)" />
-
-                                                    {/* Card 2 — placed, center */}
-                                                    <rect x="165" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" filter="url(#shadow)" />
-                                                    <rect x="245" y="40" width="18" height="18" rx="4" fill="var(--color-bg-subtle)" />
-                                                    <rect x="249" y="45" width="10" height="3" rx="1" fill="var(--color-text-tertiary)" />
-                                                    <rect x="249" y="50" width="8" height="3" rx="1" fill="var(--color-text-tertiary)" />
-                                                    <rect x="179" y="50" width="55" height="7" rx="2" fill="var(--color-text-tertiary)" />
-                                                    <rect x="179" y="65" width="88" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="179" y="77" width="80" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="179" y="89" width="88" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="179" y="101" width="70" height="5" rx="2" fill="var(--color-border)" />
-                                                    <rect x="179" y="113" width="78" height="5" rx="2" fill="var(--color-border)" />
-
-                                                    {/* Card 3 — being placed */}
-                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="var(--color-bg-surface)" opacity="0.75" filter="url(#shadow)" />
-                                                    <rect x="300" y="32" width="110" height="108" rx="8" fill="none"
-                                                        stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeDasharray="5,3" />
-                                                    <rect x="314" y="50" width="55" height="6" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                    <rect x="314" y="63" width="77" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                    <rect x="314" y="75" width="65" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                    <rect x="314" y="87" width="72" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                    <rect x="314" y="99" width="50" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                    <rect x="314" y="111" width="60" height="5" rx="2" fill="var(--color-border)" opacity="0.7" />
-                                                </svg>
-                                            </div>
-                                        </motion.div>
-                                    )}
+                                    {executionPlan && isExecutionPlanPaneOpen && (() => {
+                                        const isPlanAlreadyApproved = messages.some(m => {
+                                            const content = typeof m.content === 'string' ? m.content : '';
+                                            return content.includes('[PLAN_APPROVED]');
+                                        });
+                                        return (
+                                            <ExecutionPlanPane
+                                                executionPlan={executionPlan.content}
+                                                isLoading={isLoading}
+                                                isPlanAlreadyApproved={isPlanAlreadyApproved}
+                                                onApprove={() => {
+                                                    setIsExecutionPlanPaneOpen(false);
+                                                    if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
+                                                    const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`;
+                                                    setInputValue(msg);
+                                                    setTimeout(() => {
+                                                        const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement;
+                                                        if (sendBtn) sendBtn.click();
+                                                    }, 100);
+                                                }}
+                                                onClose={() => {
+                                                    setIsExecutionPlanPaneOpen(false);
+                                                    if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
+                                                }}
+                                            />
+                                        );
+                                    })()}
                                 </AnimatePresence>
+
+                                {/* Mission Progress card removed — steps shown inline in AgentTimeline */}
+
                             </div>
-
-                            {/* Execution Plan pane (conditional) */}
-                            <AnimatePresence>
-                                {executionPlan && isExecutionPlanPaneOpen && (() => {
-                                    const isPlanAlreadyApproved = messages.some(m => {
-                                        const content = typeof m.content === 'string' ? m.content : '';
-                                        return content.includes('[PLAN_APPROVED]');
-                                    });
-                                    return (
-                                        <ExecutionPlanPane
-                                            executionPlan={executionPlan.content}
-                                            isLoading={isLoading}
-                                            isPlanAlreadyApproved={isPlanAlreadyApproved}
-                                            onApprove={() => {
-                                                setIsExecutionPlanPaneOpen(false);
-                                                if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
-                                                const msg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`;
-                                                setInputValue(msg);
-                                                setTimeout(() => {
-                                                    const sendBtn = document.querySelector('button[title="Send"]') as HTMLButtonElement;
-                                                    if (sendBtn) sendBtn.click();
-                                                }, 100);
-                                            }}
-                                            onClose={() => {
-                                                setIsExecutionPlanPaneOpen(false);
-                                                if (activeConversationId) localStorage.setItem(`everfern_exec_pane_closed_${activeConversationId}`, "true");
-                                            }}
-                                        />
-                                    );
-                                })()}
-                            </AnimatePresence>
-
-                            {/* Mission Progress card removed — steps shown inline in AgentTimeline */}
-
-                        </div>
+                        )}
 
                         {/* Fern's Computer Side Pane */}
                         <ComputerPane
@@ -7515,6 +8132,27 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     isOpen={showCustomizeModal}
                     onClose={() => setShowCustomizeModal(false)}
                 />
+                <CreateProjectModal
+                    isOpen={showCreateProjectModal}
+                    onClose={() => setShowCreateProjectModal(false)}
+                    onCreated={(project) => {
+                        setShowCreateProjectModal(false);
+                        if (project && (project.id || project.name)) {
+                            handleNewChat();
+                            const projId = project.id || crypto.randomUUID();
+                            setActiveConversationId(projId);
+                            activeConversationIdRef.current = projId;
+                            setFolderContexts([{ id: projId, path: project.path, name: project.name }]);
+                            setContextItems([{
+                                id: crypto.randomUUID(),
+                                type: 'folder' as any,
+                                label: project.name,
+                                path: project.path
+                            } as any]);
+                            setShowProjectsPage(false);
+                        }
+                    }}
+                />
                 <ScheduledTaskModal
                     isOpen={showScheduledTaskModal}
                     onClose={() => setShowScheduledTaskModal(false)}
@@ -7533,6 +8171,12 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     onClose={() => { setShowFeedbackModal(false); setFeedbackTargetIndex(null); }}
                     onSubmit={handleFeedbackSubmit}
                     feedbackType={feedbackType}
+                />
+
+                {/* Vision Model Downgrade Notice */}
+                <VisionDowngradeNotice
+                    isVisible={showVisionDowngradeNotice}
+                    onClose={() => setShowVisionDowngradeNotice(false)}
                 />
             </div>
         </>

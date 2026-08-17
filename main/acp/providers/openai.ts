@@ -18,14 +18,14 @@ import { PROVIDER_MODELS } from '../../lib/providers';
 export class OpenAIProvider implements ACPProvider {
   private apiKey = '';
   private baseUrl = 'https://api.openai.com/v1';
-  private model = 'gpt-4o';
+  private model = 'gpt-5.5';
 
   readonly info: ProviderInfo = {
     type: 'openai',
     name: 'OpenAI',
-    description: 'GPT-4o, GPT-4o-mini, and more via OpenAI API',
+    description: 'GPT-5.6, GPT-5.5, GPT-5.4, GPT-4o and o-series via OpenAI API',
     requiresApiKey: true,
-    defaultModel: 'gpt-4o',
+    defaultModel: 'gpt-5.5',
     isLocal: false,
   };
 

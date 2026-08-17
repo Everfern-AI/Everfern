@@ -297,6 +297,18 @@ export function registerSystemHandlers() {
     return app.getVersion();
   });
 
+  ipcMain.handle('system:get-platform', () => {
+    return process.platform;
+  });
+
+  ipcMain.handle('system:get-username', () => {
+    try {
+      return os.userInfo().username || process.env.USERNAME || process.env.USER || 'User';
+    } catch {
+      return process.env.USERNAME || process.env.USER || 'User';
+    }
+  });
+
   ipcMain.handle('system:detect-hardware', async () => {
     return await detectHardwareSpecsAsync();
   });
@@ -1004,30 +1016,78 @@ export function registerSystemHandlers() {
       proc.on('close', (code: number) => resolve({ success: code === 0 || code === null, code }));
     });
   });
-  ipcMain.handle('system:open-terminal-installer', async (event, action: 'install-all' | 'pull-model') => {
-    const { exec } = require('child_process');
-    const isWin = process.platform === 'win32';
-    if (isWin) {
-      if (action === 'install-all') {
-        exec('start cmd.exe /k "echo ==================================================== && echo DOWNLOADING AND INSTALLING OLLAMA... && echo ==================================================== && powershell -NoProfile -ExecutionPolicy Bypass -Command \\"irm https://ollama.com/install.ps1 | Invoke-Expression\\" && echo ==================================================== && echo PULLING QWEN3-VL:2B VISION MODEL... && echo ==================================================== && ollama pull qwen3-vl:2b && echo ==================================================== && echo Installation completed! You can close this window now. && pause"');
-      } else {
-        exec('start cmd.exe /k "echo ==================================================== && echo PULLING QWEN3-VL:2B VISION MODEL... && echo ==================================================== && ollama pull qwen3-vl:2b && echo ==================================================== && echo Completed! You can close this window now. && pause"');
-      }
-    } else {
+  function launchNativeTerminalCommand(title: string, cmd: string): boolean {
+    try {
+      const { exec } = require('child_process');
+      const isWin = process.platform === 'win32';
       const isMac = process.platform === 'darwin';
-      if (isMac) {
-        if (action === 'install-all') {
-          exec(`osascript -e 'tell app "Terminal" to do script "curl -fsSL https://ollama.com/install.sh | sh && ollama pull qwen3-vl:2b"'`);
-        } else {
-          exec(`osascript -e 'tell app "Terminal" to do script "ollama pull qwen3-vl:2b"'`);
-        }
+
+      if (isWin) {
+        const safeTitle = title.replace(/"/g, '');
+        const fullCmd = `start cmd.exe /k "echo ==================================================== && echo [EverFern] ${safeTitle} && echo ==================================================== && ${cmd} && echo ==================================================== && echo Process finished! You can close this window now. && pause"`;
+        exec(fullCmd);
+        return true;
+      } else if (isMac) {
+        const escapedScript = `tell app "Terminal" to do script "echo \\"====================================================\\"; echo \\"[EverFern] ${title}\\"; echo \\"====================================================\\"; ${cmd.replace(/"/g, '\\"')}" activate`;
+        exec(`osascript -e '${escapedScript}'`);
+        return true;
       } else {
-        if (action === 'install-all') {
-          exec(`x-terminal-emulator -e "curl -fsSL https://ollama.com/install.sh | sh && ollama pull qwen3-vl:2b"`);
-        } else {
-          exec(`x-terminal-emulator -e "ollama pull qwen3-vl:2b"`);
-        }
+        const terminalScript = `bash -c "echo '===================================================='; echo '[EverFern] ${title}'; echo '===================================================='; ${cmd}; echo '===================================================='; echo 'Process finished. Press Enter to exit.'; read; exec bash"`;
+        exec(`which gnome-terminal 2>/dev/null`, (err: any, stdout: string) => {
+          if (!err && stdout.trim()) {
+            exec(`gnome-terminal -- ${terminalScript}`);
+          } else {
+            exec(`which konsole 2>/dev/null`, (kErr: any, kStdout: string) => {
+              if (!kErr && kStdout.trim()) {
+                exec(`konsole -e ${terminalScript}`);
+              } else {
+                exec(`which x-terminal-emulator 2>/dev/null`, (xErr: any, xStdout: string) => {
+                  if (!xErr && xStdout.trim()) {
+                    exec(`x-terminal-emulator -e "${terminalScript}"`);
+                  } else {
+                    exec(`xterm -e "${terminalScript}"`);
+                  }
+                });
+              }
+            });
+          }
+        });
+        return true;
       }
+    } catch (err) {
+      console.error('[System] Failed to launch native terminal:', err);
+      return false;
+    }
+  }
+
+  ipcMain.handle('system:pull-local-model-terminal', async (_event, params: { provider?: 'ollama' | 'lmstudio'; modelTag: string }) => {
+    const provider = params?.provider || 'ollama';
+    const modelTag = params?.modelTag || 'llama3.2:3b';
+
+    let cmd = '';
+    let title = '';
+    if (provider === 'lmstudio') {
+      title = `Pulling model "${modelTag}" via LM Studio CLI (lms)...`;
+      cmd = `lms get ${modelTag} || lms load ${modelTag}`;
+    } else {
+      title = `Pulling model "${modelTag}" via Ollama...`;
+      cmd = `ollama run ${modelTag} || ollama pull ${modelTag}`;
+    }
+
+    const success = launchNativeTerminalCommand(title, cmd);
+    return { success, provider, modelTag };
+  });
+
+  ipcMain.handle('system:open-terminal-installer', async (_event, action: 'install-all' | 'pull-model' | string, modelTag?: string) => {
+    const isWin = process.platform === 'win32';
+    const tag = modelTag || 'qwen3-vl:2b';
+
+    if (action === 'install-all') {
+      const winCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://ollama.com/install.ps1 | Invoke-Expression" && ollama pull ${tag}`;
+      const unixCmd = `curl -fsSL https://ollama.com/install.sh | sh && ollama pull ${tag}`;
+      launchNativeTerminalCommand('DOWNLOADING AND INSTALLING OLLAMA & VISION MODEL', isWin ? winCmd : unixCmd);
+    } else {
+      launchNativeTerminalCommand(`PULLING MODEL: ${tag}`, `ollama run ${tag} || ollama pull ${tag}`);
     }
     return { success: true };
   });

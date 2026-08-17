@@ -73,7 +73,7 @@ import { listSites, readSiteFile, writeSiteFile, deleteSite } from './store/site
 import { searchChatVectors, getChatVectors, deleteChatVectors, getVectorStats, initChatVectorDb, getVectorStats as getVecStats } from './store/chat-vectors';
 import { registerContextEngine, setDefaultContextEngine } from './context-engine';
 import { VectorContextEngine } from './context-engine/vector';
-import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
+import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, listAllSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
@@ -1176,7 +1176,7 @@ function normalizeVlmConfig(config: any) {
   if (!config?.vlm) return config;
   const vlm = { ...config.vlm };
   const defaultModelForProvider = (provider: string) => {
-    if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
+    if (provider === 'openrouter') return 'openai/gpt-5.6-luna';
     if (provider === 'minimax') return 'MiniMax-M3';
     if (provider === 'ollama' || provider === 'ollama-cloud') return 'qwen3-vl:235b-cloud';
     if (provider === 'openai') return 'gpt-5.5';
@@ -1506,6 +1506,10 @@ ipcMain.handle('vectors:refresh-config', async () => {
 });
 
 // ── Custom Skills IPC Handlers ─────────────────────────────────────────────
+
+ipcMain.handle('skills:list-all', async () => {
+  return listAllSkills();
+});
 
 ipcMain.handle('skills:list-custom', async () => {
   return listCustomSkills();

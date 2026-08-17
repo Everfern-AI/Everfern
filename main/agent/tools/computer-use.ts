@@ -151,6 +151,14 @@ Rules:
 - Do nothing if the task is already complete.
 - To answer the user, output ONLY the answer text (no tools, no formatting).`;
 
+const CLAUDE_COMPUTER_USE_PROMPT = `You are a Windows desktop automation agent powered by Claude. Use the computer_use tool or actions to operate the computer.
+Rules:
+- In your reasoning, describe your action as a complete, natural English sentence.
+- Consult the screenshot coordinates carefully before clicking, typing, or moving the cursor.
+- To open an application, use the Start Menu (key 'win', type the app name, press Enter).
+- If content may be below the visible view, scroll before concluding it is absent.
+- When the task is complete, stop taking actions and provide your final response to the user.`;
+
 const SYSTEM_PROMPT = `You are a GUI automation agent. You control a desktop by outputting structured actions.
 
 ## CRITICAL OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY
@@ -503,81 +511,118 @@ class ComputerUseTool {
     text = text.trim();
     if (!text || text.startsWith("#")) return;
 
-    // Normalize start_box format
-    const startBoxMatch = text.match(/click\s*\(\s*start_box\s*=\s*['"]?\(?(\d+)\s*,\s*(\d+)\)?['"]?\s*\)/i);
-    if (startBoxMatch) {
-      text = `click(${startBoxMatch[1]},${startBoxMatch[2]})`;
-    }
+    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
 
-    // Parse coordinates
-    const parseXy = (s: string): [number, number] | null => {
-      const parts = s.split(",");
-      if (parts.length >= 2) {
-        const m1 = parts[0].match(/-?\d+/);
-        const m2 = parts[1].match(/-?\d+/);
-        if (m1 && m2) return [parseInt(m1[0]), parseInt(m2[0])];
+    // Helper to extract (x, y) coordinates from formats like "<|box_start|>(835,138)<|box_end|>", "(835,138)", or "835, 138"
+    const extractCoords = (str: string): [number, number] | null => {
+      const m = str.match(/\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?/);
+      if (m) {
+        return [parseInt(m[1], 10), parseInt(m[2], 10)];
       }
       return null;
     };
 
-    const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
-    const coords = parseXy(text);
-
-    if (coords && has(/click/i, text)) {
-      // Apply scaling logic
-      if (!robot) {
-        throw new Error(`robotjs unavailable - cannot execute click`);
-      }
-
-      const [rx, ry] = this.absoluteXy(coords);
-
-      console.log(`[ComputerUse] Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
-
-      robot.moveMouse(rx, ry);
-      robot.mouseClick("left");
-      return;
-    }
-
-    if (has(/^type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i, text)) {
-      const typeMatch = text.match(/type\s*\(\s*(?:content\s*=\s*)?['\"]?(.+?)['\"]?\s*\)/i);
-      if (typeMatch) {
-        await this.call({ action: "type", text: typeMatch[1] });
+    // ── 1. hotkey(key='ctrl ,') or hotkey('ctrl c') or press(key='win') ──
+    const hotkeyMatch = text.match(/^(?:hotkey|press)\s*\(\s*(?:key\s*=\s*)?['"]?([\s\S]*?)['"]?\s*\)$/i);
+    if (hotkeyMatch) {
+      const rawKey = hotkeyMatch[1].trim();
+      // Handle hotkey combinations like 'ctrl ,', 'ctrl c', 'ctrl+c', 'alt+tab', 'win', 'ctrl, shift, esc'
+      const keyParts = rawKey.split(/[\s,+]+/).map(k => k.trim()).filter(Boolean);
+      if (keyParts.length > 0) {
+        await this.call({ action: "key", keys: keyParts });
         return;
       }
     }
 
-    if (has(/^press\s*\(\s*([^)]+)\s*\)\s*$/i, text)) {
-      const key = text.match(/press\s*\(\s*([^)]+)\s*\)/i)![1].trim().toLowerCase();
-      await this.call({ action: "key", keys: key.includes("+") ? key.split("+") : [key] });
+    // ── 2. Double Click (left_double or double_click) ──
+    if (has(/^(?:left_double|double_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Double Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.doubleClickAt(rx, ry);
+      } else {
+        await this.call({ action: "double_click" });
+      }
       return;
     }
 
-    // ── scroll(direction: down|up|left|right [, coordinate: [x, y]] [, amount: N]) ──
-    if (has(/^scroll\s*\(/i, text)) {
-      const dirMatch  = text.match(/direction\s*[:=]\s*["']?(up|down|left|right)["']?/i);
-      const coordMatch = text.match(/coordinate\s*[:=]\s*\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/i);
-      const amtMatch  = text.match(/(?:amount|pixels)\s*[:=]\s*(-?\d+)/i);
+    // ── 3. Right Click (right_single or right_click) ──
+    if (has(/^(?:right_single|right_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Right Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.click(rx, ry, "right");
+      } else {
+        this.click(undefined, undefined, "right");
+      }
+      return;
+    }
 
-      const direction = dirMatch ? dirMatch[1].toLowerCase() : "down";
-      const pixels    = amtMatch ? parseInt(amtMatch[1]) : 300; // default 300px = ~3 ticks
-      const isHoriz   = direction === "left" || direction === "right";
-      const sign      = (direction === "down" || direction === "right") ? pixels : -pixels;
+    // ── 4. Left Click (click or left_click) ──
+    if (has(/^(?:click|left_click|mouse_click)/i, text)) {
+      const coords = extractCoords(text);
+      if (coords) {
+        if (!robot) {
+          throw new Error(`robotjs unavailable - cannot execute click`);
+        }
+        const [rx, ry] = this.absoluteXy(coords);
+        console.log(`[ComputerUse] Click: input=(${coords[0]},${coords[1]}) final=(${rx},${ry})`);
+        this.moveMouse(rx, ry);
+        this.click(rx, ry, "left");
+      } else {
+        this.click(undefined, undefined, "left");
+      }
+      return;
+    }
+
+    // ── 5. Type text ──
+    const typeMatch = text.match(/^type\s*\(\s*(?:content|text)?\s*[:=]?\s*['"]?([\s\S]*?)['"]?\s*\)$/i);
+    if (typeMatch) {
+      let rawText = typeMatch[1];
+      const hasTrailingNewline = rawText.endsWith('\\n') || rawText.endsWith('\n');
+      rawText = rawText.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+      
+      const cleanType = hasTrailingNewline ? rawText.replace(/[\r\n]+$/, '') : rawText;
+      if (cleanType) {
+        await this.call({ action: "type", text: cleanType });
+      }
+      if (hasTrailingNewline) {
+        await sleep(0.1);
+        await this.call({ action: "key", keys: ["enter"] });
+      }
+      return;
+    }
+
+    // ── 6. scroll(direction: down|up|left|right [, coordinate: [x, y]] [, amount: N]) ──
+    if (has(/^scroll\s*\(/i, text)) {
+      const dirMatch = text.match(/direction\s*[:=]\s*["']?(up|down|left|right)["']?/i);
+      const amtMatch = text.match(/(?:amount|pixels)\s*[:=]\s*(-?\d+)/i);
+      const direction = dirMatch ? dirMatch[1].toLowerCase() : (text.toLowerCase().includes("up") ? "up" : "down");
+      const coords = extractCoords(text);
+      const pixels = amtMatch ? parseInt(amtMatch[1], 10) : 300;
+      const isHoriz = direction === "left" || direction === "right";
+      const sign = (direction === "down" || direction === "right") ? pixels : -pixels;
 
       const scrollParams: any = { action: isHoriz ? "hscroll" : "scroll", pixels: sign };
-      if (coordMatch) scrollParams.coordinate = [parseInt(coordMatch[1]), parseInt(coordMatch[2])];
+      if (coords) scrollParams.coordinate = coords;
 
       await this.call(scrollParams);
       return;
     }
 
-    // ── drag(startCoordinate: [x1,y1], endCoordinate: [x2,y2]) ──────────────────
+    // ── 7. drag(start_box=..., end_box=...) or drag([x1,y1], [x2,y2]) ──
     if (has(/^drag\s*\(/i, text)) {
-      const coords = [...text.matchAll(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/g)];
-      if (coords.length >= 2 && robot) {
-        const [sx, sy] = [parseInt(coords[0][1]), parseInt(coords[0][2])];
-        const [ex, ey] = [parseInt(coords[1][1]), parseInt(coords[1][2])];
+      const coordMatches = [...text.matchAll(/\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?/g)];
+      if (coordMatches.length >= 2 && robot) {
+        const p1: [number, number] = [parseInt(coordMatches[0][1], 10), parseInt(coordMatches[0][2], 10)];
+        const p2: [number, number] = [parseInt(coordMatches[1][1], 10), parseInt(coordMatches[1][2], 10)];
+        const [sx, sy] = this.absoluteXy(p1);
+        const [ex, ey] = this.absoluteXy(p2);
         robot.moveMouse(sx, sy);
         robot.mouseToggle("down", "left");
+        await sleep(0.15);
         robot.moveMouse(ex, ey);
         robot.mouseToggle("up", "left");
         console.log(`[ComputerUse] Drag from (${sx},${sy}) to (${ex},${ey})`);
@@ -587,17 +632,18 @@ class ComputerUseTool {
       return;
     }
 
-    // ── hover(coordinate: [x, y]) ────────────────────────────────────────────────
+    // ── 8. hover(coordinate: [x, y]) / mouse_move ──
     if (has(/^(?:hover|move_to|mouse_move)\s*\(/i, text)) {
-      const coordMatch = text.match(/\[?\s*(-?\d+)\s*,\s*(-?\d+)\s*\]?/);
-      if (coordMatch && robot) {
-        robot.moveMouse(parseInt(coordMatch[1]), parseInt(coordMatch[2]));
-        console.log(`[ComputerUse] Hover to (${coordMatch[1]},${coordMatch[2]})`);
+      const coords = extractCoords(text);
+      if (coords && robot) {
+        const [rx, ry] = this.absoluteXy(coords);
+        this.moveMouse(rx, ry);
+        console.log(`[ComputerUse] Hover to (${rx},${ry})`);
       }
       return;
     }
 
-    // ── wait(time: N) ────────────────────────────────────────────────────────────
+    // ── 9. wait(time: N) ──
     if (has(/^wait\s*\(/i, text)) {
       const numMatch = text.match(/(\d+(?:\.\d+)?)/);
       const secs = numMatch ? parseFloat(numMatch[1]) : 1;
@@ -606,7 +652,13 @@ class ComputerUseTool {
       return;
     }
 
-    // ── screenshot() / observe() ─────────────────────────────────────────────────
+    // ── 10. finished / terminate / done / call_user ──
+    if (has(/^(?:finished|terminate|done|call_user)/i, text)) {
+      console.log(`[ComputerUse] Automation step complete: ${text}`);
+      return;
+    }
+
+    // ── 11. screenshot() / observe() ──
     if (has(/^(?:screenshot|observe|capture)\s*\(/i, text)) {
       await this.captureObservation();
       return;
@@ -1062,6 +1114,8 @@ class ComputerUseTool {
         home: "home", end: "end", pageup: "pageup", pagedown: "pagedown",
         f1: "f1", f2: "f2", f3: "f3", f4: "f4", f5: "f5", f6: "f6",
         f7: "f7", f8: "f8", f9: "f9", f10: "f10", f11: "f11", f12: "f12",
+        ",": ",", ".": ".", "/": "/", "\\": "\\", ";": ";", "'": "'",
+        "-": "-", "=": "=", "[": "[", "]": "]", "`": "`"
       };
 
       const normalizedKeys = [...keys];
@@ -1257,7 +1311,7 @@ class ComputerUseAgent {
   private lastY: number | null = null;
   private history: string[] = [];
 
-  private REASONER_MODEL = "qwen/qwen3-vl-235b-a22b-instruct";
+  private REASONER_MODEL = "openai/gpt-5.6-luna";
   private ACTION_MODEL = "bytedance/ui-tars-1.5-7b";
 
   private planSteps: { description: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }[] = [];
@@ -1413,8 +1467,10 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
   ): Promise<{ finalAnswer: string; lastScreenshot?: string }> {
 
     const isGemini = this.client.provider === "gemini" || this.model.toLowerCase().includes("gemini");
-    const isGpt5 = this.model.toLowerCase().includes("gpt-5") || this.model.toLowerCase().includes("openai/gpt-5");
-    const useToolCallRunner = isGemini || isGpt5;
+    const isOpenAI = this.client.provider === "openai" || this.model.toLowerCase().includes("gpt") || this.model.toLowerCase().includes("openai") || this.model.toLowerCase().includes("o1") || this.model.toLowerCase().includes("o3") || this.model.toLowerCase().includes("computer-use");
+    const isAnthropic = this.client.provider === "anthropic" || this.model.toLowerCase().includes("claude") || this.model.toLowerCase().includes("anthropic");
+    const isGpt5 = isOpenAI;
+    const useToolCallRunner = isGemini || isOpenAI || isAnthropic;
 
     if (useToolCallRunner) {
       if (isGemini) {
@@ -1428,10 +1484,10 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         }
       }
 
-      const agentName = isGpt5 ? "GPT-5" : "Gemini";
-      const systemPrompt = isGpt5 ? GPT5_SYSTEM_PROMPT : GEMINI_SYSTEM_PROMPT;
-      // Token budget: GPT-5.4 is expensive — cap to 512 per turn; Gemini uses default
-      const maxTokensPerTurn = isGpt5 ? 512 : undefined;
+      const agentName = isAnthropic ? "Claude" : isOpenAI ? "OpenAI" : isGemini ? "Gemini" : "VLM";
+      const systemPrompt = isAnthropic ? CLAUDE_COMPUTER_USE_PROMPT : isGpt5 ? GPT5_SYSTEM_PROMPT : GEMINI_SYSTEM_PROMPT;
+      // Token budget: Claude / OpenAI action turns
+      const maxTokensPerTurn = isAnthropic ? 2048 : isOpenAI ? 1024 : undefined;
 
       let step = 0;
       onUpdate?.(`Starting ${agentName} Computer Use runner...`);
@@ -1496,8 +1552,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         const content = typeof chatResponse.content === "string" ? chatResponse.content : "";
         const toolCalls = chatResponse.toolCalls || [];
 
-        console.log(`[Gemini Agent] Content: ${content}`);
-        console.log(`[Gemini Agent] Tool Calls:`, JSON.stringify(toolCalls));
+        console.log(`[${agentName} Agent] Content: ${content}`);
+        console.log(`[${agentName} Agent] Tool Calls:`, JSON.stringify(toolCalls));
 
         if (content) {
           this.lastActionDescription = content;
@@ -1519,7 +1575,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         });
 
         if (toolCalls.length === 0) {
-          console.log("[Gemini Agent] No tool calls, task finished.");
+          console.log(`[${agentName} Agent] No tool calls, task finished.`);
           this.finalAnswer = content || "Task finished.";
           break;
         }
@@ -1537,7 +1593,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
         let userConfirmed = true;
         if (requiresConfirmation) {
-          console.log("[Gemini Agent] Action requires confirmation. Prompting user...");
+          console.log(`[${agentName} Agent] Action requires confirmation. Prompting user...`);
           onUpdate?.("⚠️ Action requires security confirmation...");
           try {
             const { dialog, BrowserWindow } = require("electron");
@@ -1548,15 +1604,15 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             const dialogResponse = await dialog.showMessageBox(win || undefined, {
               type: "warning",
               title: "EverFern Security Authorization",
-              message: `Gemini has requested an action that requires your confirmation.${explanation}\n\nDo you want to authorize this action?`,
+              message: `${agentName} has requested an action that requires your confirmation.${explanation}\n\nDo you want to authorize this action?`,
               buttons: ["Approve", "Deny"],
               defaultId: 0,
               cancelId: 1
             });
             userConfirmed = dialogResponse.response === 0;
-            console.log(`[Gemini Agent] User confirmation result: ${userConfirmed ? "Approved" : "Denied"}`);
+            console.log(`[${agentName} Agent] User confirmation result: ${userConfirmed ? "Approved" : "Denied"}`);
           } catch (dialogErr) {
-            console.error("[Gemini Agent] Failed to show confirmation dialog:", dialogErr);
+            console.error(`[${agentName} Agent] Failed to show confirmation dialog:`, dialogErr);
             userConfirmed = false;
           }
         }
@@ -1565,7 +1621,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         for (const tc of toolCalls) {
           if (this.aborted || globalAbortManager.streamAborted) break;
           
-          console.log(`  Executing Gemini Action: ${tc.name}`);
+          console.log(`  Executing ${agentName} Action: ${tc.name}`);
           onUpdate?.(`Executing action ${tc.name}...`);
 
           onProgress?.({
@@ -1585,7 +1641,9 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               const fname = tc.name;
               const args = (tc.arguments || {}) as Record<string, any>;
 
-            if (fname === "open_web_browser") {
+            if (fname === "computer_use" || fname === "computer" || fname === "computer_20241022") {
+              await this.tool.call(args);
+            } else if (fname === "open_web_browser") {
               // noop
             } else if (fname === "wait_5_seconds") {
               await this.tool.call({ action: "wait", time: 5 });
@@ -1605,17 +1663,33 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               } else {
                 throw new Error("url is required for navigate");
               }
-            } else if (fname === "click_at") {
-              if (args.x != null && args.y != null) {
-                await this.tool.call({ action: "left_click", coordinate: [args.x, args.y] });
+            } else if (fname === "click_at" || fname === "left_click" || fname === "click") {
+              const coord = args.coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
+              if (coord) {
+                await this.tool.call({ action: "left_click", coordinate: coord });
               } else {
-                throw new Error("x and y are required for click_at");
+                await this.tool.call({ action: "left_click", ...args });
               }
-            } else if (fname === "hover_at") {
-              if (args.x != null && args.y != null) {
-                await this.tool.call({ action: "mouse_move", coordinate: [args.x, args.y] });
+            } else if (fname === "right_click" || fname === "right_single") {
+              const coord = args.coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
+              if (coord) {
+                await this.tool.call({ action: "right_click", coordinate: coord });
               } else {
-                throw new Error("x and y are required for hover_at");
+                await this.tool.call({ action: "right_click", ...args });
+              }
+            } else if (fname === "double_click" || fname === "left_double") {
+              const coord = args.coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
+              if (coord) {
+                await this.tool.call({ action: "double_click", coordinate: coord });
+              } else {
+                await this.tool.call({ action: "double_click", ...args });
+              }
+            } else if (fname === "hover_at" || fname === "mouse_move" || fname === "move") {
+              const coord = args.coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
+              if (coord) {
+                await this.tool.call({ action: "mouse_move", coordinate: coord });
+              } else {
+                await this.tool.call({ action: "mouse_move", ...args });
               }
             } else if (fname === "type_text_at") {
               if (args.x != null && args.y != null && args.text != null) {
@@ -1638,9 +1712,14 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               } else {
                 throw new Error("x, y, and text are required for type_text_at");
               }
-            } else if (fname === "key_combination") {
+            } else if (fname === "type") {
+              await this.tool.call({ action: "type", text: args.text || args.content || "" });
+            } else if (fname === "key_combination" || fname === "hotkey" || fname === "key" || fname === "press") {
               if (args.keys) {
-                const keysList = args.keys.toLowerCase().split("+");
+                const keysList = Array.isArray(args.keys) ? args.keys : String(args.keys).toLowerCase().split("+");
+                await this.tool.call({ action: "key", keys: keysList });
+              } else if (args.key) {
+                const keysList = String(args.key).toLowerCase().split("+");
                 await this.tool.call({ action: "key", keys: keysList });
               } else {
                 throw new Error("keys is required for key_combination");
@@ -1652,30 +1731,32 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               } else {
                 await this.tool.call({ action: "hscroll", pixels: dir === "left" ? 500 : -500 });
               }
-            } else if (fname === "scroll_at") {
+            } else if (fname === "scroll_at" || fname === "scroll") {
               if (args.x != null && args.y != null) {
                 await this.tool.call({ action: "mouse_move", coordinate: [args.x, args.y] });
                 await sleep(0.2);
-                const dir = typeof args.direction === "string" ? args.direction.toLowerCase() : "down";
-                const mag = args.magnitude != null ? Number(args.magnitude) : 800;
-                if (dir === "up" || dir === "down") {
-                  await this.tool.call({ action: "scroll", pixels: dir === "up" ? mag : -mag });
-                } else {
-                  await this.tool.call({ action: "hscroll", pixels: dir === "left" ? mag : -mag });
-                }
-              } else {
-                throw new Error("x and y are required for scroll_at");
               }
-            } else if (fname === "drag_and_drop") {
-              if (args.x != null && args.y != null && args.destination_x != null && args.destination_y != null) {
+              const dir = typeof args.direction === "string" ? args.direction.toLowerCase() : "down";
+              const mag = args.magnitude != null ? Number(args.magnitude) : (args.pixels != null ? Number(args.pixels) : 800);
+              if (dir === "up" || dir === "down") {
+                await this.tool.call({ action: "scroll", pixels: dir === "up" ? mag : -mag });
+              } else {
+                await this.tool.call({ action: "hscroll", pixels: dir === "left" ? mag : -mag });
+              }
+            } else if (fname === "drag_and_drop" || fname === "drag") {
+              const start = args.start_coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
+              const dest = args.coordinate || (args.destination_x != null && args.destination_y != null ? [args.destination_x, args.destination_y] : undefined);
+              if (start && dest) {
                 await this.tool.call({
                   action: "drag",
-                  start_coordinate: [args.x, args.y],
-                  coordinate: [args.destination_x, args.destination_y]
+                  start_coordinate: start,
+                  coordinate: dest
                 });
               } else {
-                throw new Error("x, y, destination_x, and destination_y are required for drag_and_drop");
+                throw new Error("start and destination coordinates are required for drag");
               }
+            } else if (fname === "terminate" || fname === "finished" || fname === "done") {
+              this.terminated = args.status || "success";
             } else {
               console.warn(`Warning: Unimplemented or custom function ${fname}`);
               actionResult = { status: "error", error: `Unimplemented function ${fname}` };
@@ -2798,13 +2879,29 @@ function createToolWithClient(
       // Handle execute_actions from vision grounding
       if (args.action === 'execute_actions' && Array.isArray(args.actions)) {
         const actions = args.actions as string[];
+        const thought = (args.thought as string) || (args.reasoning as string) || "";
         try {
+          if (thought) {
+            emitEvent?.({
+              type: "reasoning",
+              toolCallId: toolCallId ?? "",
+              timestamp: new Date().toISOString(),
+              content: thought,
+            });
+          }
           // Create a temporary agent just to execute the actions
-          const tempAgent = new ComputerUseAgent(client, tool, model, "Execute actions", 0, 200, 12, toolCallId ?? "");
-          await tempAgent.dispatchAll(actions, onUpdate, emitEvent);
+          const tempAgent = new ComputerUseAgent(client, tool, model, thought || "Execute actions", 0, 200, 12, toolCallId ?? "");
+          await tempAgent.dispatchAll(actions, onUpdate, (ev: any) => {
+            emitEvent?.({
+              type: "subagent-progress",
+              toolCallId: toolCallId ?? "",
+              timestamp: new Date().toISOString(),
+              data: ev,
+            });
+          });
           const obs = await tool.captureObservation();
           const b64 = (obs.screenshot as string)?.split(",")?.[1] || "";
-          return { success: true, output: "Actions executed", base64Image: b64, data: { actions, screenshot: b64 } };
+          return { success: true, output: "Actions executed", base64Image: b64, data: { actions, thought, screenshot: b64 } };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return { success: false, output: `Failed to execute actions: ${message}` };

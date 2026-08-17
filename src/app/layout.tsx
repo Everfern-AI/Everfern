@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Figtree, EB_Garamond, JetBrains_Mono, Fira_Code, Geist } from "next/font/google";
+import { Figtree, JetBrains_Mono, Fira_Code, Geist } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -15,10 +16,21 @@ const figtree = Figtree({
   weight: ["300", "400", "500", "600", "700", "800", "900"],
 });
 
-const ebGaramond = EB_Garamond({
-  subsets: ["latin"],
+const loretta = localFont({
+  src: [
+    {
+      path: "../../public/fonts/loretta-light/loretta-light.otf",
+      weight: "300",
+      style: "normal",
+    },
+    {
+      path: "../../public/fonts/loretta-light/loretta-light.otf",
+      weight: "400",
+      style: "normal",
+    },
+  ],
   variable: "--font-serif",
-  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -52,7 +64,7 @@ export default function RootLayout({
         "font-body",
         "h-full",
         "antialiased",
-        ebGaramond.variable,
+        loretta.variable,
         jetbrainsMono.variable,
         firaCode.variable,
         figtree.variable,

@@ -7040,9 +7040,24 @@ export default function ToolDetailSidePanel({
   };
 
   const activeId = activeTabId || toolCall?.id || openTabs[0]?.id;
-  const isComputerUse = String(toolCall?.toolName || '').toLowerCase().includes('computer');
-  const panelWidth = isComputerUse ? 680 : 420;
-  const panelWidthCss = isDesktop ? `min(${panelWidth}px, ${isComputerUse ? '55vw' : '38vw'})` : `min(100%, ${panelWidth}px)`;
+  const normalizedToolName = String(toolCall?.toolName || '').toLowerCase();
+  const isComputerUse = normalizedToolName.includes('computer');
+  const isFileOrTerminalTool = (
+    toolType === ToolType.FILE_EDITOR ||
+    toolType === ToolType.FILE_SYSTEM ||
+    toolType === ToolType.TERMINAL ||
+    toolType === ToolType.GREP ||
+    normalizedToolName.includes('read') ||
+    normalizedToolName.includes('write') ||
+    normalizedToolName.includes('edit') ||
+    normalizedToolName.includes('terminal') ||
+    normalizedToolName.includes('run_command') ||
+    normalizedToolName.includes('bash') ||
+    surfaceMode === 'open-file' ||
+    surfaceMode === 'terminal'
+  );
+  const panelWidth = isComputerUse ? 680 : isFileOrTerminalTool ? 350 : 420;
+  const panelWidthCss = isDesktop ? `min(${panelWidth}px, ${isComputerUse ? '55vw' : isFileOrTerminalTool ? '28vw' : '38vw'})` : `min(100%, ${panelWidth}px)`;
   const hasBrowserTab = surfaceMode === 'browser' || Boolean(browserUrl);
   const hasCrowdedTabs = openTabs.length + (hasBrowserTab ? 1 : 0) >= 3;
 
