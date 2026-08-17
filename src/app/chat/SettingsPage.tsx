@@ -27,6 +27,7 @@ import {
     PlusIcon,
     ExclamationTriangleIcon,
     ArrowPathIcon,
+    PencilIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
