@@ -1090,18 +1090,22 @@ export default function ChatPage() {
 
     const isLocalModel = useMemo(() => {
         if (!selectedModel) return false;
-        const m = selectedModel.toLowerCase();
         const currentM = availableModels.find(opt => opt.id === selectedModel);
-        const pType = currentM?.providerType?.toLowerCase() || '';
-        return m === 'fern-1' ||
-            m.includes('ollama') ||
-            m.includes('lmstudio') ||
-            m.includes('local') ||
-            pType === 'ollama' ||
+        const pType = (currentM?.providerType || config?.provider || '').toLowerCase();
+        const cloudProviders = ['everfern', 'openrouter', 'openai', 'anthropic', 'google', 'gemini', 'minimax', 'deepseek', 'groq', 'together', 'mistral'];
+        
+        // If current provider/model is cloud, it is NEVER a local model
+        if (cloudProviders.includes(pType) || (currentM as any)?.isCloud) {
+            return false;
+        }
+
+        const m = selectedModel.toLowerCase();
+        return pType === 'ollama' ||
             pType === 'lmstudio' ||
             pType === 'local' ||
-            config?.provider === 'ollama' ||
-            config?.provider === 'lmstudio';
+            m === 'fern-1' ||
+            m.startsWith('ollama:') ||
+            m.startsWith('lmstudio:');
     }, [selectedModel, availableModels, config?.provider]);
 
     // Timer to detect if local model is taking too long to respond (e.g. >12s)
@@ -5252,12 +5256,12 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 width: 36,
                                 height: 36,
                                 borderRadius: 10,
-                                backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.12)",
-                                border: "1px solid rgba(245, 158, 11, 0.3)",
+                                backgroundColor: "transparent",
+                                border: "none",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                color: "#f59e0b",
+                                color: isDark ? "#ffffff" : "#000000",
                                 flexShrink: 0,
                                 marginTop: 1,
                             }}
@@ -5325,17 +5329,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 fontWeight: 600,
                                 padding: "6px 14px",
                                 borderRadius: 8,
-                                backgroundColor: "#10b981",
-                                color: "#ffffff",
-                                border: "none",
+                                backgroundColor: isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)",
+                                color: isDark ? "#ffffff" : "#000000",
+                                border: isDark ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0.15)",
                                 cursor: "pointer",
                                 transition: "all 0.15s ease",
-                                boxShadow: "0 1px 3px rgba(16, 185, 129, 0.3)",
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#059669"; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#10b981"; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.14)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)"; }}
                         >
-                            <span>🌿</span>
                             <span>Use EverFern Cloud</span>
                         </button>
                         <button

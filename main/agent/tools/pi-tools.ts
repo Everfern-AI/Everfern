@@ -26,14 +26,12 @@ import * as os from 'os';
 
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
-let globalLocalExecutionResolvers: Map<string, (response: { approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => void> | null = null;
-
 // Export for testing and IPC handler access
-export function getLocalExecutionResolvers() {
-  if (!globalLocalExecutionResolvers) {
-    globalLocalExecutionResolvers = new Map();
+export function getLocalExecutionResolvers(): Map<string, (response: { approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => void> {
+  if (!(globalThis as any).__everfern_localExecutionResolvers) {
+    (globalThis as any).__everfern_localExecutionResolvers = new Map();
   }
-  return globalLocalExecutionResolvers;
+  return (globalThis as any).__everfern_localExecutionResolvers;
 }
 
 // Strip ANSI escape sequences (color codes, cursor movement, etc.)

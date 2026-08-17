@@ -297,6 +297,18 @@ export function registerSystemHandlers() {
     return app.getVersion();
   });
 
+  ipcMain.handle('system:get-platform', () => {
+    return process.platform;
+  });
+
+  ipcMain.handle('system:get-username', () => {
+    try {
+      return os.userInfo().username || process.env.USERNAME || process.env.USER || 'User';
+    } catch {
+      return process.env.USERNAME || process.env.USER || 'User';
+    }
+  });
+
   ipcMain.handle('system:detect-hardware', async () => {
     return await detectHardwareSpecsAsync();
   });

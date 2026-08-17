@@ -850,6 +850,7 @@ export function registerAgentHandlers() {
           try {
             showPermissionNotification({
               requestId: req.requestId,
+              toolName: req.toolName || req.shellType || req.command,
               shellType: req.shellType,
               command: req.command,
               reason: req.reason,
