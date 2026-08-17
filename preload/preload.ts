@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ollamaStatus:  () => ipcRenderer.invoke('system:ollama-status'),
     ollamaInstall: () => ipcRenderer.invoke('system:ollama-install'),
     ollamaPull:    (modelName: string) => ipcRenderer.invoke('system:ollama-pull', modelName),
+    pullLocalModelTerminal: (params: { provider?: 'ollama' | 'lmstudio'; modelTag: string }) => ipcRenderer.invoke('system:pull-local-model-terminal', params),
     transcribeLocal: (audioBuffer: ArrayBuffer) => ipcRenderer.invoke('system:transcribe-local', audioBuffer),
     transcribeAudio: (audioBuffer: ArrayBuffer, userApiKey?: string) => ipcRenderer.invoke('system:transcribe-audio', audioBuffer, userApiKey),
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => ipcRenderer.invoke('system:open-terminal-installer', action),
@@ -686,6 +687,7 @@ export type ElectronAPI = {
     ollamaStatus:        () => Promise<{ installed: boolean; modelInstalled: boolean }>;
     ollamaInstall:       () => Promise<{ success: boolean; code: number }>;
     ollamaPull:          (modelName: string) => Promise<{ success: boolean; code: number }>;
+    pullLocalModelTerminal: (params: { provider?: 'ollama' | 'lmstudio'; modelTag: string }) => Promise<{ success: boolean; provider: string; modelTag: string }>;
     transcribeLocal:     (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; transcription?: string; error?: string }>;
     transcribeAudio:     (audioBuffer: ArrayBuffer, userApiKey?: string) => Promise<{ success: boolean; transcript?: string; error?: string }>;
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => Promise<{ success: boolean }>;
