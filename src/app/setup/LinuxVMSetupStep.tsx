@@ -248,7 +248,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
     }
   };
 
-  const allDepsReady = depsStatus?.available || (depsStatus?.pythonInstalled && depsStatus?.venvReady && depsStatus?.pipPackagesInstalled);
+  const allDepsReady = depsStatus?.available || (depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady && depsStatus?.pipPackagesInstalled);
 
   return (
     <motion.div
@@ -445,44 +445,57 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             )}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {/* Python & Venv */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>🐍</span> Python 3 & Virtualenv <code style={{ fontSize: 11, opacity: 0.7 }}>~/.everfern/venv</code>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.venvReady ? "#16a34a" : "#f59e0b" }}>
-                {depsStatus?.pythonInstalled && depsStatus?.venvReady ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Python 3, Node.js & Venv */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.05)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ position: "relative", width: 36, height: 32, display: "flex", alignItems: "center", flexShrink: 0 }}>
+                  <img
+                    src="/images/etc/python.png"
+                    alt="Python"
+                    style={{ width: 24, height: 24, objectFit: "contain", position: "absolute", top: 0, left: 0, zIndex: 2 }}
+                  />
+                  <img
+                    src="/images/etc/node-js.svg"
+                    alt="Node.js"
+                    style={{ width: 20, height: 20, objectFit: "contain", position: "absolute", bottom: 0, right: 0, zIndex: 3, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.15))" }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                    Python 3 &amp; Node.js Environment
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+                    {depsStatus?.pythonVersion || "Python 3"} · {depsStatus?.nodeVersion || "Node.js"} · <code style={{ fontSize: 10.5 }}>~/.everfern/venv</code>
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
               </span>
             </div>
 
-            {/* PDF Processing */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>📄</span> PDF Skill <code style={{ fontSize: 11, opacity: 0.7 }}>pypdf, pdfplumber, reportlab</code>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.pdf ? "#16a34a" : "#f59e0b" }}>
-                {depsStatus?.details?.pdf ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
-              </span>
-            </div>
-
-            {/* Excel & Data Analysis */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>📊</span> Spreadsheets & Data <code style={{ fontSize: 11, opacity: 0.7 }}>pandas, openpyxl, numpy</code>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.excel && depsStatus?.details?.data ? "#16a34a" : "#f59e0b" }}>
-                {depsStatus?.details?.excel && depsStatus?.details?.data ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
-              </span>
-            </div>
-
-            {/* Presentations & Documents */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>📽️</span> Office Docs <code style={{ fontSize: 11, opacity: 0.7 }}>python-pptx, pptxgenjs, docx</code>
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.pptx && depsStatus?.details?.docx ? "#16a34a" : "#f59e0b" }}>
-                {depsStatus?.details?.pptx && depsStatus?.details?.docx ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+            {/* Dependencies */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.05)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 36, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <img
+                    src="/images/etc/pip.png"
+                    alt="Dependencies"
+                    style={{ width: 32, height: 32, objectFit: "contain" }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                    Dependencies
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+                    pypdf, pandas, python-pptx, openpyxl, matplotlib, docx
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pipPackagesInstalled ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.pipPackagesInstalled ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
               </span>
             </div>
           </div>
@@ -524,7 +537,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 }}
               >
                 {depsInstalling ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : null}
-                {depsInstalling ? "Installing Packages..." : "Install Skill Toolchain"}
+                {depsInstalling ? "Installing Dependencies..." : "Install Dependencies"}
               </button>
             )}
 

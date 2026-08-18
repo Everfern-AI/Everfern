@@ -921,52 +921,57 @@ const LinuxVMSection = () => {
                         </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🐍 Python 3 & venv</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.venvReady ? '#10b981' : '#f59e0b' }}>
-                                    {depsStatus?.pythonInstalled && depsStatus?.venvReady ? '✓ Ready' : 'Incomplete'}
-                                </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                        {/* Python 3 & Node.js */}
+                        <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ position: 'relative', width: 38, height: 34, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                                    <img
+                                        src="/images/etc/python.png"
+                                        alt="Python"
+                                        style={{ width: 26, height: 26, objectFit: 'contain', position: 'absolute', top: 0, left: 0, zIndex: 2 }}
+                                    />
+                                    <img
+                                        src="/images/etc/node-js.svg"
+                                        alt="Node.js"
+                                        style={{ width: 22, height: 22, objectFit: 'contain', position: 'absolute', bottom: 0, right: 0, zIndex: 3, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))' }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Python 3 &amp; Node.js Environment
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                        {depsStatus?.pythonVersion || 'Python 3'} · {depsStatus?.nodeVersion || 'Node.js'} · <code style={{ fontSize: 10.5 }}>~/.everfern/venv</code>
+                                    </div>
+                                </div>
                             </div>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                {depsStatus?.pythonVersion || 'Python 3'} · Isolated venv
+                            <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '#10b981' : '#f59e0b' }}>
+                                {depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '✓ Ready' : 'Incomplete'}
                             </span>
                         </div>
 
-                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📄 PDF Skill</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.pdf ? '#10b981' : '#f59e0b' }}>
-                                    {depsStatus?.details?.pdf ? '✓ Ready' : 'Incomplete'}
-                                </span>
+                        {/* Dependencies */}
+                        <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ width: 38, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <img
+                                        src="/images/etc/pip.png"
+                                        alt="Dependencies"
+                                        style={{ width: 36, height: 36, objectFit: 'contain' }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Dependencies
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                        pypdf, pandas, python-pptx, openpyxl, matplotlib, docx
+                                    </div>
+                                </div>
                             </div>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                pypdf, pdfplumber, reportlab, pdf-lib
-                            </span>
-                        </div>
-
-                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📊 Spreadsheets & Data</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.excel && depsStatus?.details?.data ? '#10b981' : '#f59e0b' }}>
-                                    {depsStatus?.details?.excel && depsStatus?.details?.data ? '✓ Ready' : 'Incomplete'}
-                                </span>
-                            </div>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                pandas, openpyxl, numpy, matplotlib
-                            </span>
-                        </div>
-
-                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📽️ Office & Presentations</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.pptx && depsStatus?.details?.docx ? '#10b981' : '#f59e0b' }}>
-                                    {depsStatus?.details?.pptx && depsStatus?.details?.docx ? '✓ Ready' : 'Incomplete'}
-                                </span>
-                            </div>
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                python-pptx, pptxgenjs, docx, pandoc
+                            <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pipPackagesInstalled ? '#10b981' : '#f59e0b' }}>
+                                {depsStatus?.pipPackagesInstalled ? '✓ Ready' : 'Incomplete'}
                             </span>
                         </div>
                     </div>

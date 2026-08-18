@@ -150,7 +150,7 @@ export async function ensureWSLSetup(): Promise<void> {
     }
   }
 
-  // Create ~/.everfern/ directory, set up Node environment, and Python venv
+  // Create ~/.everfern/ directory, set up Node environment, and Python venv with uv / pip
   try {
     const setupScript = [
       'mkdir -p ~/.everfern',
@@ -161,8 +161,22 @@ export async function ensureWSLSetup(): Promise<void> {
       '  if [ ! -d ~/.everfern/venv ]; then',
       '    python3 -m venv ~/.everfern/venv',
       '  fi',
-      '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
-      '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q',
+      '  DEPS="pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper"',
+      '  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"',
+      '  UV_SUCCESS=0',
+      '  if ! command -v uv &>/dev/null; then',
+      '    (curl -LsSf https://astral.sh/uv/install.sh | sh) &>/dev/null || ~/.everfern/venv/bin/pip install uv -q &>/dev/null || true',
+      '    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"',
+      '  fi',
+      '  if command -v uv &>/dev/null; then',
+      '    if uv pip install --python ~/.everfern/venv/bin/python $DEPS -q; then',
+      '      UV_SUCCESS=1',
+      '    fi',
+      '  fi',
+      '  if [ "$UV_SUCCESS" -ne 1 ]; then',
+      '    ~/.everfern/venv/bin/pip install --upgrade pip -q || true',
+      '    ~/.everfern/venv/bin/pip install $DEPS -q',
+      '  fi',
       'fi'
     ].join('\n');
     await execAsync(`${wslCmd} --exec bash -c "${setupScript}"`, { timeout: 120000 });
@@ -324,8 +338,22 @@ export async function setupEnvironmentDependencies(): Promise<{ success: boolean
         'npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true',
         'if command -v python3 &>/dev/null; then',
         '  if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi',
-        '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
-        '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q',
+        '  DEPS="pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper"',
+        '  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"',
+        '  UV_SUCCESS=0',
+        '  if ! command -v uv &>/dev/null; then',
+        '    (curl -LsSf https://astral.sh/uv/install.sh | sh) &>/dev/null || ~/.everfern/venv/bin/pip install uv -q &>/dev/null || true',
+        '    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"',
+        '  fi',
+        '  if command -v uv &>/dev/null; then',
+        '    if uv pip install --python ~/.everfern/venv/bin/python $DEPS -q; then',
+        '      UV_SUCCESS=1',
+        '    fi',
+        '  fi',
+        '  if [ "$UV_SUCCESS" -ne 1 ]; then',
+        '    ~/.everfern/venv/bin/pip install --upgrade pip -q || true',
+        '    ~/.everfern/venv/bin/pip install $DEPS -q',
+        '  fi',
         'fi'
       ].join('\n');
       await execAsync(`bash -c "${setupScript}"`, { timeout: 180000 });
@@ -550,8 +578,8 @@ export async function ensureDockerContainer(): Promise<void> {
       await execAsync('docker exec everfern-ubuntu apt-get update');
       await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm build-essential jq pandoc poppler-utils libreoffice tesseract-ocr imagemagick ffmpeg');
 
-      // Create ~/.everfern/ directory, Node dependencies, and Python venv
-      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && cd ~/.everfern && if [ ! -f package.json ]; then npm init -y &>/dev/null; fi && npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && ~/.everfern/venv/bin/pip install --upgrade pip -q && ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q"');
+      // Create ~/.everfern/ directory, Node dependencies, and Python venv with uv / pip
+      await execAsync('docker exec everfern-ubuntu bash -c "mkdir -p ~/.everfern && cd ~/.everfern && if [ ! -f package.json ]; then npm init -y &>/dev/null; fi && npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true && if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi && DEPS=\'pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper\' && export PATH=\\"$HOME/.local/bin:$HOME/.cargo/bin:$PATH\\" && UV_SUCCESS=0 && (if ! command -v uv &>/dev/null; then (curl -LsSf https://astral.sh/uv/install.sh | sh) &>/dev/null || ~/.everfern/venv/bin/pip install uv -q &>/dev/null || true; export PATH=\\"$HOME/.local/bin:$HOME/.cargo/bin:$PATH\\"; fi) && (if command -v uv &>/dev/null; then if uv pip install --python ~/.everfern/venv/bin/python $DEPS -q; then UV_SUCCESS=1; fi; fi) && (if [ \\"$UV_SUCCESS\\" -ne 1 ]; then ~/.everfern/venv/bin/pip install --upgrade pip -q || true; ~/.everfern/venv/bin/pip install $DEPS -q; fi)"');
     } else {
       // Check if container is running
       const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');
