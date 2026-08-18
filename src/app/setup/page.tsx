@@ -3321,25 +3321,25 @@ export default function SetupPage() {
                             <div style={{ height: 3, width: '100%', background: '#10b981' }} />
                             <div style={{ padding: "24px 24px 20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
                                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                                         <div style={{
-                                            width: 44,
-                                            height: 44,
-                                            borderRadius: 12,
-                                            background: "rgba(16, 185, 129, 0.1)",
+                                            width: 60,
+                                            height: 60,
+                                            borderRadius: 16,
+                                            background: "rgba(16, 185, 129, 0.12)",
                                             border: "1px solid rgba(16, 185, 129, 0.25)",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
                                             flexShrink: 0
                                         }}>
-                                            <EverFernBglessLogo size={22} />
+                                            <EverFernBglessLogo size={42} />
                                         </div>
                                         <div>
-                                            <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary, #111827)", margin: 0, letterSpacing: "-0.01em" }}>
+                                            <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-text-primary, #111827)", margin: 0, letterSpacing: "-0.01em" }}>
                                                 Sign In Required
                                             </h3>
-                                            <span style={{ fontSize: 12, color: "var(--color-text-tertiary, #6b7280)" }}>
+                                            <span style={{ fontSize: 12.5, color: "var(--color-text-tertiary, #6b7280)", marginTop: 2, display: "block" }}>
                                                 EverFern Cloud
                                             </span>
                                         </div>

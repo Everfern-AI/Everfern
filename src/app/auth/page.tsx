@@ -211,31 +211,18 @@ export default function AuthPage() {
                     initial={{ opacity: 0, y: -12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ type: "spring", bounce: 0.15, duration: 0.6, delay: 0.05 }}
-                    className="absolute top-12 flex items-center gap-2"
+                    className="absolute top-10 flex items-center gap-3"
                 >
                     <Image
                         src="/images/logos/black-logo-withoutbg.png"
                         alt="EverFern"
-                        width={28}
-                        height={28}
-                        className="opacity-90"
+                        width={52}
+                        height={52}
+                        className="opacity-95"
+                        priority
                     />
-                    <span className="text-[22px] font-normal text-[#201e24] tracking-[-0.04em]" style={{ fontFamily: "var(--font-branding)" }}>
+                    <span className="text-[32px] font-normal text-[#201e24] tracking-[-0.04em]" style={{ fontFamily: "var(--font-branding)" }}>
                         everfern
-                    </span>
-                    <span style={{
-                        padding: "4px 10px",
-                        backgroundColor: "rgba(32, 30, 36, 0.08)",
-                        border: "1px solid rgba(32, 30, 36, 0.1)",
-                        borderRadius: "6px",
-                        fontSize: "9px",
-                        fontWeight: 600,
-                        color: "#8a8886",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        marginLeft: 6,
-                    }}>
-                        Desktop
                     </span>
                 </motion.div>
 

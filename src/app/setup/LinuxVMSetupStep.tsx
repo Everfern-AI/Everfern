@@ -434,16 +434,19 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             textAlign: "left",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-secondary)" }}>
-              Skill Toolchain & Packages
+              Skill Toolchain &amp; Dependencies (Virtual Machine)
             </span>
             {depsChecking && (
               <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
-                <Loader size={11} style={{ animation: "spin 1s linear infinite" }} /> Verifying packages...
+                <Loader size={11} style={{ animation: "spin 1s linear infinite" }} /> Verifying VM packages...
               </span>
             )}
           </div>
+          <p style={{ fontSize: 11.5, color: "var(--color-text-tertiary)", margin: "0 0 12px 0", lineHeight: 1.45 }}>
+            Installed securely inside your isolated Linux Virtual Machine (<code>~/.everfern/venv</code>) without modifying your host system.
+          </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {/* Python 3, Node.js & Venv */}
@@ -466,7 +469,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                     Python 3 &amp; Node.js Environment
                   </div>
                   <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>
-                    {depsStatus?.pythonVersion || "Python 3"} · {depsStatus?.nodeVersion || "Node.js"} · <code style={{ fontSize: 10.5 }}>~/.everfern/venv</code>
+                    {depsStatus?.pythonVersion || "Python 3"} · {depsStatus?.nodeVersion || "Node.js"} · <code style={{ fontSize: 10.5 }}>VM ~/.everfern/venv</code>
                   </div>
                 </div>
               </div>
@@ -515,12 +518,12 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
       <div style={{ display: "flex", gap: 10, width: "100%", justifyContent: "center" }}>
         {vmStatus === "ready" && (
           <>
-            {!allDepsReady && !depsChecking && (
+            {!allDepsReady && !depsChecking ? (
               <button
                 onClick={handleInstallDeps}
                 disabled={depsInstalling}
                 style={{
-                  flex: 1,
+                  width: "100%",
                   height: 48,
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
@@ -537,28 +540,28 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 }}
               >
                 {depsInstalling ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : null}
-                {depsInstalling ? "Installing Dependencies..." : "Install Dependencies"}
+                {depsInstalling ? "Installing Dependencies in VM..." : "Install Dependencies"}
+              </button>
+            ) : (
+              <button
+                onClick={onComplete}
+                disabled={depsChecking}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  background: "var(--color-text-primary)",
+                  color: "var(--color-bg-base)",
+                  border: "none",
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: 13.5,
+                  cursor: depsChecking ? "wait" : "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                Continue
               </button>
             )}
-
-            <button
-              onClick={onComplete}
-              style={{
-                flex: allDepsReady ? undefined : 1,
-                width: allDepsReady ? "100%" : undefined,
-                height: 48,
-                background: allDepsReady ? "var(--color-text-primary)" : "transparent",
-                color: allDepsReady ? "var(--color-bg-base)" : "var(--color-text-secondary)",
-                border: allDepsReady ? "none" : "1px solid rgba(32,30,36,0.12)",
-                borderRadius: 12,
-                fontWeight: 600,
-                fontSize: 13.5,
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              {allDepsReady ? "Continue" : "Skip for now"}
-            </button>
           </>
         )}
 
