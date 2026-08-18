@@ -2270,9 +2270,6 @@ export default function SettingsPage({
     const CLOUD_DATA_CACHE_MS = 30000; // 30 seconds cache
 
     useEffect(() => {
-        // Only fetch cloud data when settings are open
-        if (!isOpen) return;
-
         const fetchCloudData = async () => {
             try {
                 const sessionStr = localStorage.getItem('everfern_cloud_session');
@@ -2348,7 +2345,7 @@ export default function SettingsPage({
             clearInterval(interval);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [isOpen]);
+    }, []);
 
     const handleSignOut = async () => {
         localStorage.removeItem('everfern_cloud_session');
@@ -4416,6 +4413,10 @@ export default function SettingsPage({
         const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number; z: number }>>({});
         const [zoom, setZoom] = useState<number>(1);
         const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+        const [showAddModal, setShowAddModal] = useState<boolean>(false);
+        const [newMemoryContent, setNewMemoryContent] = useState<string>('');
+        const [newMemoryType, setNewMemoryType] = useState<'preference' | 'habit' | 'fact'>('preference');
+        const [isSavingMemory, setIsSavingMemory] = useState<boolean>(false);
 
         const isDark = theme === 'dark';
         const globeBg0 = isDark ? '#181714' : '#fdfbf7';
@@ -4483,6 +4484,29 @@ export default function SettingsPage({
                 }
             } catch (e) {
                 console.error('Delete error:', e);
+            }
+        };
+        const handleDeleteMemory = handleDeleteNode;
+
+        const handleSaveNewMemory = async () => {
+            if (!newMemoryContent.trim()) return;
+            setIsSavingMemory(true);
+            try {
+                const res = await (window as any).electronAPI?.memory?.saveDirect?.(
+                    newMemoryContent.trim(),
+                    `[User ${newMemoryType.toUpperCase()}]`
+                );
+                if (res?.success !== false) {
+                    setNewMemoryContent('');
+                    setShowAddModal(false);
+                    fetchGraph();
+                } else {
+                    alert('Failed to save memory.');
+                }
+            } catch (e: any) {
+                alert('Failed to save memory: ' + (e.message || 'Unknown error'));
+            } finally {
+                setIsSavingMemory(false);
             }
         };
 
@@ -5304,7 +5328,7 @@ export default function SettingsPage({
                                         {[
                                             { icon: MagnifyingGlassPlus, title: 'Zoom in', onClick: () => setZoom(z => Math.min(z + 0.25, 3)) },
                                             { icon: MagnifyingGlassMinus, title: 'Zoom out', onClick: () => setZoom(z => Math.max(z - 0.25, 0.25)) },
-                                            { icon: ArrowsCounterClockwise, title: 'Reset zoom & orientation', onClick: () => { setZoom(1); rotationRef.current = { yaw: 0, pitch: 0.2 }; updateRotatedPositions(); } },
+                                            { icon: ArrowsCounterClockwise, title: 'Reset zoom & orientation', onClick: () => { setZoom(1); rotationRef.current = { yaw: 0, pitch: 0.2 }; } },
                                         ].map((btn, idx) => {
                                             const IconComp = btn.icon;
                                             return (
@@ -5546,6 +5570,130 @@ export default function SettingsPage({
                                     </div>
                                 )}
                             </Card>
+                        </div>
+                    </div>
+                )}
+
+                {showAddModal && (
+                    <div
+                        style={{
+                            position: 'fixed',
+                            inset: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 9999,
+                            backdropFilter: 'blur(4px)',
+                        }}
+                        onClick={() => setShowAddModal(false)}
+                    >
+                        <div
+                            style={{
+                                width: '100%',
+                                maxWidth: 480,
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 16,
+                                padding: 24,
+                                boxShadow: 'var(--shadow-xl)',
+                            }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)' }}>Add Memory</h3>
+                                <button
+                                    onClick={() => setShowAddModal(false)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: 4 }}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div style={{ marginBottom: 16 }}>
+                                <Label>Memory Type</Label>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    {(['preference', 'habit', 'fact'] as const).map(t => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => setNewMemoryType(t)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px 12px',
+                                                borderRadius: 8,
+                                                border: '1px solid var(--color-border)',
+                                                backgroundColor: newMemoryType === t ? 'var(--color-accent, #3b82f6)' : 'var(--color-bg-subtle)',
+                                                color: newMemoryType === t ? '#ffffff' : 'var(--color-text-secondary)',
+                                                fontSize: 12.5,
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                textTransform: 'capitalize',
+                                                transition: 'all 0.15s'
+                                            }}
+                                        >
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: 20 }}>
+                                <Label>Memory Content / Fact</Label>
+                                <textarea
+                                    value={newMemoryContent}
+                                    onChange={e => setNewMemoryContent(e.target.value)}
+                                    placeholder="e.g. Always use TypeScript and prefer functional programming style..."
+                                    rows={4}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        borderRadius: 10,
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-subtle)',
+                                        color: 'var(--color-text-primary)',
+                                        fontSize: 13,
+                                        outline: 'none',
+                                        resize: 'vertical',
+                                        boxSizing: 'border-box',
+                                        fontFamily: 'inherit',
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddModal(false)}
+                                    style={{
+                                        padding: '8px 16px',
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        color: 'var(--color-text-primary)',
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveNewMemory}
+                                    disabled={isSavingMemory || !newMemoryContent.trim()}
+                                    style={{
+                                        padding: '8px 16px',
+                                        borderRadius: 8,
+                                        border: 'none',
+                                        backgroundColor: 'var(--color-accent, #3b82f6)',
+                                        color: '#ffffff',
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        cursor: (isSavingMemory || !newMemoryContent.trim()) ? 'not-allowed' : 'pointer',
+                                        opacity: (isSavingMemory || !newMemoryContent.trim()) ? 0.6 : 1,
+                                    }}
+                                >
+                                    {isSavingMemory ? 'Saving…' : 'Save Memory'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
