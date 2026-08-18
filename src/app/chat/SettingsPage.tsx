@@ -2922,16 +2922,16 @@ export default function SettingsPage({
                                     }}
                                     style={{
                                         padding: '8px 16px',
-                                        backgroundColor: '#10b981',
-                                        color: '#000000',
+                                        backgroundColor: 'var(--color-text-primary)',
+                                        color: 'var(--color-text-inverse)',
                                         borderRadius: 10,
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         fontSize: 13,
                                         border: 'none',
                                         cursor: 'pointer',
                                         transition: 'all 0.2s'
                                     }}
-                                    onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                                     onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                                 >
                                     {cloudUsage?.plan && cloudUsage.plan !== 'free' ? 'Manage Subscription' : 'Upgrade ($5/mo)'}
