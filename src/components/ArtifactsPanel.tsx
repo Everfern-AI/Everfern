@@ -448,6 +448,133 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
     );
 }
 
+// ── 4. PDF DOCUMENT VIEWER ──────────────────────────────────────────
+export function PDFViewer({ filename, content, filePath }: { filename: string; content?: string | null; filePath?: string }) {
+    const [loadError, setLoadError] = useState(false);
+
+    const handleOpenExternal = () => {
+        try {
+            if (filePath && (window as any).electronAPI?.projects?.openFolder) {
+                (window as any).electronAPI.projects.openFolder(filePath);
+            }
+        } catch (e) {
+            console.error('Failed to open PDF externally:', e);
+        }
+    };
+
+    const pdfSource = (content && (content.startsWith('data:application/pdf') || content.startsWith('http') || content.startsWith('blob:')))
+        ? content
+        : filePath
+        ? (filePath.startsWith('http') || filePath.startsWith('file://') ? filePath : `file:///${filePath.replace(/\\/g, '/')}`)
+        : content;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 450, backgroundColor: 'var(--color-bg-base)', position: 'relative' }}>
+            {/* Top Toolbar */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 16px',
+                backgroundColor: 'var(--color-bg-subtle)',
+                borderBottom: '1px solid var(--color-border)',
+                fontSize: 12,
+                flexShrink: 0
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        backgroundColor: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.04em'
+                    }}>
+                        PDF
+                    </span>
+                    <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>{filename}</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {filePath && (
+                        <button
+                            onClick={handleOpenExternal}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '5px 12px',
+                                borderRadius: 6,
+                                border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-surface)',
+                                color: 'var(--color-text-primary)',
+                                fontSize: 11.5,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
+                            title="Open in System Default PDF Viewer"
+                        >
+                            <span>Open in Default Viewer</span>
+                            <ArrowTopRightOnSquareIcon width={13} height={13} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Embedded PDF iframe / fallback */}
+            <div style={{ flex: 1, position: 'relative', width: '100%', height: '100%', minHeight: 400, backgroundColor: 'var(--color-bg-surface)', overflow: 'hidden' }}>
+                {pdfSource && !loadError ? (
+                    <iframe
+                        src={pdfSource}
+                        title={filename}
+                        onError={() => setLoadError(true)}
+                        style={{ width: '100%', height: '100%', minHeight: 450, border: 'none', display: 'block', backgroundColor: 'var(--color-bg-surface)' }}
+                    />
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 400, color: 'var(--color-text-secondary)', gap: 14, padding: 24, textAlign: 'center' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
+                            📄
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>{filename}</div>
+                            <div style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', maxWidth: 380 }}>PDF document is ready. Click below to open and view with your default PDF reader.</div>
+                        </div>
+                        {filePath && (
+                            <button
+                                onClick={handleOpenExternal}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '8px 18px',
+                                    borderRadius: 8,
+                                    backgroundColor: 'var(--color-text-primary)',
+                                    color: 'var(--color-bg-base)',
+                                    border: 'none',
+                                    fontWeight: 600,
+                                    fontSize: 12.5,
+                                    cursor: 'pointer',
+                                    marginTop: 4,
+                                }}
+                            >
+                                <ArrowTopRightOnSquareIcon width={14} height={14} />
+                                Open PDF Document
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // Syntax highlighting helper
 const getSyntaxHighlightingColors = (language: string, token: string): string => {
     const colorMap: Record<string, Record<string, string>> = {
@@ -773,8 +900,21 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const handleDownload = () => {
         if (!selectedCode) return;
+        const content = editedContent || selectedCode.content;
+        const isPdf = selectedCode.name.toLowerCase().endsWith('.pdf');
+
+        if (isPdf && content.startsWith('data:application/pdf')) {
+            const link = document.createElement('a');
+            link.href = content;
+            link.download = selectedCode.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            return;
+        }
+
         const element = document.createElement('a');
-        const file = new Blob([editedContent || selectedCode.content], { type: 'text/plain' });
+        const file = new Blob([content], { type: isPdf ? 'application/pdf' : 'text/plain' });
         element.href = URL.createObjectURL(file);
         element.download = selectedCode.name;
         document.body.appendChild(element);
@@ -809,174 +949,253 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                     transition={{ type: "spring", damping: 25, stiffness: 250 }}
                     style={{
                         position: "fixed",
-                        top: 0, left: 0, right: 0, bottom: 0,
+                        top: 24,
+                        left: 24,
+                        right: 24,
+                        bottom: 24,
                         backgroundColor: "var(--color-bg-base)",
-                        zIndex: 9999,
+                        borderRadius: "24px",
+                        boxShadow: "0 25px 50px -12px var(--color-bg-overlay)",
+                        border: "1px solid var(--color-border)",
+                        zIndex: 100,
                         display: "flex",
                         flexDirection: "column",
-                        color: "var(--color-text-primary)",
-                        overflowY: "auto",
-                        padding: "60px 80px"
+                        overflow: "hidden",
                     }}
                 >
-                    <button
-                        onClick={onClose}
-                        style={{ position: "absolute", top: 30, right: 40, background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
-                    >
-                        <XMarkIcon width={24} height={24} />
-                    </button>
- 
-                    {selectedCode ? (
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            transition={{ type: "spring", damping: 20, stiffness: 300 }}
-                            style={{ display: "flex", flexDirection: "column", flex: 1 }}
-                        >
-                            {/* Back button above filename */}
+                    {/* Header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid var(--color-border)" }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                            <div style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#ff5f56", cursor: "pointer" }} onClick={onClose}></div>
+                            <div style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#ffbd2e" }}></div>
+                            <div style={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: "#27c93f" }}></div>
+                        </div>
+
+                        {/* Tabs */}
+                        <div style={{ display: "flex", backgroundColor: "var(--color-bg-hover)", padding: 4, borderRadius: 12, gap: 4 }}>
                             <button
-                                onClick={() => { setSelectedCode(null); setIsEditing(false); }}
-                                style={{ 
-                                    alignSelf: 'flex-start',
-                                    background: "transparent", 
-                                    border: "1px solid var(--color-border)", 
-                                    color: "var(--color-text-primary)", 
-                                    borderRadius: 8, 
-                                    padding: "6px 16px", 
-                                    cursor: "pointer", 
-                                    fontSize: 13, 
-                                    fontWeight: 600,
-                                    marginBottom: 16,
+                                onClick={() => { setActiveTab('yours'); setSelectedCode(null); }}
+                                style={{
+                                    padding: "6px 16px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor: activeTab === 'yours' ? "var(--color-bg-selected)" : "transparent",
+                                    color: activeTab === 'yours' ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
                                     transition: "all 0.2s"
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
-                                onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                             >
-                                {"\u2190"} Back
+                                Your Artifacts
                             </button>
+                            <button
+                                onClick={() => { setActiveTab('sites'); setSelectedCode(null); }}
+                                style={{
+                                    padding: "6px 16px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor: activeTab === 'sites' ? "var(--color-bg-selected)" : "transparent",
+                                    color: activeTab === 'sites' ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                                    transition: "all 0.2s"
+                                }}
+                            >
+                                Websites &amp; Apps
+                            </button>
+                            <button
+                                onClick={() => { setActiveTab('inspiration'); setSelectedCode(null); }}
+                                style={{
+                                    padding: "6px 16px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor: activeTab === 'inspiration' ? "var(--color-bg-selected)" : "transparent",
+                                    color: activeTab === 'inspiration' ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                                    transition: "all 0.2s"
+                                }}
+                            >
+                                Community Gallery
+                            </button>
+                            <button
+                                onClick={() => { setActiveTab('terminal'); setSelectedCode(null); }}
+                                style={{
+                                    padding: "6px 16px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    backgroundColor: activeTab === 'terminal' ? "var(--color-bg-selected)" : "transparent",
+                                    color: activeTab === 'terminal' ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                                    transition: "all 0.2s",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6
+                                }}
+                            >
+                                <span>Terminal Tasks</span>
+                                {processes.filter(p => p.status === 'running').length > 0 && (
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
+                                )}
+                            </button>
+                        </div>
+
+                        <div style={{ width: 60 }}></div>
+                    </div>
+
+                    {/* Body */}
+                    <div style={{ flex: 1, overflowY: "auto", padding: "32px 40px", display: "flex", flexDirection: "column" }}>
+                        {selectedCode ? (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.98, y: 10 }}
+                                transition={{ type: "spring", damping: 20, stiffness: 300 }}
+                                style={{ display: "flex", flexDirection: "column", height: "100%" }}
+                            >
+                                {/* Back button */}
+                                <button
+                                    onClick={() => setSelectedCode(null)}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                        background: "transparent",
+                                        border: "none",
+                                        color: "var(--color-text-tertiary)",
+                                        cursor: "pointer",
+                                        padding: "6px 12px",
+                                        borderRadius: 8,
+                                        width: "fit-content",
+                                        fontSize: 13, 
+                                        fontWeight: 600,
+                                        marginBottom: 16,
+                                        transition: "all 0.2s"
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
+                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                                >
+                                    {"\u2190"} Back
+                                </button>
  
-                            {/* Filename and path */}
-                            <div style={{ marginBottom: 8 }}>
-                                <h1 style={{ margin: "0 0 4px", fontSize: 28, fontWeight: 600 }}>{selectedCode.name}</h1>
-                                <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: "break-all" }}>{artifactPath}</p>
-                            </div>
+                                {/* Filename and path */}
+                                <div style={{ marginBottom: 8 }}>
+                                    <h1 style={{ margin: "0 0 4px", fontSize: 28, fontWeight: 600 }}>{selectedCode.name}</h1>
+                                    <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)", fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: "break-all" }}>{artifactPath}</p>
+                                </div>
 
-                            {/* Toolbar */}
-                            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
-                                {!isPlanFile && !selectedCode.name.toLowerCase().endsWith('.pdf') && (
-                                    <button
-                                        onClick={() => setIsEditing(v => !v)}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: isEditing ? "var(--color-bg-selected)" : "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                        onMouseEnter={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
-                                        onMouseLeave={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "transparent"; }}
-                                    >
-                                        <PencilSquareIcon width={14} height={14} />
-                                        {isEditing ? "Preview" : "Edit"}
-                                    </button>
+                                {/* Toolbar */}
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
+                                    {!isPlanFile && !selectedCode.name.toLowerCase().endsWith('.pdf') && (
+                                        <button
+                                            onClick={() => setIsEditing(v => !v)}
+                                            style={{ display: "flex", alignItems: "center", gap: 6, background: isEditing ? "var(--color-bg-selected)" : "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
+                                            onMouseLeave={e => { if (!isEditing) e.currentTarget.style.backgroundColor = "transparent"; }}
+                                        >
+                                            <PencilSquareIcon width={14} height={14} />
+                                            {isEditing ? "Preview" : "Edit"}
+                                        </button>
+                                    )}
+                                    {!isEditing && (
+                                        <button
+                                            onClick={handleDownload}
+                                            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
+                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                                            title="Download artifact"
+                                        >
+                                            <ArrowDownTrayIcon width={14} height={14} />
+                                            Download
+                                        </button>
+                                    )}
+                                    {isEditing && (
+                                        <button
+                                            onClick={handleSave}
+                                            disabled={isSaving}
+                                            style={{ display: "flex", alignItems: "center", gap: 6, background: saveSuccess ? "var(--color-success-dim, rgba(34,197,94,0.1))" : "var(--color-bg-hover)", border: `1px solid ${saveSuccess ? "var(--color-success)" : "var(--color-border)"}`, color: saveSuccess ? "var(--color-success)" : "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.3s" }}
+                                        >
+                                            {saveSuccess ? <><CheckIcon width={14} height={14} /> Saved!</> : "Save"}
+                                        </button>
+                                    )}
+                                    {isPlanFile && (
+                                        <button
+                                            onClick={handleApprovePlan}
+                                            style={{ display: "flex", alignItems: "center", gap: 8, background: "linear-gradient(135deg, rgba(74,222,128,0.2), rgba(34,197,94,0.1))", border: "1px solid rgba(74,222,128,0.5)", color: "#4ade80", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", transition: "all 0.2s" }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(74,222,128,0.28), rgba(34,197,94,0.18))"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.8)"; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(74,222,128,0.2), rgba(34,197,94,0.1))"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.5)"; }}
+                                        >
+                                            <CheckIcon width={15} height={15} />
+                                            Approve &amp; Execute
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* View Mode Toggle */}
+                                {!isPlanFile && (['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md', 'pdf'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '')) && !selectedCode.name.toLowerCase().endsWith('.pdf') && (
+                                    <div style={{ display: "flex", gap: 8, marginBottom: 16, backgroundColor: "var(--color-bg-hover)", padding: 4, borderRadius: 10, width: "fit-content" }}>
+                                        <button
+                                            onClick={() => setViewMode('code')}
+                                            style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'code' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'code' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
+                                        >
+                                            Code
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('preview')}
+                                            style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'preview' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'preview' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
+                                        >
+                                            {['xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '') ? 'Preview' : 'Visual Preview'}
+                                        </button>
+                                    </div>
                                 )}
-                                {!isEditing && (
-                                    <button
-                                        onClick={handleDownload}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--color-border)", color: "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}
-                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"; }}
-                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-                                        title="Download artifact"
-                                    >
-                                        <ArrowDownTrayIcon width={14} height={14} />
-                                        Download
-                                    </button>
-                                )}
-                                {isEditing && (
-                                    <button
-                                        onClick={handleSave}
-                                        disabled={isSaving}
-                                        style={{ display: "flex", alignItems: "center", gap: 6, background: saveSuccess ? "var(--color-success-dim, rgba(34,197,94,0.1))" : "var(--color-bg-hover)", border: `1px solid ${saveSuccess ? "var(--color-success)" : "var(--color-border)"}`, color: saveSuccess ? "var(--color-success)" : "var(--color-text-primary)", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, transition: "all 0.3s" }}
-                                    >
-                                        {saveSuccess ? <><CheckIcon width={14} height={14} /> Saved!</> : "Save"}
-                                    </button>
-                                )}
+
+                                {/* Plan notice */}
                                 {isPlanFile && (
-                                    <button
-                                        onClick={handleApprovePlan}
-                                        style={{ display: "flex", alignItems: "center", gap: 8, background: "linear-gradient(135deg, rgba(74,222,128,0.2), rgba(34,197,94,0.1))", border: "1px solid rgba(74,222,128,0.5)", color: "#4ade80", borderRadius: 8, padding: "8px 18px", cursor: "pointer", fontSize: 13, fontWeight: 600, letterSpacing: "0.02em", transition: "all 0.2s" }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(74,222,128,0.28), rgba(34,197,94,0.18))"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.8)"; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(74,222,128,0.2), rgba(34,197,94,0.1))"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.5)"; }}
-                                    >
-                                        <CheckIcon width={15} height={15} />
-                                        Approve &amp; Execute
-                                    </button>
+                                    <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, fontSize: 13, color: "#fbbf24", lineHeight: 1.5 }}>
+                                        ✍️ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
+                                    </div>
                                 )}
-                            </div>
 
-                            {/* View Mode Toggle */}
-                            {!isPlanFile && (['html', 'htm', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '')) && (
-                                <div style={{ display: "flex", gap: 8, marginBottom: 16, backgroundColor: "var(--color-bg-hover)", padding: 4, borderRadius: 10, width: "fit-content" }}>
-                                    <button
-                                        onClick={() => setViewMode('code')}
-                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'code' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'code' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
-                                    >
-                                        Code
-                                    </button>
-                                    <button
-                                        onClick={() => setViewMode('preview')}
-                                        style={{ padding: "6px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 500, cursor: "pointer", backgroundColor: viewMode === 'preview' ? "var(--color-bg-selected)" : "transparent", color: viewMode === 'preview' ? "var(--color-text-primary)" : "var(--color-text-tertiary)", transition: "all 0.2s" }}
-                                    >
-                                        {['xlsx', 'xls', 'csv', 'pptx', 'ppt', 'md'].includes(selectedCode.name.split('.').pop()?.toLowerCase() || '') ? 'Preview' : 'Visual Preview'}
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Plan notice */}
-                            {isPlanFile && (
-                                <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, fontSize: 13, color: "#fbbf24", lineHeight: 1.5 }}>
-                                    ✍️ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
-                                </div>
-                            )}
-
-                            {/* Content area */}
-                            {viewMode === 'preview' ? (
-                                <motion.div 
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.1 }}
-                                    style={{ flex: 1, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--color-border)", position: "relative", minHeight: 400 }}>
-                                    {(() => {
-                                        const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
-                                        if (ext === 'md') {
-                                            return <MarkdownViewer content={editedContent || selectedCode.content} />;
-                                        }
-                                        if (['xlsx', 'xls', 'csv'].includes(ext)) {
-                                            return <ExcelViewer filename={selectedCode.name} content={selectedCode.content} />;
-                                        }
-                                        if (['pptx', 'ppt'].includes(ext)) {
-                                            return <PPTViewer filename={selectedCode.name} filePath={artifactPath} />;
-                                        }
-                                        if (ext === 'pdf') {
+                                {/* Content area */}
+                                {viewMode === 'preview' ? (
+                                    <motion.div 
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        transition={{ delay: 0.1 }}
+                                        style={{ flex: 1, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--color-border)", position: "relative", minHeight: 400 }}>
+                                        {(() => {
+                                            const ext = selectedCode.name.split('.').pop()?.toLowerCase() || '';
+                                            if (ext === 'md') {
+                                                return <MarkdownViewer content={editedContent || selectedCode.content} />;
+                                            }
+                                            if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                                                return <ExcelViewer filename={selectedCode.name} content={selectedCode.content} />;
+                                            }
+                                            if (['pptx', 'ppt'].includes(ext)) {
+                                                return <PPTViewer filename={selectedCode.name} filePath={artifactPath} />;
+                                            }
+                                            if (ext === 'pdf') {
+                                                return <PDFViewer filename={selectedCode.name} content={selectedCode.content} filePath={artifactPath} />;
+                                            }
                                             return (
-                                                <iframe 
-                                                    src={selectedCode.content}
-                                                    style={{ width: "100%", height: "100%", border: "none" }}
-                                                    title="PDF Preview"
-                                                />
+                                                <>
+                                                    <iframe 
+                                                        srcDoc={(editedContent || selectedCode.content)}
+                                                        style={{ width: "100%", height: "100%", border: "none" }}
+                                                        title="Preview"
+                                                        sandbox="allow-scripts allow-forms allow-same-origin"
+                                                    />
+                                                    <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "var(--color-text-primary)", pointerEvents: "none" }}>
+                                                        Interactive Preview Mode
+                                                    </div>
+                                                </>
                                             );
-                                        }
-                                        return (
-                                            <>
-                                                <iframe 
-                                                    srcDoc={(editedContent || selectedCode.content)}
-                                                    style={{ width: "100%", height: "100%", border: "none" }}
-                                                    title="Preview"
-                                                    sandbox="allow-scripts allow-forms allow-same-origin"
-                                                />
-                                                <div style={{ position: "absolute", bottom: 12, right: 12, backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(4px)", padding: "4px 10px", borderRadius: 6, fontSize: 10, color: "var(--color-text-primary)", pointerEvents: "none" }}>
-                                                    Interactive Preview Mode
-                                                </div>
-                                            </>
-                                        );
-                                    })()}
+                                        })()}
                                 </motion.div>
                             ) : isEditing ? (
                                 <motion.textarea
@@ -1309,6 +1528,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             </AnimatePresence>
                         </motion.div>
                     )}
+                    </div>
                 </motion.div>
             )}
         </AnimatePresence>

@@ -428,7 +428,76 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
     );
 }
 
-// ── 4. CODE & TEXT VIEWER ───────────────────────────────────────────
+// ── 4. PDF VIEWER ──────────────────────────────────────────────────
+function PDFViewer({ filename, content, filePath }: { filename: string; content?: string | null; filePath?: string }) {
+    const [loadError, setLoadError] = useState(false);
+
+    const handleOpenExternal = () => {
+        try {
+            if (filePath && (window as any).electronAPI?.projects?.openFolder) {
+                (window as any).electronAPI.projects.openFolder(filePath);
+            }
+        } catch (e) {
+            console.error('Failed to open PDF externally:', e);
+        }
+    };
+
+    const pdfSource = (content && (content.startsWith('data:application/pdf') || content.startsWith('http') || content.startsWith('blob:')))
+        ? content
+        : filePath
+        ? (filePath.startsWith('http') || filePath.startsWith('file://') ? filePath : `file:///${filePath.replace(/\\/g, '/')}`)
+        : content;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 450, backgroundColor: 'var(--color-bg-base)', position: 'relative' }}>
+            {/* Embedded PDF iframe / fallback */}
+            <div style={{ flex: 1, position: 'relative', width: '100%', height: '100%', minHeight: 400, backgroundColor: 'var(--color-bg-surface)', overflow: 'hidden' }}>
+                {pdfSource && !loadError ? (
+                    <iframe
+                        src={pdfSource}
+                        title={filename}
+                        onError={() => setLoadError(true)}
+                        style={{ width: '100%', height: '100%', minHeight: 450, border: 'none', display: 'block', backgroundColor: 'var(--color-bg-surface)' }}
+                    />
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 400, color: 'var(--color-text-secondary)', gap: 14, padding: 24, textAlign: 'center' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
+                            📄
+                        </div>
+                        <div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>{filename}</div>
+                            <div style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', maxWidth: 380 }}>PDF document is ready. Click below to open in your system default PDF reader.</div>
+                        </div>
+                        {filePath && (
+                            <button
+                                onClick={handleOpenExternal}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '8px 18px',
+                                    borderRadius: 8,
+                                    backgroundColor: 'var(--color-text-primary)',
+                                    color: 'var(--color-bg-base)',
+                                    border: 'none',
+                                    fontWeight: 600,
+                                    fontSize: 12.5,
+                                    cursor: 'pointer',
+                                    marginTop: 4,
+                                }}
+                            >
+                                <ArrowTopRightOnSquareIcon width={14} height={14} />
+                                Open PDF Document
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── 5. CODE & TEXT VIEWER ───────────────────────────────────────────
 function CodeTextViewer({ filename, content, extension }: { filename: string; content: string | null; extension: string }) {
     const isHtml = extension === 'html' || extension === 'htm';
     const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml ? 'preview' : 'code');
@@ -644,6 +713,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
         if (extension === 'md') return 'markdown';
         if (['xlsx', 'xls', 'csv'].includes(extension)) return 'excel';
         if (['pptx', 'ppt'].includes(extension)) return 'ppt';
+        if (extension === 'pdf') return 'pdf';
         if (['py', 'java', 'html', 'css', 'js', 'ts', 'tsx', 'jsx', 'json', 'txt', 'sh', 'bash', 'yaml', 'yml'].includes(extension)) {
             return 'code';
         }
@@ -657,6 +727,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
             case 'markdown': return 'Markdown Document';
             case 'excel': return 'Spreadsheet Ledger';
             case 'ppt': return 'PowerPoint Presentation';
+            case 'pdf': return 'PDF Document';
             case 'code': return 'Source Code / Text';
             default: return 'Asset File';
         }
@@ -832,6 +903,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     {viewerType === 'markdown' && <MarkdownViewer content={content || ''} />}
                                     {viewerType === 'excel' && <ExcelViewer filename={file.name} content={content} />}
                                     {viewerType === 'ppt' && <PPTViewer filename={file.name} filePath={file.path} />}
+                                    {viewerType === 'pdf' && <PDFViewer filename={file.name} content={content} filePath={file.path} />}
                                     {viewerType === 'code' && <CodeTextViewer filename={file.name} content={content} extension={extension} />}
                                     {viewerType === 'fallback' && <FallbackViewer file={file} />}
                                 </>
