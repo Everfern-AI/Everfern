@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkDocker:    () => ipcRenderer.invoke('system:checkDocker'),
     installWSL:     () => ipcRenderer.invoke('system:installWSL'),
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
+    checkEnvironmentDependencies: () => ipcRenderer.invoke('system:checkEnvironmentDependencies'),
+    setupEnvironmentDependencies: () => ipcRenderer.invoke('system:setupEnvironmentDependencies'),
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
     getVersion:     () => ipcRenderer.invoke('system:get-version'),
     detectHardware: () => ipcRenderer.invoke('system:detect-hardware'),

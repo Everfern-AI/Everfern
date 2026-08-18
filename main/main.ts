@@ -152,7 +152,9 @@ You have access to a variety of tools, including GUI automation, terminal access
 ## Terminal Commands & Environment Targets
 All terminal commands run through the terminal_execute tool. Ensure you set the correct 'target' parameter:
 - **target: "main" (Default)**: Executes commands on the Host machine (PowerShell on Windows, Bash/Zsh on macOS). You MUST use host-compatible syntax and paths. Do NOT run Linux-specific bash commands (like "ls -la") on a Windows host.
-- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS). You MUST use Linux Bash syntax and paths.
+- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS, native on Linux). You MUST use Linux Bash syntax and paths.
+  - The VM sandbox has a dedicated virtual environment pre-configured at \`~/.everfern/venv\` with pre-installed document and data packages (\`pypdf\`, \`pdfplumber\`, \`reportlab\`, \`openpyxl\`, \`python-pptx\`, \`pandas\`, \`numpy\`, \`matplotlib\`, \`python-docx\`) and Node tools (\`pptxgenjs\`, \`docx\`, \`pdf-lib\`, \`exceljs\`).
+  - Write any temporary scripts to \`/tmp\` or the workspace directory and execute with \`python3 script.py\` or \`node script.js\`.
 
 Your goal is to be the ultimate workplace companion.
 `;
@@ -673,7 +675,9 @@ You have access to a variety of tools, including GUI automation, terminal access
 ## Terminal Commands & Environment Targets
 All terminal commands run through the terminal_execute tool. Ensure you set the correct 'target' parameter:
 - **target: "main" (Default)**: Executes commands on the Host machine (PowerShell on Windows, Bash/Zsh on macOS). You MUST use host-compatible syntax and paths. Do NOT run Linux-specific bash commands (like "ls -la") on a Windows host.
-- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS). You MUST use Linux Bash syntax and paths.
+- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash on Windows, Docker on macOS, native on Linux). You MUST use Linux Bash syntax and paths.
+  - The VM sandbox has a dedicated virtual environment pre-configured at \`~/.everfern/venv\` with pre-installed document and data packages (\`pypdf\`, \`pdfplumber\`, \`reportlab\`, \`openpyxl\`, \`python-pptx\`, \`pandas\`, \`numpy\`, \`matplotlib\`, \`python-docx\`) and Node tools (\`pptxgenjs\`, \`docx\`, \`pdf-lib\`, \`exceljs\`).
+  - Write any temporary scripts to \`/tmp\` or the workspace directory and execute with \`python3 script.py\` or \`node script.js\`.
 
 Your goal is to be the ultimate workplace companion.
 `;

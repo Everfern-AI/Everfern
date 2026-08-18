@@ -33,6 +33,34 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
   const [errorMessage, setErrorMessage] = useState("");
   const [osDetails, setOsDetails] = useState<string>("");
 
+  const [depsStatus, setDepsStatus] = useState<any>(null);
+  const [depsChecking, setDepsChecking] = useState(false);
+  const [depsInstalling, setDepsInstalling] = useState(false);
+  const [depsInstallMessage, setDepsInstallMessage] = useState("");
+
+  const checkDeps = useCallback(async () => {
+    setDepsChecking(true);
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.system?.checkEnvironmentDependencies) {
+        const status = await electronAPI.system.checkEnvironmentDependencies();
+        setDepsStatus(status);
+      } else {
+        setDepsStatus({
+          available: true,
+          pythonInstalled: true,
+          venvReady: true,
+          details: { pdf: true, excel: true, pptx: true, docx: true, data: true },
+          missingList: []
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to check dependencies:", err);
+    } finally {
+      setDepsChecking(false);
+    }
+  }, []);
+
   // Check VM availability for the currently active OS
   const checkVM = useCallback(async (osToCheck?: SupportedOS) => {
     const currentOS = osToCheck || selectedOS;
@@ -41,14 +69,13 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
 
     try {
       if (currentOS === "linux") {
-        // Native Linux is always ready for command execution
         setVmStatus("ready");
         setOsDetails("Native Linux environment ready");
+        checkDeps();
         return;
       }
 
       if (currentOS === "windows") {
-        // Check for WSL on Windows
         const electronAPI = (window as any).electronAPI;
         if (electronAPI?.system?.checkWSL) {
           const wslAvailable = await electronAPI.system.checkWSL();
@@ -56,29 +83,30 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             const info = await electronAPI.system?.getWSLInfo?.().catch(() => null);
             setVmStatus("ready");
             setOsDetails(info?.osName || "Ubuntu Linux (WSL 2)");
+            checkDeps();
           } else {
             setVmStatus("not-installed");
           }
         } else {
-          // In browser dev mode: fallback
           setVmStatus("ready");
           setOsDetails("Ubuntu Linux (WSL 2)");
+          checkDeps();
         }
       } else if (currentOS === "macos") {
-        // Check for Docker Desktop on macOS
         const electronAPI = (window as any).electronAPI;
         if (electronAPI?.system?.checkDocker) {
           const dockerAvailable = await electronAPI.system.checkDocker();
           if (dockerAvailable) {
             setVmStatus("ready");
             setOsDetails("Docker Ubuntu Sandbox ready");
+            checkDeps();
           } else {
             setVmStatus("not-installed");
           }
         } else {
-          // In browser dev mode: fallback
           setVmStatus("ready");
           setOsDetails("Docker Ubuntu Sandbox ready");
+          checkDeps();
         }
       }
     } catch (err: any) {
@@ -86,7 +114,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
       setVmStatus("error");
       setErrorMessage(err?.message || "Failed to check VM status. You can verify and retry below.");
     }
-  }, [selectedOS]);
+  }, [selectedOS, checkDeps]);
 
   // Initial OS detection on mount
   useEffect(() => {
@@ -135,6 +163,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             setTimeout(() => {
               setVmStatus("ready");
               setOsDetails("Ubuntu Linux (WSL 2)");
+              checkDeps();
             }, 1200);
           } else {
             throw new Error(result?.error || "WSL installation failed. Please run 'wsl --install -d Ubuntu' in PowerShell as Administrator.");
@@ -142,7 +171,10 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
         } else {
           setInstallProgress(100);
           setInstallMessage("✓ WSL ready");
-          setTimeout(() => setVmStatus("ready"), 1000);
+          setTimeout(() => {
+            setVmStatus("ready");
+            checkDeps();
+          }, 1000);
         }
       } else if (selectedOS === "macos") {
         setInstallMessage("Opening Docker Desktop download page in your browser...");
@@ -153,6 +185,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
         setInstallProgress(50);
       } else {
         setVmStatus("ready");
+        checkDeps();
       }
     } catch (err: any) {
       setVmStatus("error");
@@ -183,6 +216,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
         setTimeout(() => {
           setVmStatus("ready");
           setOsDetails("Docker Ubuntu Sandbox ready");
+          checkDeps();
         }, 1200);
       } else {
         throw new Error(result?.error || "Failed to initialize Docker Ubuntu container");
@@ -194,6 +228,28 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
     }
   };
 
+  const handleInstallDeps = async () => {
+    setDepsInstalling(true);
+    setDepsInstallMessage("Provisioning Python 3, venv, and skill packages (~/.everfern)...");
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.system?.setupEnvironmentDependencies) {
+        const res = await electronAPI.system.setupEnvironmentDependencies();
+        if (!res?.success) {
+          throw new Error(res?.error || "Failed to install dependencies");
+        }
+      }
+      await checkDeps();
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Dependency installation encountered an issue.");
+    } finally {
+      setDepsInstalling(false);
+      setDepsInstallMessage("");
+    }
+  };
+
+  const allDepsReady = depsStatus?.available || (depsStatus?.pythonInstalled && depsStatus?.venvReady && depsStatus?.pipPackagesInstalled);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -202,7 +258,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
       style={{ width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", alignItems: "center" }}
     >
       {/* Header Logo */}
-      <div style={{ textAlign: "center", marginBottom: 28, width: "100%" }}>
+      <div style={{ textAlign: "center", marginBottom: 24, width: "100%" }}>
         <div
           style={{
             width: 52,
@@ -220,7 +276,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
 
         <h1
           style={{
-            fontSize: 30,
+            fontSize: 28,
             fontWeight: 600,
             letterSpacing: "-0.03em",
             color: "var(--color-text-primary)",
@@ -228,31 +284,31 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             lineHeight: 1.15,
           }}
         >
-          {selectedOS === "windows" && "WSL & Ubuntu Sandbox"}
-          {selectedOS === "macos" && "macOS Docker Sandbox"}
-          {selectedOS === "linux" && "Native Linux Environment"}
+          {selectedOS === "windows" && "WSL & Skill Dependencies"}
+          {selectedOS === "macos" && "macOS Docker & Skill Sandbox"}
+          {selectedOS === "linux" && "Native Linux & Skill Toolchain"}
         </h1>
         <p
           style={{
-            fontSize: 13.5,
+            fontSize: 13,
             color: "var(--color-text-tertiary)",
-            lineHeight: 1.6,
-            maxWidth: 420,
+            lineHeight: 1.55,
+            maxWidth: 440,
             margin: "0 auto",
           }}
         >
-          {selectedOS === "windows" && "EverFern uses an isolated Ubuntu Linux VM (WSL 2) to safely execute commands, run tools, and compile code."}
-          {selectedOS === "macos" && "EverFern uses a lightweight Docker Ubuntu container to safely execute sandbox terminal commands on macOS."}
-          {selectedOS === "linux" && "EverFern runs natively on Linux with full access to sandbox execution tools with zero virtualization overhead."}
+          {selectedOS === "windows" && "EverFern uses an isolated Ubuntu VM (WSL 2) and Python virtual environment to process PDFs, spreadsheets, slides, and execute code."}
+          {selectedOS === "macos" && "EverFern uses Docker and Python sandbox to execute tools and analyze files securely on macOS."}
+          {selectedOS === "linux" && "EverFern runs natively on Linux with an isolated Python environment for high-performance file workflows."}
         </p>
       </div>
 
-      {/* Status Card */}
+      {/* VM Status Card */}
       <div
         style={{
           width: "100%",
-          padding: "20px 22px",
-          borderRadius: 16,
+          padding: "16px 20px",
+          borderRadius: 14,
           border: `1px solid ${
             vmStatus === "ready"
               ? "rgba(34, 197, 94, 0.25)"
@@ -262,11 +318,11 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           }`,
           background:
             vmStatus === "ready"
-              ? "rgba(34, 197, 94, 0.05)"
+              ? "rgba(34, 197, 94, 0.04)"
               : vmStatus === "error"
               ? "rgba(239, 68, 68, 0.04)"
               : "rgba(32,30,36,0.03)",
-          marginBottom: 24,
+          marginBottom: 16,
           boxSizing: "border-box",
         }}
       >
@@ -286,11 +342,11 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
 
         {vmStatus === "ready" && (
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <CheckCircle2 size={20} style={{ color: "#22c55e", flexShrink: 0 }} />
+            <CheckCircle2 size={18} style={{ color: "#22c55e", flexShrink: 0 }} />
             <div style={{ flex: 1, textAlign: "left" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: "#16a34a", margin: 0 }}>
-                  ✓ {selectedOS === "windows" ? "WSL & Ubuntu Ready" : selectedOS === "macos" ? "Docker Sandbox Ready" : "Native Linux Ready"}
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: "#16a34a", margin: 0 }}>
+                  ✓ {selectedOS === "windows" ? "WSL 2 Ubuntu Ready" : selectedOS === "macos" ? "Docker Sandbox Ready" : "Native Linux Ready"}
                 </p>
                 {osDetails && (
                   <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 6, backgroundColor: "rgba(34, 197, 94, 0.12)", color: "#15803d" }}>
@@ -298,81 +354,49 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   </span>
                 )}
               </div>
-              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
-                Safe sandbox execution is configured and ready to execute commands.
-              </p>
             </div>
             <button
-              onClick={() => checkVM()}
+              onClick={() => { checkVM(); checkDeps(); }}
               title="Re-check status"
               style={{
                 background: "none",
                 border: "none",
                 color: "var(--color-text-tertiary)",
                 cursor: "pointer",
-                padding: 6,
-                borderRadius: 8,
+                padding: 4,
+                borderRadius: 6,
                 display: "flex",
                 alignItems: "center",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={13} />
             </button>
           </div>
         )}
 
         {vmStatus === "not-installed" && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <AlertCircle size={20} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+            <AlertCircle size={18} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
             <div style={{ flex: 1, textAlign: "left" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: "#d97706", margin: 0 }}>
-                  {selectedOS === "windows" ? "WSL 2 Not Detected" : "Docker Desktop Not Running"}
-                </p>
-                <button
-                  onClick={() => checkVM()}
-                  title="Check again"
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "var(--color-text-tertiary)",
-                    cursor: "pointer",
-                    padding: 4,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    fontSize: 11.5,
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
-                >
-                  <RefreshCw size={12} /> Check again
-                </button>
-              </div>
-              <p style={{ fontSize: 12.5, color: "var(--color-text-tertiary)", margin: "4px 0 0", lineHeight: 1.5 }}>
-                {selectedOS === "windows"
-                  ? "Windows Subsystem for Linux (WSL 2) with Ubuntu is required to run commands in an isolated sandbox."
-                  : "Docker Desktop is required to run the isolated Ubuntu container sandbox on macOS."}
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#d97706", margin: 0 }}>
+                {selectedOS === "windows" ? "WSL 2 Not Detected" : "Docker Desktop Not Running"}
               </p>
-
-              {selectedOS === "windows" && (
-                <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, backgroundColor: "rgba(32,30,36,0.04)", fontSize: 11.5, fontFamily: "monospace", color: "var(--color-text-secondary)" }}>
-                  Manual command: <strong>wsl --install -d Ubuntu</strong>
-                </div>
-              )}
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0", lineHeight: 1.4 }}>
+                {selectedOS === "windows"
+                  ? "WSL 2 with Ubuntu is needed to execute tools and skills safely in an isolated sandbox."
+                  : "Docker Desktop is required to run the isolated Ubuntu sandbox on macOS."}
+              </p>
             </div>
           </div>
         )}
 
         {vmStatus === "installing" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <Loader size={16} style={{ color: "var(--color-text-primary)", animation: "spin 1s linear infinite", flexShrink: 0 }} />
-              <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{installMessage}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <Loader size={15} style={{ color: "var(--color-text-primary)", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+              <p style={{ fontSize: 12.5, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{installMessage}</p>
             </div>
-            <div style={{ height: 6, background: "rgba(32,30,36,0.08)", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ height: 5, background: "rgba(32,30,36,0.08)", borderRadius: 999, overflow: "hidden" }}>
               <div
                 style={{
                   height: "100%",
@@ -387,55 +411,142 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
 
         {vmStatus === "error" && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <AlertCircle size={20} style={{ color: "#ef4444", flexShrink: 0, marginTop: 2 }} />
+            <AlertCircle size={18} style={{ color: "#ef4444", flexShrink: 0, marginTop: 2 }} />
             <div style={{ flex: 1, textAlign: "left" }}>
               <p style={{ fontSize: 13.5, fontWeight: 600, color: "#dc2626", margin: 0 }}>Setup issue detected</p>
-              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0", lineHeight: 1.5 }}>
-                {errorMessage}
-              </p>
-              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                <button
-                  onClick={() => checkVM()}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    fontSize: 11.5,
-                    color: "var(--color-text-primary)",
-                    cursor: "pointer",
-                    padding: 0,
-                    textDecoration: "underline",
-                  }}
-                >
-                  Re-check status
-                </button>
-              </div>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>{errorMessage}</p>
             </div>
           </div>
         )}
       </div>
 
+      {/* Skill Dependencies Breakdown (Shown when VM is ready) */}
+      {vmStatus === "ready" && (
+        <div
+          style={{
+            width: "100%",
+            padding: "16px 20px",
+            borderRadius: 14,
+            border: "1px solid rgba(32,30,36,0.08)",
+            background: "rgba(32,30,36,0.02)",
+            marginBottom: 20,
+            boxSizing: "border-box",
+            textAlign: "left",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-secondary)" }}>
+              Skill Toolchain & Packages
+            </span>
+            {depsChecking && (
+              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
+                <Loader size={11} style={{ animation: "spin 1s linear infinite" }} /> Verifying packages...
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* Python & Venv */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>🐍</span> Python 3 & Virtualenv <code style={{ fontSize: 11, opacity: 0.7 }}>~/.everfern/venv</code>
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.venvReady ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.pythonInstalled && depsStatus?.venvReady ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+              </span>
+            </div>
+
+            {/* PDF Processing */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📄</span> PDF Skill <code style={{ fontSize: 11, opacity: 0.7 }}>pypdf, pdfplumber, reportlab</code>
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.pdf ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.details?.pdf ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+              </span>
+            </div>
+
+            {/* Excel & Data Analysis */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📊</span> Spreadsheets & Data <code style={{ fontSize: 11, opacity: 0.7 }}>pandas, openpyxl, numpy</code>
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.excel && depsStatus?.details?.data ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.details?.excel && depsStatus?.details?.data ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+              </span>
+            </div>
+
+            {/* Presentations & Documents */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+              <span style={{ color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📽️</span> Office Docs <code style={{ fontSize: 11, opacity: 0.7 }}>python-pptx, pptxgenjs, docx</code>
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.details?.pptx && depsStatus?.details?.docx ? "#16a34a" : "#f59e0b" }}>
+                {depsStatus?.details?.pptx && depsStatus?.details?.docx ? "✓ Ready" : (depsChecking ? "..." : "Needs Setup")}
+              </span>
+            </div>
+          </div>
+
+          {depsInstalling && (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(32,30,36,0.06)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <Loader size={13} style={{ animation: "spin 1s linear infinite", color: "var(--color-text-primary)" }} />
+                <span style={{ fontSize: 11.5, color: "var(--color-text-secondary)" }}>{depsInstallMessage}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action Buttons */}
-      <div style={{ display: "flex", gap: 12, width: "100%", justifyContent: "center" }}>
+      <div style={{ display: "flex", gap: 10, width: "100%", justifyContent: "center" }}>
         {vmStatus === "ready" && (
-          <button
-            onClick={onComplete}
-            style={{
-              width: "100%",
-              height: 50,
-              background: "var(--color-text-primary)",
-              color: "var(--color-bg-base)",
-              border: "none",
-              borderRadius: 14,
-              fontWeight: 600,
-              fontSize: 14.5,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.9")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
-          >
-            Continue
-          </button>
+          <>
+            {!allDepsReady && !depsChecking && (
+              <button
+                onClick={handleInstallDeps}
+                disabled={depsInstalling}
+                style={{
+                  flex: 1,
+                  height: 48,
+                  background: "var(--color-text-primary)",
+                  color: "var(--color-bg-base)",
+                  border: "none",
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: 13.5,
+                  cursor: depsInstalling ? "wait" : "pointer",
+                  transition: "all 0.15s",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                {depsInstalling ? <Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> : null}
+                {depsInstalling ? "Installing Packages..." : "Install Skill Toolchain"}
+              </button>
+            )}
+
+            <button
+              onClick={onComplete}
+              style={{
+                flex: allDepsReady ? undefined : 1,
+                width: allDepsReady ? "100%" : undefined,
+                height: 48,
+                background: allDepsReady ? "var(--color-text-primary)" : "transparent",
+                color: allDepsReady ? "var(--color-bg-base)" : "var(--color-text-secondary)",
+                border: allDepsReady ? "none" : "1px solid rgba(32,30,36,0.12)",
+                borderRadius: 12,
+                fontWeight: 600,
+                fontSize: 13.5,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {allDepsReady ? "Continue" : "Skip for now"}
+            </button>
+          </>
         )}
 
         {vmStatus === "not-installed" && (
@@ -445,62 +556,55 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 onClick={handleInstallNow}
                 style={{
                   flex: 1,
-                  height: 50,
+                  height: 48,
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 14,
+                  borderRadius: 12,
                   fontWeight: 600,
-                  fontSize: 14,
+                  fontSize: 13.5,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 8,
-                  transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.9")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
               >
-                <Download size={16} /> Install WSL 2
+                <Download size={15} /> Install WSL 2
               </button>
             ) : selectedOS === "macos" ? (
               <button
                 onClick={handleInstallNow}
                 style={{
                   flex: 1,
-                  height: 50,
+                  height: 48,
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 14,
+                  borderRadius: 12,
                   fontWeight: 600,
-                  fontSize: 14,
+                  fontSize: 13.5,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 8,
-                  transition: "all 0.15s",
                 }}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.9")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
               >
-                <ExternalLink size={16} /> Get Docker Desktop
+                <ExternalLink size={15} /> Get Docker Desktop
               </button>
             ) : (
               <button
                 onClick={onComplete}
                 style={{
                   flex: 1,
-                  height: 50,
+                  height: 48,
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 14,
+                  borderRadius: 12,
                   fontWeight: 600,
-                  fontSize: 14,
-                  cursor: "pointer",
+                  fontSize: 13.5,
                 }}
               >
                 Continue
@@ -511,23 +615,14 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               onClick={onSkip}
               style={{
                 flex: 1,
-                height: 50,
+                height: 48,
                 background: "transparent",
                 color: "var(--color-text-tertiary)",
                 border: "1px solid rgba(32,30,36,0.12)",
-                borderRadius: 14,
+                borderRadius: 12,
                 fontWeight: 600,
-                fontSize: 14,
+                fontSize: 13.5,
                 cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-text-primary)";
-                (e.currentTarget as HTMLElement).style.color = "var(--color-text-primary)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "rgba(32,30,36,0.12)";
-                (e.currentTarget as HTMLElement).style.color = "var(--color-text-tertiary)";
               }}
             >
               Skip for now
@@ -540,18 +635,15 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             onClick={handleVerifyMacDocker}
             style={{
               width: "100%",
-              height: 50,
+              height: 48,
               background: "var(--color-text-primary)",
               color: "var(--color-bg-base)",
               border: "none",
-              borderRadius: 14,
+              borderRadius: 12,
               fontWeight: 600,
-              fontSize: 14.5,
+              fontSize: 14,
               cursor: "pointer",
-              transition: "all 0.15s",
             }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.9")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
           >
             Verify & Setup Sandbox
           </button>
@@ -563,38 +655,34 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               onClick={() => checkVM()}
               style={{
                 flex: 1,
-                height: 50,
+                height: 48,
                 background: "var(--color-text-primary)",
                 color: "var(--color-bg-base)",
                 border: "none",
-                borderRadius: 14,
+                borderRadius: 12,
                 fontWeight: 600,
-                fontSize: 14,
+                fontSize: 13.5,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 8,
-                transition: "all 0.15s",
+                gap: 6,
               }}
-              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.9")}
-              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
             >
-              <RefreshCw size={16} /> Re-check
+              <RefreshCw size={14} /> Re-check
             </button>
             <button
               onClick={onSkip}
               style={{
                 flex: 1,
-                height: 50,
+                height: 48,
                 background: "transparent",
                 color: "var(--color-text-tertiary)",
                 border: "1px solid rgba(32,30,36,0.12)",
-                borderRadius: 14,
+                borderRadius: 12,
                 fontWeight: 600,
-                fontSize: 14,
+                fontSize: 13.5,
                 cursor: "pointer",
-                transition: "all 0.15s",
               }}
             >
               Skip for now
@@ -606,21 +694,21 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
       {/* Info Footnote */}
       <div
         style={{
-          marginTop: 20,
-          padding: "12px 16px",
-          borderRadius: 12,
+          marginTop: 18,
+          padding: "10px 14px",
+          borderRadius: 10,
           background: "rgba(32,30,36,0.03)",
-          border: "1px solid rgba(32,30,36,0.06)",
+          border: "1px solid rgba(32,30,36,0.05)",
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           width: "100%",
           boxSizing: "border-box",
         }}
       >
-        <Terminal size={15} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
-        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.5, margin: 0, textAlign: "left" }}>
-          You can configure or change your sandbox VM anytime in <strong>Settings &gt; Linux VM</strong>.
+        <Terminal size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
+        <p style={{ fontSize: 11.5, color: "var(--color-text-tertiary)", lineHeight: 1.4, margin: 0, textAlign: "left" }}>
+          You can inspect and update your skill toolchain anytime in <strong>Settings &gt; Linux VM</strong>.
         </p>
       </div>
     </motion.div>

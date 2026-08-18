@@ -1387,6 +1387,34 @@ export default function ChatPage() {
         dependencies?: string[];
     }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
+    const [envWarning, setEnvWarning] = useState<string | null>(null);
+    const [showEnvWarningBanner, setShowEnvWarningBanner] = useState<boolean>(false);
+
+    useEffect(() => {
+        const checkEnv = async () => {
+            try {
+                const dismissed = sessionStorage.getItem('everfern_env_warning_dismissed');
+                if (dismissed === 'true') return;
+
+                const electronAPI = (window as any).electronAPI;
+                if (!electronAPI?.system?.checkEnvironmentDependencies) return;
+
+                const res = await electronAPI.system.checkEnvironmentDependencies();
+                if (res && (!res.vmReady || !res.pythonInstalled || !res.venvReady || !res.pipPackagesInstalled)) {
+                    if (!res.vmReady) {
+                        setEnvWarning("Sandbox environment (WSL / Docker) is not ready. Some document & terminal skills may be limited.");
+                    } else {
+                        setEnvWarning("Python skill environment (~/.everfern/venv) is incomplete. Some PDF and data analysis skills may be limited.");
+                    }
+                    setShowEnvWarningBanner(true);
+                }
+            } catch (e) {
+                // Ignore quietly
+            }
+        };
+        const timer = setTimeout(checkEnv, 2500);
+        return () => clearTimeout(timer);
+    }, []);
 
     // ── EverFern Dispatch: broadcast state back to the web UI ─────────────────
     // This effect runs whenever chat state changes and sends a state_update
@@ -6573,6 +6601,62 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             </div>
                         ) : (
                             <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" }}>
+                                {showEnvWarningBanner && envWarning && (
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '7px 16px',
+                                        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                        borderBottom: '1px solid rgba(245, 158, 11, 0.15)',
+                                        fontSize: 12,
+                                        color: 'var(--color-text-secondary)',
+                                        zIndex: 10,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ fontSize: 13 }}>⚠️</span>
+                                            <span>{envWarning}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <button
+                                                onClick={() => {
+                                                    setShowSettings(true);
+                                                    setShowEnvWarningBanner(false);
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: 'var(--color-text-primary)',
+                                                    fontWeight: 600,
+                                                    fontSize: 11.5,
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline'
+                                                }}
+                                            >
+                                                Review in Settings
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    sessionStorage.setItem('everfern_env_warning_dismissed', 'true');
+                                                    setShowEnvWarningBanner(false);
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: '2px 4px',
+                                                    color: 'var(--color-text-tertiary)',
+                                                    cursor: 'pointer',
+                                                    fontSize: 13,
+                                                    lineHeight: 1
+                                                }}
+                                                title="Dismiss"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
                                     <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 880 : 1160) : (isToolDetailOpen ? 640 : 860), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
 

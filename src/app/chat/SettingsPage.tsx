@@ -697,6 +697,26 @@ const LinuxVMSection = () => {
     const [installError, setInstallError] = useState('');
     const [installWarning, setInstallWarning] = useState('');
 
+    const [depsStatus, setDepsStatus] = useState<any>(null);
+    const [depsLoading, setDepsLoading] = useState(false);
+    const [depsInstalling, setDepsInstalling] = useState(false);
+    const [depsMessage, setDepsMessage] = useState('');
+
+    const checkDeps = async () => {
+        setDepsLoading(true);
+        try {
+            const electronAPI = (window as any).electronAPI;
+            if (electronAPI?.system?.checkEnvironmentDependencies) {
+                const res = await electronAPI.system.checkEnvironmentDependencies();
+                setDepsStatus(res);
+            }
+        } catch (err) {
+            console.error('Failed to check dependencies', err);
+        } finally {
+            setDepsLoading(false);
+        }
+    };
+
     useEffect(() => {
         const check = async () => {
             try {
@@ -707,16 +727,19 @@ const LinuxVMSection = () => {
                     const isInstalled = await (window as any).electronAPI?.system?.checkDocker?.();
                     if (isInstalled) {
                         setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Running' });
+                        checkDeps();
                     } else {
                         setWslStatus({ installed: false, healthy: null });
                     }
                 } else if (plat === 'linux') {
                     setWslStatus({ installed: true, healthy: true, osName: 'Native Linux', uptime: 'Running' });
+                    checkDeps();
                 } else {
                     const isInstalled = await (window as any).electronAPI?.system?.checkWSL?.();
                     if (isInstalled) {
                         const info = await (window as any).electronAPI?.system?.getWSLInfo?.();
                         setWslStatus({ installed: true, healthy: info?.healthy, osName: info?.osName, uptime: info?.uptime });
+                        checkDeps();
                     } else {
                         setWslStatus({ installed: false, healthy: null });
                     }
@@ -745,6 +768,7 @@ const LinuxVMSection = () => {
                 const res = await (window as any).electronAPI?.system?.setupDockerUbuntu?.();
                 if (res?.success) {
                     setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Just now' });
+                    checkDeps();
                 } else {
                     setInstallError(res?.error || 'Failed to set up Docker Ubuntu container.');
                 }
@@ -753,6 +777,7 @@ const LinuxVMSection = () => {
                 if (res?.success) {
                     setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Just now' });
                     if (res.warning) setInstallWarning(res.warning);
+                    checkDeps();
                 } else {
                     setInstallError(res?.error || 'Failed to install Linux VM.');
                 }
@@ -764,17 +789,39 @@ const LinuxVMSection = () => {
         }
     };
 
+    const handleInstallDependencies = async () => {
+        setDepsInstalling(true);
+        setDepsMessage('Provisioning Python 3, venv, and skill packages in ~/.everfern...');
+        try {
+            const electronAPI = (window as any).electronAPI;
+            if (electronAPI?.system?.setupEnvironmentDependencies) {
+                const res = await electronAPI.system.setupEnvironmentDependencies();
+                if (!res?.success) {
+                    throw new Error(res?.error || 'Failed to install dependencies');
+                }
+            }
+            await checkDeps();
+            setDepsMessage('✓ All dependencies installed successfully!');
+            setTimeout(() => setDepsMessage(''), 3000);
+        } catch (err: any) {
+            setDepsMessage(`❌ ${err?.message || 'Installation failed'}`);
+        } finally {
+            setDepsInstalling(false);
+        }
+    };
+
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <SectionTitle>Linux VM Settings</SectionTitle>
+            <SectionTitle>Linux VM & Skill Environment</SectionTitle>
             <SectionSubtitle>
                 {platform === 'darwin'
-                    ? 'Manage the local Linux virtual machine (Docker) used by EverFern for advanced tasks and code execution.'
+                    ? 'Manage the local Linux sandbox (Docker) and Python virtual environment used by EverFern for file skills, PDF processing, spreadsheets, and code execution.'
                     : platform === 'linux'
-                    ? 'Manage the local Linux environment used by EverFern for advanced tasks and code execution.'
-                    : 'Manage the local Linux virtual machine (WSL) used by EverFern for advanced tasks and code execution.'}
+                    ? 'Manage the local Linux toolchain and Python virtual environment used by EverFern for advanced tasks and code execution.'
+                    : 'Manage the local Linux virtual machine (WSL 2) and Python virtual environment used by EverFern for advanced tasks, PDF generation, spreadsheets, and code execution.'}
             </SectionSubtitle>
 
+            {/* Sandbox VM Status */}
             <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div>
@@ -842,6 +889,95 @@ const LinuxVMSection = () => {
                     </div>
                 )}
             </Card>
+
+            {/* Skill Toolchain & Dependencies */}
+            {wslStatus.installed && (
+                <Card style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                        <div>
+                            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+                                Skill Toolchain & Dependencies
+                            </h3>
+                            <p style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', margin: '4px 0 0 0' }}>
+                                Pre-installed Python virtual environment (<code>~/.everfern/venv</code>) and Node.js packages for document processing.
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleInstallDependencies}
+                            disabled={depsInstalling || depsLoading}
+                            style={{
+                                padding: '6px 14px',
+                                backgroundColor: 'var(--color-bg-subtle)',
+                                color: 'var(--color-text-primary)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 8,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: (depsInstalling || depsLoading) ? 'wait' : 'pointer',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            {depsInstalling ? 'Installing...' : depsLoading ? 'Checking...' : 'Re-install / Verify'}
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🐍 Python 3 & venv</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.venvReady ? '#10b981' : '#f59e0b' }}>
+                                    {depsStatus?.pythonInstalled && depsStatus?.venvReady ? '✓ Ready' : 'Incomplete'}
+                                </span>
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                {depsStatus?.pythonVersion || 'Python 3'} · Isolated venv
+                            </span>
+                        </div>
+
+                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📄 PDF Skill</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.pdf ? '#10b981' : '#f59e0b' }}>
+                                    {depsStatus?.details?.pdf ? '✓ Ready' : 'Incomplete'}
+                                </span>
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                pypdf, pdfplumber, reportlab, pdf-lib
+                            </span>
+                        </div>
+
+                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📊 Spreadsheets & Data</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.excel && depsStatus?.details?.data ? '#10b981' : '#f59e0b' }}>
+                                    {depsStatus?.details?.excel && depsStatus?.details?.data ? '✓ Ready' : 'Incomplete'}
+                                </span>
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                pandas, openpyxl, numpy, matplotlib
+                            </span>
+                        </div>
+
+                        <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>📽️ Office & Presentations</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: depsStatus?.details?.pptx && depsStatus?.details?.docx ? '#10b981' : '#f59e0b' }}>
+                                    {depsStatus?.details?.pptx && depsStatus?.details?.docx ? '✓ Ready' : 'Incomplete'}
+                                </span>
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                                python-pptx, pptxgenjs, docx, pandoc
+                            </span>
+                        </div>
+                    </div>
+
+                    {depsMessage && (
+                        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: 'rgba(32,30,36,0.03)', border: '1px solid var(--color-border-subtle)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            {depsMessage}
+                        </div>
+                    )}
+                </Card>
+            )}
         </div>
     );
 };

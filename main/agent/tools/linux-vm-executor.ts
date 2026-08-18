@@ -184,6 +184,158 @@ export async function ensureWSLSetup(): Promise<void> {
   console.log('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅');
 }
 
+export interface EnvironmentDependenciesResult {
+  available: boolean;
+  platform: string;
+  vmReady: boolean;
+  pythonInstalled: boolean;
+  pythonVersion?: string;
+  nodeInstalled: boolean;
+  nodeVersion?: string;
+  venvReady: boolean;
+  pipPackagesInstalled: boolean;
+  nodePackagesInstalled: boolean;
+  details: {
+    pdf: boolean;
+    excel: boolean;
+    pptx: boolean;
+    docx: boolean;
+    data: boolean;
+  };
+  missingList: string[];
+}
+
+/**
+ * Checks environment readiness and skill dependency status across WSL/Docker/Linux.
+ */
+export async function checkEnvironmentDependencies(): Promise<EnvironmentDependenciesResult> {
+  const result: EnvironmentDependenciesResult = {
+    available: false,
+    platform: process.platform,
+    vmReady: false,
+    pythonInstalled: false,
+    nodeInstalled: false,
+    venvReady: false,
+    pipPackagesInstalled: false,
+    nodePackagesInstalled: false,
+    details: {
+      pdf: false,
+      excel: false,
+      pptx: false,
+      docx: false,
+      data: false,
+    },
+    missingList: [],
+  };
+
+  try {
+    const probeScript = [
+      'python3 --version 2>/dev/null || echo "NO_PYTHON"',
+      'node --version 2>/dev/null || echo "NO_NODE"',
+      'test -d ~/.everfern/venv && echo "VENV_EXISTS" || echo "NO_VENV"',
+      '~/.everfern/venv/bin/python3 -c "import pypdf, pdfplumber, reportlab; print(\'PDF_OK\')" 2>/dev/null || echo "NO_PDF"',
+      '~/.everfern/venv/bin/python3 -c "import pandas, openpyxl; print(\'EXCEL_OK\')" 2>/dev/null || echo "NO_EXCEL"',
+      '~/.everfern/venv/bin/python3 -c "import pptx; print(\'PPTX_OK\')" 2>/dev/null || echo "NO_PPTX"',
+      '~/.everfern/venv/bin/python3 -c "import docx; print(\'DOCX_OK\')" 2>/dev/null || echo "NO_DOCX"',
+      '~/.everfern/venv/bin/python3 -c "import numpy, matplotlib, seaborn; print(\'DATA_OK\')" 2>/dev/null || echo "NO_DATA"',
+      'test -d ~/.everfern/node_modules/pptxgenjs && echo "NODE_PKGS_OK" || echo "NO_NODE_PKGS"',
+    ].join(' && ');
+
+    let output = '';
+
+    if (process.platform === 'win32') {
+      const wslCmd = getWslCmd();
+      const { stdout } = await execAsync(`${wslCmd} --exec bash -c "${probeScript}"`, { timeout: 12000 });
+      output = stdout || '';
+      result.vmReady = true;
+    } else if (process.platform === 'darwin') {
+      const { stdout } = await execAsync(`docker exec everfern-ubuntu bash -c "${probeScript}"`, { timeout: 12000 });
+      output = stdout || '';
+      result.vmReady = true;
+    } else if (process.platform === 'linux') {
+      const { stdout } = await execAsync(`bash -c "${probeScript}"`, { timeout: 12000 });
+      output = stdout || '';
+      result.vmReady = true;
+    }
+
+    if (output.includes('Python 3')) {
+      result.pythonInstalled = true;
+      const match = output.match(/Python 3\.[0-9.]+/);
+      if (match) result.pythonVersion = match[0];
+    } else {
+      result.missingList.push('Python 3');
+    }
+
+    if (output.includes('v') && !output.includes('NO_NODE')) {
+      result.nodeInstalled = true;
+      const match = output.match(/v[0-9.]+/);
+      if (match) result.nodeVersion = match[0];
+    } else {
+      result.missingList.push('Node.js');
+    }
+
+    if (output.includes('VENV_EXISTS')) {
+      result.venvReady = true;
+    } else {
+      result.missingList.push('Python Virtualenv (~/.everfern/venv)');
+    }
+
+    result.details.pdf = output.includes('PDF_OK');
+    result.details.excel = output.includes('EXCEL_OK');
+    result.details.pptx = output.includes('PPTX_OK');
+    result.details.docx = output.includes('DOCX_OK');
+    result.details.data = output.includes('DATA_OK');
+
+    if (!result.details.pdf) result.missingList.push('PDF Libraries (pypdf, pdfplumber, reportlab)');
+    if (!result.details.excel) result.missingList.push('Excel Libraries (pandas, openpyxl)');
+    if (!result.details.pptx) result.missingList.push('PPTX Libraries (python-pptx, pptxgenjs)');
+    if (!result.details.docx) result.missingList.push('DOCX Libraries (python-docx, docx-js)');
+    if (!result.details.data) result.missingList.push('Data Science Libraries (numpy, matplotlib, seaborn)');
+
+    result.pipPackagesInstalled = result.details.pdf && result.details.excel && result.details.pptx && result.details.docx && result.details.data;
+    result.nodePackagesInstalled = output.includes('NODE_PKGS_OK');
+
+    result.available = result.vmReady && result.pythonInstalled && result.venvReady && result.pipPackagesInstalled;
+  } catch (err: any) {
+    result.available = false;
+    result.vmReady = false;
+  }
+
+  return result;
+}
+
+/**
+ * Installs all required system tools, python venv, and skill libraries.
+ */
+export async function setupEnvironmentDependencies(): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (process.platform === 'win32') {
+      _wslSetupDone = false;
+      await ensureWSLSetup();
+      return { success: true };
+    } else if (process.platform === 'darwin') {
+      await ensureDockerContainer();
+      return { success: true };
+    } else {
+      const setupScript = [
+        'mkdir -p ~/.everfern',
+        'cd ~/.everfern',
+        'if [ ! -f package.json ]; then npm init -y &>/dev/null; fi',
+        'npm install pptxgenjs pdf-lib exceljs sharp canvas chart.js typescript ts-node -q &>/dev/null || true',
+        'if command -v python3 &>/dev/null; then',
+        '  if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi',
+        '  ~/.everfern/venv/bin/pip install --upgrade pip -q',
+        '  ~/.everfern/venv/bin/pip install pypdf pdfplumber openpyxl python-pptx pandas pytesseract pdf2image reportlab python-docx fastapi uvicorn numpy matplotlib seaborn scipy requests beautifulsoup4 lxml openai-whisper -q',
+        'fi'
+      ].join('\n');
+      await execAsync(`bash -c "${setupScript}"`, { timeout: 180000 });
+      return { success: true };
+    }
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
 async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   const wslCmd = getWslCmd();
   console.log(`[runInWSL] Using WSL command: ${wslCmd}`);

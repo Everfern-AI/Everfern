@@ -10,45 +10,6 @@ license: Proprietary. LICENSE.txt has complete terms
 
 This guide covers essential PDF processing operations using Python libraries and command-line tools. For advanced features, JavaScript libraries, and detailed examples, see REFERENCE.md. If you need to fill out a PDF form, read FORMS.md and follow its instructions.
 
-## System Requirements & Python Setup
-
-This skill works across **Windows**, **macOS**, and **Linux/WSL**.
-
-### 1. Ensure Python is Installed (or Auto-Install)
-Before executing Python PDF scripts, check if Python is available:
-```bash
-python --version || python3 --version
-```
-
-If Python is **not installed**, auto-install it using the system package manager:
-- **Windows (PowerShell)**:
-  ```powershell
-  winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
-  ```
-- **macOS (Terminal)**:
-  ```bash
-  brew install python || xcode-select --install
-  ```
-- **Linux / WSL (Ubuntu/Debian)**:
-  ```bash
-  sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv poppler-utils tesseract-ocr
-  ```
-
-### 2. Auto-Install Required Python Dependencies
-Run this one-line command to install all necessary PDF processing libraries:
-```bash
-python -m pip install --upgrade pypdf pdfplumber reportlab pytesseract pdf2image pypdfium2 pandas openpyxl
-```
-*(On macOS/Linux, use `python3 -m pip ...` or the virtualenv in `~/.everfern/venv/bin/pip`)*
-
-### 3. JavaScript / Node.js Alternative (Pure JS, Zero Native Dependencies)
-If Python cannot be run, you can also process PDFs via Node.js using `pdf-lib` and `pdf-parse`:
-```bash
-npm install -g pdf-lib pdf-parse
-```
-
----
-
 ## Quick Start
 
 ```python

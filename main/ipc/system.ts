@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { memorySaveTool } from '../agent/tools/memory-save';
-import { ensureDockerContainer } from '../agent/tools/linux-vm-executor';
+import { ensureDockerContainer, checkEnvironmentDependencies, setupEnvironmentDependencies } from '../agent/tools/linux-vm-executor';
 
 function imageMimeFromPath(filePath: string): string | null {
   const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
@@ -286,6 +286,14 @@ export function registerSystemHandlers() {
       console.error('[Docker Installer] Container setup failed:', err);
       return { success: false, error: err.message };
     }
+  });
+
+  ipcMain.handle('system:checkEnvironmentDependencies', async () => {
+    return await checkEnvironmentDependencies();
+  });
+
+  ipcMain.handle('system:setupEnvironmentDependencies', async () => {
+    return await setupEnvironmentDependencies();
   });
 
   ipcMain.handle('system:toHostPath', async (_event, pathStr: string) => {
