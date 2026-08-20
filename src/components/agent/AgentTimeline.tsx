@@ -601,7 +601,11 @@ function ExecStepRow({
     <React.Fragment>
       <div
         onClick={() => {
-          if (isTerminal || isCode) {
+          // Code steps open side pane; terminal expands inline
+          if (isCode) {
+            const targetTc = toolCall || null;
+            if (targetTc && onPillClick) onPillClick(targetTc);
+          } else if (isTerminal) {
             setIsExpanded(!isExpanded);
           } else {
             const targetTc = toolCall || null;
@@ -632,7 +636,7 @@ function ExecStepRow({
         >
           {step.text}
         </span>
-        {(isTerminal || isCode) && (
+        {isTerminal && (
           <motion.svg
             width="12"
             height="12"
@@ -655,9 +659,9 @@ function ExecStepRow({
           </span>
         )}
       </div>
-      {/* Collapsible Inline Views */}
+      {/* Collapsible Inline Terminal View only */}
       <AnimatePresence>
-        {isExpanded && toolCall && (isTerminal || isCode) && (
+        {isExpanded && toolCall && isTerminal && (
           <motion.div
             key={`inline-${step.id}`}
             initial={{ height: 0, opacity: 0 }}
@@ -667,11 +671,7 @@ function ExecStepRow({
             style={{ overflow: 'hidden' }}
           >
             <div style={{ margin: '8px 0 8px 27px' }}>
-              {isTerminal ? (
-                <CollapsibleTerminalView toolCall={toolCall} isDark={isDark} />
-              ) : (
-                <CollapsibleCodeView toolCall={toolCall} isDark={isDark} />
-              )}
+              <CollapsibleTerminalView toolCall={toolCall} isDark={isDark} />
             </div>
           </motion.div>
         )}

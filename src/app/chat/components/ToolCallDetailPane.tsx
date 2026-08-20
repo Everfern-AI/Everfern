@@ -9,6 +9,7 @@ import {
   List, Terminal, FileCode, Sparkles
 } from 'lucide-react';
 import { PlanArtifact } from './PlanArtifact';
+import ToolCallCodePane from '@/components/tools/ToolCallCodePane';
 
 /* ============================================================
    TYPES & CONSTANTS
@@ -107,7 +108,426 @@ function CopyButton({ text, size = 'sm' }: { text: string; size?: 'sm' | 'md' })
       {copied ? <Check size={s.iconSize} /> : <Copy size={s.iconSize} />}
       {copied ? 'Copied' : 'Copy'}
     </button>
+);
+}
+
+/* ============================================================
+   SIMPLIFIED CODE VIEW - Inline style for write/edit/read tools
+   ============================================================ */
+/* ============================================================
+   FILE OPERATION VIEW - Custom pane for write/edit/read tools
+   Exactly like the image: traffic lights, diff view, clean header
+   ============================================================ */
+function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; onClose: () => void }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+
+  const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || args.filePath || '');
+  const filename = rawPath.split(/[/\\]/).pop() || 'file';
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+  // Determine content based on tool type
+  const newContent = String(
+    args.FileContent || args.content || args.Content || args.newString || args.replace || args.ReplacementContent || ''
+  ).trim();
+
+  const oldContent = String(
+    args.oldString || args.find || args.TargetContent || ''
+  ).trim();
+
+  const resultContent = String(
+    args.output || toolCall.result?.output || toolCall.result?.data?.output || ''
+  ).trim();
+
+  const content = newContent || resultContent;
+  const hasDiff = isEdit && oldContent;
+
+  // Build diff lines
+  type DiffLine = { prefix: string; text: string; color: string };
+  let diffLines: DiffLine[] = [];
+
+  if (isWrite) {
+    diffLines = content.split('\n').map(l => ({ prefix: '+', text: l, color: '#3fb950' }));
+  } else if (isRead) {
+    diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
+  } else if (hasDiff) {
+    // Simple diff: show old lines as - and new lines as +
+    const oldLines = oldContent.split('\n');
+    const newLines = content.split('\n');
+    // For now, just show all old as removed and all new as added
+    oldLines.forEach(l => diffLines.push({ prefix: '-', text: l, color: '#f85149' }));
+    newLines.forEach(l => diffLines.push({ prefix: '+', text: l, color: '#3fb950' }));
+  } else {
+    diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
+  }
+
+  const actionLabel = isWrite ? 'write' : isEdit ? 'edit' : 'view';
+  const badgeLabel = isWrite ? 'Write Operation' : isEdit ? 'Edit Operation' : 'Read Operation';
+  const badgeColor = isWrite ? '#3fb950' : isEdit ? '#f85149' : '#58a6ff';
+
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {}
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#141414' }}>
+      {/* ── Top Chrome Bar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        borderBottom: '1px solid #2a2a2a',
+        background: '#1a1a1a',
+        gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+          {/* Code brackets icon */}
+          <div style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.06)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </div>
+          {/* Agent name + action pill */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#e5e5e5', fontWeight: 500 }}>Fern</span>
+            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
+            <span style={{
+              fontSize: 12,
+              color: '#e5e5e5',
+              background: 'rgba(255,255,255,0.08)',
+              padding: '3px 10px',
+              borderRadius: 6,
+              fontWeight: 500,
+              textTransform: 'lowercase',
+            }}>
+              {actionLabel}
+            </span>
+          </div>
+        </div>
+        {/* Status dot + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: badgeColor }} />
+          <button
+            onClick={handleCopy}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Metadata Row ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '12px 16px',
+        borderBottom: '1px solid #2a2a2a',
+      }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: '#e5e5e5', textTransform: 'lowercase' }}>
+          {actionLabel}
+        </span>
+        <span style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: badgeColor,
+          background: `${badgeColor}15`,
+          padding: '3px 10px',
+          borderRadius: 20,
+          border: `1px solid ${badgeColor}30`,
+        }}>
+          {badgeLabel}
+        </span>
+        <span style={{
+          fontSize: 12,
+          color: 'rgba(255,255,255,0.4)',
+          fontFamily: '"JetBrains Mono", monospace',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flex: 1,
+        }}>
+          {rawPath}
+        </span>
+      </div>
+
+      {/* ── Scrollable Content ── */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px 24px' }}>
+        {/* Code Card */}
+        <div style={{
+          background: '#0d0d0d',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.06)',
+          overflow: 'hidden',
+        }}>
+          {/* Card Header with traffic lights */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            background: '#141414',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Traffic lights */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+              </div>
+              <span style={{
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.7)',
+                fontFamily: T.sans,
+                marginLeft: 4,
+              }}>
+                {filename}
+              </span>
+            </div>
+            <button
+              onClick={handleCopy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: '1px solid #3a3a3a',
+                background: 'transparent',
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 12,
+              }}
+            >
+              <Copy size={14} />
+              Copy
+            </button>
+          </div>
+
+          {/* Code content with diff prefixes */}
+          <div style={{
+            padding: '12px 0',
+            fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
+            fontSize: 13,
+            lineHeight: 1.7,
+            overflow: 'auto',
+          }}>
+            {diffLines.map((dl, i) => (
+              <div key={i} style={{ display: 'flex', minHeight: 23 }}>
+                <span style={{
+                  width: 36,
+                  padding: '0 8px 0 14px',
+                  textAlign: 'right',
+                  color: dl.color,
+                  userSelect: 'none',
+                  flexShrink: 0,
+                  fontWeight: 500,
+                }}>
+                  {dl.prefix}
+                </span>
+                <span
+                  style={{
+                    padding: '0 12px',
+                    color: '#c9d1d9',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    flex: 1,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: highlightLine(dl.text, ext) }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
+}
+
+/* ── Multi-Language Syntax Highlighter ─────────────────────────────── */
+function highlightLine(line: string, ext: string): string {
+  let h = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (!h.trim()) return h;
+
+  if (ext === 'py') return highlightPython(h);
+  if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) return highlightJS(h);
+  if (['css', 'scss'].includes(ext)) return highlightCSS(h);
+  if (['html', 'htm'].includes(ext)) return highlightHTML(h);
+  if (ext === 'json') return highlightJSON(h);
+  if (['sh', 'bash', 'zsh'].includes(ext)) return highlightShell(h);
+  
+  // Generic fallback
+  return highlightGeneric(h);
+}
+
+function highlightPython(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  h = h.replace(/(""".*""")|('''.*''')|("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  // Keywords
+  const kw = /\b(import|from|as|def|class|return|if|elif|else|for|while|try|except|finally|with|yield|lambda|raise|assert|del|global|nonlocal|pass|continue|break|and|or|not|in|is|None|True|False)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  // Builtins
+  const bi = /\b(print|len|range|enumerate|zip|map|filter|sorted|open|str|int|float|list|dict|set|tuple|type|isinstance|hasattr|getattr|super|self|cls)\b/g;
+  h = h.replace(bi, '<span style="color: #61afef">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Functions
+  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return h;
+}
+
+function highlightJS(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  const str = /(`[^`]*`)|("[^"]*")|('[^']*')/g;
+  h = h.replace(str, '<span style="color: #98c379">$1</span>');
+  // Template literals interpolation
+  h = h.replace(/(\\\$\{[^}]*\})/g, '<span style="color: #e06c75">$1</span>');
+  // Keywords
+  const kw = /\b(import|export|from|default|const|let|var|function|class|extends|implements|interface|type|enum|namespace|module|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|async|await|yield|get|set|static|public|private|protected|as|declare|readonly)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  // Types
+  const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|console|window|document|Math)\b/g;
+  h = h.replace(types, '<span style="color: #e5c07b">$1</span>');
+  // JSX tags
+  if (h.includes('<')) {
+    h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+    h = h.replace(/(\w+)=/g, '<span style="color: #d19a66">$1</span>=');
+  }
+  // Properties
+  h = h.replace(/(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Functions
+  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return h;
+}
+
+function highlightCSS(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  // Selectors
+  h = h.replace(/^(\s*[.#]\w+)/, '<span style="color: #e06c75">$1</span>');
+  h = h.replace(/@\w+/g, '<span style="color: #c678dd">$&</span>');
+  // Properties
+  const prop = /([\w-]+)(?=\s*:)/g;
+  h = h.replace(prop, '<span style="color: #e06c75">$1</span>');
+  // Values (colors, px, rem, etc)
+  h = h.replace(/(#[0-9a-fA-F]{3,8})/g, '<span style="color: #98c379">$1</span>');
+  h = h.replace(/(\d+(px|rem|em|%|vh|vw|s|ms|deg|fr|pt|cm|mm|in))/g, '<span style="color: #d19a66">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightHTML(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(&lt;!--[\s\S]*?--&gt;)/gm, '<span style="color: #5c6370">$1</span>');
+  // Tags
+  h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+  h = h.replace(/(\/?)\s*&gt;/g, '$1<span style="color: #e06c75">&gt;</span>');
+  // Attributes
+  h = h.replace(/\b(\w+)(?==)/g, '<span style="color: #d19a66">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightJSON(line: string): string {
+  let h = line;
+  // Keys
+  h = h.replace(/("[^"]*")(?=\s*:)/g, '<span style="color: #e06c75">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")/g, '<span style="color: #98c379">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Booleans/null
+  const kw = /\b(true|false|null)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  return h;
+}
+
+function highlightShell(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Variables
+  h = h.replace(/(\$\w+)/g, '<span style="color: #e06c75">$1</span>');
+  // Builtins
+  const builtins = /\b(echo|cd|ls|mkdir|rm|cp|mv|cat|grep|awk|sed|cut|sort|uniq|head|tail|find|chmod|chown|sudo|apt|yum|brew|curl|wget|git|docker|python|python3|node|npm|npx|yarn|pip|pip3)\b/g;
+  h = h.replace(builtins, '<span style="color: #61afef">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightGeneric(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  return h;
 }
 
 function StatusDot({ status }: { status: string }) {
@@ -889,8 +1309,21 @@ export function ToolCallDetailPane({
       .replace(/\b\w/g, c => c.toUpperCase());
   };
 
+  // If this is a file/code operation (write/edit/read), render the pixel-perfect ToolCallCodePane
+  if (isCodeOrFileViewer) {
+    return (
+      <ToolCallCodePane
+        toolName={toolCall.toolName}
+        args={toolCall.arguments || (toolCall as any).args}
+        output={toolCall.result?.output || toolCall.result?.data?.output || ''}
+        data={toolCall.result?.data || toolCall.result}
+        onClose={onClose}
+      />
+    );
+  }
+
   // Determine if we should use simple styling (no glossy effects)
-  const useSimpleStyle = isTerminal || isWrite || isEdit || isRead;
+  const useSimpleStyle = isTerminal;
 
   return (
     <motion.div
@@ -1006,9 +1439,7 @@ export function ToolCallDetailPane({
           />
         </div>
       ) : isCodeOrFileViewer ? (
-        <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <CodeEditorPreview toolCall={toolCall} />
-        </div>
+        <FileOperationView toolCall={toolCall} onClose={onClose} />
       ) : isTerminal ? (
         <div style={{ flex: 1, padding: '20px', minHeight: 0, display: 'flex', flexDirection: 'column', background: '#141414' }}>
           <SimplifiedTerminalView toolCall={toolCall} />

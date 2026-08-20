@@ -23,6 +23,7 @@ export * from './plans/PlanApprovalBanner';
 
 // 3. Tools & Capabilities
 export * from './tools/ToolCallComponents';
+export * from './tools/ToolCallCodePane';
 export { default as ToolDetailSidePanel } from './tools/ToolDetailSidePanel';
 export * from './tools/ToolSettingsSection';
 export * from './tools/ComputerPane';

@@ -134,6 +134,14 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
         } catch {}
     };
 
+    const handleDriveClick = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setShowDropdown(false);
+        try {
+            window.open('https://drive.google.com/drive/my-drive', '_blank');
+        } catch {}
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 4 }}

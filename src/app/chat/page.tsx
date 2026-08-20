@@ -1275,7 +1275,7 @@ export default function ChatPage() {
     };
 
     const handlePillClick = (tc: ToolCallDisplay) => {
-        // Don't open ToolCallDetailPane for these tools - show inline in timeline instead
+        // Don't open ToolCallDetailPane for terminal tools - show inline in timeline instead
         const toolLower = tc.toolName?.toLowerCase() || '';
         if (
             toolLower.includes('terminal') || 
@@ -1284,10 +1284,7 @@ export default function ChatPage() {
             toolLower.includes('exec') ||
             toolLower.includes('present_files') ||
             toolLower.includes('task_complete') ||
-            toolLower.includes('complete') ||
-            toolLower.includes('write') ||
-            toolLower.includes('edit') ||
-            toolLower.includes('read')
+            toolLower.includes('complete')
         ) {
             return;
         }

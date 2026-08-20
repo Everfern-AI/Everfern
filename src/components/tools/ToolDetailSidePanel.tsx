@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from '../files/FileViewerModal';
+import ToolCallCodePane from './ToolCallCodePane';
 
 /* ============================================================
    TYPES
@@ -3098,302 +3099,36 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
   );
 }
 
-function FileEditorView({ toolName, path, args, output, data }: { toolName: string; path: string; args: any; output: string; data?: any }) {
-  const name = (toolName || '').toLowerCase();
-  const rawFileList = args?.files || args?.items || data?.files || data?.items;
-
-  if (name === 'multi_file_edit' || name === 'multi_replace_file_content' || (Array.isArray(rawFileList) && rawFileList.length > 0)) {
-    return <SidePanelMultiFileDiffView args={args || data || {}} output={output} />;
-  }
-
-  const ext = path.split(/[/\\]/).pop()?.split('.').pop() || 'text';
-  const { isWrite, isMulti, chunks, oldContent, newContent, isRead, hasRenderableContent } = useMemo(() => {
-    const name = (toolName || '').toLowerCase();
-
-    let oldContent = '';
-    let newContent = '';
-    let isWrite = false;
-    let isMulti = false;
-    let chunks: any[] = [];
-    let isRead = false;
-
-    if (name.includes('write')) {
-      isWrite = true;
-      newContent = args?.CodeContent || args?.code || args?.content || args?.text || data?.content || '';
-    } else if (name === 'read' || name === 'read_file' || name === 'view_file') {
-      isRead = true;
-      newContent = output || '';
-    } else {
-      if (args?.ReplacementChunks && Array.isArray(args.ReplacementChunks)) {
-        isMulti = true;
-        chunks = args.ReplacementChunks.map((chunk: any) => ({
-          target: chunk.TargetContent || chunk.target || '',
-          replacement: chunk.ReplacementContent || chunk.replacement || '',
-          startLine: chunk.StartLine,
-          endLine: chunk.EndLine,
-        }));
-      } else {
-        oldContent =
-          args?.TargetContent ||
-          args?.target ||
-          args?.oldString ||
-          args?.old_string ||
-          args?.oldText ||
-          args?.old_text ||
-          args?.search ||
-          args?.find ||
-          args?.from ||
-          args?.original ||
-          args?.before ||
-          data?.oldString ||
-          data?.old_string ||
-          '';
-        newContent =
-          args?.ReplacementContent ||
-          args?.replacement ||
-          args?.newString ||
-          args?.new_string ||
-          args?.newText ||
-          args?.new_text ||
-          args?.replace ||
-          args?.with ||
-          args?.to ||
-          args?.updated ||
-          args?.after ||
-          data?.newString ||
-          data?.new_string ||
-          '';
-      }
-    }
-
-    return {
-      isWrite,
-      isMulti,
-      chunks,
-      oldContent,
-      newContent,
-      isRead,
-      hasRenderableContent: isMulti ? chunks.length > 0 : Boolean(oldContent || newContent),
-    };
-  }, [toolName, args, output, data]);
-
-  // Helper to render diff lines for a target and replacement
-  const renderDiffLines = (oldText: string, newText: string, startLine = 1) => {
-    const MAX_LINES_TO_RENDER = 1000;
-
-    if (isWrite || isRead) {
-      const lines = newText.split('\n');
-      const truncated = lines.length > MAX_LINES_TO_RENDER;
-      const linesToRender = truncated ? lines.slice(0, MAX_LINES_TO_RENDER) : lines;
-
-      const elements = linesToRender.map((line, idx) => (
-        <CodeLine
-          key={idx}
-          type={isRead ? 'normal' : 'add'}
-          content={line}
-          lineNumber={startLine + idx}
-          ext={ext}
-        />
-      ));
-
-      if (truncated) {
-        elements.push(
-          <div key="trunc-msg" style={{ padding: '8px 16px', color: '#71717a', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
-            ... [Remaining {lines.length - MAX_LINES_TO_RENDER} lines truncated for performance]
-          </div>
-        );
-      }
-      return elements;
-    }
-
-    // Compute diff
-    const changes = diffLines(oldText, newText);
-    const lineElements: React.ReactNode[] = [];
-    let oldLine = startLine;
-    let newLine = startLine;
-    let linesCount = 0;
-    let wasTruncated = false;
-
-    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
-      if (linesCount >= MAX_LINES_TO_RENDER) {
-        wasTruncated = true;
-        break;
-      }
-      const change = changes[changeIdx];
-      // Split the text while keeping trailing spaces/newlines
-      const lines = change.value.replace(/\n$/, '').split('\n');
-      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-        if (linesCount >= MAX_LINES_TO_RENDER) {
-          wasTruncated = true;
-          break;
-        }
-        linesCount++;
-        const line = lines[lineIdx];
-        const key = `${changeIdx}-${lineIdx}`;
-        if (change.added) {
-          lineElements.push(
-            <CodeLine
-              key={key}
-              type="add"
-              content={line}
-              lineNumber={newLine++}
-              ext={ext}
-            />
-          );
-        } else if (change.removed) {
-          lineElements.push(
-            <CodeLine
-              key={key}
-              type="del"
-              content={line}
-              lineNumber={oldLine++}
-              ext={ext}
-            />
-          );
-        } else {
-          lineElements.push(
-            <CodeLine
-              key={key}
-              type="normal"
-              content={line}
-              lineNumber={newLine++}
-              ext={ext}
-            />
-          );
-          oldLine++;
-        }
-      }
-    }
-
-    if (wasTruncated) {
-      lineElements.push(
-        <div key="trunc-msg" style={{ padding: '8px 16px', color: '#71717a', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
-          ... [Remaining lines truncated for performance]
-        </div>
-      );
-    }
-
-    return lineElements;
-  };
-
+function FileEditorView({
+  toolName,
+  path,
+  args,
+  output,
+  data,
+  onClose,
+  isExpanded,
+  onToggleExpand,
+}: {
+  toolName: string;
+  path: string;
+  args: any;
+  output: string;
+  data?: any;
+  onClose?: () => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+}) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Title bar */}
-      <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: 0, letterSpacing: '-0.015em', fontFamily: T.sans }}>
-            {toolName}
-          </h3>
-          <span style={{
-            fontSize: 9.5,
-            fontWeight: 700,
-            color: isWrite ? T.green : isRead ? T.blue : T.textSecondary,
-            background: isWrite ? T.greenFaint : isRead ? T.blueFaint : T.surfaceRaised,
-            border: `1px solid ${isWrite ? 'rgba(34,197,94,0.15)' : isRead ? 'rgba(59,130,246,0.15)' : T.border}`,
-            padding: '2px 8px',
-            borderRadius: 20,
-            fontFamily: T.sans
-          }}>
-            {isWrite ? 'Write Operation' : isRead ? 'Read Operation' : 'Edit Operation'}
-          </span>
-        </div>
-        {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
-      </div>
-
-      {/* Editor Body */}
-      <div style={{ flex: 1, overflowY: 'auto', background: EDITOR_COLORS.bg, padding: 16 }}>
-        <div style={{
-          border: `1px solid ${EDITOR_COLORS.border}`,
-          borderRadius: T.r8,
-          overflow: 'hidden',
-          backgroundColor: EDITOR_COLORS.bg,
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          {/* Editor Header / Tab bar */}
-          <div style={{
-            height: 36,
-            backgroundColor: EDITOR_COLORS.gutterBg,
-            borderBottom: `1px solid ${EDITOR_COLORS.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            paddingLeft: 16,
-            paddingRight: 16,
-            justifyContent: 'space-between',
-            userSelect: 'none',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* Colored Dots */}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#ef4444' }} />
-                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#fbbf24' }} />
-                <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#22c55e' }} />
-              </div>
-              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: T.mono, marginLeft: 12 }}>
-                {path.split(/[/\\]/).pop() || 'Untitled'}
-              </span>
-            </div>
-            {/* Copy button */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <CopyBtn text={isWrite ? newContent : isMulti ? chunks.map(c => c.replacement).join('\n') : newContent} dark />
-            </div>
-          </div>
-
-          {/* Editor Code Area */}
-          <div style={{
-            overflowX: 'auto',
-            paddingTop: 8,
-            paddingBottom: 8,
-            backgroundColor: EDITOR_COLORS.bg,
-          }}>
-            {!hasRenderableContent ? (
-              <div style={{ padding: 16 }}>
-                <div style={{
-                  border: `1px solid ${EDITOR_COLORS.border}`,
-                  borderRadius: T.r8,
-                  padding: 14,
-                  background: '#18181b',
-                  color: 'var(--color-border)',
-                  fontFamily: T.mono,
-                  fontSize: 12,
-                  lineHeight: 1.7,
-                }}>
-                  <div style={{ color: 'var(--color-text-tertiary)', marginBottom: 10, fontFamily: T.sans, fontSize: 12 }}>
-                    This edit completed, but no before/after diff was included in the tool arguments.
-                  </div>
-                  {output && (
-                    <pre style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{output}</pre>
-                  )}
-                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-tertiary)' }}>
-                    {JSON.stringify(args || {}, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            ) : isMulti ? (
-              chunks.map((chunk, idx) => (
-                <div key={idx} style={{ marginBottom: idx < chunks.length - 1 ? 16 : 0 }}>
-                  <div style={{
-                    backgroundColor: '#18181b',
-                    color: 'var(--color-text-tertiary)',
-                    padding: '4px 16px',
-                    fontSize: 10,
-                    fontWeight: 'bold',
-                    fontFamily: T.mono,
-                    borderTop: idx > 0 ? `1px dashed ${EDITOR_COLORS.border}` : 'none',
-                    borderBottom: `1px solid ${EDITOR_COLORS.border}`,
-                  }}>
-                    @@ Chunk {idx + 1} (Line {chunk.startLine || '?'} to {chunk.endLine || '?'}) @@
-                  </div>
-                  {renderDiffLines(chunk.target, chunk.replacement, chunk.startLine || 1)}
-                </div>
-              ))
-            ) : (
-              renderDiffLines(oldContent, newContent, 1)
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <ToolCallCodePane
+      toolName={toolName}
+      path={path}
+      args={args}
+      output={output}
+      data={data}
+      onClose={onClose || (() => {})}
+      isExpanded={isExpanded}
+      onToggleExpand={onToggleExpand}
+    />
   );
 }
 
@@ -3736,61 +3471,23 @@ function FilePreviewOverlay({
   content: string | null;
   onClose: () => void;
 }) {
-  const ext = filePath.split('.').pop() || 'text';
-  const lines = (content || '').split('\n');
-  const MAX_PREVIEW_LINES = 1000;
-  const truncated = lines.length > MAX_PREVIEW_LINES;
-  const linesToRender = truncated ? lines.slice(0, MAX_PREVIEW_LINES) : lines;
-
   return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      zIndex: 4,
-      background: '#151515',
-      color: 'var(--color-bg-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: 0,
-    }}>
-      <div style={{
-        height: 48,
-        borderBottom: '1px solid #252525',
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 40,
+        background: '#18181b',
         display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '0 14px',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-          <FileIcon size={15} color={extensionColor(filePath)} />
-          <span style={{ fontSize: 13, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {basenameFromPath(filePath)}
-          </span>
-        </div>
-        <button type="button" onClick={onClose} title="Close preview" style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #303030', background: '#202020', color: '#d4d4d4', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <X size={14} />
-        </button>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', fontFamily: T.mono, fontSize: 12.5, lineHeight: '20px', padding: '12px 0' }}>
-        {content == null ? (
-          <div style={{ padding: 18, color: '#7c7c7c' }}>Unable to preview this file.</div>
-        ) : (
-          <>
-            {linesToRender.map((line, idx) => (
-              <div key={idx} style={{ display: 'flex', minWidth: 'fit-content' }}>
-                <span style={{ width: 52, flexShrink: 0, textAlign: 'right', paddingRight: 12, color: 'var(--color-text-tertiary)', userSelect: 'none' }}>{idx + 1}</span>
-                <pre style={{ margin: 0, paddingRight: 18, color: 'var(--color-border)', whiteSpace: 'pre' }}>{syntaxHighlightLine(line, ext)}</pre>
-              </div>
-            ))}
-            {truncated && (
-              <div style={{ padding: '8px 16px 8px 64px', color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontFamily: T.mono, fontSize: 12 }}>
-                ... [Remaining {lines.length - MAX_PREVIEW_LINES} lines truncated for performance]
-              </div>
-            )}
-          </>
-        )}
-      </div>
+        flexDirection: 'column',
+      }}
+    >
+      <ToolCallCodePane
+        toolName="view_file"
+        path={filePath}
+        output={content || ''}
+        onClose={onClose}
+      />
     </div>
   );
 }
@@ -3831,6 +3528,7 @@ export default function ToolDetailSidePanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isExpandedWidth, setIsExpandedWidth] = useState(false);
   const [showFilePane, setShowFilePane] = useState(false);
   const [filePaneProjectPath, setFilePaneProjectPath] = useState('');
   const [filePaneFiles, setFilePaneFiles] = useState<string[]>([]);
@@ -3853,6 +3551,7 @@ export default function ToolDetailSidePanel({
 
     setIsLoading(true);
     setError(null);
+    setIsExpandedWidth(false);
     try {
       const type = detectToolType(toolCall.toolName);
       setToolType(type);
@@ -4125,9 +3824,12 @@ export default function ToolDetailSidePanel({
     if (toolType === ToolType.TODO_WRITE) return <TodoWriteView {...toolData} />;
     if (toolType === ToolType.IMAGE_ANALYSIS) return <ImageAnalysisView {...toolData} />;
     if (toolType === ToolType.FILE_SYSTEM) return <FileSystemView {...toolData} />;
-    if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} />;
+    if (toolType === ToolType.FILE_EDITOR) return <FileEditorView {...toolData} onClose={onClose} isExpanded={isExpandedWidth} onToggleExpand={() => setIsExpandedWidth(v => !v)} />;
     return <GenericView {...toolData} />;
   };
+
+  const isFileEditor = toolType === ToolType.FILE_EDITOR;
+  const panelWidth = isExpandedWidth ? 880 : (showFilePane ? 780 : 520);
 
   return (
     <AnimatePresence>
@@ -4149,27 +3851,27 @@ export default function ToolDetailSidePanel({
             aria-label="Tool execution details"
             style={isDesktop ? {
               position: 'relative', height: '100%',
-              background: T.bg, borderLeft: `1px solid ${T.border}`,
+              background: '#18181b', borderLeft: `1px solid ${T.border}`,
               display: 'flex', flexDirection: 'column',
               overflow: 'hidden', outline: 'none', flexShrink: 0,
             } : {
               position: 'fixed', right: 0, top: 0, bottom: 0,
               width: 'min(100%, 520px)',
-              background: T.bg, borderLeft: `1px solid ${T.border}`,
+              background: '#18181b', borderLeft: `1px solid ${T.border}`,
               display: 'flex', flexDirection: 'column',
               zIndex: 50, overflow: 'hidden', outline: 'none',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
-            animate={isDesktop ? { width: showFilePane ? 780 : 520, opacity: 1 } : { x: 0 }}
+            animate={isDesktop ? { width: panelWidth, opacity: 1 } : { x: 0 }}
             exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
             transition={{ type: 'spring', stiffness: 340, damping: 36 }}
           >
             {/* Inner wrapper prevents layout reflow during animation */}
             <div style={{
-              width: isDesktop ? (showFilePane ? 780 : 520) : '100%', height: '100%',
+              width: isDesktop ? panelWidth : '100%', height: '100%',
               display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
             }}>
-              {toolCall && (
+              {!isFileEditor && toolCall && (
                 <PanelHeader
                   agentName={toolCall.agentName}
                   toolName={toolCall.toolName}
