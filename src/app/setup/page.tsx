@@ -82,7 +82,7 @@ const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
 );
 
 const EverFernBglessLogo = ({ size = 20, isDark = false }: { size?: number; isDark?: boolean }) => (
-    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} className={isDark ? "" : "dark:invert opacity-90"} />
+    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} priority loading="eager" className={isDark ? "" : "dark:invert opacity-90"} />
 );
 
 const PhosphorStar = ({ size = 24, color = "currentColor", weight = "fill" }: { size?: number; color?: string; weight?: "fill" | "regular" | "duotone" }) => {
@@ -942,7 +942,7 @@ export default function SetupPage() {
                 style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
+                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} priority loading="eager" style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                 </div>
                 <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
                     <WindowControls />
@@ -989,6 +989,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <BackButton onClick={() => router.push("/auth")} />
@@ -1080,6 +1081,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" }}
                         >
                             <BackButton onClick={() => setStep(1)} />
@@ -1182,6 +1184,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column" }}
                         >
                             <BackButton onClick={() => setStep(2)} />
@@ -1268,6 +1271,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: engine === "local" ? 640 : 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 24 }}>
@@ -1845,6 +1849,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -1991,6 +1996,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2012,6 +2018,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2724,6 +2731,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2884,6 +2892,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2981,6 +2990,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 500, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -3075,6 +3085,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -3136,6 +3147,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -3321,25 +3333,25 @@ export default function SetupPage() {
                             <div style={{ height: 3, width: '100%', background: '#10b981' }} />
                             <div style={{ padding: "24px 24px 20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
                                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                                         <div style={{
-                                            width: 44,
-                                            height: 44,
-                                            borderRadius: 12,
-                                            background: "rgba(16, 185, 129, 0.1)",
+                                            width: 60,
+                                            height: 60,
+                                            borderRadius: 16,
+                                            background: "rgba(16, 185, 129, 0.12)",
                                             border: "1px solid rgba(16, 185, 129, 0.25)",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
                                             flexShrink: 0
                                         }}>
-                                            <EverFernBglessLogo size={22} />
+                                            <EverFernBglessLogo size={42} />
                                         </div>
                                         <div>
-                                            <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary, #111827)", margin: 0, letterSpacing: "-0.01em" }}>
+                                            <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-text-primary, #111827)", margin: 0, letterSpacing: "-0.01em" }}>
                                                 Sign In Required
                                             </h3>
-                                            <span style={{ fontSize: 12, color: "var(--color-text-tertiary, #6b7280)" }}>
+                                            <span style={{ fontSize: 12.5, color: "var(--color-text-tertiary, #6b7280)", marginTop: 2, display: "block" }}>
                                                 EverFern Cloud
                                             </span>
                                         </div>

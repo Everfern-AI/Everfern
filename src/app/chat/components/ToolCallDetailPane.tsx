@@ -3,10 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Copy, Check, ChevronDown, Code2, Zap, AlertCircle,
+  X, Copy, Check, ChevronDown, ChevronRight, Code2, Zap, AlertCircle,
   Clock, CheckCircle, AlertTriangle, ArrowRight, FileText, Loader2,
-  Eye, Code, Table, FileSpreadsheet, ExternalLink
+  Eye, Code, Table, FileSpreadsheet, ExternalLink,
+  List, Terminal, FileCode, Sparkles
 } from 'lucide-react';
+import { PlanArtifact } from './PlanArtifact';
+import ToolCallCodePane from '@/components/tools/ToolCallCodePane';
 
 /* ============================================================
    TYPES & CONSTANTS
@@ -26,6 +29,7 @@ export interface ToolCallDetail {
   navisReport?: string;
 }
 
+// Muted minimal theme
 const T = {
   bg: 'var(--color-bg-subtle)',
   surface: 'var(--color-bg-surface)',
@@ -34,23 +38,27 @@ const T = {
   text: 'var(--color-text-primary)',
   textSecondary: 'var(--color-text-secondary)',
   textMuted: 'var(--color-text-tertiary)',
-  green: '#22c55e',
-  greenFaint: 'rgba(34,197,94,0.08)',
-  red: '#ef4444',
-  redFaint: 'rgba(239,68,68,0.07)',
-  blue: '#3b82f6',
-  blueFaint: 'rgba(59,130,246,0.08)',
+  accent: '#44403c',
+  accentFaint: 'rgba(68, 64, 60, 0.06)',
+  accentHover: 'rgba(68, 64, 60, 0.1)',
+  success: '#22c55e',
+  successFaint: 'rgba(34, 197, 94, 0.08)',
+  warning: '#f59e0b',
+  warningFaint: 'rgba(245, 158, 11, 0.08)',
+  error: '#ef4444',
+  errorFaint: 'rgba(239, 68, 68, 0.08)',
   r8: 8,
   r12: 12,
+  r16: 16,
   mono: '"Geist Mono", ui-monospace, monospace',
   sans: '"Geist", "DM Sans", ui-sans-serif, system-ui, sans-serif',
 };
 
 /* ============================================================
-   COPY BUTTON
+   UTILITY COMPONENTS
    ============================================================ */
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, size = 'sm' }: { text: string; size?: 'sm' | 'md' }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -63,6 +71,13 @@ function CopyButton({ text }: { text: string }) {
     }
   };
 
+  const sizes = {
+    sm: { padding: '4px 8px', fontSize: 10, iconSize: 10 },
+    md: { padding: '6px 12px', fontSize: 11, iconSize: 12 },
+  };
+
+  const s = sizes[size];
+
   return (
     <button
       onClick={handleCopy}
@@ -70,29 +85,674 @@ function CopyButton({ text }: { text: string }) {
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        padding: '4px 8px',
+        padding: s.padding,
         borderRadius: T.r8,
         border: `1px solid ${T.border}`,
         background: T.surface,
-        fontSize: 10,
-        fontWeight: 600,
-        color: copied ? T.green : T.textMuted,
+        fontSize: s.fontSize,
+        fontWeight: 500,
+        color: copied ? T.success : T.textMuted,
         cursor: 'pointer',
-        transition: 'all 0.2s',
+        transition: 'all 0.15s ease',
         fontFamily: T.sans,
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = T.surfaceRaised;
-        e.currentTarget.style.borderColor = T.text;
+        e.currentTarget.style.background = T.accentFaint;
+        e.currentTarget.style.borderColor = T.textMuted;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.background = T.surface;
         e.currentTarget.style.borderColor = T.border;
       }}
     >
-      {copied ? <Check size={10} /> : <Copy size={10} />}
+      {copied ? <Check size={s.iconSize} /> : <Copy size={s.iconSize} />}
       {copied ? 'Copied' : 'Copy'}
     </button>
+);
+}
+
+/* ============================================================
+   SIMPLIFIED CODE VIEW - Inline style for write/edit/read tools
+   ============================================================ */
+/* ============================================================
+   FILE OPERATION VIEW - Custom pane for write/edit/read tools
+   Exactly like the image: traffic lights, diff view, clean header
+   ============================================================ */
+function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; onClose: () => void }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+
+  const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || args.filePath || '');
+  const filename = rawPath.split(/[/\\]/).pop() || 'file';
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+  // Determine content based on tool type
+  const newContent = String(
+    args.FileContent || args.content || args.Content || args.newString || args.replace || args.ReplacementContent || ''
+  ).trim();
+
+  const oldContent = String(
+    args.oldString || args.find || args.TargetContent || ''
+  ).trim();
+
+  const resultContent = String(
+    args.output || toolCall.result?.output || toolCall.result?.data?.output || ''
+  ).trim();
+
+  const content = newContent || resultContent;
+  const hasDiff = isEdit && oldContent;
+
+  // Build diff lines
+  type DiffLine = { prefix: string; text: string; color: string };
+  let diffLines: DiffLine[] = [];
+
+  if (isWrite) {
+    diffLines = content.split('\n').map(l => ({ prefix: '+', text: l, color: '#3fb950' }));
+  } else if (isRead) {
+    diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
+  } else if (hasDiff) {
+    // Simple diff: show old lines as - and new lines as +
+    const oldLines = oldContent.split('\n');
+    const newLines = content.split('\n');
+    // For now, just show all old as removed and all new as added
+    oldLines.forEach(l => diffLines.push({ prefix: '-', text: l, color: '#f85149' }));
+    newLines.forEach(l => diffLines.push({ prefix: '+', text: l, color: '#3fb950' }));
+  } else {
+    diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
+  }
+
+  const actionLabel = isWrite ? 'write' : isEdit ? 'edit' : 'view';
+  const badgeLabel = isWrite ? 'Write Operation' : isEdit ? 'Edit Operation' : 'Read Operation';
+  const badgeColor = isWrite ? '#3fb950' : isEdit ? '#f85149' : '#58a6ff';
+
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {}
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#141414' }}>
+      {/* ── Top Chrome Bar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        borderBottom: '1px solid #2a2a2a',
+        background: '#1a1a1a',
+        gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+          {/* Code brackets icon */}
+          <div style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.06)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </div>
+          {/* Agent name + action pill */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#e5e5e5', fontWeight: 500 }}>Fern</span>
+            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
+            <span style={{
+              fontSize: 12,
+              color: '#e5e5e5',
+              background: 'rgba(255,255,255,0.08)',
+              padding: '3px 10px',
+              borderRadius: 6,
+              fontWeight: 500,
+              textTransform: 'lowercase',
+            }}>
+              {actionLabel}
+            </span>
+          </div>
+        </div>
+        {/* Status dot + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: badgeColor }} />
+          <button
+            onClick={handleCopy}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Metadata Row ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '12px 16px',
+        borderBottom: '1px solid #2a2a2a',
+      }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: '#e5e5e5', textTransform: 'lowercase' }}>
+          {actionLabel}
+        </span>
+        <span style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: badgeColor,
+          background: `${badgeColor}15`,
+          padding: '3px 10px',
+          borderRadius: 20,
+          border: `1px solid ${badgeColor}30`,
+        }}>
+          {badgeLabel}
+        </span>
+        <span style={{
+          fontSize: 12,
+          color: 'rgba(255,255,255,0.4)',
+          fontFamily: '"JetBrains Mono", monospace',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flex: 1,
+        }}>
+          {rawPath}
+        </span>
+      </div>
+
+      {/* ── Scrollable Content ── */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px 24px' }}>
+        {/* Code Card */}
+        <div style={{
+          background: '#0d0d0d',
+          borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.06)',
+          overflow: 'hidden',
+        }}>
+          {/* Card Header with traffic lights */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 14px',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            background: '#141414',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Traffic lights */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+              </div>
+              <span style={{
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.7)',
+                fontFamily: T.sans,
+                marginLeft: 4,
+              }}>
+                {filename}
+              </span>
+            </div>
+            <button
+              onClick={handleCopy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: '1px solid #3a3a3a',
+                background: 'transparent',
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 12,
+              }}
+            >
+              <Copy size={14} />
+              Copy
+            </button>
+          </div>
+
+          {/* Code content with diff prefixes */}
+          <div style={{
+            padding: '12px 0',
+            fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
+            fontSize: 13,
+            lineHeight: 1.7,
+            overflow: 'auto',
+          }}>
+            {diffLines.map((dl, i) => (
+              <div key={i} style={{ display: 'flex', minHeight: 23 }}>
+                <span style={{
+                  width: 36,
+                  padding: '0 8px 0 14px',
+                  textAlign: 'right',
+                  color: dl.color,
+                  userSelect: 'none',
+                  flexShrink: 0,
+                  fontWeight: 500,
+                }}>
+                  {dl.prefix}
+                </span>
+                <span
+                  style={{
+                    padding: '0 12px',
+                    color: '#c9d1d9',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    flex: 1,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: highlightLine(dl.text, ext) }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Multi-Language Syntax Highlighter ─────────────────────────────── */
+function highlightLine(line: string, ext: string): string {
+  let h = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (!h.trim()) return h;
+
+  if (ext === 'py') return highlightPython(h);
+  if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) return highlightJS(h);
+  if (['css', 'scss'].includes(ext)) return highlightCSS(h);
+  if (['html', 'htm'].includes(ext)) return highlightHTML(h);
+  if (ext === 'json') return highlightJSON(h);
+  if (['sh', 'bash', 'zsh'].includes(ext)) return highlightShell(h);
+  
+  // Generic fallback
+  return highlightGeneric(h);
+}
+
+function highlightPython(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  h = h.replace(/(""".*""")|('''.*''')|("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  // Keywords
+  const kw = /\b(import|from|as|def|class|return|if|elif|else|for|while|try|except|finally|with|yield|lambda|raise|assert|del|global|nonlocal|pass|continue|break|and|or|not|in|is|None|True|False)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  // Builtins
+  const bi = /\b(print|len|range|enumerate|zip|map|filter|sorted|open|str|int|float|list|dict|set|tuple|type|isinstance|hasattr|getattr|super|self|cls)\b/g;
+  h = h.replace(bi, '<span style="color: #61afef">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Functions
+  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return h;
+}
+
+function highlightJS(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  const str = /(`[^`]*`)|("[^"]*")|('[^']*')/g;
+  h = h.replace(str, '<span style="color: #98c379">$1</span>');
+  // Template literals interpolation
+  h = h.replace(/(\\\$\{[^}]*\})/g, '<span style="color: #e06c75">$1</span>');
+  // Keywords
+  const kw = /\b(import|export|from|default|const|let|var|function|class|extends|implements|interface|type|enum|namespace|module|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|async|await|yield|get|set|static|public|private|protected|as|declare|readonly)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  // Types
+  const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|console|window|document|Math)\b/g;
+  h = h.replace(types, '<span style="color: #e5c07b">$1</span>');
+  // JSX tags
+  if (h.includes('<')) {
+    h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+    h = h.replace(/(\w+)=/g, '<span style="color: #d19a66">$1</span>=');
+  }
+  // Properties
+  h = h.replace(/(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Functions
+  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return h;
+}
+
+function highlightCSS(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  // Selectors
+  h = h.replace(/^(\s*[.#]\w+)/, '<span style="color: #e06c75">$1</span>');
+  h = h.replace(/@\w+/g, '<span style="color: #c678dd">$&</span>');
+  // Properties
+  const prop = /([\w-]+)(?=\s*:)/g;
+  h = h.replace(prop, '<span style="color: #e06c75">$1</span>');
+  // Values (colors, px, rem, etc)
+  h = h.replace(/(#[0-9a-fA-F]{3,8})/g, '<span style="color: #98c379">$1</span>');
+  h = h.replace(/(\d+(px|rem|em|%|vh|vw|s|ms|deg|fr|pt|cm|mm|in))/g, '<span style="color: #d19a66">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightHTML(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(&lt;!--[\s\S]*?--&gt;)/gm, '<span style="color: #5c6370">$1</span>');
+  // Tags
+  h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+  h = h.replace(/(\/?)\s*&gt;/g, '$1<span style="color: #e06c75">&gt;</span>');
+  // Attributes
+  h = h.replace(/\b(\w+)(?==)/g, '<span style="color: #d19a66">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightJSON(line: string): string {
+  let h = line;
+  // Keys
+  h = h.replace(/("[^"]*")(?=\s*:)/g, '<span style="color: #e06c75">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")/g, '<span style="color: #98c379">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  // Booleans/null
+  const kw = /\b(true|false|null)\b/g;
+  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  return h;
+}
+
+function highlightShell(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Variables
+  h = h.replace(/(\$\w+)/g, '<span style="color: #e06c75">$1</span>');
+  // Builtins
+  const builtins = /\b(echo|cd|ls|mkdir|rm|cp|mv|cat|grep|awk|sed|cut|sort|uniq|head|tail|find|chmod|chown|sudo|apt|yum|brew|curl|wget|git|docker|python|python3|node|npm|npx|yarn|pip|pip3)\b/g;
+  h = h.replace(builtins, '<span style="color: #61afef">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return h;
+}
+
+function highlightGeneric(line: string): string {
+  let h = line;
+  // Comments
+  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  // Strings
+  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  // Numbers
+  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  return h;
+}
+
+function StatusDot({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    pending: T.textMuted,
+    executing: T.warning,
+    completed: T.success,
+    failed: T.error,
+  };
+
+  return (
+    <div
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        background: colors[status] || T.textMuted,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { bg: string; color: string; icon: React.ComponentType<{ size?: number }>; text: string }> = {
+    pending: { bg: T.accentFaint, color: T.textMuted, icon: Clock, text: 'Pending' },
+    executing: { bg: T.warningFaint, color: T.warning, icon: Zap, text: 'Executing' },
+    completed: { bg: T.successFaint, color: T.success, icon: CheckCircle, text: 'Completed' },
+    failed: { bg: T.errorFaint, color: T.error, icon: AlertTriangle, text: 'Failed' },
+  };
+
+  const c = config[status] || config.pending;
+  const Icon = c.icon;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 10px',
+        borderRadius: 20,
+        background: c.bg,
+        color: c.color,
+        fontSize: 11,
+        fontWeight: 600,
+        fontFamily: T.sans,
+      }}
+    >
+      <Icon size={12} />
+      {c.text}
+    </div>
+  );
+}
+
+/* ============================================================
+   PLAN PREVIEW CARD - Shows in chat before full detail pane
+   ============================================================ */
+
+export function PlanPreviewCard({
+  title,
+  description,
+  stepCount,
+  completedCount = 0,
+  onClick,
+  onApprove,
+  className,
+}: {
+  title: string;
+  description?: string;
+  stepCount: number;
+  completedCount?: number;
+  onClick?: () => void;
+  onApprove?: () => void;
+  className?: string;
+}) {
+  const progress = stepCount > 0 ? (completedCount / stepCount) * 100 : 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.005 }}
+      whileTap={{ scale: 0.995 }}
+      onClick={onClick}
+      className={className}
+      style={{
+        width: '100%',
+        maxWidth: 480,
+        background: T.surface,
+        border: `1px solid ${T.border}`,
+        borderRadius: T.r12,
+        overflow: 'hidden',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.2s ease',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '14px 16px',
+          borderBottom: `1px solid ${T.border}`,
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: T.r8,
+            background: T.accentFaint,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <List size={18} color={T.textSecondary} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: T.text,
+              fontFamily: T.sans,
+              marginBottom: 2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {title}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: T.textMuted,
+              fontFamily: T.sans,
+            }}
+          >
+            {completedCount} of {stepCount} steps completed
+          </div>
+        </div>
+        <ChevronRight size={16} color={T.textMuted} />
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 2, background: T.accentFaint }}>
+        <motion.div
+          style={{ height: '100%', background: T.accent }}
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        />
+      </div>
+
+      {/* Description */}
+      {description && (
+        <div style={{ padding: '12px 16px' }}>
+          <p
+            style={{
+              fontSize: 12,
+              color: T.textSecondary,
+              fontFamily: T.sans,
+              lineHeight: 1.5,
+              margin: 0,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {description}
+          </p>
+        </div>
+      )}
+
+      {/* Actions */}
+      {onApprove && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '12px 16px',
+            borderTop: `1px solid ${T.border}`,
+          }}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onApprove();
+            }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '8px 12px',
+              borderRadius: T.r8,
+              border: 'none',
+              background: T.accent,
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: T.sans,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#292524';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = T.accent;
+            }}
+          >
+            <Check size={14} />
+            Approve & Execute
+          </button>
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -117,7 +777,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
   return (
     <div
       style={{
-        background: 'var(--color-bg-subtle)',
+        background: T.surface,
         border: `1px solid ${T.border}`,
         borderRadius: T.r8,
         fontFamily: T.mono,
@@ -126,7 +786,6 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
       {isLarge && (
         <div
           style={{
@@ -135,7 +794,7 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
             justifyContent: 'space-between',
             padding: '8px 12px',
             borderBottom: `1px solid ${T.border}`,
-            background: T.surface,
+            background: T.bg,
             cursor: 'pointer',
           }}
           onClick={() => setExpanded(!expanded)}
@@ -153,7 +812,6 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
         </div>
       )}
 
-      {/* Content */}
       <div
         style={{
           padding: '10px 12px',
@@ -166,7 +824,6 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
         {jsonStr}
       </div>
 
-      {/* Footer */}
       {isLarge && (
         <div
           style={{
@@ -174,48 +831,12 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
             justifyContent: 'flex-end',
             padding: '8px 12px',
             borderTop: `1px solid ${T.border}`,
-            background: T.surface,
+            background: T.bg,
           }}
         >
           <CopyButton text={jsonStr} />
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   STATUS BADGE
-   ============================================================ */
-
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; color: string; icon: React.ComponentType<{ size?: number }>; text: string }> = {
-    pending: { bg: T.surfaceRaised, color: T.textMuted, icon: Clock, text: 'Pending' },
-    executing: { bg: T.blueFaint, color: T.blue, icon: Zap, text: 'Executing' },
-    completed: { bg: T.greenFaint, color: T.green, icon: CheckCircle, text: 'Completed' },
-    failed: { bg: T.redFaint, color: T.red, icon: AlertTriangle, text: 'Failed' },
-  };
-
-  const c = config[status] || config.pending;
-  const Icon = c.icon;
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '6px 12px',
-        borderRadius: T.r8,
-        background: c.bg,
-        color: c.color,
-        fontSize: 12,
-        fontWeight: 600,
-        fontFamily: T.sans,
-      }}
-    >
-      <Icon size={14} />
-      {c.text}
     </div>
   );
 }
@@ -400,8 +1021,8 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
-              <CheckCircle size={10} color={T.green} />
-              <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
+              <CheckCircle size={10} color={T.success} />
+              <span style={{ fontSize: 10, color: T.success, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
             </div>
           )}
         </div>
@@ -437,7 +1058,74 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
 }
 
 /* ============================================================
-   TOOL CALL DETAIL PANE
+   SIMPLIFIED TERMINAL VIEW - Inline style like Image 2
+   ============================================================ */
+function SimplifiedTerminalView({ toolCall }: { toolCall: ToolCallDetail }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const command = args.command || args.cmd || args.Command || args.script || '';
+  const output = toolCall.result?.output || toolCall.result?.data?.output || toolCall.result || '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontFamily: T.mono }}>
+      {/* Command Header with bash label */}
+      <div>
+        <div style={{ 
+          fontSize: 12, 
+          color: 'var(--color-text-secondary)', 
+          marginBottom: 8,
+          fontFamily: T.sans,
+          fontWeight: 500
+        }}>
+          bash
+        </div>
+        <div style={{ 
+          background: '#0d0d0d', 
+          borderRadius: 8,
+          padding: '14px 16px',
+          fontSize: 13, 
+          color: '#e5e5e5',
+          overflowX: 'auto',
+          border: '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <span style={{ color: '#4ade80' }}>❯</span> {command}
+        </div>
+      </div>
+
+      {/* Output block */}
+      {output && (
+        <div>
+          <div style={{ 
+            fontSize: 12, 
+            color: 'var(--color-text-secondary)', 
+            marginBottom: 8,
+            fontFamily: T.sans,
+            fontWeight: 500
+          }}>
+            Output
+          </div>
+          <div style={{ 
+            background: '#0d0d0d', 
+            borderRadius: 8,
+            padding: '14px 16px',
+            fontSize: 13, 
+            color: '#a3a3a3',
+            whiteSpace: 'pre-wrap', 
+            wordBreak: 'break-word',
+            maxHeight: 400,
+            overflow: 'auto',
+            border: '1px solid rgba(255,255,255,0.06)',
+            lineHeight: 1.6
+          }}>
+            {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   TOOL CALL DETAIL PANE - COMPLETELY REDESIGNED
    ============================================================ */
 
 export function ToolCallDetailPane({
@@ -448,7 +1136,8 @@ export function ToolCallDetailPane({
   onClose: () => void;
 }) {
   const isNavis = toolCall.toolName === 'navis' || toolCall.toolName?.toLowerCase().includes('navis');
-  const defaultTab = isNavis ? 'findings' : 'input';
+  const isPlan = toolCall.toolName === 'execution_plan' || toolCall.toolName === 'create_plan';
+  const defaultTab = isNavis ? 'findings' : isPlan ? 'plan' : 'input';
   const [activeTab, setActiveTab] = useState<'findings' | 'input' | 'output' | 'timeline'>(defaultTab as any);
   const duration = toolCall.endTime ? toolCall.endTime - toolCall.startTime : undefined;
   const toolNameLower = toolCall.toolName.toLowerCase();
@@ -460,6 +1149,30 @@ export function ToolCallDetailPane({
 
   const [findingsContent, setFindingsContent] = useState<string>('');
 
+  // Parse plan content if this is a plan tool
+  const planData = React.useMemo(() => {
+    if (!isPlan || !toolCall.result?.data) return null;
+    const content = toolCall.result.data.content || '';
+    const title = content.match(/^# Execution Plan:\s*(.+)$/m)?.[1] || 'Execution Plan';
+    const steps: { id: string; title: string; description?: string; status?: string }[] = [];
+    const lines = content.split('\n');
+    let inSteps = false;
+    lines.forEach((line: string) => {
+      if (line.startsWith('## Steps')) { inSteps = true; return; }
+      if (inSteps && line.startsWith('### ')) {
+        const clean = line.replace('###', '').replace(/\*\*/g, '').replace(/`[^`]*`/g, '').trim();
+        const [title, ...descParts] = clean.split('—');
+        steps.push({
+          id: `step_${steps.length + 1}`,
+          title: title.trim(),
+          description: descParts.join('—').trim() || undefined,
+          status: 'pending',
+        });
+      }
+    });
+    return { title, steps, content };
+  }, [isPlan, toolCall.result]);
+
   useEffect(() => {
     let isMounted = true;
     if (!isNavis || !toolCall) return;
@@ -469,7 +1182,6 @@ export function ToolCallDetailPane({
         const api = (window as any).electronAPI;
         if (!api?.projects) return;
 
-        // 1. Get candidate paths from toolCall arguments
         const args = toolCall.arguments || (toolCall as any).args || {};
         const result = toolCall.result || {};
         const resultData = result.data || {};
@@ -485,11 +1197,9 @@ export function ToolCallDetailPane({
           resultData.cwd,
         ].filter((v: any) => typeof v === 'string' && v.trim()) as string[];
 
-        // 2. Fetch projects list
         const projects = await api.projects.list() || [];
         const normalized = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
-        // 3. Find matched project path
         let projectPath = '';
         for (const value of candidateValues) {
           const val = normalized(value);
@@ -500,7 +1210,6 @@ export function ToolCallDetailPane({
           }
         }
 
-        // If not matched in registered projects, try using candidate values directly if they are absolute paths
         if (!projectPath) {
           for (const value of candidateValues) {
             if (/^[a-zA-Z]:[\\/]/i.test(value) || value.startsWith('/')) {
@@ -536,7 +1245,6 @@ export function ToolCallDetailPane({
           content = await api.projects.readFile(projectPath, filename);
         }
 
-        // Fallback to global findings.md if tool-call-specific file was not found
         if (content === null && isNavis && toolCall.id) {
           try {
             const everfernPath = await api.projects.getEverfernPath();
@@ -568,7 +1276,6 @@ export function ToolCallDetailPane({
 
     readFindings();
 
-    // Poll for live updates while executing
     const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
     let intervalId: any;
     if (isRunning) {
@@ -581,61 +1288,113 @@ export function ToolCallDetailPane({
     };
   }, [isNavis, toolCall]);
 
+  const getToolIcon = () => {
+    if (isPlan) return <List size={18} />;
+    if (isTerminal) return <Terminal size={18} />;
+    if (isCodeOrFileViewer) return <FileCode size={18} />;
+    if (isNavis) return <Sparkles size={18} />;
+    return <Code2 size={18} />;
+  };
+
+  const getToolLabel = () => {
+    if (isPlan) return 'Execution Plan';
+    if (isTerminal) return 'Terminal Command';
+    if (isWrite) return 'File Write';
+    if (isEdit) return 'File Edit';
+    if (isRead) return 'File Read';
+    if (isNavis) return 'AI Research';
+    // Format tool name: remove underscores, capitalize words
+    return toolCall.toolName
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // If this is a file/code operation (write/edit/read), render the pixel-perfect ToolCallCodePane
+  if (isCodeOrFileViewer) {
+    return (
+      <ToolCallCodePane
+        toolName={toolCall.toolName}
+        args={toolCall.arguments || (toolCall as any).args}
+        output={toolCall.result?.output || toolCall.result?.data?.output || ''}
+        data={toolCall.result?.data || toolCall.result}
+        onClose={onClose}
+      />
+    );
+  }
+
+  // Determine if we should use simple styling (no glossy effects)
+  const useSimpleStyle = isTerminal;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 400 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 400 }}
       transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+      className={useSimpleStyle ? "" : "glossy"}
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background: T.bg,
-        borderRadius: T.r12,
+        background: useSimpleStyle ? '#141414' : T.bg,
+        borderRadius: T.r16,
         overflow: 'hidden',
-        border: `1px solid ${T.border}`,
+        border: `1px solid ${useSimpleStyle ? '#2a2a2a' : T.border}`,
       }}
     >
       {/* Header */}
       <div
         style={{
-          padding: '20px 24px',
-          borderBottom: `1px solid ${T.border}`,
-          background: T.surface,
+          padding: useSimpleStyle ? '12px 16px' : '16px 20px',
+          borderBottom: `1px solid ${useSimpleStyle ? '#2a2a2a' : T.border}`,
+          background: useSimpleStyle ? '#1a1a1a' : T.surface,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: T.r8,
-              background: T.blueFaint,
-              border: `1px solid ${T.blue}30`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: T.blue,
-            }}
-          >
-            <Code2 size={18} />
+        {isTerminal || isWrite || isEdit || isRead ? (
+          /* Simplified header for terminal/write/view/edit tools */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+            <Terminal size={16} color={T.textMuted} />
+            <span style={{ fontSize: 13, color: T.textMuted, fontFamily: T.sans }}>
+              {isTerminal ? 'bash' : isWrite ? 'write' : isEdit ? 'edit' : 'view'}
+            </span>
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, fontFamily: T.sans, marginBottom: 2 }}>
-              {toolCall.toolName}
+        ) : (
+          /* Full header for other tools */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: T.r12,
+                background: T.accentFaint,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: T.textSecondary,
+                flexShrink: 0,
+              }}
+            >
+              {getToolIcon()}
             </div>
-            {toolCall.agent && (
-              <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.sans }}>
-                Agent: {toolCall.agent}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: T.sans, marginBottom: 2 }}>
+                {getToolLabel()}
               </div>
-            )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <StatusBadge status={toolCall.status} />
+                {duration && (
+                  <span style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>
+                    {(duration / 1000).toFixed(2)}s
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
         <button
           onClick={onClose}
           style={{
@@ -649,10 +1408,10 @@ export function ToolCallDetailPane({
             justifyContent: 'center',
             cursor: 'pointer',
             color: T.textMuted,
-            transition: 'all 0.2s',
+            transition: 'all 0.15s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = T.surfaceRaised;
+            e.currentTarget.style.background = T.accentFaint;
             e.currentTarget.style.color = T.text;
           }}
           onMouseLeave={(e) => {
@@ -664,52 +1423,26 @@ export function ToolCallDetailPane({
         </button>
       </div>
 
-      {/* Meta Info */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderBottom: `1px solid ${T.border}`,
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 12,
-        }}
-      >
-        {[
-          { label: 'Status', value: <StatusBadge status={toolCall.status} /> },
-          {
-            label: 'Duration',
-            value: (
-              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, fontFamily: T.mono }}>
-                {duration ? `${(duration / 1000).toFixed(2)}s` : '—'}
-              </div>
-            ),
-          },
-          {
-            label: 'Time',
-            value: (
-              <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>
-                {new Date(toolCall.startTime).toLocaleTimeString()}
-              </div>
-            ),
-          },
-        ].map((item) => (
-          <div key={item.label}>
-            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, marginBottom: 4, fontFamily: T.sans }}>
-              {item.label}
-            </div>
-            {item.value}
-          </div>
-        ))}
-      </div>
-
-      {/* Tabs / Code Editor / Terminal content */}
-      {isCodeOrFileViewer ? (
-        <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <CodeEditorPreview toolCall={toolCall} />
+      {/* Plan Content - Special view for execution plans */}
+      {isPlan && planData ? (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px 20px' }}>
+          <PlanArtifact
+            title={planData.title}
+            steps={planData.steps.map((step) => ({
+              id: step.id,
+              title: step.title,
+              description: step.description && step.description.trim() !== step.title.trim() ? step.description : undefined,
+              status: step.status as 'pending' | 'in_progress' | 'completed',
+            }))}
+            defaultExpanded={true}
+            variant="panel"
+          />
         </div>
+      ) : isCodeOrFileViewer ? (
+        <FileOperationView toolCall={toolCall} onClose={onClose} />
       ) : isTerminal ? (
-        <div style={{ flex: 1, padding: '16px 20px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <TerminalViewPreview toolCall={toolCall} />
+        <div style={{ flex: 1, padding: '20px', minHeight: 0, display: 'flex', flexDirection: 'column', background: '#141414' }}>
+          <SimplifiedTerminalView toolCall={toolCall} />
         </div>
       ) : (
         <>
@@ -719,7 +1452,7 @@ export function ToolCallDetailPane({
               display: 'flex',
               borderBottom: `1px solid ${T.border}`,
               background: T.surface,
-              padding: '0 24px',
+              padding: '0 20px',
               gap: 0,
             }}
           >
@@ -728,30 +1461,33 @@ export function ToolCallDetailPane({
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 style={{
-                  padding: '14px 18px',
+                  padding: '12px 16px',
                   fontSize: 12,
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: activeTab === tab ? T.text : T.textMuted,
-                  background: activeTab === tab ? T.bg : 'transparent',
+                  background: 'transparent',
                   border: 'none',
                   cursor: 'pointer',
-                  borderBottom: activeTab === tab ? `2px solid ${T.green}` : 'none',
+                  borderBottom: activeTab === tab ? `2px solid ${T.accent}` : '2px solid transparent',
                   fontFamily: T.sans,
-                  transition: 'all 0.2s',
+                  transition: 'all 0.15s ease',
                   textTransform: 'capitalize',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 5,
+                  gap: 6,
                 }}
               >
-                {tab === 'findings' && <FileText size={11} />}
+                {tab === 'findings' && <FileText size={12} />}
+                {tab === 'input' && <Code size={12} />}
+                {tab === 'output' && <ArrowRight size={12} />}
+                {tab === 'timeline' && <Clock size={12} />}
                 {tab}
               </button>
             ))}
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: activeTab === 'findings' ? 'hidden' : 'auto', padding: activeTab === 'findings' ? 0 : '22px 26px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: activeTab === 'findings' ? 'hidden' : 'auto', padding: activeTab === 'findings' ? 0 : '20px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <AnimatePresence mode="wait">
               {activeTab === 'findings' && (
                 <motion.div key="findings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
@@ -765,7 +1501,7 @@ export function ToolCallDetailPane({
               {activeTab === 'input' && (
                 <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
                       Arguments
                     </div>
                     <JsonViewer data={toolCall.arguments} />
@@ -777,7 +1513,7 @@ export function ToolCallDetailPane({
                 <motion.div key="output" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   {toolCall.status === 'completed' && toolCall.result ? (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.sans }}>
                         Result
                       </div>
                       <JsonViewer data={toolCall.result} />
@@ -785,20 +1521,20 @@ export function ToolCallDetailPane({
                   ) : toolCall.status === 'failed' && toolCall.error ? (
                     <div
                       style={{
-                        background: T.redFaint,
-                        border: `1px solid ${T.red}30`,
+                        background: T.errorFaint,
+                        border: `1px solid ${T.error}30`,
                         borderRadius: T.r8,
                         padding: '12px 14px',
                         display: 'flex',
                         gap: 10,
                       }}
                     >
-                      <AlertCircle size={16} color={T.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <AlertCircle size={16} color={T.error} style={{ flexShrink: 0, marginTop: 1 }} />
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: T.red, marginBottom: 4, fontFamily: T.sans }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: T.error, marginBottom: 4, fontFamily: T.sans }}>
                           Error
                         </div>
-                        <code style={{ fontSize: 11, color: T.red, fontFamily: T.mono, whiteSpace: 'pre-wrap' }}>
+                        <code style={{ fontSize: 11, color: T.error, fontFamily: T.mono, whiteSpace: 'pre-wrap' }}>
                           {toolCall.error}
                         </code>
                       </div>
@@ -842,21 +1578,20 @@ export function ToolCallDetailPane({
                       },
                     ].map((event, idx) => (
                       <div key={idx} style={{ display: 'flex', gap: 12 }}>
-                        {/* Timeline dot */}
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                           <div
                             style={{
-                              width: 12,
-                              height: 12,
+                              width: 10,
+                              height: 10,
                               borderRadius: '50%',
                               background:
                                 event.status === 'completed'
-                                  ? T.green
+                                  ? T.success
                                   : event.status === 'in-progress'
-                                    ? T.blue
-                                    : T.red,
+                                    ? T.warning
+                                    : T.error,
                               border: `2px solid ${T.surface}`,
-                              boxShadow: `0 0 0 2px ${event.status === 'completed' ? T.green : event.status === 'in-progress' ? T.blue : T.red}`,
+                              boxShadow: `0 0 0 1.5px ${event.status === 'completed' ? T.success : event.status === 'in-progress' ? T.warning : T.error}`,
                             }}
                           />
                           {idx < 2 && (
@@ -869,10 +1604,8 @@ export function ToolCallDetailPane({
                             />
                           )}
                         </div>
-
-                        {/* Event */}
                         <div style={{ flex: 1, paddingTop: 2 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: T.text, marginBottom: 2, fontFamily: T.sans }}>
                             {event.label}
                           </div>
                           <div style={{ fontSize: 11, color: T.textMuted, fontFamily: T.mono }}>
@@ -893,7 +1626,7 @@ export function ToolCallDetailPane({
 }
 
 /* ============================================================
-   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS (INCLUDING MULTI_FILE_EDIT)
+   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS
    ============================================================ */
 
 interface CodeLine {
@@ -1078,7 +1811,6 @@ function FileSpreadsheetViewer({ content, fileName }: { content: string; fileNam
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d1117', fontFamily: T.mono, fontSize: 11 }}>
-      {/* Formula & Search Bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#161b22', borderBottom: '1px solid #30363d' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#38bdf8', fontWeight: 700, fontStyle: 'italic', fontSize: 12 }}>
           <span>fx</span>
@@ -1105,7 +1837,6 @@ function FileSpreadsheetViewer({ content, fileName }: { content: string; fileNam
         </span>
       </div>
 
-      {/* Table Container */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         {rows.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#8b949e', fontStyle: 'italic' }}>
@@ -1159,7 +1890,6 @@ function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: str
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d1117' }}>
-      {/* Header bar with actions */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: '#161b22', borderBottom: '1px solid #30363d' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <FileText size={14} color="#f87171" />
@@ -1188,7 +1918,6 @@ function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: str
         </button>
       </div>
 
-      {/* Embedded PDF iframe / fallback */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {fileUrl ? (
           <iframe
@@ -1287,7 +2016,6 @@ function parseSingleFileDiff(
     const lines = outputText.split('\n');
     codeLines = lines.map(line => ({ text: line, type: 'normal' as const }));
   } else {
-    // Edit / multi_file_edit
     const findStr = item?.find || item?.TargetContent || item?.oldString || item?.old_string || item?.search || '';
     const replaceStr = item?.replace || item?.ReplacementContent || item?.newString || item?.new_string || item?.insert || '';
     const chunks = item?.ReplacementChunks || item?.chunks || item?.edits || item?.replacements || [];
@@ -1346,510 +2074,148 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
   const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
   const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
-  const isMultiFileTool = toolNameLower.includes('multi_file_edit') || toolNameLower.includes('multi_edit');
 
-  const rawFileList = args.files || args.items || args.targets || (Array.isArray(args.edits) && args.edits[0]?.path ? args.edits : null);
-  const isMultiFile = isMultiFileTool || (Array.isArray(rawFileList) && rawFileList.length > 0);
+  const files = args.files || args.FileEdits || args.edits || (args.path || args.filePath || args.TargetFile ? [args] : []);
+  const parsedFiles: ParsedFileDiff[] = files.map((f: any) => parseSingleFileDiff(f, args.path || args.filePath || args.TargetFile, isWrite, isRead, toolCall.result));
 
-  const defaultPath = args.path || args.TargetFile || args.AbsolutePath || args.filePath || args.file || toolCall.result?.data?.path || 'unknown_file';
-
-  const parsedFiles: ParsedFileDiff[] = isMultiFile && Array.isArray(rawFileList) && rawFileList.length > 0
-    ? rawFileList.map((item: any) => parseSingleFileDiff(item, '', isWrite, isRead, toolCall.result))
-    : [parseSingleFileDiff(args, defaultPath, isWrite, isRead, toolCall.result)];
-
-  const [activeFileIndex, setActiveFileIndex] = useState<number | null>(parsedFiles.length > 1 ? null : 0);
-  
-  const currentFile = activeFileIndex !== null && parsedFiles[activeFileIndex] ? parsedFiles[activeFileIndex] : parsedFiles[0];
-  const ext = (currentFile?.fileName?.split('.').pop() || '').toLowerCase();
-  const isMarkdown = ext === 'md' || ext === 'markdown';
-  const isSpreadsheet = ext === 'csv' || ext === 'tsv' || ext === 'xlsx';
-  const isPdf = ext === 'pdf';
-  const hasRichPreview = isMarkdown || isSpreadsheet || isPdf;
-
-  const [viewMode, setViewMode] = useState<'preview' | 'diff'>(hasRichPreview ? 'preview' : 'diff');
-
-  const filesToDisplay = activeFileIndex !== null && parsedFiles[activeFileIndex]
-    ? [parsedFiles[activeFileIndex]]
-    : parsedFiles;
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        borderRadius: 8,
-        overflow: 'hidden',
-        background: '#0d1117',
-        border: '1px solid #30363d',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-      }}
-    >
-      {/* Editor Title Bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          background: '#161b22',
-          borderBottom: '1px solid #30363d',
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
-          <span style={{ fontSize: 11, color: '#8b949e', marginLeft: 8, fontFamily: T.mono }}>
-            {parsedFiles.length > 1 ? `${parsedFiles.length} Files Edited` : parsedFiles[0]?.fileName}
-          </span>
-        </div>
-
-        {/* View Mode Toggle when rich preview is supported */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {hasRichPreview && (
-            <div style={{ display: 'flex', background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: 2 }}>
-              <button
-                onClick={() => setViewMode('preview')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '3px 8px',
-                  borderRadius: 4,
-                  border: 'none',
-                  background: viewMode === 'preview' ? '#21262d' : 'transparent',
-                  color: viewMode === 'preview' ? '#f0f6fc' : '#8b949e',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: T.sans,
-                }}
-              >
-                <Eye size={11} />
-                <span>Preview</span>
-              </button>
-              <button
-                onClick={() => setViewMode('diff')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '3px 8px',
-                  borderRadius: 4,
-                  border: 'none',
-                  background: viewMode === 'diff' ? '#21262d' : 'transparent',
-                  color: viewMode === 'diff' ? '#f0f6fc' : '#8b949e',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: T.sans,
-                }}
-              >
-                <Code size={11} />
-                <span>Diff</span>
-              </button>
-            </div>
-          )}
-
-          <div style={{ fontSize: 10, color: '#8b949e', fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
-            {isMultiFile ? `MULTI-FILE (${parsedFiles.length})` : isWrite ? 'WRITE' : isRead ? 'READ' : 'EDIT'}
-          </div>
-        </div>
+  if (parsedFiles.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: T.textMuted, fontFamily: T.sans }}>
+        No file content to display
       </div>
-
-      {/* Multi-File Tab / Filter Selector */}
-      {parsedFiles.length > 1 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 12px',
-            background: '#161b22',
-            borderBottom: '1px solid #30363d',
-            overflowX: 'auto',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <button
-            onClick={() => setActiveFileIndex(null)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '4px 10px',
-              borderRadius: 6,
-              background: activeFileIndex === null ? '#0d1117' : 'transparent',
-              border: activeFileIndex === null ? '1px solid #30363d' : '1px solid #21262d',
-              color: activeFileIndex === null ? '#f0f6fc' : '#8b949e',
-              fontSize: 11,
-              fontFamily: T.mono,
-              fontWeight: activeFileIndex === null ? 600 : 400,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <span>All Files ({parsedFiles.length})</span>
-          </button>
-
-          {parsedFiles.map((f, idx) => {
-            const isActive = activeFileIndex === idx;
-            return (
-              <button
-                key={idx}
-                onClick={() => setActiveFileIndex(idx)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  background: isActive ? '#0d1117' : 'transparent',
-                  border: isActive ? '1px solid #30363d' : '1px solid #21262d',
-                  color: isActive ? '#f0f6fc' : '#8b949e',
-                  fontSize: 11,
-                  fontFamily: T.mono,
-                  fontWeight: isActive ? 600 : 400,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <span style={{ color: isActive ? '#4ade80' : '#6e7681' }}>⚡</span>
-                <span>{f.fileName}</span>
-                {(f.addedCount > 0 || f.removedCount > 0) && (
-                  <span style={{ display: 'flex', gap: 3, fontSize: 10 }}>
-                    {f.addedCount > 0 && <span style={{ color: '#4ade80' }}>+{f.addedCount}</span>}
-                    {f.removedCount > 0 && <span style={{ color: '#f87171' }}>-{f.removedCount}</span>}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Main Content Container (Rich Preview or Diff) */}
-      {viewMode === 'preview' && hasRichPreview ? (
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {isMarkdown ? (
-            <FileMarkdownViewer content={currentFile.rawContent || currentFile.codeLines.map(l => l.text).join('\n')} />
-          ) : isSpreadsheet ? (
-            <FileSpreadsheetViewer content={currentFile.rawContent || currentFile.codeLines.map(l => l.text).join('\n')} fileName={currentFile.fileName} />
-          ) : isPdf ? (
-            <FilePdfViewer filePath={currentFile.filePath} fileName={currentFile.fileName} />
-          ) : null}
-        </div>
-      ) : (
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '12px 14px',
-            fontFamily: T.mono,
-            fontSize: 12,
-            color: '#c9d1d9',
-          }}
-        >
-        {filesToDisplay.map((file, fileIdx) => (
-          <div
-            key={fileIdx}
-            style={{
-              marginBottom: filesToDisplay.length > 1 && fileIdx < filesToDisplay.length - 1 ? 16 : 0,
-              border: '1px solid #30363d',
-              borderRadius: 6,
-              overflow: 'hidden',
-              background: '#0d1117',
-            }}
-          >
-            {/* File Section Header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 14px',
-                background: '#161b22',
-                borderBottom: '1px solid #21262d',
-                gap: 12,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                <span style={{ color: '#4ade80' }}>⚡</span>
-                <span style={{ fontWeight: 600, color: '#f0f6fc', fontSize: 12 }}>{file.fileName}</span>
-                <span style={{ color: '#8b949e', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {file.filePath}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                {file.addedCount > 0 && (
-                  <span style={{ color: '#4ade80', background: 'rgba(46, 160, 67, 0.2)', padding: '2px 6px', borderRadius: 4 }}>
-                    +{file.addedCount}
-                  </span>
-                )}
-                {file.removedCount > 0 && (
-                  <span style={{ color: '#f87171', background: 'rgba(248, 81, 112, 0.2)', padding: '2px 6px', borderRadius: 4 }}>
-                    -{file.removedCount}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Code Line Diff Table */}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', lineHeight: '1.6' }}>
-                <tbody>
-                  {(() => {
-                    const MAX_PREVIEW_LINES = 1000;
-                    const truncated = file.codeLines.length > MAX_PREVIEW_LINES;
-                    const linesToRender = truncated ? file.codeLines.slice(0, MAX_PREVIEW_LINES) : file.codeLines;
-
-                    const rows = linesToRender.map((line, idx) => {
-                      const isAdded = line.type === 'added';
-                      const isRemoved = line.type === 'removed';
-                      const rowBg = isAdded 
-                        ? 'rgba(46, 160, 67, 0.18)' 
-                        : isRemoved 
-                          ? 'rgba(248, 81, 112, 0.18)' 
-                          : 'transparent';
-                      
-                      const textColor = isAdded 
-                        ? '#4ade80' 
-                        : isRemoved 
-                          ? '#f87171' 
-                          : '#8b949e';
-
-                      const prefix = isAdded ? '+' : isRemoved ? '-' : ' ';
-
-                      return (
-                        <tr 
-                          key={idx} 
-                          style={{ 
-                            background: rowBg,
-                            transition: 'background 0.1s',
-                          }}
-                        >
-                          <td
-                            style={{
-                              width: 40,
-                              textAlign: 'right',
-                              paddingRight: 10,
-                              color: '#484f58',
-                              userSelect: 'none',
-                              borderRight: '1px solid #21262d',
-                              fontSize: 11,
-                            }}
-                          >
-                            {idx + 1}
-                          </td>
-                          <td
-                            style={{
-                              width: 24,
-                              textAlign: 'center',
-                              color: textColor,
-                              fontWeight: 'bold',
-                              userSelect: 'none',
-                              fontSize: 12,
-                            }}
-                          >
-                            {prefix}
-                          </td>
-                          <td
-                            style={{
-                              paddingLeft: 8,
-                              paddingRight: 16,
-                              color: textColor,
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-all',
-                            }}
-                          >
-                            {line.text}
-                          </td>
-                        </tr>
-                      );
-                    });
-
-                    if (truncated) {
-                      rows.push(
-                        <tr key="trunc-msg" style={{ background: 'transparent' }}>
-                          <td colSpan={3} style={{ padding: '8px 16px', color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
-                            ... [Remaining {file.codeLines.length - MAX_PREVIEW_LINES} lines truncated for performance]
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    return rows;
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-      </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================
-   TERMINAL VIEW PREVIEW FOR COMMAND/EXECUTION TOOLS
-   ============================================================ */
-
-function normalizeTerminalOutput(output?: string, command?: string) {
-  let normalized = (output || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  normalized = normalized
-    .split('\n')
-    .filter(line => {
-      const trimmed = line.trim();
-      if (trimmed.includes('$global:EF_M') || trimmed.includes('$global:EF_EXIT') || trimmed.includes('$EF_M') || trimmed.includes('__EF_DONE_')) return false;
-      if (trimmed.includes('try { & { $global:LASTEXITCODE = $null;')) return false;
-      if (trimmed.startsWith('Set-Location:') && trimmed.includes('Cannot find path')) return false;
-      if (command && trimmed.toLowerCase().startsWith('command:')) {
-        const rest = trimmed.slice('command:'.length).trim();
-        if (rest === command.trim()) return false;
-      }
-      return true;
-    })
-    .join('\n');
-
-  if (/^(success|error): (local )?command (completed|failed)/i.test(normalized.trim())) {
-    const lines = normalized.split('\n');
-    const outputIndex = lines.findIndex(l => l.trim().toLowerCase() === 'output:');
-    if (outputIndex !== -1) {
-      normalized = lines.slice(outputIndex + 1).join('\n');
-    }
+    );
   }
 
-  return normalized.replace(/\n{3,}/g, '\n\n').trim();
+  // Simple syntax highlighter matching One Dark theme
+  const highlightSyntax = (code: string, fileName: string): string => {
+    let h = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Keywords (purple)
+    const keywords = /\b(import|export|from|const|let|var|function|return|if|else|for|while|class|interface|type|extends|implements|async|await|try|catch|throw|new|this|typeof|instanceof|default|as|yield|void|delete|in|of)\b/g;
+    h = h.replace(keywords, '<span style="color: #c678dd">$1</span>');
+    
+    // Types (yellow/orange)
+    const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|ComponentProps|ReactNode|JSX|Element|boolean|Record|Map|Set|Date|Error|RegExp)\b/g;
+    h = h.replace(types, '<span style="color: #e5c07b">$1</span>');
+    
+    // Strings (green)
+    h = h.replace(/("[^"]*"|'[^']*'|`[^`]*`)/g, '<span style="color: #98c379">$1</span>');
+    
+    // Comments (gray)
+    h = h.replace(/(\/\/.*$|\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+    
+    // Functions (blue)
+    h = h.replace(/(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+    
+    // Numbers (orange)
+    h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$1</span>');
+    
+    // Properties (red)
+    h = h.replace(/(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+    
+    return h;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
+      {parsedFiles.map((file, idx) => {
+        const fileExt = file.fileName.split('.').pop()?.toUpperCase() || '';
+        
+        return (
+          <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* File type label */}
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.02em', textTransform: 'lowercase' }}>
+              {fileExt.toLowerCase()}
+            </div>
+            
+            {/* Clean code card - One Dark style */}
+            <div style={{ 
+              background: '#141414', 
+              borderRadius: 10,
+              padding: '14px 0',
+              overflow: 'auto',
+              border: '1px solid rgba(255,255,255,0.06)'
+            }}>
+              {file.codeLines.map((line, lineIdx) => (
+                <div
+                  key={lineIdx}
+                  style={{
+                    display: 'flex',
+                    fontSize: 13,
+                    fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {/* Line number */}
+                  <span style={{ 
+                    width: 50, 
+                    padding: '0 12px', 
+                    textAlign: 'right', 
+                    color: '#4a4a4a', 
+                    userSelect: 'none', 
+                    flexShrink: 0,
+                    fontSize: 12
+                  }}>
+                    {lineIdx + 1}
+                  </span>
+                  {/* Code with syntax highlighting */}
+                  <span 
+                    style={{ 
+                      padding: '0 12px', 
+                      color: '#abb2bf', 
+                      whiteSpace: 'pre-wrap', 
+                      wordBreak: 'break-word',
+                      flex: 1
+                    }}
+                    dangerouslySetInnerHTML={{ __html: highlightSyntax(line.text, file.fileName) }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function TerminalViewPreview({ toolCall }: { toolCall: ToolCallDetail }) {
   const args = toolCall.arguments || (toolCall as any).args || {};
-  const command = args.CommandLine || args.command || args.cmd || args.script || args.code || args.exec || toolCall.result?.command || '';
-  const cwd = args.Cwd || args.cwd || args.dir || args.path || args.workingDirectory || '';
-
-  let rawOutput = '';
-  if (toolCall.result) {
-    if (typeof toolCall.result === 'string') {
-      rawOutput = toolCall.result;
-    } else if (typeof toolCall.result.output === 'string') {
-      rawOutput = toolCall.result.output;
-    } else if (typeof toolCall.result.stdout === 'string') {
-      rawOutput = toolCall.result.stdout + (toolCall.result.stderr ? '\n' + toolCall.result.stderr : '');
-    } else if (Array.isArray(toolCall.result.content)) {
-      rawOutput = toolCall.result.content
-        .filter((c: any) => c.type === 'text')
-        .map((c: any) => c.text)
-        .join('\n');
-    } else if (toolCall.result.data?.output) {
-      rawOutput = toolCall.result.data.output;
-    } else {
-      rawOutput = JSON.stringify(toolCall.result, null, 2);
-    }
-  } else if (toolCall.error) {
-    rawOutput = toolCall.error;
-  }
-
-  const cleanOutput = normalizeTerminalOutput(rawOutput, command);
-  const isExecuting = toolCall.status === 'executing' || toolCall.status === 'pending';
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [cleanOutput, isExecuting]);
+  const command = args.command || args.cmd || args.Command || args.script || '';
+  const output = toolCall.result?.output || toolCall.result?.data?.output || toolCall.result || '';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Command block */}
+      <div style={{ 
+        background: '#1a1a1a', 
         borderRadius: 8,
-        overflow: 'hidden',
-        background: '#0d1117',
-        border: '1px solid #30363d',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-        fontFamily: T.mono,
-      }}
-    >
-      {/* Title Bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          background: '#161b22',
-          borderBottom: '1px solid #30363d',
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f56' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
-          <span style={{ fontSize: 11, color: '#8b949e', marginLeft: 8, fontWeight: 600 }}>
-            Terminal {isExecuting ? '• Streaming' : ''}
-          </span>
-        </div>
-
-        {isExecuting ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: 12, padding: '2px 8px' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', animation: 'pulse 1.2s infinite' }} />
-            <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 600, fontFamily: T.sans }}>LIVE STREAMING</span>
-          </div>
-        ) : (
-          <div style={{ fontSize: 10, color: toolCall.status === 'completed' ? '#4ade80' : toolCall.status === 'failed' ? '#f87171' : '#8b949e', fontFamily: T.sans, fontWeight: 600 }}>
-            {toolCall.status?.toUpperCase() || 'FINISHED'}
-          </div>
-        )}
+        padding: '12px 16px',
+        fontFamily: T.mono, 
+        fontSize: 13, 
+        color: '#e5e5e5',
+        overflowX: 'auto' 
+      }}>
+        <span style={{ color: '#22c55e' }}>$</span> {command}
       </div>
 
-      {/* Terminal Output Area */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '14px 16px',
-          fontSize: 12,
-          lineHeight: '1.6',
-          color: '#c9d1d9',
-          whiteSpace: 'pre-wrap',
+      {/* Output block */}
+      {output && (
+        <div style={{ 
+          background: '#1a1a1a', 
+          borderRadius: 8,
+          padding: '12px 16px',
+          fontFamily: T.mono, 
+          fontSize: 13, 
+          color: '#a3a3a3',
+          whiteSpace: 'pre-wrap', 
           wordBreak: 'break-word',
-        }}
-      >
-        {/* Command prompt line */}
-        <div style={{ display: 'flex', gap: 8, color: '#38bdf8', marginBottom: cleanOutput ? 10 : 0 }}>
-          <span style={{ color: '#4ade80', fontWeight: 'bold' }}>PS {cwd || '~'}&gt;</span>
-          <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{command}</span>
+          maxHeight: 300,
+          overflow: 'auto'
+        }}>
+          {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
         </div>
-
-        {/* Output */}
-        {cleanOutput ? (
-          <div style={{ color: toolCall.status === 'failed' ? '#f87171' : '#c9d1d9' }}>
-            {cleanOutput}
-          </div>
-        ) : isExecuting ? (
-          <div style={{ color: '#8b949e', fontStyle: 'italic', fontSize: 11 }}>
-            Running command... streaming output below
-          </div>
-        ) : (
-          <div style={{ color: '#6e7681', fontStyle: 'italic', fontSize: 11 }}>
-            (No output produced)
-          </div>
-        )}
-
-        {/* Live Cursor */}
-        {isExecuting && (
-          <div style={{ display: 'inline-block', width: 8, height: 14, background: '#38bdf8', marginLeft: 4, verticalAlign: 'middle', animation: 'blink 1s step-end infinite' }} />
-        )}
-        <div ref={bottomRef} />
-      </div>
+      )}
     </div>
   );
 }
-
-

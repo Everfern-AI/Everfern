@@ -54,4 +54,6 @@ dist-electron/
 *.mp4
 *.zip
 output.txt
-
+*.stackdump
+tool-res.json
+generate_*.py

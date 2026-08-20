@@ -38,7 +38,6 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
                         borderRadius: 16,
                         padding: '24px 24px 20px',
                         width: 360,
-                        boxShadow: '0 20px 60px var(--color-bg-overlay)',
                         border: '1px solid var(--color-border)',
                     }}
                 >
@@ -140,8 +139,10 @@ const InlineLink = ({ href, label }: { href: string, label: string }) => {
 
 // ── Markdown Renderer ────────────────────────────────────────────────────────
 const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { content: string; isStreaming?: boolean }) => {
-    // Hide raw tool_call tags and computer:/// links that are handled separately to prevent "ghost" lines or empty containers.
+    // Hide raw tool_call tags, reasoning blocks, and computer:/// links
     const cleanedContent = content
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*?(<\/(?:think|thought|reasoning|reflection)>|$)/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*?(\[\/(?:Thinking|Reasoning)\]|$)/gi, '')
         .replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/gi, '')
         .replace(/\[[^\]]+\]\(computer:\/\/\/[^)]+\)/g, '');
     const lines = cleanedContent.split('\n');

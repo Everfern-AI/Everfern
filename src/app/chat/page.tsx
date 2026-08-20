@@ -47,6 +47,7 @@ import {
     ChatBubbleLeftIcon,
     FolderIcon,
     PencilSquareIcon,
+    ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { CheckIcon as CheckSolidIcon, BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 
@@ -87,10 +88,10 @@ import MessageFeedbackModal from './components/MessageFeedbackModal';
 import ProjectsPage from '../components/ProjectsPage';
 import CreateProjectModal from '../components/CreateProjectModal';
 import { ComputerPane } from './components/ComputerPane';
-import ToolDetailSidePanel from './components/ToolDetailSidePanel';
+import ToolDetailSidePanel from '@/components/ToolDetailSidePanel';
 import FileViewerModal from './components/FileViewerModal';
 import { SubagentPanel } from './components/SubagentPanel';
-import { ToolCallDetailPane, type ToolCallDetail } from './components/ToolCallDetailPane';
+import { ToolCallDetailPane, PlanPreviewCard, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
 import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
 
@@ -115,7 +116,7 @@ import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginB
 import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
 import { ReportContainer } from './components/ReportComponents';
 import { InlineVisualization } from './components/InlineVisualization';
-import { PlanReviewCard, AgentWorkspaceCards } from './components/PlanComponents';
+import { PlanReviewCard, AgentWorkspaceCards, PlanArtifact } from './components/PlanComponents';
 import { HitlApprovalForm, UserQuestionForm } from './components/FormComponents';
 import { PlanApprovalBanner } from './components/PlanApprovalBanner';
 import { ReasoningBranch, ReasoningPane, ProgressStepsIcon, ContextGridIcon, PaneSection, ReasoningBlock } from './components/ReasoningComponents';
@@ -187,6 +188,14 @@ const ORCHESTRATOR_LINE_PATTERNS = [
 function scrubOrchestratorNoise(text: string): string {
     if (!text) return text;
     let out = text;
+    // Strip XML/bracket reasoning tags (closed or open-ended)
+    out = out
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|reasoning|reflection)>/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*?\[\/(?:Thinking|Reasoning)\]/gi, '')
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*$/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*$/gi, '')
+        .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought):[^\n]*\n?/gim, '');
+
     for (const pat of ORCHESTRATOR_LINE_PATTERNS) {
         out = out.replace(pat, '');
     }
@@ -870,6 +879,165 @@ export default function ChatPage() {
         }
     };
 
+    const isPdfFile = (name: string, mimeType?: string) =>
+        name.toLowerCase().endsWith('.pdf') || mimeType === 'application/pdf';
+
+    const isDocxFile = (name: string, mimeType?: string) =>
+        name.toLowerCase().endsWith('.docx') ||
+        name.toLowerCase().endsWith('.doc') ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mimeType === 'application/msword';
+
+    // Automatically extracts text from Word documents (.docx/.doc) right after attached.
+    const processAttachmentDocx = useCallback((att: FileAttachment, update: (patch: Partial<FileAttachment>) => void) => {
+        console.log('[DOCX] processAttachmentDocx triggered for attachment:', att.name, 'path:', att.path);
+        const sys = (window as any).electronAPI?.system;
+        if (!att.path || !sys?.parseDocx) {
+            update({ ocrStatus: 'idle' });
+            return;
+        }
+        (async () => {
+            try {
+                const res = await sys.parseDocx(att.path);
+                if (res && res.success && res.text) {
+                    console.log(`[DOCX] Extracted ${res.text.length} chars from ${att.name}`);
+                    update({ content: res.text, ocrText: res.text, ocrStatus: 'done' });
+                } else {
+                    console.warn('[DOCX] parseDocx returned empty or unsuccessful:', res?.error);
+                    update({ ocrStatus: 'idle' });
+                }
+            } catch (e) {
+                console.error('[DOCX] Error in processAttachmentDocx:', e);
+                update({ ocrStatus: 'error', ocrError: e instanceof Error ? e.message : String(e) });
+            }
+        })();
+    }, []);
+
+    // Runs OCR (or Vision-Send page rendering) on a PDF right after it is
+    // attached, so the extracted text/pages are ready before the user hits send.
+    const processAttachmentOcr = useCallback((att: FileAttachment, update: (patch: Partial<FileAttachment>) => void) => {
+        console.log('[OCR] processAttachmentOcr triggered for attachment:', att.name, 'path:', att.path);
+        const sys = (window as any).electronAPI?.system;
+        if (!att.path || !sys?.ocrPdf || !sys?.pdfPages) {
+            console.warn('[OCR] OCR API not ready or missing path:', { hasPath: !!att.path, hasOcrPdf: !!sys?.ocrPdf, hasPdfPages: !!sys?.pdfPages });
+            update({ ocrStatus: 'error', ocrError: 'OCR not available' });
+            return;
+        }
+        let ocrCfg: any = {};
+        (async () => {
+            try {
+                ocrCfg = (await (window as any).electronAPI?.toolSettings?.get?.())?.pdfOcr || {};
+            } catch (cfgErr) {
+                console.warn('[OCR] Failed to read toolSettings for pdfOcr:', cfgErr);
+            }
+            console.log('[OCR] Current pdfOcr config:', ocrCfg);
+            if (ocrCfg.autoOcr === false) {
+                console.log('[OCR] autoOcr disabled in tool settings. Skipping OCR for:', att.name);
+                update({ ocrStatus: 'idle' });
+                return;
+            }
+            const isVision = ocrCfg.engine === 'vision-send';
+            const engine = isVision ? 'vision-send' : (ocrCfg.engine || 'ocrmypdf');
+            const backend = ocrCfg.backend === 'openvino' ? 'openvino' : 'auto';
+            console.log(`[OCR] Executing OCR for ${att.name} (engine=${engine}, backend=${backend})...`);
+            try {
+                if (isVision) {
+                    const res = await sys.pdfPages({ pdfPath: att.path, maxPages: 30, installIfMissing: true });
+                    console.log('[OCR] pdfPages result:', res);
+                    if (res?.ok && res.pages?.length) {
+                        update({ ocrStatus: 'done', visionPages: res.pages, visionError: undefined });
+                    } else {
+                        update({ ocrStatus: 'error', visionError: res?.error || 'Could not render pages' });
+                    }
+                } else {
+                    const startTime = Date.now();
+                    const res = await sys.ocrPdf({ pdfPath: att.path, engine, backend, installIfMissing: true });
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`[OCR] ocrPdf returned in ${elapsed}s:`, { status: res?.status, engine: res?.engine, textLen: res?.text?.length, error: res?.error });
+                    if (res?.status === 'ok' && res.text) {
+                        update({ ocrStatus: 'done', ocrText: res.text, ocrEngine: res.engine, ocrError: undefined });
+                    } else if (res?.status === 'no_text') {
+                        update({ ocrStatus: 'no_text', ocrText: '', ocrEngine: res.engine });
+                    } else {
+                        update({ ocrStatus: 'error', ocrError: res?.error || 'OCR failed', ocrEngine: res?.engine });
+                    }
+                }
+            } catch (e) {
+                console.error('[OCR] Error in processAttachmentOcr:', e);
+                update({ ocrStatus: 'error', ocrError: e instanceof Error ? e.message : String(e) });
+            }
+        })();
+    }, []);
+
+    const handleAttachment = useCallback(async (type?: 'image' | 'document' | 'all') => {
+        console.log('[handleAttachment] Called with type:', type);
+
+        if (!(window as any).electronAPI?.system?.openFilePicker) {
+            console.error('[handleAttachment] openFilePicker API not available');
+            alert('File picker is not available. Please restart the application.');
+            return;
+        }
+
+        try {
+            let options: any = { filters: [{ name: 'All Files', extensions: ['*'] }] };
+            if (type === 'image') {
+                options = { filters: [{ name: 'All Files', extensions: ['*'] }, { name: 'Images', extensions: ['jpg', 'png', 'webp', 'gif', 'jpeg', 'svg'] }] };
+            }
+
+            console.log('[handleAttachment] Opening file picker with options:', options);
+            const file = await (window as any).electronAPI?.system.openFilePicker(options);
+            console.log('[handleAttachment] File picker result:', file);
+
+            if (!file) {
+                console.log('[handleAttachment] File picker returned null - user may have cancelled');
+                return;
+            }
+
+            if (file.canceled) {
+                console.log('[handleAttachment] User cancelled file selection');
+                return;
+            }
+
+            if (!file.success) {
+                console.error('[handleAttachment] File picker failed:', file.error);
+                alert(`Failed to select file: ${file.error || 'Unknown error'}`);
+                return;
+            }
+
+            if (file.success && file.path) {
+                const isPdf = isPdfFile(file.name, file.mimeType);
+                const isDocx = isDocxFile(file.name, file.mimeType);
+                const newAttachment: FileAttachment = {
+                    id: crypto.randomUUID(),
+                    name: file.name,
+                    size: file.size || 0,
+                    mimeType: file.mimeType || 'application/octet-stream',
+                    base64: file.base64,
+                    content: file.content,
+                    path: file.path,
+                    ocrStatus: isPdf ? 'pending' : (isDocx ? 'pending' : 'idle')
+                };
+                console.log('[handleAttachment] Adding attachment:', newAttachment.name);
+                // Show the upload in the prompt input immediately, then OCR/parse in background.
+                setAttachments(prev => [...prev, newAttachment]);
+                if (isPdf) {
+                    const update = (patch: Partial<FileAttachment>) =>
+                        setAttachments(prev => prev.map(a => a.id === newAttachment.id ? { ...a, ...patch } : a));
+                    processAttachmentOcr(newAttachment, update);
+                } else if (isDocx) {
+                    const update = (patch: Partial<FileAttachment>) =>
+                        setAttachments(prev => prev.map(a => a.id === newAttachment.id ? { ...a, ...patch } : a));
+                    processAttachmentDocx(newAttachment, update);
+                }
+            } else {
+                console.warn('[handleAttachment] File picker returned unexpected result:', file);
+            }
+        } catch (error) {
+            console.error('[handleAttachment] Error:', error);
+            alert(`Failed to attach file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }, []);
+
     const formatRelativeTime = (dateStr?: string) => {
         if (!dateStr) return '';
         try {
@@ -1107,6 +1275,19 @@ export default function ChatPage() {
     };
 
     const handlePillClick = (tc: ToolCallDisplay) => {
+        // Don't open ToolCallDetailPane for terminal tools - show inline in timeline instead
+        const toolLower = tc.toolName?.toLowerCase() || '';
+        if (
+            toolLower.includes('terminal') || 
+            toolLower.includes('command') || 
+            toolLower.includes('bash') || 
+            toolLower.includes('exec') ||
+            toolLower.includes('present_files') ||
+            toolLower.includes('task_complete') ||
+            toolLower.includes('complete')
+        ) {
+            return;
+        }
         openToolDetailTab(mapToolCallForDetail(tc));
     };
 
@@ -1387,6 +1568,38 @@ export default function ChatPage() {
         dependencies?: string[];
     }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
+    const [envWarning, setEnvWarning] = useState<string | null>(null);
+    const [showEnvWarningBanner, setShowEnvWarningBanner] = useState<boolean>(false);
+    const [settingsInitialSection, setSettingsInitialSection] = useState<string>('general');
+
+    useEffect(() => {
+        const checkEnv = async () => {
+            try {
+                const dismissed = sessionStorage.getItem('everfern_env_warning_dismissed');
+                if (dismissed === 'true') return;
+
+                const electronAPI = (window as any).electronAPI;
+                if (!electronAPI?.system?.checkEnvironmentDependencies) return;
+
+                const res = await electronAPI.system.checkEnvironmentDependencies();
+                if (res) {
+                    if (!res.vmReady) {
+                        setEnvWarning("Sandbox environment (WSL / Docker) is not ready. Some document & terminal skills may be limited.");
+                        setShowEnvWarningBanner(true);
+                    } else if (!res.venvReady || !res.pipPackagesInstalled) {
+                        setEnvWarning("Python skill environment (~/.everfern/venv) is incomplete. Some PDF and data analysis skills may be limited.");
+                        setShowEnvWarningBanner(true);
+                    } else {
+                        setShowEnvWarningBanner(false);
+                    }
+                }
+            } catch (e) {
+                // Ignore quietly
+            }
+        };
+        const timer = setTimeout(checkEnv, 2500);
+        return () => clearTimeout(timer);
+    }, []);
 
     // ── EverFern Dispatch: broadcast state back to the web UI ─────────────────
     // This effect runs whenever chat state changes and sends a state_update
@@ -1887,6 +2100,7 @@ export default function ChatPage() {
                         handleSelectConversation(notification.id);
                         setNotification(null);
                     }}
+                    className="glossy"
                     style={{
                         position: 'fixed',
                         top: 24,
@@ -1897,7 +2111,6 @@ export default function ChatPage() {
                         border: '1px solid var(--color-border)',
                         borderRadius: 16,
                         padding: '16px 20px',
-                        boxShadow: '0 12px 40px rgba(0,0,0,0.12)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -2337,6 +2550,23 @@ export default function ChatPage() {
                     id: m.id, name: m.name, provider: m.provider, providerType: m.providerType,
                     logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
                 }));
+
+                // Ensure openrouter / nvidia custom model from config is visible in dropdown
+                if (config?.customModel && (config?.provider === 'openrouter' || config?.provider === 'nvidia' || config?.provider === 'ollama-cloud')) {
+                    const customId = config.customModel.trim();
+                    if (customId && !formatted.find((m: any) => m.id === customId)) {
+                        const provName = config.provider === 'openrouter' ? 'OpenRouter' : config.provider === 'nvidia' ? 'NVIDIA NIM' : 'Ollama Cloud';
+                        const provLogo = config.provider === 'openrouter' ? OpenRouterLogo : NvidiaLogo;
+                        formatted.unshift({
+                            id: customId,
+                            name: `${customId} (Custom)`,
+                            provider: provName,
+                            providerType: config.provider,
+                            logo: provLogo
+                        });
+                    }
+                }
+
                 const finalModels = (formatted.length > 0 ? formatted : [
                     { id: "mistralai/mistral-medium-3.5-128b", name: "Mistral Medium 3.5 (EverFern Cloud)", provider: "EverFern", providerType: "everfern", logo: EverFernBglessLogo },
                     { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "OpenAI", providerType: "openai", logo: OpenAILogo },
@@ -2663,6 +2893,13 @@ export default function ChatPage() {
                 }
             }
 
+            // File attachment shortcut (Ctrl+U)
+            if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "u") {
+                e.preventDefault();
+                handleAttachment('all');
+                return;
+            }
+
             // Developer JSON Viewer shortcut (Ctrl+Shift+J)
             if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toUpperCase() === "J") {
                 e.preventDefault();
@@ -2671,7 +2908,7 @@ export default function ChatPage() {
         };
         window.addEventListener("keydown", handleKeyDown as any);
         return () => window.removeEventListener("keydown", handleKeyDown as any);
-    }, []);
+    }, [handleAttachment]);
 
     // Listen for acp:show-json-viewer event from main process
     useEffect(() => {
@@ -2987,64 +3224,6 @@ export default function ChatPage() {
             }
         } catch (err) {
             console.error("Failed to get JSON:", err);
-        }
-    };
-
-    const handleAttachment = async (type?: 'image' | 'document') => {
-        console.log('[handleAttachment] Called with type:', type);
-
-        if (!(window as any).electronAPI?.system?.openFilePicker) {
-            console.error('[handleAttachment] openFilePicker API not available');
-            alert('File picker is not available. Please restart the application.');
-            return;
-        }
-
-        try {
-            let options: any = {};
-            if (type === 'image') {
-                options = { filters: [{ name: 'Images', extensions: ['jpg', 'png', 'webp', 'gif', 'jpeg'] }] };
-            } else if (type === 'document') {
-                options = { filters: [{ name: 'All Files', extensions: ['*'] }] };
-            }
-
-            console.log('[handleAttachment] Opening file picker with options:', options);
-            const file = await (window as any).electronAPI?.system.openFilePicker(options);
-            console.log('[handleAttachment] File picker result:', file);
-
-            if (!file) {
-                console.log('[handleAttachment] File picker returned null - user may have cancelled');
-                return;
-            }
-
-            if (file.canceled) {
-                console.log('[handleAttachment] User cancelled file selection');
-                return;
-            }
-
-            if (!file.success) {
-                console.error('[handleAttachment] File picker failed:', file.error);
-                alert(`Failed to select file: ${file.error || 'Unknown error'}`);
-                return;
-            }
-
-            if (file.success && file.path) {
-                const newAttachment: FileAttachment = {
-                    id: crypto.randomUUID(),
-                    name: file.name,
-                    size: file.size || 0,
-                    mimeType: file.mimeType || 'application/octet-stream',
-                    base64: file.base64,
-                    content: file.content,
-                    path: file.path
-                };
-                console.log('[handleAttachment] Adding attachment:', newAttachment.name);
-                setAttachments(prev => [...prev, newAttachment]);
-            } else {
-                console.warn('[handleAttachment] File picker returned unexpected result:', file);
-            }
-        } catch (error) {
-            console.error('[handleAttachment] Error:', error);
-            alert(`Failed to attach file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     };
 
@@ -4468,6 +4647,77 @@ export default function ChatPage() {
                     }
                 }
 
+                // Auto-OCR any attached PDFs so the AI receives the extracted text
+                // directly (instead of being told to run Python to scan the PDF).
+                // With "vision-send", render each page to an image and send those to the AI.
+                const ocrResults: Record<string, { status: string; text: string; engine?: string; error?: string }> = {};
+                const visionResults: Record<string, { ok: boolean; pages: { name: string; base64: string }[]; error?: string }> = {};
+                let isVisionSend = false;
+                if (sys?.ocrPdf && sys?.pdfPages) {
+                    try {
+                        const ocrSettings = await (window as any).electronAPI?.toolSettings?.get?.();
+                        const ocrCfg = ocrSettings?.pdfOcr || {};
+                        const ocrEngine = ocrCfg.engine === 'vision-send' ? 'vision-send' : (ocrCfg.engine || 'ocrmypdf');
+                        isVisionSend = ocrEngine === 'vision-send';
+                        const ocrBackend = ocrCfg.backend === 'openvino' ? 'openvino' : 'auto';
+                        const autoOcr = ocrCfg.autoOcr !== false;
+                        if (autoOcr) {
+                            for (const m of newMessages) {
+                                if (m.role === 'user' && m.attachments) {
+                                    for (const a of m.attachments) {
+                                        const isPdf = a.name.toLowerCase().endsWith('.pdf') || a.mimeType === 'application/pdf';
+                                        if (isPdf && a.path) {
+                                            try {
+                                                if (isVisionSend) {
+                                                    const vr = await sys.pdfPages({ pdfPath: a.path, maxPages: 30, installIfMissing: true });
+                                                    visionResults[a.path] = { ok: Boolean(vr?.ok), pages: vr?.pages || [], error: vr?.error };
+                                                } else {
+                                                    const res = await sys.ocrPdf({ pdfPath: a.path, engine: ocrEngine, backend: ocrBackend, installIfMissing: true });
+                                                    ocrResults[a.path] = { status: res?.status || 'error', text: res?.text || '', engine: res?.engine, error: res?.error };
+                                                }
+                                            } catch (e) {
+                                                console.error('[handleSend] PDF processing failed for', a.name, e);
+                                                if (isVisionSend) {
+                                                    visionResults[a.path] = { ok: false, pages: [], error: e instanceof Error ? e.message : String(e) };
+                                                } else {
+                                                    ocrResults[a.path] = { status: 'error', text: '', error: e instanceof Error ? e.message : String(e) };
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[handleSend] PDF setup error:', e);
+                    }
+                }
+
+                // Auto-read Word documents (.docx/.doc) so AI directly receives the full document text
+                const docxResults: Record<string, string> = {};
+                if (sys?.parseDocx) {
+                    for (const m of newMessages) {
+                        if (m.role === 'user' && m.attachments) {
+                            for (const a of m.attachments) {
+                                if (isDocxFile(a.name, a.mimeType) && a.path) {
+                                    try {
+                                        if (a.ocrText || a.content) {
+                                            docxResults[a.path] = a.ocrText || a.content || '';
+                                        } else {
+                                            const dr = await sys.parseDocx(a.path);
+                                            if (dr?.success && dr.text) {
+                                                docxResults[a.path] = dr.text;
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error('[handleSend] DOCX parse error for', a.name, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 await api.stream({
                     messages: newMessages
                         .filter(m => m.content || (m.attachments && m.attachments.length > 0))
@@ -4483,11 +4733,61 @@ export default function ChatPage() {
                                         const hostPath = a.path || '';
                                         const wslPath = hostPath ? toLinuxPath(hostPath) : `/everfern/${a.name}`;
                                         const escapedHost = hostPath.replace(/\\/g, '\\\\');
+                                        const isPdf = a.name.toLowerCase().endsWith('.pdf') || a.mimeType === 'application/pdf';
+                                        const isDocx = isDocxFile(a.name, a.mimeType);
+
+                                        if (isDocx) {
+                                            const docxText = hostPath ? (docxResults[hostPath] || a.ocrText || a.content || '') : (a.ocrText || a.content || '');
+                                            let docxSection = '';
+                                            if (docxText) {
+                                                docxSection = `\n\n[Extracted Word Document Text from ${a.name}:]\n${docxText}\n[End of extracted document text]`;
+                                            }
+                                            blocks.push({
+                                                type: 'text',
+                                                text: `[Attached Word Document: ${a.name}]
+[Host Path: ${escapedHost || '(not available)'}]
+[WSL Path: ${wslPath}]
+${docxSection}
+
+This Word document is available on the local machine at ${escapedHost || '(path unavailable)'}.`
+                                            });
+                                            return;
+                                        }
+
+                                        const vision = isPdf && hostPath ? visionResults[hostPath] : undefined;
+                                        if (isVisionSend && vision) {
+                                            if (vision.ok && vision.pages.length > 0) {
+                                                blocks.push({
+                                                    type: 'text',
+                                                    text: `[Attached PDF: ${a.name}] — ${vision.pages.length} page screenshot(s) below. Each page is an image; read the relevant pages to extract the content.`
+                                                });
+                                                vision.pages.forEach(pg => blocks.push({ type: 'image_url', image_url: { url: pg.base64 } }));
+                                            } else {
+                                                blocks.push({
+                                                    type: 'text',
+                                                    text: `[Attached File: ${a.name}]\n[Host Path: ${escapedHost || '(not available)'}]\n[Vision Send: could not render pages (${vision.error || 'unknown error'}).] Use the file path at ${escapedHost || 'the host machine'} if needed.`
+                                                });
+                                            }
+                                            return;
+                                        }
+                                        const ocr = isPdf && hostPath ? ocrResults[hostPath] : undefined;
+                                        let ocrSection = '';
+                                        if (ocr) {
+                                            const engineLabel = ocr.engine === 'paddleocr-vl' ? 'PaddleOCR-VL' : ocr.engine === 'tesseract' ? 'Tesseract' : ocr.engine === 'paddleocr' ? 'PaddleOCR' : 'OCRmyPDF';
+                                            if (ocr.status === 'ok' && ocr.text) {
+                                                ocrSection = `\n\n[Extracted text via ${engineLabel}:]\n${ocr.text}\n[End of extracted text]`;
+                                            } else if (ocr.status === 'no_text') {
+                                                ocrSection = `\n\n[OCR: No text detected in this PDF (scanned/image-only pages).]`;
+                                            } else {
+                                                ocrSection = `\n\n[OCR: Could not extract text automatically (${ocr.error || 'unknown error'}). Use the file path if needed.]`;
+                                            }
+                                        }
                                         blocks.push({
                                             type: 'text',
                                             text: `[Attached File: ${a.name}]
 [Host Path: ${escapedHost || '(not available)'}]
 [WSL Path: ${wslPath}]
+${ocrSection}
 
 This file is available on the Windows host machine at ${escapedHost || '(path unavailable)'}.
 For file analysis tasks (reading PDFs, parsing CSVs, analyzing images, processing documents), use the local machine tools (PowerShell, python on Windows) via the execute_pwsh tool with local=true.
@@ -4838,7 +5138,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     backgroundColor: 'var(--color-bg-surface)',
                     border: '1px solid var(--color-border)',
                     borderRadius: 16,
-                    boxShadow: '0 12px 36px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08)',
                     padding: '6px',
                     display: 'flex',
                     flexDirection: 'column',
@@ -5056,7 +5355,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             <AnimatePresence>
                 {showModelSelector && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
-                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+                        className="glossy"
+                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999 }}>
                         <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
                         <div style={{ maxHeight: 320, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}>
                             {availableModels.map(model => {
@@ -5118,7 +5418,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             engine: settingsEngine,
             provider: settingsEngine === "online" ? settingsProvider : settingsEngine,
             apiKey: (settingsEngine === "online" || settingsEngine === "everfern") ? settingsApiKey : undefined,
-            customModel: settingsEngine === "online" && settingsProvider === "nvidia" ? settingsCustomModel : undefined,
+            customModel: (settingsEngine === "online" || settingsEngine === "everfern") && (settingsProvider === "nvidia" || settingsProvider === "openrouter" || settingsProvider === "ollama-cloud") ? (settingsCustomModel?.trim() || undefined) : undefined,
             showuiUrl: settingsShowuiUrl || undefined
         };
 
@@ -5254,55 +5554,244 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
     // ── Shared composer toolbar ──────────────────────────────────────────────
     const renderComposerLeftActions = () => (
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {showAddMenu && (
+                <div
+                    onClick={() => setShowAddMenu(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                />
+            )}
             <div style={{ position: "relative" }}>
-                <button type="button" onClick={() => setShowAddMenu(!showAddMenu)} title="Attach menu"
-                    style={{ background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-primary)"}
-                    onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
+                <button
+                    type="button"
+                    onClick={() => setShowAddMenu(!showAddMenu)}
+                    title="Add content and tools (Ctrl+U)"
+                    style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        backgroundColor: showAddMenu ? "var(--color-bg-hover)" : "transparent",
+                        border: "none",
+                        color: showAddMenu ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 0,
+                        transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                        e.currentTarget.style.color = "var(--color-text-primary)";
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = showAddMenu ? "var(--color-bg-hover)" : "transparent";
+                        e.currentTarget.style.color = showAddMenu ? "var(--color-text-primary)" : "var(--color-text-secondary)";
+                    }}
                 >
-                    <PlusIcon width={22} height={22} style={{ transform: showAddMenu ? 'rotate(45deg)' : 'none', transition: '0.2s' }} />
+                    <PlusIcon width={20} height={20} style={{ transform: showAddMenu ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)' }} />
                 </button>
                 <AnimatePresence>
                     {showAddMenu && (
-                        <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, display: "flex", flexDirection: "column", gap: 2, minWidth: 180, zIndex: 50, boxShadow: "0 8px 30px rgba(0,0,0,0.12)" }}>
-                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('image'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect><path d="M8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path><path d="M21 15l-5-5L5 21"></path></svg>
-                                Upload Image
-                            </button>
-                            <button type="button" onClick={() => { setShowAddMenu(false); handleAttachment('document'); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }} onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"} onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                Upload Document
-                            </button>
-                            <div style={{ height: 1, backgroundColor: "var(--color-border-subtle)", margin: "4px 6px" }} />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                            style={{
+                                position: "absolute",
+                                bottom: "calc(100% + 8px)",
+                                left: 0,
+                                backgroundColor: "var(--color-bg-surface)",
+                                border: "1px solid var(--color-border)",
+                                borderRadius: 16,
+                                padding: 6,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 2,
+                                width: 245,
+                                zIndex: 100,
+                                boxShadow: "0 12px 32px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.04)",
+                            }}
+                        >
+                            {/* 1. Add files or photos */}
                             <button
                                 type="button"
-                                onClick={() => setPursueGoalMode(v => !v)}
-                                title="Enable operator mode for long-running goals"
-                                style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: pursueGoalMode ? "var(--color-bg-selected)" : "transparent", color: "var(--color-text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                                onClick={() => { setShowAddMenu(false); handleAttachment('all'); }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: "none",
+                                    backgroundColor: "transparent",
+                                    color: "var(--color-text-primary)",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 500,
+                                    textAlign: "left",
+                                    transition: "all 0.12s ease",
+                                }}
                                 onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = pursueGoalMode ? "var(--color-bg-selected)" : "transparent"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                             >
-                                <SparklesIcon width={18} height={18} style={{ flexShrink: 0 }} />
-                                <span style={{ flex: 1 }}>Pursue goal</span>
-                                <span
-                                    aria-hidden
-                                    style={{
-                                        width: 32,
-                                        height: 18,
-                                        borderRadius: 999,
-                                        backgroundColor: pursueGoalMode ? "var(--color-text-primary)" : "var(--color-border-strong)",
-                                        padding: 2,
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: pursueGoalMode ? "flex-end" : "flex-start",
-                                        transition: "all 0.18s ease",
-                                        flexShrink: 0,
-                                    }}
-                                >
-                                    <span style={{ width: 14, height: 14, borderRadius: "50%", backgroundColor: "var(--color-bg-surface)", boxShadow: "0 1px 2px rgba(0,0,0,0.18)" }} />
-                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <PaperClipIcon width={17} height={17} style={{ color: "var(--color-text-secondary)", flexShrink: 0 }} />
+                                    <span>Add files or photos</span>
+                                </div>
+                                <span style={{ fontSize: 11.5, color: "var(--color-text-tertiary)", fontWeight: 500 }}>Ctrl+U</span>
+                            </button>
+
+                            {/* 2. Add to project */}
+                            <button
+                                type="button"
+                                onClick={() => { setShowAddMenu(false); setShowProjectDropdown(true); }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: "none",
+                                    backgroundColor: "transparent",
+                                    color: "var(--color-text-primary)",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 500,
+                                    textAlign: "left",
+                                    transition: "all 0.12s ease",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    {/* Tray / Folder Inbox SVG */}
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-text-secondary)", flexShrink: 0 }}>
+                                        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+                                        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+                                    </svg>
+                                    <span>Add to project</span>
+                                </div>
+                                <ChevronRightIcon width={14} height={14} style={{ color: "var(--color-text-tertiary)" }} />
+                            </button>
+
+                            {/* Divider line */}
+                            <div style={{ height: 1, backgroundColor: "var(--color-border-subtle)", margin: "4px 6px" }} />
+
+                            {/* 4. Skills */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddMenu(false);
+                                    setInputValue("/");
+                                    textareaRef.current?.focus();
+                                }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: "none",
+                                    backgroundColor: "transparent",
+                                    color: "var(--color-text-primary)",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 500,
+                                    textAlign: "left",
+                                    transition: "all 0.12s ease",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    {/* Scroll / Parchment SVG */}
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-text-secondary)", flexShrink: 0 }}>
+                                        <path d="M19 17V5a2 2 0 0 0-2-2H4" />
+                                        <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1z" />
+                                        <path d="M19 17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v12z" />
+                                        <line x1="8" y1="8" x2="14" y2="8" />
+                                        <line x1="8" y1="12" x2="12" y2="12" />
+                                    </svg>
+                                    <span>Skills</span>
+                                </div>
+                                <ChevronRightIcon width={14} height={14} style={{ color: "var(--color-text-tertiary)" }} />
+                            </button>
+
+                            {/* 5. Connectors */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddMenu(false);
+                                    setShowIntegrationSettings(true);
+                                }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: "none",
+                                    backgroundColor: "transparent",
+                                    color: "var(--color-text-primary)",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 500,
+                                    textAlign: "left",
+                                    transition: "all 0.12s ease",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    {/* 4 squares connector SVG */}
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-text-secondary)", flexShrink: 0 }}>
+                                        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                                        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                                        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                                        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                                    </svg>
+                                    <span>Connectors</span>
+                                </div>
+                                <ChevronRightIcon width={14} height={14} style={{ color: "var(--color-text-tertiary)" }} />
+                            </button>
+
+                            {/* 6. Add plugins... */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAddMenu(false);
+                                    setShowDirectoryModal(true);
+                                }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: "none",
+                                    backgroundColor: "transparent",
+                                    color: "var(--color-text-primary)",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 500,
+                                    textAlign: "left",
+                                    transition: "all 0.12s ease",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                            >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    {/* Power Plug SVG */}
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-text-secondary)", flexShrink: 0 }}>
+                                        <path d="M12 22v-5" />
+                                        <path d="M9 8V2" />
+                                        <path d="M15 8V2" />
+                                        <path d="M18 8v5a6 6 0 0 1-12 0V8z" />
+                                    </svg>
+                                    <span>Add plugins...</span>
+                                </div>
                             </button>
                         </motion.div>
                     )}
@@ -5744,7 +6233,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(16px)" }}>
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-                        style={{ width: "100%", maxWidth: onboardingStep === "name" ? 440 : 540, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 32, padding: "48px 32px", textAlign: "center", boxShadow: "var(--shadow-lg)" }}>
+                        className="glossy"
+                        style={{ width: "100%", maxWidth: onboardingStep === "name" ? 440 : 540, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 32, padding: "48px 32px", textAlign: "center" }}>
                         {onboardingStep === "name" ? (
                             <motion.div key="name-step" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
                                 <div style={{ width: 64, height: 64, borderRadius: 24, margin: "0 auto 24px", background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -5849,6 +6339,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             {showSettings && (
                 <SettingsPage
                     activeProjectId={folderContexts[0]?.path || undefined}
+                    initialSection={settingsInitialSection}
                     onClose={() => setShowSettings(false)}
                     config={config}
                     username={onboardingName || config?.name || 'User'}
@@ -6498,7 +6989,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 {showNotificationMenu && (
                                     <>
                                         <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setShowNotificationMenu(false)} />
-                                        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, boxShadow: "var(--shadow-md)", border: "1px solid var(--color-border)", zIndex: 100, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                                        <div className="glossy" style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, backgroundColor: "var(--color-bg-surface)", borderRadius: 12, border: "1px solid var(--color-border)", zIndex: 100, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                                             <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--color-border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                                 <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Activity & Notifications</span>
                                                 {(activeTaskIds.length > 0 || notification) && (
@@ -6541,7 +7032,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         </div>
                     </header>
 
-                    <div style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "var(--color-bg-surface)", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid var(--color-border)", boxShadow: "var(--shadow-xs)", overflow: "hidden" }}>
+                    <div className="glossy" style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "var(--color-bg-surface)", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid var(--color-border)", overflow: "hidden" }}>
                         {/* Main Chat Area */}
                         {showAnalyticsPage ? (
                             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "var(--color-bg-surface)" }}>
@@ -6573,8 +7064,65 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             </div>
                         ) : (
                             <div style={{ flex: isToolDetailOpen ? "1 1 440px" : 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", height: "100%" }}>
+                                {showEnvWarningBanner && envWarning && (
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '7px 16px',
+                                        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                        borderBottom: '1px solid rgba(245, 158, 11, 0.15)',
+                                        fontSize: 12,
+                                        color: 'var(--color-text-secondary)',
+                                        zIndex: 10,
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <ExclamationTriangleIcon className="w-4 h-4 text-amber-500 shrink-0" style={{ width: 15, height: 15, color: '#f59e0b', flexShrink: 0 }} />
+                                            <span>{envWarning}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <button
+                                                onClick={() => {
+                                                    setSettingsInitialSection('linux-vm');
+                                                    setShowSettings(true);
+                                                    setShowEnvWarningBanner(false);
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: 'var(--color-text-primary)',
+                                                    fontWeight: 600,
+                                                    fontSize: 11.5,
+                                                    cursor: 'pointer',
+                                                    textDecoration: 'underline'
+                                                }}
+                                            >
+                                                Review in Settings
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    sessionStorage.setItem('everfern_env_warning_dismissed', 'true');
+                                                    setShowEnvWarningBanner(false);
+                                                }}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: '2px 4px',
+                                                    color: 'var(--color-text-tertiary)',
+                                                    cursor: 'pointer',
+                                                    fontSize: 13,
+                                                    lineHeight: 1
+                                                }}
+                                                title="Dismiss"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                                 <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
-                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 880 : 1160) : (isToolDetailOpen ? 640 : 860), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
+                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 960 : 1200) : (isToolDetailOpen ? 780 : 1000), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
 
                                         {/* ── Empty / Home State ── */}
                                         {isEmpty && (
@@ -6815,7 +7363,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                                 {/* Project Composer Card */}
                                                                 <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
+                                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
                                                                         {renderSubagentSpawnAttachment()}
                                                                         {renderAttachmentStrip()}
                                                                         {isRecording && recordingSource === 'button' ? (
@@ -6918,7 +7466,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             </div>
 
                                                             {/* Right Column: Project Side Card */}
-                                                            <div style={{ width: 350, flexShrink: 0, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                                                            <div className="glossy" style={{ width: 350, flexShrink: 0, backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                                                                 {/* Instructions Section */}
                                                                 <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
                                                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -7012,7 +7560,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 ) : (
                                                     /* ── Standard Home State ── */
                                                     <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", duration: 0.7 }}
-                                                        style={{ margin: "auto 0", width: "100%", maxWidth: 860, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                                        style={{ margin: "auto 0", width: "100%", maxWidth: 1000, display: "flex", flexDirection: "column", alignItems: "center" }}>
                                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 28, width: "100%" }}>
                                                             <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 38, fontWeight: 300, margin: 0, color: "var(--color-text-primary)", letterSpacing: "-0.01em", textAlign: "center" }}>
                                                                 {randomGreeting}
@@ -7020,7 +7568,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         </div>
 
                                                         {/* ── Empty state composer ── */}
-                                                        <div style={{ width: "100%", maxWidth: 860 }}>
+                                                        <div style={{ width: "100%", maxWidth: 1000 }}>
                                                             {/* Memory Preference Banner */}
                                                             {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                                 <motion.div
@@ -7116,7 +7664,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
                                                                 {/* Progressive input container */}
-                                                                <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
+                                                                <div className="" style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
                                                                     {renderSubagentSpawnAttachment()}
                                                                     {renderAttachmentStrip()}
                                                                     {isRecording && recordingSource === 'button' ? (
@@ -7195,8 +7743,49 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                         {/* Plan Review Card */}
                                         {activePlan && (
-                                            <div style={{ maxWidth: 800, margin: "0 auto 24px", padding: "0 32px" }}>
-                                                <PlanReviewCard plan={activePlan} onApprove={handleApprovePlan} onEdit={() => setShowArtifacts(true)} />
+                                            <div style={{ maxWidth: 600, margin: "0 auto 24px", padding: "0 32px" }}>
+                                                <PlanArtifact
+                                                    title={(() => {
+                                                        const match = activePlan.content.match(/^# Execution Plan:\s*(.+)$/m);
+                                                        return match?.[1] || "Execution Plan";
+                                                    })()}
+                                                    description={(() => {
+                                                        const lines = activePlan.content.split('\n');
+                                                        let desc = '';
+                                                        let foundTitle = false;
+                                                        for (const line of lines) {
+                                                            if (line.startsWith('# Execution Plan:')) { foundTitle = true; continue; }
+                                                            if (foundTitle && line.startsWith('## ')) break;
+                                                            if (foundTitle && line.trim()) { desc += line.trim() + ' '; }
+                                                        }
+                                                        return desc.trim() || undefined;
+                                                    })()}
+                                                    steps={(() => {
+                                                        const steps: { id: string; title: string; description?: string; status?: "pending" | "in_progress" | "completed" }[] = [];
+                                                        const lines = activePlan.content.split('\n');
+                                                        let inSteps = false;
+                                                        lines.forEach((line, idx) => {
+                                                            if (line.startsWith('## Steps')) { inSteps = true; return; }
+                                                            if (inSteps && line.startsWith('### ')) {
+                                                                const clean = line.replace('###', '').replace(/\*\*/g, '').replace(/`[^`]*`/g, '').trim();
+                                                                const [title, ...descParts] = clean.split('—');
+                                                                steps.push({
+                                                                    id: `step_${steps.length + 1}`,
+                                                                    title: title.trim(),
+                                                                    description: descParts.join('—').trim() || undefined,
+                                                                    status: "pending"
+                                                                });
+                                                            }
+                                                        });
+                                                        return steps;
+                                                    })()}
+                                                    meta={{
+                                                        tools: activePlan.content.match(/Tools?:\s*(.+)/i)?.[1]?.split(/,\s*/),
+                                                        estimatedTime: activePlan.content.match(/Est\.?\s*(?:Time|Duration)?:?\s*(.+)/i)?.[1]
+                                                    }}
+                                                    onApprove={() => handleApprovePlan(activePlan.content)}
+                                                    onEdit={() => setShowArtifacts(true)}
+                                                />
                                             </div>
                                         )}
 
@@ -7230,10 +7819,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         exit={{ opacity: 0, y: -20, scale: 0.95 }}
                                                         transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
                                                         layout={idx === messages.length - 1}
-                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}
+                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", width: "100%" }}
                                                     >
 
-                                                        <div style={{ maxWidth: msg.role === "user" ? "80%" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
+                                                        <div className={msg.role === "user" ? "glossy-bubble" : ""} style={{ maxWidth: msg.role === "user" ? "80%" : "100%", width: msg.role === "user" ? "auto" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
                                                             {msg.role === "user" ? (
                                                                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                                                     {msg.attachments && msg.attachments.length > 0 && (
@@ -7295,6 +7884,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     <div
                                                                         className="overflow-y-auto pr-3 custom-scrollbar"
                                                                         style={{
+                                                                            width: "100%",
                                                                             maxHeight: "calc(100vh - 280px)",
                                                                             position: "relative",
                                                                             paddingLeft: "0px",
@@ -7391,6 +7981,33 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             </>
                                                                         );
                                                                     })()}
+                                                                    {/* Presented File Cards — Claude-style file presentation after message text */}
+                                                                    {(() => {
+                                                                        const presentFileCalls = msg.toolCalls?.filter(
+                                                                            (tc: any) => tc.toolName === 'present_files' && tc.data?.files && Array.isArray(tc.data.files)
+                                                                        ) || [];
+                                                                        if (presentFileCalls.length === 0) return null;
+                                                                        const presentedFiles = presentFileCalls.flatMap((tc: any) => tc.data.files);
+                                                                        return (
+                                                                            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                                                                                {presentedFiles.map((file: any, fi: number) => {
+                                                                                    const filePath = file.path || '';
+                                                                                    const fileDesc = file.title || file.description || undefined;
+                                                                                    return (
+                                                                                        <FileArtifact
+                                                                                            key={`presented-${fi}-${filePath}`}
+                                                                                            path={filePath}
+                                                                                            description={fileDesc}
+                                                                                            chatId={activeConversationId || ""}
+                                                                                            onOpenArtifact={(name) => {
+                                                                                                setViewingFile({ name, path: filePath });
+                                                                                            }}
+                                                                                        />
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                     <ReportContainer
                                                                         content={msg.content}
                                                                         onView={(label, path) => {
@@ -7414,6 +8031,38 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             height={tc.args?.height as number}
                                                                         />
                                                                     ))}
+                                                                    {/* Plan Preview Card - Show when execution_plan tool is present */}
+                                                                    {msg.toolCalls?.filter(tc => tc.toolName === 'execution_plan').map(tc => {
+                                                                        const planContent = tc.data?.content || '';
+                                                                        const planTitle = planContent.match(/^# Execution Plan:\s*(.+)$/m)?.[1] || 'Execution Plan';
+                                                                        const stepCount = (planContent.match(/^### /gm) || []).length;
+                                                                        return (
+                                                                            <div key={tc.id} style={{ marginTop: 12, marginBottom: 8 }}>
+                                                                                <PlanPreviewCard
+                                                                                    title={planTitle}
+                                                                                    description="Click to view the full execution plan with all steps and details."
+                                                                                    stepCount={stepCount}
+                                                                                    completedCount={0}
+                                                                                    onClick={() => {
+                                                                                        // Open the tool call detail pane for this plan
+                                                                                        setSelectedToolCall({
+                                                                                            id: tc.id,
+                                                                                            toolName: tc.toolName || 'execution_plan',
+                                                                                            status: tc.status === 'done' ? 'completed' : tc.status === 'error' ? 'failed' : 'executing',
+                                                                                            startTime: Date.now(),
+                                                                                            arguments: tc.args || {},
+                                                                                            result: tc.data ? { data: tc.data } : undefined,
+                                                                                        });
+                                                                                    }}
+                                                                                    onApprove={() => {
+                                                                                        // Handle plan approval
+                                                                                        const approvalMsg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`;
+                                                                                        handleSend(approvalMsg);
+                                                                                    }}
+                                                                                />
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                                     <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
@@ -7504,54 +8153,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             }
                                         </AnimatePresence>
 
-                                        {/* 401 Cloud Auth Error Card */}
-                                        {cloudAuthError && !isLoading && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 8 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                                            >
-                                                <div style={{
-                                                    padding: '16px 20px',
-                                                    borderRadius: 14,
-                                                    border: '1px solid var(--color-border)',
-                                                    background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                                                    display: 'flex',
-                                                    gap: 14,
-                                                    alignItems: 'flex-start',
-                                                    maxWidth: 480,
-                                                }}>
-                                                    <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🌿</div>
-                                                    <div style={{ minWidth: 0 }}>
-                                                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Sign in to EverFern Cloud</div>
-                                                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '0 0 12px', lineHeight: 1.6 }}>
-                                                            You need to be logged in to use EverFern Cloud models. Sign in to continue.
-                                                        </p>
-                                                        <button
-                                                            onClick={() => {
-                                                                setCloudAuthError(false);
-                                                                router.push('/auth');
-                                                            }}
-                                                            style={{
-                                                                backgroundColor: '#10b981',
-                                                                color: '#fff',
-                                                                padding: '8px 18px',
-                                                                borderRadius: 8,
-                                                                fontSize: 13,
-                                                                fontWeight: 600,
-                                                                border: 'none',
-                                                                cursor: 'pointer',
-                                                                transition: 'all 0.15s',
-                                                            }}
-                                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#059669'; }}
-                                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#10b981'; }}
-                                                        >
-                                                            Login with EverFern
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        )}
 
                                         {/* Live streaming state - hide if last message already has this content (prevent duplicates).
                                         Exception: when HITL or user question is active, always show the streaming bubble
@@ -7660,6 +8261,33 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             height={tc.args?.height as number}
                                                                         />
                                                                     ))}
+                                                                    {/* Presented File Cards — Claude-style file presentation (live) */}
+                                                                    {(() => {
+                                                                        const livePresentCalls = liveToolCalls.filter(
+                                                                            (tc: any) => tc.toolName === 'present_files' && tc.data?.files && Array.isArray(tc.data.files)
+                                                                        );
+                                                                        if (livePresentCalls.length === 0) return null;
+                                                                        const presentedFiles = livePresentCalls.flatMap((tc: any) => tc.data.files);
+                                                                        return (
+                                                                            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                                                                                {presentedFiles.map((file: any, fi: number) => {
+                                                                                    const filePath = file.path || '';
+                                                                                    const fileDesc = file.title || file.description || undefined;
+                                                                                    return (
+                                                                                        <FileArtifact
+                                                                                            key={`live-presented-${fi}-${filePath}`}
+                                                                                            path={filePath}
+                                                                                            description={fileDesc}
+                                                                                            chatId={activeConversationId || ""}
+                                                                                            onOpenArtifact={(name) => {
+                                                                                                setViewingFile({ name, path: filePath });
+                                                                                            }}
+                                                                                        />
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                     <RateLimitContinueButton content={streamingContent} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                                     <CloudAuthLoginButton content={streamingContent} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                 </>
@@ -7852,7 +8480,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             {renderLocalSlowHardwarePopup()}
 
                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)" }}>
+                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
                                                     {/* Memory Preference Banner */}
                                                     {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                         <motion.div

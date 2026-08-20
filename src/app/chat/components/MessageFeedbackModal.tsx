@@ -68,11 +68,11 @@ export default function MessageFeedbackModal({ isOpen, onClose, onSubmit, feedba
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="glossy"
                     style={{
                         backgroundColor: 'var(--color-bg-surface)',
                         borderRadius: '24px',
                         border: '1px solid var(--color-border)',
-                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
                         width: '100%',
                         maxWidth: '500px',
                         maxHeight: '90vh',

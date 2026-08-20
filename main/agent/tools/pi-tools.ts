@@ -13,6 +13,9 @@ import * as path from 'path';
 import { UnifiedExecutor } from './unified-executor';
 import { taskCompleteTool } from './task-complete';
 
+import * as os from 'os';
+import { runOcrPdf } from '../../ocr/ocr';
+
 async function existsAsync(p: string): Promise<boolean> {
   try {
     await fs.promises.access(p);
@@ -22,7 +25,48 @@ async function existsAsync(p: string): Promise<boolean> {
   }
 }
 
-import * as os from 'os';
+async function parseDocxFile(filePath: string): Promise<{ success: boolean; text?: string; error?: string }> {
+  try {
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip(filePath);
+    const entry = zip.getEntry('word/document.xml');
+    if (!entry) return { success: false, error: 'Missing word/document.xml' };
+    const xmlContent = entry.getData().toString('utf8');
+
+    const decodeXmlEntities = (str: string): string => {
+      return str
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+        .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    };
+
+    const pRegex = /<w:p[^>]*>([\s\S]*?)<\/w:p>/g;
+    let pMatch;
+    const paragraphs: string[] = [];
+
+    while ((pMatch = pRegex.exec(xmlContent)) !== null) {
+      const pXml = pMatch[1];
+      const tRegex = /<w:t[^>]*>([^<]*?)<\/w:t>/g;
+      let tMatch;
+      let pText = '';
+      while ((tMatch = tRegex.exec(pXml)) !== null) {
+        pText += tMatch[1];
+      }
+      pText = decodeXmlEntities(pText).trim();
+      if (pText) {
+        paragraphs.push(pText);
+      }
+    }
+
+    return { success: true, text: paragraphs.join('\n\n') };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
 
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
@@ -599,6 +643,22 @@ function adaptTool(
     }
   }
 
+  // Universal metadata properties for clear UI timeline rendering and task grouping
+  if (parameters && parameters.properties) {
+    if (!parameters.properties._narrative) {
+      parameters.properties._narrative = {
+        type: 'string',
+        description: 'A single, high-polish active-voice sentence describing what you are doing (e.g. "Creating Python script with ReportLab styling for global warming report.")'
+      };
+    }
+    if (!parameters.properties.taskName) {
+      parameters.properties.taskName = {
+        type: 'string',
+        description: 'A clean human-friendly Title Case task group name (e.g. "Drafting PDF Report", "Generating Charts", "Finalizing Output")'
+      };
+    }
+  }
+
   return {
     name,
     description,
@@ -1018,6 +1078,78 @@ function adaptTool(
             }
           } catch (readErr) {
             console.warn(`[pi-tools] Could not read file before edit result payload: ${editPath}`, readErr);
+          }
+        }
+
+        // Intercept binary document & image files in read tool
+        if (name === 'read' && typeof args?.path === 'string') {
+          const readPath = path.resolve(args.path);
+          const ext = path.extname(readPath).toLowerCase();
+
+          // 1. Word Documents (.docx, .doc)
+          if (['.docx', '.doc'].includes(ext)) {
+            onUpdate?.(`Reading Word document: ${path.basename(readPath)} (DOCX parser)...`);
+            const docxRes = await parseDocxFile(readPath);
+            if (docxRes.success && docxRes.text) {
+              return {
+                success: true,
+                output: stripAnsi(`Success: read file (Word Document)\nPath: ${readPath}\nType: Microsoft Word (.docx)\n[DOCX Reader: Extracted full text and paragraphs from ${path.basename(readPath)}]\n\n${docxRes.text}`),
+                data: { path: readPath, type: 'docx', content: docxRes.text }
+              };
+            } else {
+              return {
+                success: false,
+                output: `Error reading DOCX file ${readPath}: ${docxRes.error || 'Unknown error'}`,
+                error: docxRes.error || 'docx_read_failed'
+              };
+            }
+          }
+
+          // 2. PDF Documents (.pdf)
+          if (ext === '.pdf') {
+            onUpdate?.(`Scanning & reading PDF: ${path.basename(readPath)} (OCR engine)...`);
+            try {
+              const ocrRes = await runOcrPdf(readPath, 'ocrmypdf');
+              if (ocrRes && ocrRes.status === 'ok' && ocrRes.text) {
+                const engineLabel = ocrRes.engine === 'tesseract' ? 'Tesseract' : ocrRes.engine === 'paddleocr' ? 'PaddleOCR' : 'OCRmyPDF';
+                return {
+                  success: true,
+                  output: stripAnsi(`Success: read file (PDF Document via OCR)\nPath: ${readPath}\nType: PDF Document (.pdf)\n[PDF Reader/OCR: Extracted text via ${engineLabel} (${ocrRes.text.length} chars) from ${path.basename(readPath)}]\n\n${ocrRes.text}`),
+                  data: { path: readPath, type: 'pdf', engine: ocrRes.engine, content: ocrRes.text }
+                };
+              } else if (ocrRes && ocrRes.status === 'no_text') {
+                return {
+                  success: true,
+                  output: stripAnsi(`Success: read file (PDF Document via OCR)\nPath: ${readPath}\nType: PDF Document (.pdf)\n[PDF Reader/OCR: No text detected in this PDF (scanned/empty pages).]`),
+                  data: { path: readPath, type: 'pdf', content: '' }
+                };
+              }
+            } catch (pdfErr: any) {
+              console.warn('[pi-tools] PDF OCR failed in read tool:', pdfErr);
+            }
+          }
+
+          // 3. Images (.png, .jpg, .jpeg, .webp, .bmp, .tiff)
+          if (['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'].includes(ext)) {
+            onUpdate?.(`Performing OCR scan on image: ${path.basename(readPath)}...`);
+            try {
+              const ocrRes = await runOcrPdf(readPath, 'tesseract');
+              if (ocrRes && ocrRes.status === 'ok' && ocrRes.text) {
+                return {
+                  success: true,
+                  output: stripAnsi(`Success: read file (Image OCR Scan)\nPath: ${readPath}\nType: Image (${ext})\n[OCR Image Scanner: Extracted text from ${path.basename(readPath)}]\n\n${ocrRes.text}`),
+                  data: { path: readPath, type: 'image_ocr', content: ocrRes.text }
+                };
+              } else if (ocrRes && ocrRes.status === 'no_text') {
+                return {
+                  success: true,
+                  output: stripAnsi(`Success: read file (Image OCR Scan)\nPath: ${readPath}\nType: Image (${ext})\n[OCR Image Scanner: No text detected in image.]`),
+                  data: { path: readPath, type: 'image_ocr', content: '' }
+                };
+              }
+            } catch (imgErr: any) {
+              console.warn('[pi-tools] Image OCR failed in read tool:', imgErr);
+            }
           }
         }
 

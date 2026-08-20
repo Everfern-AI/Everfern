@@ -79,8 +79,8 @@ export default function OnboardingPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", bounce: 0.2, duration: 0.8 }}
-        className="flex flex-col items-center text-center gap-6 px-8"
-        style={{ maxWidth: 440 }}
+        className="flex flex-col items-center text-center gap-6 px-8 glossy"
+        style={{ maxWidth: 440, borderRadius: 24, padding: 40, background: 'var(--color-bg-surface)' }}
       >
         {/* Logo */}
         <Image
@@ -88,6 +88,8 @@ export default function OnboardingPage() {
           alt="EverFern Logo"
           width={72}
           height={72}
+          priority
+          loading="eager"
           style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }}
         />
 
@@ -128,6 +130,7 @@ export default function OnboardingPage() {
         >
           <Link
             href="/auth"
+            className="glossy"
             style={{
               display: "flex",
               alignItems: "center",
@@ -142,7 +145,6 @@ export default function OnboardingPage() {
               border: "none",
               cursor: "pointer",
               fontFamily: "var(--font-sans)",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
               textDecoration: "none",
               transition: "all 0.2s ease",
             }}

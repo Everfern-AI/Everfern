@@ -416,6 +416,7 @@ export default function Sidebar({
                     position: "relative",
                     marginBottom: 2,
                     fontWeight: isActive ? 600 : 400,
+                    overflow: "hidden",
                 }}
                 onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
                     if (!isActive) {
@@ -437,7 +438,7 @@ export default function Sidebar({
                 }}
             >
                 {/* Icon & Unread Dot */}
-                <div style={{ flexShrink: 0, opacity: 0.75, display: "flex", alignItems: "center", position: "relative" }}>
+                <div style={{ flexShrink: 0, opacity: 0.75, display: "flex", alignItems: "center", position: "relative", zIndex: 1 }}>
                     {activeTaskIds.includes(item.id) ? (
                         <div style={{ position: "relative", width: 14, height: 14 }}>
                             <div style={{
@@ -493,20 +494,31 @@ export default function Sidebar({
                                     color: "var(--color-text-primary, #111111)",
                                     outline: "none",
                                     minWidth: 0,
+                                    zIndex: 3,
                                 }}
                             />
                         ) : (
-                            <span style={{
+                            <div style={{
                                 flex: 1,
+                                minWidth: 0,
+                                position: "relative",
                                 overflow: "hidden",
-                                whiteSpace: "nowrap",
-                                textOverflow: "ellipsis",
-                                fontSize: 13,
-                                color: item.isUnread ? "var(--color-text-primary, #111111)" : "inherit",
-                                fontWeight: item.isUnread ? 600 : "inherit",
+                                paddingRight: item.projectName ? 4 : 26,
+                                maskImage: "linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%)",
+                                WebkitMaskImage: "linear-gradient(to right, black 0%, black calc(100% - 32px), transparent 100%)",
                             }}>
-                                {item.title || "Untitled Chat"}
-                            </span>
+                                <span style={{
+                                    display: "block",
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "clip",
+                                    fontSize: 13,
+                                    color: item.isUnread ? "var(--color-text-primary, #111111)" : "inherit",
+                                    fontWeight: item.isUnread ? 600 : "inherit",
+                                }}>
+                                    {item.title || "Untitled Chat"}
+                                </span>
+                            </div>
                         )}
 
                         {item.projectName && !isRenaming && (
@@ -521,7 +533,9 @@ export default function Sidebar({
                                 flexShrink: 0,
                                 maxWidth: 70,
                                 overflow: 'hidden',
-                                textOverflow: 'ellipsis'
+                                textOverflow: 'ellipsis',
+                                zIndex: 3,
+                                marginRight: 24,
                             }}>
                                 {item.projectName}
                             </div>
@@ -533,16 +547,21 @@ export default function Sidebar({
                             onClick={(e) => handleOpenMenu(e, item.id)}
                             title="Options"
                             style={{
+                                position: "absolute",
+                                right: 6,
+                                top: "50%",
+                                transform: "translateY(-50%)",
                                 padding: "3px 4px",
                                 borderRadius: 6,
                                 color: "var(--sidebar-text-tertiary)",
                                 opacity: menuConvId === item.id ? 1 : 0,
-                                transition: "opacity 0.15s, background-color 0.15s",
+                                transition: "opacity 0.15s, background-color 0.15s, color 0.15s",
                                 cursor: "pointer",
                                 lineHeight: 1,
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
+                                zIndex: 4,
                             }}
                             onMouseEnter={e => {
                                 e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)";
@@ -556,22 +575,22 @@ export default function Sidebar({
                             <EllipsisHorizontalIcon width={16} height={16} />
                         </div>
 
-                        {/* Right-edge blur */}
-                        <div
-                            style={{
-                                position: "absolute",
-                                right: 0,
-                                top: 0,
-                                bottom: 0,
-                                width: 24,
-                                backdropFilter: "blur(3px)",
-                                WebkitBackdropFilter: "blur(3px)",
-                                maskImage: "linear-gradient(to right, transparent, black)",
-                                WebkitMaskImage: "linear-gradient(to right, transparent, black)",
-                                pointerEvents: "none",
-                                borderRadius: "0 10px 10px 0",
-                            }}
-                        />
+                        {/* Right-edge smooth fade for active item */}
+                        {isActive && (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    width: 36,
+                                    pointerEvents: "none",
+                                    zIndex: 2,
+                                    borderRadius: "0 10px 10px 0",
+                                    background: "linear-gradient(to right, transparent 0%, var(--sidebar-bg-selected) 90%)",
+                                }}
+                            />
+                        )}
                     </>
                 )}
             </div>
@@ -587,6 +606,7 @@ export default function Sidebar({
                 initial={false}
                 animate={{ width: isOpen ? sidebarWidth : collapsedWidth }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="glossy-no-border"
                 style={{
                     position: "fixed",
                     left: 0,
@@ -650,7 +670,7 @@ export default function Sidebar({
                     backgroundColor: "var(--sidebar-bg)"
                 } as any}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
+                        <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} priority loading="eager" style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                         {isOpen && (
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--sidebar-brand-text)", fontFamily: 'var(--font-sans)' }}>EverFern</span>

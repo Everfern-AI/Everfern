@@ -79,6 +79,7 @@ export default function PermissionDialog() {
                             exit={{ opacity: 0, scale: 0.9, y: -20 }}
                             transition={{ type: 'spring', damping: 20, stiffness: 300 }}
                             onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                            className="glossy"
                             style={{
                                 position: 'fixed',
                                 inset: 0,
@@ -88,7 +89,6 @@ export default function PermissionDialog() {
                                 height: 'fit-content',
                                 backgroundColor: 'var(--color-bg-surface)',
                                 borderRadius: 16,
-                                boxShadow: '0 25px 50px rgba(0, 0, 0, 0.3)',
                                 zIndex: 9999,
                                 display: 'flex',
                                 flexDirection: 'column',

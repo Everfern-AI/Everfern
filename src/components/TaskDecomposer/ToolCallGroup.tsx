@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { ToolCallRow } from '../ToolCallComponents';
+import { ToolCallRow } from '../tools/ToolCallComponents';
 import type { ToolCallGroupProps } from './types';
 
 /**

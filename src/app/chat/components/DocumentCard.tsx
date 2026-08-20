@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface DocumentCardProps {
     path: string;
@@ -9,6 +10,9 @@ interface DocumentCardProps {
 }
 
 export default function DocumentCard({ path, description, chatId, onOpenArtifact }: DocumentCardProps) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     const [isHovered, setIsHovered] = useState(false);
     const [content, setContent] = useState<string | null>(null);
     const [csvGrid, setCsvGrid] = useState<string[][] | null>(null);
@@ -109,7 +113,8 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
         // Escape HTML
         f = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         // Inline code
-        f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #3b82f6;">$1</code>');
+        const codeBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+        f = f.replace(/`(.*?)`/g, `<code style="background-color: ${codeBg}; padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #3b82f6;">$1</code>`);
         // Inline bold
         f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         return f;
@@ -117,11 +122,13 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
 
     const renderPreviewContent = () => {
         if (loading) {
+            const pulseBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+            const pulseBg2 = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
             return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 0' }}>
-                    <div style={{ height: 16, width: '40%', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 4, animation: 'pulse 1.5s infinite' }} />
-                    <div style={{ height: 12, width: '90%', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 3, animation: 'pulse 1.5s infinite' }} />
-                    <div style={{ height: 12, width: '75%', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 3, animation: 'pulse 1.5s infinite' }} />
+                    <div style={{ height: 16, width: '40%', backgroundColor: pulseBg, borderRadius: 4, animation: 'pulse 1.5s infinite' }} />
+                    <div style={{ height: 12, width: '90%', backgroundColor: pulseBg2, borderRadius: 3, animation: 'pulse 1.5s infinite' }} />
+                    <div style={{ height: 12, width: '75%', backgroundColor: pulseBg2, borderRadius: 3, animation: 'pulse 1.5s infinite' }} />
                     <style dangerouslySetInnerHTML={{ __html: `
                         @keyframes pulse {
                             0%, 100% { opacity: 0.3; }
@@ -135,17 +142,17 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
         if (csvGrid && csvGrid.length > 0) {
             // Render Mini spreadsheet
             return (
-                <div style={{ overflowX: 'auto', margin: '10px 0 0 0', borderRadius: 6, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, color: '#e3e3e6', fontFamily: 'monospace' }}>
+                <div style={{ overflowX: 'auto', margin: '10px 0 0 0', borderRadius: 6, border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
                         <tbody>
                             {csvGrid.map((row, ri) => (
-                                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', backgroundColor: ri === 0 ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+                                <tr key={ri} style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)', backgroundColor: ri === 0 ? (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)') : 'transparent' }}>
                                     {row.map((cell, ci) => (
                                         <td key={ci} style={{
                                             padding: '6px 10px',
-                                            borderRight: '1px solid rgba(255,255,255,0.05)',
+                                            borderRight: isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)',
                                             fontWeight: ri === 0 ? 600 : 'normal',
-                                            color: ri === 0 ? 'var(--color-bg-surface)' : '#b0b0b5',
+                                            color: ri === 0 ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                                             whiteSpace: 'nowrap',
                                             textOverflow: 'ellipsis',
                                             overflow: 'hidden',
@@ -164,7 +171,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
 
         if (!content) {
             return (
-                <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', padding: '12px 0', fontStyle: 'italic' }}>
+                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', padding: '12px 0', fontStyle: 'italic' }}>
                     Document content empty or loading...
                 </div>
             );
@@ -181,9 +188,9 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                         const text = trimmed.replace(/^#+\s*/, '');
                         return (
                             <div key={idx} style={{
-                                fontSize: level === 1 ? 16 : level === 2 ? 14 : 13,
+                                fontSize: level === 1 ? 15 : level === 2 ? 13.5 : 12.5,
                                 fontWeight: 700,
-                                color: 'var(--color-bg-surface)',
+                                color: 'var(--color-text-primary)',
                                 marginTop: idx > 0 ? 8 : 2,
                                 marginBottom: 2
                             }} dangerouslySetInnerHTML={{ __html: formatInline(text) }} />
@@ -194,7 +201,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                             <div key={idx} style={{
                                 display: 'flex',
                                 fontSize: 12,
-                                color: '#c9c9cf',
+                                color: 'var(--color-text-secondary)',
                                 paddingLeft: 8,
                                 lineHeight: 1.5
                             }}>
@@ -210,7 +217,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                             <div key={idx} style={{
                                 display: 'flex',
                                 fontSize: 12,
-                                color: '#c9c9cf',
+                                color: 'var(--color-text-secondary)',
                                 paddingLeft: 8,
                                 lineHeight: 1.5
                             }}>
@@ -222,7 +229,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                     return (
                         <p key={idx} style={{
                             fontSize: 12,
-                            color: '#b0b0b5',
+                            color: 'var(--color-text-secondary)',
                             lineHeight: 1.5,
                             margin: 0
                         }} dangerouslySetInnerHTML={{ __html: formatInline(trimmed) }} />
@@ -237,23 +244,29 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             onClick={handleClick}
-            animate={{ scale: isHovered ? 1.01 : 1 }}
+            animate={{ scale: isHovered ? 1.008 : 1 }}
             transition={{ duration: 0.15 }}
             style={{
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '16px 20px',
-                backgroundColor: isHovered ? '#1f1f23' : '#141416',
-                border: isHovered ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: isDark 
+                    ? (isHovered ? '#1c1c1f' : '#141416') 
+                    : (isHovered ? '#f9f9fb' : '#ffffff'),
+                border: isDark 
+                    ? (isHovered ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                    : (isHovered ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(0, 0, 0, 0.08)'),
                 borderRadius: 16,
                 cursor: 'pointer',
-                boxShadow: isHovered ? '0 12px 32px rgba(0,0,0,0.3)' : '0 4px 16px rgba(0,0,0,0.15)',
-                transition: 'border 0.2s ease, background-color 0.2s ease',
+                boxShadow: isHovered 
+                    ? (isDark ? '0 12px 32px rgba(0,0,0,0.3)' : '0 8px 24px rgba(0,0,0,0.06)') 
+                    : (isDark ? '0 4px 16px rgba(0,0,0,0.15)' : '0 2px 8px rgba(0,0,0,0.03)'),
+                transition: 'border 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease',
                 position: 'relative',
                 width: '100%',
                 maxWidth: '620px',
                 boxSizing: 'border-box',
-                marginTop: 12,
+                marginTop: 10,
                 marginBottom: 4,
                 overflow: 'hidden'
             }}
@@ -265,7 +278,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                     <div style={{
                         width: 32,
                         height: 32,
-                        borderRadius: 6,
+                        borderRadius: 7,
                         backgroundColor: isExcel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
                         border: `1px solid ${isExcel ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                         display: 'flex',
@@ -296,7 +309,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                         <div style={{
                             fontSize: 14,
                             fontWeight: 600,
-                            color: 'var(--color-bg-surface)',
+                            color: 'var(--color-text-primary)',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
@@ -307,16 +320,10 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                     </div>
                 </div>
 
-                {/* More options button */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                    }}
+                {/* More options icon */}
+                <div
                     style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'rgba(255,255,255,0.4)',
-                        cursor: 'pointer',
+                        color: 'var(--color-text-tertiary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -328,12 +335,12 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                         <circle cx="19" cy="12" r="1" />
                         <circle cx="5" cy="12" r="1" />
                     </svg>
-                </button>
+                </div>
             </div>
 
-            <hr style={{ border: 'none', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '12px 0 6px 0' }} />
+            <hr style={{ border: 'none', borderTop: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)', margin: '12px 0 6px 0' }} />
 
-            {/* Document Preview Area (Max Height + bottom fade gradient) */}
+            {/* Document Preview Area */}
             <div style={{ position: 'relative', maxHeight: 150, overflow: 'hidden' }}>
                 {renderPreviewContent()}
                 
@@ -344,9 +351,9 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
                     left: 0,
                     right: 0,
                     height: 40,
-                    background: isHovered 
-                        ? 'linear-gradient(to bottom, transparent, #1f1f23)' 
-                        : 'linear-gradient(to bottom, transparent, #141416)',
+                    background: isDark
+                        ? (isHovered ? 'linear-gradient(to bottom, transparent, #1c1c1f)' : 'linear-gradient(to bottom, transparent, #141416)')
+                        : (isHovered ? 'linear-gradient(to bottom, transparent, #f9f9fb)' : 'linear-gradient(to bottom, transparent, #ffffff)'),
                     pointerEvents: 'none',
                     transition: 'background-color 0.2s ease'
                 }} />

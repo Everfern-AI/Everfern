@@ -30,6 +30,7 @@ import {
     PencilIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
+import PdfOcrPanel from './components/PdfOcrPanel';
 import StarRepoPopup, { GITHUB_REPO_URL } from './components/StarRepoPopup';
 import Image from 'next/image';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
@@ -82,6 +83,7 @@ export const navCategories = [
             { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view' },
             { id: 'system', label: 'System & Hardware', icon: ComputerDesktopIcon, keywords: 'system hardware gpu cpu vram memory ram specs performance tps benchmarks models compatible compatibility accelerate huggingface' },
             { id: 'keybinds', label: 'Keybindings & Shortcuts', icon: CommandLineIcon, keywords: 'keyboard shortcuts keybinds hotkeys commands ctrl cmd bind key toggle' },
+            { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon, keywords: 'wsl docker container ubuntu linux terminal environment sandbox' },
             { id: 'dispatch', label: 'EverFern Dispatch', icon: BoltIcon, keywords: 'dispatch remote cloud orchestration sync beta issues', badge: 'Beta' },
             { id: 'privacy', label: 'Privacy & Data', icon: KeyIcon, keywords: 'telemetry keys security local privacy storage' },
         ]
@@ -104,7 +106,6 @@ export const navCategories = [
             { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon, keywords: 'search tavily crawl fetch website web google duckduckgo' },
             { id: 'tool-permissions', label: 'Tool Permissions', icon: ShieldCheckIcon, keywords: 'security auto-approval rules permissions grants allow authorize' },
             { id: 'skills', label: 'Custom Skills', icon: BoltIcon, keywords: 'skill custom scripts functions instructions prompt workflow' },
-            { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon, keywords: 'wsl docker container ubuntu linux terminal environment sandbox' },
         ]
     },
     {
@@ -237,10 +238,11 @@ const Select = (props: React.SelectHTMLAttributes<HTMLSelectElement>) => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.15 }}
+                    className="glossy"
                     style={{
                         position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6,
                         backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 12,
-                        boxShadow: '0 4px 16px var(--color-bg-overlay)', zIndex: 1000,
+                        zIndex: 1000,
                         maxHeight: 240, overflowY: 'auto',
                     }}
                 >
@@ -697,6 +699,37 @@ const LinuxVMSection = () => {
     const [installError, setInstallError] = useState('');
     const [installWarning, setInstallWarning] = useState('');
 
+    const [depsStatus, setDepsStatus] = useState<any>(null);
+    const [depsLoading, setDepsLoading] = useState(false);
+    const [depsInstalling, setDepsInstalling] = useState(false);
+    const [depsMessage, setDepsMessage] = useState('');
+    const [depsProgress, setDepsProgress] = useState<{
+        percent: number;
+        step: number;
+        title: string;
+        detail: string;
+    }>({
+        percent: 0,
+        step: 0,
+        title: '',
+        detail: ''
+    });
+
+    const checkDeps = async () => {
+        setDepsLoading(true);
+        try {
+            const electronAPI = (window as any).electronAPI;
+            if (electronAPI?.system?.checkEnvironmentDependencies) {
+                const res = await electronAPI.system.checkEnvironmentDependencies();
+                setDepsStatus(res);
+            }
+        } catch (err) {
+            console.error('Failed to check dependencies', err);
+        } finally {
+            setDepsLoading(false);
+        }
+    };
+
     useEffect(() => {
         const check = async () => {
             try {
@@ -706,17 +739,20 @@ const LinuxVMSection = () => {
                 if (plat === 'darwin') {
                     const isInstalled = await (window as any).electronAPI?.system?.checkDocker?.();
                     if (isInstalled) {
-                        setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Running' });
+                        setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Active' });
+                        checkDeps();
                     } else {
                         setWslStatus({ installed: false, healthy: null });
                     }
                 } else if (plat === 'linux') {
-                    setWslStatus({ installed: true, healthy: true, osName: 'Native Linux', uptime: 'Running' });
+                    setWslStatus({ installed: true, healthy: true, osName: 'Native Linux', uptime: 'Active' });
+                    checkDeps();
                 } else {
                     const isInstalled = await (window as any).electronAPI?.system?.checkWSL?.();
                     if (isInstalled) {
                         const info = await (window as any).electronAPI?.system?.getWSLInfo?.();
                         setWslStatus({ installed: true, healthy: info?.healthy, osName: info?.osName, uptime: info?.uptime });
+                        checkDeps();
                     } else {
                         setWslStatus({ installed: false, healthy: null });
                     }
@@ -727,6 +763,41 @@ const LinuxVMSection = () => {
             }
         };
         check();
+    }, []);
+
+    // Listen to real-time setup logs
+    useEffect(() => {
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI?.system?.onVMSetupLog) {
+            electronAPI.system.onVMSetupLog((data: { timestamp: string; message: string; level?: string; step?: number }) => {
+                if (data.step) {
+                    const stepNum = data.step;
+                    const stepPct = Math.min(100, Math.max(15, stepNum * 20));
+                    const stepTitles: Record<number, string> = {
+                        1: "Initializing VM sandbox & resource limits...",
+                        2: "Verifying Python 3 & Node.js runtimes...",
+                        3: "Provisioning isolated virtualenv (~/.everfern/venv)...",
+                        4: "Installing pypdf, pandas, python-pptx, openpyxl, matplotlib, docx...",
+                        5: "Toolchain setup complete & verified ✓"
+                    };
+                    setDepsProgress({
+                        percent: stepPct,
+                        step: stepNum,
+                        title: stepTitles[stepNum] || data.message,
+                        detail: data.message
+                    });
+                } else if (data.message) {
+                    setDepsProgress(prev => ({
+                        ...prev,
+                        detail: data.message
+                    }));
+                }
+            });
+
+            return () => {
+                electronAPI.system.removeVMSetupLogListeners?.();
+            };
+        }
     }, []);
 
     const handleInstall = async () => {
@@ -744,15 +815,17 @@ const LinuxVMSection = () => {
                 }
                 const res = await (window as any).electronAPI?.system?.setupDockerUbuntu?.();
                 if (res?.success) {
-                    setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Just now' });
+                    setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Active (just now)' });
+                    checkDeps();
                 } else {
                     setInstallError(res?.error || 'Failed to set up Docker Ubuntu container.');
                 }
             } else {
                 const res = await (window as any).electronAPI?.system?.installWSL?.();
                 if (res?.success) {
-                    setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Just now' });
+                    setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Active (just now)' });
                     if (res.warning) setInstallWarning(res.warning);
+                    checkDeps();
                 } else {
                     setInstallError(res?.error || 'Failed to install Linux VM.');
                 }
@@ -764,17 +837,55 @@ const LinuxVMSection = () => {
         }
     };
 
+    const handleInstallDependencies = async () => {
+        setDepsInstalling(true);
+        setDepsProgress({
+            percent: 15,
+            step: 1,
+            title: 'Starting environment setup...',
+            detail: 'Connecting to VM runtime...'
+        });
+        setDepsMessage('');
+
+        try {
+            const electronAPI = (window as any).electronAPI;
+            if (electronAPI?.system?.setupEnvironmentDependencies) {
+                const res = await electronAPI.system.setupEnvironmentDependencies();
+                if (!res?.success) {
+                    throw new Error(res?.error || 'Failed to install dependencies');
+                }
+            }
+            setDepsProgress({
+                percent: 100,
+                step: 5,
+                title: 'All dependencies installed successfully!',
+                detail: 'Toolchain ready'
+            });
+            await checkDeps();
+            setDepsMessage('✓ All dependencies installed and ready!');
+            setTimeout(() => {
+                setDepsMessage('');
+                setDepsProgress({ percent: 0, step: 0, title: '', detail: '' });
+            }, 4000);
+        } catch (err: any) {
+            setDepsMessage(`❌ ${err?.message || 'Installation failed'}`);
+        } finally {
+            setDepsInstalling(false);
+        }
+    };
+
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <SectionTitle>Linux VM Settings</SectionTitle>
+            <SectionTitle>Linux VM & Skill Environment</SectionTitle>
             <SectionSubtitle>
                 {platform === 'darwin'
-                    ? 'Manage the local Linux virtual machine (Docker) used by EverFern for advanced tasks and code execution.'
+                    ? 'Manage the local Linux sandbox (Docker) and Python virtual environment used by EverFern for file skills, PDF processing, spreadsheets, and code execution.'
                     : platform === 'linux'
-                    ? 'Manage the local Linux environment used by EverFern for advanced tasks and code execution.'
-                    : 'Manage the local Linux virtual machine (WSL) used by EverFern for advanced tasks and code execution.'}
+                    ? 'Manage the local Linux toolchain and Python virtual environment used by EverFern for advanced tasks and code execution.'
+                    : 'Manage the local Linux virtual machine (WSL 2) and Python virtual environment used by EverFern for advanced tasks, PDF generation, spreadsheets, and code execution.'}
             </SectionSubtitle>
 
+            {/* Sandbox VM Status */}
             <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div>
@@ -808,7 +919,7 @@ const LinuxVMSection = () => {
                         </p>
                         {wslStatus.uptime && (
                             <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '4px 0 0 0' }}>
-                                Uptime: {wslStatus.uptime}
+                                Status: {wslStatus.uptime}
                             </p>
                         )}
                     </div>
@@ -842,6 +953,148 @@ const LinuxVMSection = () => {
                     </div>
                 )}
             </Card>
+
+            {/* Skill Toolchain & Dependencies */}
+            {wslStatus.installed && (
+                <Card style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                        <div>
+                            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+                                Skill Toolchain & Dependencies
+                            </h3>
+                            <p style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', margin: '4px 0 0 0' }}>
+                                Pre-installed Python virtual environment (<code>~/.everfern/venv</code>) and Node.js packages for document processing.
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleInstallDependencies}
+                            disabled={depsInstalling || depsLoading}
+                            style={{
+                                padding: '6px 14px',
+                                backgroundColor: 'var(--color-bg-subtle)',
+                                color: 'var(--color-text-primary)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: 8,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: (depsInstalling || depsLoading) ? 'wait' : 'pointer',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            {depsInstalling ? 'Installing...' : depsLoading ? 'Checking...' : 'Re-install / Verify'}
+                        </button>
+                    </div>
+
+                    {/* Live Progress Bar when Installing / Verifying */}
+                    {depsInstalling && (
+                        <div style={{
+                            padding: '14px 16px',
+                            borderRadius: 10,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            marginBottom: 14,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981', animation: 'pulse 1.5s infinite' }} />
+                                    {depsProgress.title || 'Installing packages in background...'}
+                                </span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#10b981' }}>
+                                    {depsProgress.percent}%
+                                </span>
+                            </div>
+
+                            {/* Animated Progress Bar Track & Fill */}
+                            <div style={{
+                                width: '100%',
+                                height: 8,
+                                borderRadius: 6,
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border-subtle)',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{
+                                    height: '100%',
+                                    width: `${depsProgress.percent}%`,
+                                    background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                                    borderRadius: 6,
+                                    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+                                }} />
+                            </div>
+
+                            {depsProgress.detail && (
+                                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
+                                    {depsProgress.detail}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                        {/* Python 3 & Node.js */}
+                        <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ position: 'relative', width: 38, height: 34, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                                    <img
+                                        src="/images/etc/python.png"
+                                        alt="Python"
+                                        style={{ width: 26, height: 26, objectFit: 'contain', position: 'absolute', top: 0, left: 0, zIndex: 2 }}
+                                    />
+                                    <img
+                                        src="/images/etc/node-js.svg"
+                                        alt="Node.js"
+                                        style={{ width: 22, height: 22, objectFit: 'contain', position: 'absolute', bottom: 0, right: 0, zIndex: 3, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))' }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Python 3 &amp; Node.js Environment
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                        {depsStatus?.pythonVersion || 'Python 3'} · {depsStatus?.nodeVersion || 'Node.js'} · <code style={{ fontSize: 10.5 }}>~/.everfern/venv</code>
+                                    </div>
+                                </div>
+                            </div>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '#10b981' : '#f59e0b' }}>
+                                {depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '✓ Ready' : 'Incomplete'}
+                            </span>
+                        </div>
+
+                        {/* Dependencies */}
+                        <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ width: 38, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <img
+                                        src="/images/etc/pip.png"
+                                        alt="Dependencies"
+                                        style={{ width: 36, height: 36, objectFit: 'contain' }}
+                                    />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Dependencies
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                        pypdf, pandas, python-pptx, openpyxl, matplotlib, docx
+                                    </div>
+                                </div>
+                            </div>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pipPackagesInstalled ? '#10b981' : '#f59e0b' }}>
+                                {depsStatus?.pipPackagesInstalled ? '✓ Ready' : 'Incomplete'}
+                            </span>
+                        </div>
+                    </div>
+
+                    {depsMessage && (
+                        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: 'rgba(32,30,36,0.03)', border: '1px solid var(--color-border-subtle)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                            {depsMessage}
+                        </div>
+                    )}
+                </Card>
+            )}
         </div>
     );
 };
@@ -1175,6 +1428,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
 
 interface SettingsPageProps {
     activeProjectId?: string;
+    initialSection?: string;
     onClose: () => void;
     config: any;
     username: string;
@@ -1917,6 +2171,7 @@ const SystemHardwareSection: React.FC = () => {
 
 export default function SettingsPage({
     activeProjectId,
+    initialSection,
     onClose,
     config,
     username,
@@ -1943,8 +2198,14 @@ export default function SettingsPage({
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
     const { theme, setTheme } = useTheme();
-    const [activeSection, setActiveSection] = useState('general');
+    const [activeSection, setActiveSection] = useState(initialSection || 'general');
     const [showStarPopup, setShowStarPopup] = useState(false);
+
+    useEffect(() => {
+        if (initialSection) {
+            setActiveSection(initialSection);
+        }
+    }, [initialSection]);
 
     const handleVisionLocalSetup = async () => {
         let isInstalled = ollamaInstalled;
@@ -2781,16 +3042,16 @@ export default function SettingsPage({
                                     }}
                                     style={{
                                         padding: '8px 16px',
-                                        backgroundColor: '#10b981',
-                                        color: '#000000',
+                                        backgroundColor: 'var(--color-text-primary)',
+                                        color: 'var(--color-text-inverse)',
                                         borderRadius: 10,
-                                        fontWeight: 700,
+                                        fontWeight: 600,
                                         fontSize: 13,
                                         border: 'none',
                                         cursor: 'pointer',
                                         transition: 'all 0.2s'
                                     }}
-                                    onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                                     onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                                 >
                                     {cloudUsage?.plan && cloudUsage.plan !== 'free' ? 'Manage Subscription' : 'Upgrade ($5/mo)'}
@@ -4093,6 +4354,7 @@ export default function SettingsPage({
                         { label: 'AI Memory (Vectors)', path: '~/.everfern/sql/memory.sqlite' },
                         { label: 'Screenshots & Media', path: '~/.everfern/screenshots/' },
                         { label: 'Custom Skills', path: '~/.everfern/skills/' },
+                        { label: 'Tool Settings & Search Keys', path: '~/.everfern/tool-settings.json' },
                         { label: 'Configuration', path: '~/.everfern/config.json' }
                     ].map((item, index, arr) => (
                         <div key={item.path} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', fontSize: 13, borderBottom: index < arr.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
@@ -4188,14 +4450,25 @@ export default function SettingsPage({
 
             <div style={{ backgroundColor: 'var(--color-error-dim)', border: '1px solid var(--color-error-dim)', borderRadius: 16, padding: 24 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-error)', margin: '0 0 8px' }}>Danger Zone</h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data and reset your account. This cannot be undone.</p>
+                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data, search API keys, tool configurations, and reset your account. This cannot be undone.</p>
                 <button
                     onClick={async () => {
-                        if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, settings, and local data.')) return;
+                        if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, search API keys, settings, and local data.')) return;
                         try {
+                            try {
+                                await (window as any).electronAPI?.toolSettings?.set?.({
+                                    webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
+                                    webCrawl: { mode: 'local', headless: true, apiKey: '' },
+                                    browserUse: { mode: 'local', headless: false, apiKey: '' },
+                                    navis: { useVision: false, onlyVision: false, headless: false, maxSteps: 200, useChromeProfile: true, selectedBrowserId: 'chrome', useIsolatedBrowser: false, automationMode: 'extension-first' },
+                                });
+                            } catch (e) {
+                                console.warn('toolSettings reset error:', e);
+                            }
                             const result = await (window as any).electronAPI?.system.wipeAccount();
                             if (result?.success) {
                                 localStorage.clear();
+                                sessionStorage.clear();
                                 window.location.reload();
                             } else {
                                 alert(`Reset failed: ${result?.error || 'Unknown error'}`);
@@ -4209,7 +4482,7 @@ export default function SettingsPage({
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
                 >
                     <TrashIcon width={16} height={16} />
-                    Reset Account
+                    Reset Account & Delete All Data
                 </button>
             </div>
         </div>
@@ -5731,7 +6004,12 @@ export default function SettingsPage({
             case 'tool-permissions': return <ToolPermissionsSection />;
             case 'privacy': return <PrivacySection />;
             case 'dispatch': return <DispatchSection isCloudUser={isCloudUser} />;
-            case 'linux-vm': return <LinuxVMSection />;
+            case 'linux-vm': return (
+                <div>
+                    <LinuxVMSection />
+                    <PdfOcrPanel />
+                </div>
+            );
             case 'help': return <HelpSection />;
             default: return <GeneralSection />;
         }

@@ -204,6 +204,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                         animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
                         exit={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                        className="glossy"
                         style={{
                             width: '100%',
                             maxWidth: 520,
@@ -211,7 +212,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                             borderRadius: 24,
                             padding: '32px 32px 24px',
                             position: 'relative',
-                            boxShadow: '0 20px 40px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
                             zIndex: 1,
                             border: '1px solid var(--color-border)'
                         }}

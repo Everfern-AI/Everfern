@@ -1,4 +1,11 @@
-import { chromium } from 'playwright';
+let chromium: any = null;
+try {
+  chromium = require('playwright').chromium;
+} catch {
+  try {
+    chromium = require('playwright-core').chromium;
+  } catch {}
+}
 
 const ANTI_DETECTION_ARGS = [
   '--disable-infobars',

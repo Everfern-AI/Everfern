@@ -84,9 +84,8 @@ async function createAgentCheckpoint(
       runner.telemetry.warn(`[Brain] Checkpoint creation failed for step: ${stepDescription}. Execution continues.`);
       console.warn(`[Brain] Checkpoint failed: ${stepDescription} (taskId: ${taskId})`);
     } else {
-      // Successful checkpoint
-      runner.telemetry.info(`[Brain] Checkpoint created in ${duration}ms for step: ${stepDescription}`);
-      console.log(`[Brain] Checkpoint created: id=${checkpoint.id} task=${taskId} step=${checkpoint.stepNumber} (${stepDescription})`);
+      // Successful checkpoint (debug only)
+      console.debug(`[Brain] Checkpoint created: id=${checkpoint.id} task=${taskId} step=${checkpoint.stepNumber} (${stepDescription})`);
     }
 
     return checkpoint;
@@ -572,26 +571,47 @@ export const createBrainNode = (
       console.log('[Brain] Form response continuation — specialists finished or brain coordination needed. Proceeding to LLM synthesis.');
     }
 
-    // Circuit breaker: if brain produced no meaningful output on repeat iterations,
-    // signal task complete to prevent infinite loops (e.g. after spawn_agent returns
-    // and the brain hallucinates filtered tools with empty response).
-    if (hasNoOutput && state.iterations > 1 && !state.resumingFromFormResponse) {
-      runner.telemetry.warn(`[Brain] No output on iteration ${state.iterations} — forcing task_complete to prevent loop`);
+    // Fast-path completion: if deliverables were presented or task_complete called, complete cleanly
+    const pastTools = (state.messages || [])
+      .filter((m: any) => m.role === 'tool' || m.tool_calls)
+      .flatMap((m: any) => m.tool_calls ? m.tool_calls.map((tc: any) => tc.name) : (m.tool_name ? [m.tool_name] : []));
+    const alreadyDelivered = pastTools.includes('present_files') || pastTools.includes('task_complete');
+
+    if (alreadyDelivered && !hasPendingTools) {
+      runner.telemetry.info(`[Brain] Mission deliverables completed on step ${state.iterations}`);
+      const finalState = {
+        ...result,
+        completionSignal: { reason: 'task_complete' as const, explanation: 'Deliverables presented and mission finished.' },
+        routingDecision: null,
+        brainToolsInFlight: false,
+        returningFromSpecialist: null,
+        resumingFromFormResponse: false
+      };
+      await createAgentCheckpoint(
+        { ...state, ...finalState },
+        runner,
+        `Brain completed (step ${state.iterations})`
+      );
+      return finalState;
+    }
+
+    // Circuit breaker: if brain produced no meaningful output on repeat iterations without tools
+    if (hasNoOutput && state.iterations > 2 && !state.resumingFromFormResponse) {
+      runner.telemetry.info(`[Brain] No additional tool calls on iteration ${state.iterations} — wrapping up task`);
 
       const finalState = {
         ...result,
-        completionSignal: { reason: 'task_complete' as const, explanation: 'Brain produced no output after multiple iterations.' },
+        completionSignal: { reason: 'task_complete' as const, explanation: 'Task completed.' },
         routingDecision: null,
         brainToolsInFlight: false,
         returningFromSpecialist: null,
         resumingFromFormResponse: false
       };
 
-      // Create checkpoint before forcing completion
       await createAgentCheckpoint(
         { ...state, ...finalState },
         runner,
-        `Brain forced completion (no output on iteration ${state.iterations})`
+        `Brain completed on step ${state.iterations}`
       );
 
       return finalState;
@@ -734,14 +754,27 @@ export const createBrainNode = (
       return routedState;
     }
 
-    // If continuing with brain or completing task, build completion signal
-    let signal = await buildCompletionSignal(runner, responseContent, originalRequest);
+    // Fast-path completion bypass (Claude Cowork pattern)
+    // If routing decided complete_task or a deliverable was presented, skip redundant LLM validation call
+    const executedTools = (state.messages || [])
+      .filter((m: any) => m.role === 'tool' || m.tool_calls)
+      .flatMap((m: any) => m.tool_calls ? m.tool_calls.map((tc: any) => tc.name) : (m.tool_name ? [m.tool_name] : []));
 
+    const deliveredOrCompleted = executedTools.includes('present_files') || executedTools.includes('task_complete');
+
+    let signal: any = null;
     if (routingDecision && routingDecision.decision === 'complete_task') {
       signal = {
         reason: 'task_complete' as const,
         explanation: routingDecision.explanation || 'Specialist task has already completed.'
       };
+    } else if (deliveredOrCompleted && !hasPendingTools) {
+      signal = {
+        reason: 'task_complete' as const,
+        explanation: 'Deliverables presented or task_complete executed successfully.'
+      };
+    } else {
+      signal = await buildCompletionSignal(runner, responseContent, originalRequest);
     }
 
     if (signal) {

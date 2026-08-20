@@ -1,13 +1,13 @@
 "use client";
 
-import { ChevronRightIcon } from "lucide-react";
+import React from "react";
+import { History, ChevronRight } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { collapsePanel, mono, ShimmerLabel, SwapLabel } from "./surfaces";
 import { take } from "./range";
 
 export interface ReasoningStep {
@@ -21,8 +21,9 @@ export interface ReasoningPanelProps {
   streaming: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  restingLabel: string;
+  restingLabel?: string;
   elapsed?: string;
+  summary?: string;
   className?: string;
 }
 
@@ -34,8 +35,34 @@ export function ReasoningPanel({
   onOpenChange,
   restingLabel,
   elapsed,
+  summary,
   className,
 }: ReasoningPanelProps) {
+  // Derive concise summary from summary prop, first step title, or first step body
+  const displaySummary = React.useMemo(() => {
+    if (summary && summary.trim()) return summary.trim();
+    if (steps && steps.length > 0) {
+      const first = steps[0];
+      const text = first.title && first.title !== "Reasoning" && first.title !== "Thought"
+        ? first.title
+        : first.body;
+      if (text) {
+        // Strip markdown headers/bullets
+        const clean = text.replace(/^[#*\-\d.:\s]+/, "").trim();
+        // Take first sentence or up to 90 chars
+        const firstSentence = clean.split(/[.\n]/)[0]?.trim();
+        if (firstSentence && firstSentence.length > 5) {
+          return firstSentence.endsWith(".") ? firstSentence : `${firstSentence}.`;
+        }
+      }
+    }
+    return "";
+  }, [summary, steps]);
+
+  const headerLabel = streaming
+    ? "Thinking..."
+    : restingLabel || "Thought";
+
   return (
     <Collapsible
       data-slot="reasoning-panel"
@@ -43,39 +70,47 @@ export function ReasoningPanel({
       onOpenChange={onOpenChange}
       className={cn("w-full max-w-full my-2 select-none", className)}
     >
-      <CollapsibleTrigger className="group/trigger text-foreground/55 hover:text-foreground/90 flex items-center gap-1.5 py-1 text-[13.5px] transition-[color,scale] outline-none active:scale-[0.98]">
-        <SwapLabel active={streaming ? 0 : 1} className="text-start">
-          <>
-            <ShimmerLabel
-              active={streaming}
-              className="relative inline-block leading-none font-normal"
-            >
-              Thinking
-            </ShimmerLabel>
-            {elapsed !== undefined && (
-              <span className={cn(mono, "text-foreground/30 tabular-nums")}>
-                {elapsed}
-              </span>
-            )}
-          </>
-          <ShimmerLabel className="font-normal">
-            {restingLabel}
-          </ShimmerLabel>
-        </SwapLabel>
-        <ChevronRightIcon className="size-3.5 shrink-0 opacity-60 transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-open/trigger:rotate-90 group-data-panel-open/trigger:rotate-90 motion-reduce:transition-none" />
+      {/* Top line: Thought for 36s (collapsible trigger) */}
+      <CollapsibleTrigger className="group/trigger text-foreground/45 hover:text-foreground/75 flex items-center gap-1.5 py-0.5 text-[14px] transition-colors outline-none cursor-pointer">
+        <span className="font-normal text-foreground/45">
+          {headerLabel}
+        </span>
+        {elapsed !== undefined && streaming && (
+          <span className="text-foreground/30 tabular-nums text-xs ml-1">
+            {elapsed}
+          </span>
+        )}
       </CollapsibleTrigger>
-      <CollapsibleContent className={cn(collapsePanel, "outline-none")}>
-        <div className="flex flex-col gap-4 pt-3 pb-3">
+
+      {/* Second line: Clock/History icon + summary sentence (Image 1 style) */}
+      {displaySummary && !streaming && (
+        <div
+          onClick={() => onOpenChange(!open)}
+          className="flex items-center gap-2.5 mt-2 cursor-pointer text-[14.5px] leading-relaxed text-foreground/90 hover:text-foreground transition-colors"
+        >
+          <History
+            size={15}
+            strokeWidth={1.75}
+            className="text-foreground/40 shrink-0"
+          />
+          <span className="font-normal">
+            {displaySummary}
+          </span>
+        </div>
+      )}
+
+      {/* Collapsible reasoning thoughts */}
+      <CollapsibleContent className="outline-none">
+        <div className="flex flex-col gap-2 pt-2.5 pb-2 pl-4 border-l border-border/20 ml-2 my-2">
           {take(steps, visibleSteps).map((step, i, shown) => {
             const active = streaming && i === shown.length - 1;
             return (
               <p
-                key={step.title}
+                key={`${step.title}-${i}`}
                 className={cn(
-                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/50 text-[13px] leading-relaxed",
-                  active && "text-foreground/60"
+                  "text-foreground/55 text-[13.5px] leading-relaxed m-0",
+                  active && "text-foreground/80"
                 )}
-                style={{ animationDelay: `${i * 40}ms` }}
               >
                 {step.body || step.title}
               </p>

@@ -191,35 +191,47 @@ export class MessageHandler extends EventEmitter {
     }
 
     try {
-      // Requirement 4.3: Retrieve model and provider config for this platform
-      const platformConfig = this.config.integrationConfig[platform as keyof IntegrationConfig];
+      // Retrieve model and provider config for this platform, falling back to desktop app defaults
+      const platformConfig = this.config.integrationConfig[platform as keyof IntegrationConfig] || {
+        enabled: true,
+        botToken: '',
+        connected: true,
+      };
 
-      if (!platformConfig) {
-        console.error(`[MessageHandler] ❌ Unknown platform: ${platform}`);
+      const userAppConfig = this.getUserAppConfig();
+      const effectiveProvider = (platformConfig.provider || userAppConfig?.provider || userAppConfig?.engine || 'everfern').toLowerCase();
+      const effectiveModel = platformConfig.model || userAppConfig?.model || (effectiveProvider === 'everfern' ? 'fern-1' : 'gpt-4o');
+
+      console.log(`[MessageHandler] Platform ${platform}: effectiveProvider=${effectiveProvider}, effectiveModel=${effectiveModel}`);
+
+      // Handle Built-in Interactive Commands
+      const rawText = (message.content.text || '').trim();
+      const commandLower = rawText.toLowerCase();
+
+      if (commandLower === '/start' || commandLower === '/help') {
+        const helpMsg = `🤖 **EverFern AI Assistant is ready!**\n\nI'm connected to your EverFern workspace.\n\n🧠 **Active Model:** \`${effectiveModel}\` (${effectiveProvider})\n\n**Available Commands:**\n• \`/new\` or \`/clear\` — Reset conversation context & start fresh\n• \`/status\` — View bot health, active model & connection info\n• \`/model\` — Check the currently active AI model\n• \`/help\` — Display this help menu\n\nAsk me anything, or send code, questions, and ideas to begin!`;
+        await this.sendDirectReply(message.chat.id, platform, helpMsg, replyToMessageId);
         return;
       }
 
-      console.log(`[MessageHandler] Platform config: provider=${platformConfig.provider}, model=${platformConfig.model}`);
-
-      // Requirement 6.1: Check if model is configured
-      if (!platformConfig.model) {
-        console.warn(`[MessageHandler] ⚠️ No model configured for ${platform}`);
-        await this.sendErrorMessage(
-          message.chat.id,
-          platform,
-          '⚠️ Bot not configured with an AI model. Please configure in settings.'
-        );
+      if (commandLower === '/new' || commandLower === '/reset' || commandLower === '/clear') {
+        this.activeRunners.delete(sessionId);
+        this.pendingHitlRequests.delete(sessionId);
+        this.activeMessages.delete(sessionId);
+        const resetMsg = `✨ **Conversation Reset**\nYour conversation context has been cleared. What would you like to explore next?`;
+        await this.sendDirectReply(message.chat.id, platform, resetMsg, replyToMessageId);
         return;
       }
 
-      // Requirement 6.2: Check if provider is configured
-      if (!platformConfig.provider) {
-        console.warn(`[MessageHandler] ⚠️ No provider configured for ${platform}`);
-        await this.sendErrorMessage(
-          message.chat.id,
-          platform,
-          '⚠️ Bot not configured with an AI provider. Please configure in settings.'
-        );
+      if (commandLower === '/status') {
+        const statusMsg = `⚡ **EverFern Bot Status**\n\n• **Platform:** ${platform.toUpperCase()}\n• **Status:** 🟢 Connected & Online\n• **AI Model:** \`${effectiveModel}\`\n• **Provider:** \`${effectiveProvider}\`\n• **Chat ID:** \`${message.chat.id}\``;
+        await this.sendDirectReply(message.chat.id, platform, statusMsg, replyToMessageId);
+        return;
+      }
+
+      if (commandLower === '/model') {
+        const modelMsg = `🧠 **Current AI Model:** \`${effectiveModel}\` (\`${effectiveProvider}\`)\n\nYou can configure custom bot models in **EverFern Settings → Connectors** on desktop.`;
+        await this.sendDirectReply(message.chat.id, platform, modelMsg, replyToMessageId);
         return;
       }
 
@@ -237,14 +249,14 @@ export class MessageHandler extends EventEmitter {
         console.log(`[MessageHandler] 🆕 Creating new agent runner session: ${sessionId}`);
 
         // Get API key for the provider
-        const apiKey = await this.getApiKeyForProvider(platformConfig.provider);
+        const apiKey = await this.getApiKeyForProvider(effectiveProvider);
 
         // Configure ACP manager with platform-specific model/provider
-        console.log(`[MessageHandler] 🔧 Configuring ACP manager with provider=${platformConfig.provider}, model=${platformConfig.model}`);
+        console.log(`[MessageHandler] 🔧 Configuring ACP manager with provider=${effectiveProvider}, model=${effectiveModel}`);
         const existingConfig = this.config.acpManager.getClient()?.getFullConfig?.();
         this.config.acpManager.setProvider({
-          provider: platformConfig.provider as any,
-          model: platformConfig.model,
+          provider: effectiveProvider as any,
+          model: effectiveModel,
           apiKey: apiKey || undefined,
           vlm: existingConfig?.vlm,
         });
@@ -888,7 +900,7 @@ export class MessageHandler extends EventEmitter {
   }
 
   /**
-   * Split message into chunks at natural boundaries
+   * Split message into chunks at natural boundaries, preserving markdown code fences
    * Requirement 5.4: Message splitting logic
    */
   private splitMessage(text: string, maxLength: number): string[] {
@@ -901,13 +913,11 @@ export class MessageHandler extends EventEmitter {
         break;
       }
 
-      // Try to split at a natural boundary (newline, period, space)
       let splitIndex = maxLength;
       const lastNewline = remaining.lastIndexOf('\n', maxLength);
       const lastPeriod = remaining.lastIndexOf('. ', maxLength);
       const lastSpace = remaining.lastIndexOf(' ', maxLength);
 
-      // Prefer boundaries in the last 30% of the chunk
       const threshold = maxLength * 0.7;
 
       if (lastNewline > threshold) {
@@ -918,11 +928,63 @@ export class MessageHandler extends EventEmitter {
         splitIndex = lastSpace + 1;
       }
 
-      chunks.push(remaining.substring(0, splitIndex));
-      remaining = remaining.substring(splitIndex);
+      let chunk = remaining.substring(0, splitIndex);
+
+      // Check for unclosed code block fences in chunk
+      const codeBlockMarkers = (chunk.match(/```/g) || []).length;
+      if (codeBlockMarkers % 2 !== 0) {
+        // We split inside a code block - close it in this chunk and reopen in the next
+        const lastFenceMatch = chunk.match(/```([a-zA-Z0-9_-]*)\n?[^`]*$/);
+        const lang = lastFenceMatch ? lastFenceMatch[1] : '';
+        chunk = chunk + '\n```';
+        remaining = '```' + lang + '\n' + remaining.substring(splitIndex);
+      } else {
+        remaining = remaining.substring(splitIndex);
+      }
+
+      chunks.push(chunk);
     }
 
     return chunks;
+  }
+
+  /**
+   * Send direct reply to chat (used for built-in commands)
+   */
+  private async sendDirectReply(
+    chatId: string,
+    platform: string,
+    text: string,
+    replyToMessageId?: string
+  ): Promise<void> {
+    const botPlatform = this.config.botManager.getPlatform(platform);
+    if (!botPlatform) return;
+    try {
+      await this.rateLimiter.waitForMessageSlot();
+      await botPlatform.sendMessage(text, {
+        chatId,
+        parseMode: 'markdown',
+        replyToMessageId
+      });
+    } catch (err) {
+      console.error(`[MessageHandler] Failed to send direct reply to ${platform}/${chatId}:`, err);
+    }
+  }
+
+  /**
+   * Read user configuration from ~/.everfern/config.json
+   */
+  private getUserAppConfig(): any {
+    try {
+      const configDir = path.join(os.homedir(), '.everfern');
+      const configPath = path.join(configDir, 'config.json');
+      if (fs.existsSync(configPath)) {
+        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      }
+    } catch (err) {
+      console.warn('[MessageHandler] Failed to read user config.json:', err);
+    }
+    return null;
   }
 
   /**
@@ -947,19 +1009,73 @@ export class MessageHandler extends EventEmitter {
   }
 
   /**
-   * Get API key for provider from file system
+   * Get API key for provider from config.json, cloud session, keys directory, or env
    * Requirement 4.4: API key retrieval
    */
   private async getApiKeyForProvider(provider: string): Promise<string> {
     try {
       const configDir = path.join(os.homedir(), '.everfern');
-      const keysDir = path.join(configDir, 'keys');
-      const keyPath = path.join(keysDir, `${provider}.key`);
+      const normalizedProvider = (provider || '').toLowerCase();
 
+      // 1. Check ~/.everfern/config.json
+      const configPath = path.join(configDir, 'config.json');
+      if (fs.existsSync(configPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          if (config.keys && config.keys[normalizedProvider]) {
+            const key = String(config.keys[normalizedProvider]).trim();
+            if (key) {
+              console.log(`[MessageHandler] Loaded API key for provider ${provider} from config.json keys`);
+              return key;
+            }
+          }
+          if (config.provider?.toLowerCase() === normalizedProvider && config.apiKey) {
+            const key = String(config.apiKey).trim();
+            if (key) {
+              console.log(`[MessageHandler] Loaded active API key for provider ${provider} from config.json`);
+              return key;
+            }
+          }
+        } catch { /* ignore parse error */ }
+      }
+
+      // 2. Check cloud session for EverFern provider
+      if (normalizedProvider === 'everfern') {
+        const cloudPath = path.join(configDir, 'cloud_session.json');
+        if (fs.existsSync(cloudPath)) {
+          try {
+            const cloudSession = JSON.parse(fs.readFileSync(cloudPath, 'utf8'));
+            const key = cloudSession?.apiKey || cloudSession?.token;
+            if (key) {
+              console.log(`[MessageHandler] Loaded EverFern cloud session key`);
+              return String(key).trim();
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // 3. Check isolated key files in ~/.everfern/keys/
+      const keysDir = path.join(configDir, 'keys');
+      const keyPath = path.join(keysDir, `${normalizedProvider}.key`);
       if (fs.existsSync(keyPath)) {
         const apiKey = fs.readFileSync(keyPath, 'utf-8').trim();
-        console.log(`[MessageHandler] Loaded API key for provider: ${provider}`);
-        return apiKey;
+        if (apiKey) {
+          console.log(`[MessageHandler] Loaded API key for provider ${provider} from .key file`);
+          return apiKey;
+        }
+      }
+
+      // 4. Check environment variables
+      const envMap: Record<string, string | undefined> = {
+        anthropic: process.env.ANTHROPIC_API_KEY,
+        openai: process.env.OPENAI_API_KEY,
+        openrouter: process.env.OPENROUTER_API_KEY,
+        groq: process.env.GROQ_API_KEY,
+        gemini: process.env.GEMINI_API_KEY,
+        everfern: process.env.EVERFERN_API_KEY,
+      };
+      if (envMap[normalizedProvider]) {
+        return envMap[normalizedProvider]!;
       }
 
       console.warn(`[MessageHandler] No API key found for provider: ${provider}`);

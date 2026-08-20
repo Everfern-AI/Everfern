@@ -14,6 +14,7 @@ import type { AgentTool, ToolResult } from '../runner/types';
 import { toolSettingsStore } from '../../store/tool-settings';
 import { playwrightWebSearch } from './web-playwright';
 import { exaSearch } from './exa-client';
+import { firecrawlSearch } from './firecrawl-client';
 
 // ── search-engine-nodejs wrapper ─────────────────────────────────────
 
@@ -235,6 +236,14 @@ export const webSearchTool: AgentTool = {
         type: 'string',
         description: 'The search query (e.g. "best discord bots 2024", "React useEffect docs")',
       },
+      _narrative: {
+        type: 'string',
+        description: 'A single, high-polish active-voice sentence describing the search intent (e.g. "Gathering comprehensive information about global warming to build the PDF content.")',
+      },
+      taskName: {
+        type: 'string',
+        description: 'A clean human-friendly Title Case task group name (e.g. "Gathering Global Warming Research")',
+      },
     },
     required: ['query'],
   },
@@ -290,12 +299,25 @@ export const webSearchTool: AgentTool = {
           results = await search(query);
         }
       } else if (config.mode === 'api') {
-        try {
-          const exaResults = await exaSearch(query, config.apiKey);
-          results = exaResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
-        } catch (err) {
-          console.log(`[WebSearch] Exa API failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
-          results = await search(query);
+        const provider = config.provider || 'exa';
+        if (provider === 'firecrawl') {
+          try {
+            const key = config.firecrawlApiKey || config.apiKey;
+            const fcResults = await firecrawlSearch(query, key);
+            results = fcResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
+          } catch (err) {
+            console.log(`[WebSearch] Firecrawl API search failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
+            results = await search(query);
+          }
+        } else {
+          try {
+            const key = config.exaApiKey || config.apiKey;
+            const exaResults = await exaSearch(query, key);
+            results = exaResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
+          } catch (err) {
+            console.log(`[WebSearch] Exa API failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
+            results = await search(query);
+          }
         }
       } else {
         results = await search(query);

@@ -157,7 +157,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     if (tool.parameters && tool.parameters.properties) {
       tool.parameters.properties['taskName'] = {
         type: 'string',
-        description: 'MANDATORY: The name of the task this tool call belongs to. If you are starting a new logical task, provide a concise name for it. Tools with the same taskName will be grouped together in the UI.'
+        description: 'MANDATORY: Human-friendly Title Case name for this logical step (e.g., "Drafting Report Script", "Generating PDF Document", "Presenting Final Artifacts"). Never use snake_case or technical names like "run_pdf_generation" or "write_script_in_vm". Related tool calls with the same taskName are grouped into a clean collapsible timeline batch in the UI.'
       };
       if (!tool.parameters.required) {
         tool.parameters.required = [];

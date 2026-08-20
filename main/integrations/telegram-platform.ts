@@ -155,19 +155,36 @@ export class TelegramPlatform extends MessagePlatform {
 
     this.validateMessage(text, options);
 
+    const parseMode = options.parseMode || 'markdown';
+    const telegramParseMode = this.mapParseMode(parseMode);
+
     try {
       const telegramOptions: TelegramBot.SendMessageOptions = {
-        parse_mode: this.mapParseMode(options.parseMode),
+        parse_mode: telegramParseMode,
         disable_web_page_preview: options.disableWebPagePreview,
         disable_notification: options.silent,
         reply_to_message_id: options.replyToMessageId ? parseInt(options.replyToMessageId) : undefined
       };
 
       // Format text for Telegram
-      const formattedText = this.formatText(text, options.parseMode);
+      const formattedText = this.formatText(text, parseMode);
 
       // Send text message
-      const message = await this.bot.sendMessage(options.chatId, formattedText, telegramOptions);
+      let message: TelegramBot.Message;
+      try {
+        message = await this.bot.sendMessage(options.chatId, formattedText, telegramOptions);
+      } catch (sendError: any) {
+        const errorDesc = String(sendError?.response?.body?.description || sendError?.message || '').toLowerCase();
+        if (errorDesc.includes('can\'t parse entities') || errorDesc.includes('parse mode') || sendError?.code === 400) {
+          console.warn('[Telegram] Parse mode failed, falling back to plain text:', errorDesc);
+          message = await this.bot.sendMessage(options.chatId, text, {
+            ...telegramOptions,
+            parse_mode: undefined
+          });
+        } else {
+          throw sendError;
+        }
+      }
 
       // Send attachments if any
       if (options.attachments && options.attachments.length > 0) {
@@ -193,34 +210,55 @@ export class TelegramPlatform extends MessagePlatform {
       throw new PlatformConnectionError('telegram', 'Bot not initialized');
     }
 
-    try {
-      const formattedText = this.formatText(text, parseMode);
+    const effectiveParseMode = parseMode || 'markdown';
+    const telegramParseMode = this.mapParseMode(effectiveParseMode);
 
-      await this.bot.editMessageText(formattedText, {
-        chat_id: chatId,
-        message_id: parseInt(messageId),
-        parse_mode: this.mapParseMode(parseMode)
-      });
+    try {
+      const formattedText = this.formatText(text, effectiveParseMode);
+
+      try {
+        await this.bot.editMessageText(formattedText, {
+          chat_id: chatId,
+          message_id: parseInt(messageId),
+          parse_mode: telegramParseMode
+        });
+      } catch (editError: any) {
+        const errorText = String(editError.message || editError.response?.body?.description || '').toLowerCase();
+        if (errorText.includes('message is not modified')) {
+          return;
+        }
+
+        if (errorText.includes('can\'t parse entities') || errorText.includes('parse mode')) {
+          console.warn('[Telegram] Edit parse failed, falling back to plain text');
+          await this.bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: parseInt(messageId),
+            parse_mode: undefined
+          });
+          return;
+        }
+
+        // If editing fails because the message is no longer editable, replace it.
+        if (editError.code === 400) {
+          try {
+            await this.bot.deleteMessage(chatId, parseInt(messageId));
+            await this.bot.sendMessage(chatId, text, {
+              parse_mode: undefined
+            });
+          } catch (deleteError) {
+            console.error('Failed to delete and resend message:', deleteError);
+          }
+        } else {
+          throw editError;
+        }
+      }
     } catch (error: any) {
       const errorText = String(error.message || error.response?.body?.description || '').toLowerCase();
       if (errorText.includes('message is not modified')) {
         return;
       }
-
-      // If editing fails because the message is no longer editable, replace it.
-      if (error.code === 400) {
-        try {
-          await this.bot.deleteMessage(chatId, parseInt(messageId));
-          await this.bot.sendMessage(chatId, this.formatText(text, parseMode), {
-            parse_mode: this.mapParseMode(parseMode)
-          });
-        } catch (deleteError) {
-          console.error('Failed to delete and resend message:', deleteError);
-        }
-      } else {
-        this.handleTelegramError(error);
-        throw error;
-      }
+      this.handleTelegramError(error);
+      throw error;
     }
   }
 
@@ -339,25 +377,38 @@ export class TelegramPlatform extends MessagePlatform {
    * Format text for Telegram markdown
    */
   protected formatText(text: string, parseMode?: string): string {
-    if (parseMode === 'markdown') {
-      // Convert standard markdown to Telegram MarkdownV2 format
-      // In Telegram MarkdownV2: * = bold, _ = italic, ` = code
-      // Standard markdown: ** = bold, * = italic, ` = code
+    if (!text) return '';
 
+    if (parseMode === 'markdown') {
       let formatted = text;
 
-      // Step 1: Temporarily replace markdown patterns with placeholders
-      const boldPattern = /\*\*(.+?)\*\*/g;
-      const italicPattern = /\*(.+?)\*/g;
-      const codePattern = /`(.+?)`/g;
+      // Extract and preserve multi-line code blocks
+      const blockCodeMatches: Array<{ placeholder: string; lang: string; content: string }> = [];
+      let blockIndex = 0;
+      formatted = formatted.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
+        const placeholder = `@@BLOCKCODE${blockIndex}@@`;
+        blockCodeMatches.push({ placeholder, lang: lang || '', content: code });
+        blockIndex++;
+        return placeholder;
+      });
 
-      const boldMatches: Array<{ placeholder: string; content: string }> = [];
-      const italicMatches: Array<{ placeholder: string; content: string }> = [];
-      const codeMatches: Array<{ placeholder: string; content: string }> = [];
+      // Extract and preserve inline code
+      const inlineCodeMatches: Array<{ placeholder: string; content: string }> = [];
+      let inlineIndex = 0;
+      formatted = formatted.replace(/`([^`\n]+)`/g, (_match, code) => {
+        const placeholder = `@@INLINECODE${inlineIndex}@@`;
+        inlineCodeMatches.push({ placeholder, content: code });
+        inlineIndex++;
+        return placeholder;
+      });
+
+      // Convert Markdown headers (# Title -> *Title*)
+      formatted = formatted.replace(/^#{1,6}\s+(.+)$/gm, '**$1**');
 
       // Extract bold text (**text**)
+      const boldMatches: Array<{ placeholder: string; content: string }> = [];
       let boldIndex = 0;
-      formatted = formatted.replace(boldPattern, (match, content) => {
+      formatted = formatted.replace(/\*\*(.+?)\*\*/g, (_match, content) => {
         const placeholder = `@@BOLD${boldIndex}@@`;
         boldMatches.push({ placeholder, content });
         boldIndex++;
@@ -365,48 +416,48 @@ export class TelegramPlatform extends MessagePlatform {
       });
 
       // Extract italic text (*text*)
+      const italicMatches: Array<{ placeholder: string; content: string }> = [];
       let italicIndex = 0;
-      formatted = formatted.replace(italicPattern, (match, content) => {
+      formatted = formatted.replace(/\*([^*\n]+)\*/g, (_match, content) => {
         const placeholder = `@@ITALIC${italicIndex}@@`;
         italicMatches.push({ placeholder, content });
         italicIndex++;
         return placeholder;
       });
 
-      // Extract code text (`text`)
-      let codeIndex = 0;
-      formatted = formatted.replace(codePattern, (match, content) => {
-        const placeholder = `@@CODE${codeIndex}@@`;
-        codeMatches.push({ placeholder, content });
-        codeIndex++;
-        return placeholder;
-      });
-
-      // Step 2: Escape special characters in the remaining text
+      // Escape all special characters in normal text according to Telegram MarkdownV2 requirements:
+      // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
       formatted = formatted.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 
-      // Step 3: Restore markdown with proper Telegram formatting
-      // Restore code blocks (no escaping needed inside code)
-      codeMatches.forEach(({ placeholder, content }) => {
-        formatted = formatted.replace(placeholder, `\`${content}\``);
-      });
-
-      // Restore bold (**text** -> *text* in Telegram)
+      // Restore bold (**text** -> *text* in Telegram MarkdownV2)
       boldMatches.forEach(({ placeholder, content }) => {
-        // Escape special chars in content except those already escaped
-        const escaped = content.replace(/([_\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+        const escaped = content.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
         formatted = formatted.replace(placeholder, `*${escaped}*`);
       });
 
-      // Restore italic (*text* -> _text_ in Telegram)
+      // Restore italic (*text* -> _text_ in Telegram MarkdownV2)
       italicMatches.forEach(({ placeholder, content }) => {
-        const escaped = content.replace(/([*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+        const escaped = content.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
         formatted = formatted.replace(placeholder, `_${escaped}_`);
+      });
+
+      // Restore inline code blocks
+      inlineCodeMatches.forEach(({ placeholder, content }) => {
+        // Only escape backticks and backslashes inside inline code
+        const safeCode = content.replace(/([\\`])/g, '\\$1');
+        formatted = formatted.replace(placeholder, `\`${safeCode}\``);
+      });
+
+      // Restore multi-line code blocks
+      blockCodeMatches.forEach(({ placeholder, lang, content }) => {
+        // In Telegram MarkdownV2 code blocks, only backslashes and backticks inside code need escaping
+        const safeCode = content.replace(/([\\`])/g, '\\$1');
+        const langTag = lang ? `${lang}\n` : '';
+        formatted = formatted.replace(placeholder, `\`\`\`${langTag}${safeCode}\`\`\``);
       });
 
       return formatted;
     } else if (parseMode === 'html') {
-      // HTML mode - ensure proper HTML encoding
       return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')

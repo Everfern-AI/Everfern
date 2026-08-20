@@ -1,7 +1,8 @@
 "use client";
 
-import React, { type ComponentProps } from "react";
-import { SearchIcon, ExternalLink } from "lucide-react";
+import React, { useState, type ComponentProps } from "react";
+import { Search, ChevronDown, ExternalLink } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export interface WebSearchResult {
@@ -17,30 +18,12 @@ export interface WebSearchProps extends Omit<ComponentProps<"div">, "children" |
   visibleResults?: number;
   searching?: boolean;
   cycle?: number;
+  defaultExpanded?: boolean;
   className?: string;
 }
 
 function take<T>(array: readonly T[], n: number): T[] {
   return array.slice(0, n);
-}
-
-function ShimmerLabel({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <span
-      className={cn("font-medium", className)}
-      style={{
-        backgroundImage: "linear-gradient(90deg, var(--color-text-tertiary) 0%, var(--color-text-primary) 50%, var(--color-text-tertiary) 100%)",
-        backgroundSize: "200% 100%",
-        WebkitBackgroundClip: "text",
-        backgroundClip: "text",
-        WebkitTextFillColor: "transparent",
-        animation: "efShimmerLineAnim 2.2s linear infinite",
-        display: "inline-block",
-      }}
-    >
-      {children}
-    </span>
-  );
 }
 
 export function WebSearch({
@@ -49,99 +32,115 @@ export function WebSearch({
   visibleResults = results.length,
   searching = false,
   cycle = 0,
+  defaultExpanded = false,
   className,
   ...props
 }: WebSearchProps) {
+  const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const displayedResults = take(results, visibleResults ?? results.length);
+  const hasResults = displayedResults.length > 0;
 
   return (
     <div
       data-slot="web-search"
-      className={cn("flex w-full max-w-lg flex-col gap-2.5 my-2", className)}
+      className={cn("flex w-full max-w-full flex-col gap-1 my-1", className)}
       {...props}
     >
-      <style>{`
-        @keyframes efShimmerLineAnim {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
-
-      {/* Query Pill */}
-      <div className="flex items-center gap-2">
+      <div
+        onClick={() => hasResults && setIsExpanded((prev) => !prev)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          cursor: hasResults ? "pointer" : "default",
+          padding: "2px 0",
+        }}
+        className={hasResults ? "hover:opacity-80 transition-opacity" : ""}
+      >
+        <Search
+          size={15}
+          strokeWidth={1.75}
+          style={{ color: "var(--muted-foreground, rgba(255,255,255,0.4))", flexShrink: 0 }}
+        />
         <span
-          className="text-foreground/75 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs border"
           style={{
-            backgroundColor: "var(--color-bg-subtle)",
-            borderColor: "var(--color-border)",
-            color: "var(--color-text-primary)",
+            fontSize: 14.5,
+            lineHeight: 1.5,
+            color: "var(--foreground, rgba(255,255,255,0.85))",
+            fontWeight: 400,
           }}
         >
-          <SearchIcon className="size-3 shrink-0 opacity-60" />
-          <span className="truncate max-w-sm">{query}</span>
+          {query}
         </span>
-      </div>
-
-      {/* Status Label */}
-      <div className="text-xs px-0.5" style={{ color: "var(--color-text-tertiary)" }}>
         {searching ? (
-          <ShimmerLabel className="relative inline-block leading-none">
-            Searching the web...
-          </ShimmerLabel>
-        ) : (
-          <span className="fade-in animate-in duration-300">
-            Read {results.length} {results.length === 1 ? "source" : "sources"}
+          <span
+            style={{
+              fontSize: 13,
+              color: "var(--muted-foreground, rgba(255,255,255,0.45))",
+              marginLeft: 4,
+            }}
+          >
+            searching...
           </span>
-        )}
+        ) : hasResults ? (
+          <span
+            style={{
+              fontSize: 13,
+              color: "var(--muted-foreground, rgba(255,255,255,0.45))",
+              marginLeft: 4,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            <span>({results.length} {results.length === 1 ? "source" : "sources"})</span>
+            <ChevronDown
+              size={12}
+              className={cn("transition-transform duration-200 opacity-60", isExpanded && "rotate-180")}
+            />
+          </span>
+        ) : null}
       </div>
 
-      {/* Result cards */}
-      {displayedResults.length > 0 && (
-        <div key={cycle} className="flex flex-col gap-1">
-          {displayedResults.map((result, idx) => {
-            const domainLetter = (result.domain || result.title || "W").charAt(0).toUpperCase();
+      {/* Expanded Sources List */}
+      <AnimatePresence initial={false}>
+        {hasResults && isExpanded && (
+          <motion.div
+            key={`results-${cycle}`}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden pl-6 border-l border-border/20 ml-2 my-1"
+          >
+            <div className="flex flex-col gap-1.5 pt-1 pb-1">
+              {displayedResults.map((result, idx) => {
+                const cleanDomain = (result.domain || "")
+                  .replace(/^https?:\/\//i, "")
+                  .replace(/^www\./i, "")
+                  .split("/")[0];
+                const destinationUrl =
+                  result.url ||
+                  (result.domain.startsWith("http") ? result.domain : `https://${result.domain}`);
 
-            return (
-              <a
-                key={`${cycle}-${result.domain}-${idx}`}
-                href={result.url || (result.domain.startsWith("http") ? result.domain : `https://${result.domain}`)}
-                target="_blank"
-                rel="noreferrer"
-                className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 transition-colors duration-200 group no-underline"
-                style={{
-                  color: "inherit",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              >
-                <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded text-[10px] font-semibold border"
-                  style={{
-                    backgroundColor: "var(--color-bg-subtle)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  {domainLetter}
-                </span>
-                <span
-                  className="min-w-0 flex-1 truncate text-[13px] group-hover:underline"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {result.title || result.domain}
-                </span>
-                <span
-                  className="font-mono text-[11px] shrink-0 opacity-60 flex items-center gap-1"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                >
-                  {result.domain}
-                  <ExternalLink className="size-3 opacity-40 group-hover:opacity-100" />
-                </span>
-              </a>
-            );
-          })}
-        </div>
-      )}
+                return (
+                  <a
+                    key={`${cycle}-${result.domain}-${idx}`}
+                    href={destinationUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 py-0.5 text-[13px] text-foreground/60 hover:text-foreground hover:underline transition-colors no-underline"
+                  >
+                    <span className="truncate max-w-md">{result.title || cleanDomain}</span>
+                    <span className="text-[11px] text-foreground/35 font-mono">({cleanDomain})</span>
+                    <ExternalLink size={11} className="opacity-30" />
+                  </a>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -159,3 +159,141 @@ export function getThinkLevelFromString(level: string): ThinkLevel {
     if (lower === 'high' || lower === '3') return 'high';
     return 'medium'; // default
 }
+
+/**
+ * Strips all thinking, reasoning, and reflection blocks (closed or unclosed)
+ * from LLM text outputs.
+ */
+export function scrubReasoningTags(text: string): string {
+    if (!text) return '';
+    return text
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|reasoning|reflection)>/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*?\[\/(?:Thinking|Reasoning)\]/gi, '')
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*$/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*$/gi, '')
+        .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought):[^\n]*\n?/gim, '')
+        .trim();
+}
+
+/**
+ * State machine for separating streaming thought/reasoning tokens from
+ * normal output text across arbitrary chunk boundaries.
+ */
+export class StreamingThoughtFilter {
+    private isThinking = false;
+    private buffer = '';
+    private readonly startTags = ['<think>', '<thought>', '<reasoning>', '<reflection>', '[Thinking]', '[Reasoning]'];
+    private readonly endTags = ['</think>', '</thought>', '</reasoning>', '</reflection>', '[/Thinking]', '[/Reasoning]'];
+
+    process(chunk: string, emitChunk: (c: string) => void, emitThought: (t: string) => void) {
+        this.buffer += chunk;
+
+        while (this.buffer.length > 0) {
+            if (!this.isThinking) {
+                // Check if buffer contains any start tag
+                let earliestStart = -1;
+                let matchedStartTag = '';
+
+                for (const tag of this.startTags) {
+                    const idx = this.buffer.toLowerCase().indexOf(tag.toLowerCase());
+                    if (idx !== -1 && (earliestStart === -1 || idx < earliestStart)) {
+                        earliestStart = idx;
+                        matchedStartTag = tag;
+                    }
+                }
+
+                if (earliestStart !== -1) {
+                    // Content before start tag is regular chunk
+                    const before = this.buffer.slice(0, earliestStart);
+                    if (before) {
+                        emitChunk(before);
+                    }
+                    this.isThinking = true;
+                    this.buffer = this.buffer.slice(earliestStart + matchedStartTag.length);
+                } else {
+                    // Check for potential partial start tag at end of buffer (e.g. "<th", "<", "[Th")
+                    let partialLen = 0;
+                    for (const tag of this.startTags) {
+                        for (let len = 1; len < tag.length; len++) {
+                            if (this.buffer.toLowerCase().endsWith(tag.slice(0, len).toLowerCase())) {
+                                if (len > partialLen) partialLen = len;
+                            }
+                        }
+                    }
+
+                    if (partialLen > 0) {
+                        // Emit everything except the potential partial tag
+                        const safe = this.buffer.slice(0, this.buffer.length - partialLen);
+                        if (safe) {
+                            emitChunk(safe);
+                        }
+                        this.buffer = this.buffer.slice(this.buffer.length - partialLen);
+                        break; // wait for next chunk
+                    } else {
+                        // Buffer has no start tags and no partial tags — emit all
+                        emitChunk(this.buffer);
+                        this.buffer = '';
+                    }
+                }
+            } else {
+                // We are in thinking mode: look for end tag
+                let earliestEnd = -1;
+                let matchedEndTag = '';
+
+                for (const tag of this.endTags) {
+                    const idx = this.buffer.toLowerCase().indexOf(tag.toLowerCase());
+                    if (idx !== -1 && (earliestEnd === -1 || idx < earliestEnd)) {
+                        earliestEnd = idx;
+                        matchedEndTag = tag;
+                    }
+                }
+
+                if (earliestEnd !== -1) {
+                    // Content before end tag is thought
+                    const thoughtPart = this.buffer.slice(0, earliestEnd);
+                    if (thoughtPart) {
+                        emitThought(thoughtPart);
+                    }
+                    this.isThinking = false;
+                    this.buffer = this.buffer.slice(earliestEnd + matchedEndTag.length);
+                } else {
+                    // Check for potential partial end tag at end of buffer (e.g. "</th", "</", "[/Th")
+                    let partialLen = 0;
+                    for (const tag of this.endTags) {
+                        for (let len = 1; len < tag.length; len++) {
+                            if (this.buffer.toLowerCase().endsWith(tag.slice(0, len).toLowerCase())) {
+                                if (len > partialLen) partialLen = len;
+                            }
+                        }
+                    }
+
+                    if (partialLen > 0) {
+                        // Emit everything except potential partial end tag as thought
+                        const safeThought = this.buffer.slice(0, this.buffer.length - partialLen);
+                        if (safeThought) {
+                            emitThought(safeThought);
+                        }
+                        this.buffer = this.buffer.slice(this.buffer.length - partialLen);
+                        break; // wait for next chunk
+                    } else {
+                        // Whole buffer is thought
+                        emitThought(this.buffer);
+                        this.buffer = '';
+                    }
+                }
+            }
+        }
+    }
+
+    flush(emitChunk: (c: string) => void, emitThought: (t: string) => void) {
+        if (this.buffer) {
+            if (this.isThinking) {
+                emitThought(this.buffer);
+            } else {
+                emitChunk(this.buffer);
+            }
+            this.buffer = '';
+        }
+    }
+}
+

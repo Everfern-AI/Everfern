@@ -50,6 +50,12 @@ export interface FileAttachment {
     mimeType: string;
     base64?: string;
     content?: string;
+    ocrStatus?: 'idle' | 'pending' | 'done' | 'no_text' | 'error';
+    ocrText?: string;
+    ocrEngine?: string;
+    ocrError?: string;
+    visionPages?: { name: string; base64: string }[];
+    visionError?: string;
 }
 
 export interface FolderContext {

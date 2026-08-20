@@ -401,3 +401,6 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
 };
 
 export { PlanReviewCard, AgentWorkspaceCards };
+
+// Re-export new minimal plan artifact
+export { PlanArtifact, PlanArtifactCompact } from "./PlanArtifact";

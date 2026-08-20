@@ -10,6 +10,7 @@ import { createMissionIntegrator } from '../mission-integrator';
 import { normalizeMessages } from '../services/message-utils';
 import { captureScreen } from '../../tools/computer-use';
 import { resolveContextEngine } from '../../../context-engine';
+import { StreamingThoughtFilter, scrubReasoningTags } from '../../helpers/thinking';
 
 /**
  * AI-based prompt slimming decision
@@ -409,56 +410,36 @@ You do not need to use complex execution plans or tools for this interaction.`;
       console.warn('[CallModel] ContextEngine assembly fallback:', err);
     }
 
+    const thoughtFilter = new StreamingThoughtFilter();
+
     const request: ChatRequest = {
       messages: finalMessages,
       tools: toolDefs,
       onStreamChunk: (chunk: string) => {
-        thoughtBuffer += chunk;
-        const hasStart = thoughtBuffer.includes('<think>') || thoughtBuffer.includes('<thought>');
-        const hasEnd = thoughtBuffer.includes('</think>') || thoughtBuffer.includes('</thought>');
-
-        if (!isThinking && hasStart) {
-          isThinking = true;
-          const tag = thoughtBuffer.includes('<think>') ? '<think>' : '<thought>';
-          const parts = thoughtBuffer.split(tag);
-          if (parts[0]) {
-            eventQueue?.push({ type: 'chunk', content: parts[0] });
-            streamedText += parts[0];
+        thoughtFilter.process(
+          chunk,
+          (content) => {
+            eventQueue?.push({ type: 'chunk', content });
+            streamedText += content;
+          },
+          (thought) => {
+            eventQueue?.push({ type: 'thought', content: thought });
           }
-          if (parts[1]) eventQueue?.push({ type: 'thought', content: parts[1] });
-          thoughtBuffer = '';
-        } else if (isThinking && hasEnd) {
-          isThinking = false;
-          const tag = thoughtBuffer.includes('</think>') ? '</think>' : '</thought>';
-          const parts = thoughtBuffer.split(tag);
-          if (parts[0]) eventQueue?.push({ type: 'thought', content: parts[0] });
-          if (parts[1]) {
-            eventQueue?.push({ type: 'chunk', content: parts[1] });
-            streamedText += parts[1];
-          }
-          thoughtBuffer = '';
-        } else if (isThinking) {
-          eventQueue?.push({ type: 'thought', content: chunk });
-          thoughtBuffer = '';
-        } else {
-          const trimmed = thoughtBuffer.trim();
-          if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
-            if (thoughtBuffer.length > 20) {
-               eventQueue?.push({ type: 'chunk', content: thoughtBuffer });
-               streamedText += thoughtBuffer;
-               thoughtBuffer = '';
-            }
-          } else {
-            eventQueue?.push({ type: 'chunk', content: thoughtBuffer });
-            streamedText += thoughtBuffer;
-            thoughtBuffer = '';
-          }
-        }
+        );
       },
       userConfirmation: state.userConfirmation,
     };
 
     const response = await client.chat(request);
+    thoughtFilter.flush(
+      (content) => {
+        eventQueue?.push({ type: 'chunk', content });
+        streamedText += content;
+      },
+      (thought) => {
+        eventQueue?.push({ type: 'thought', content: thought });
+      }
+    );
 
     if (response.usage) {
       const usage = response.usage;
@@ -560,9 +541,7 @@ You do not need to use complex execution plans or tools for this interaction.`;
       ? rawContent
       : rawContent.map((c: any) => 'text' in c ? c.text : '').join('\n');
 
-    let scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
-    // Also remove unclosed <think> or <thought> tags at the end of the string
-    scrubbed = scrubbed.replace(/<(?:think|thought)>[\s\S]*$/i, '').trim();
+    let scrubbed = scrubReasoningTags(textContent);
 
     if (scrubbed) {
         const preview = scrubbed.length > 80 ? scrubbed.substring(0, 80) + '...' : scrubbed;

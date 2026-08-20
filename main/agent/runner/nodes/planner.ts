@@ -145,7 +145,7 @@ export const createPlannerNode = (runner: AgentRunner, eventQueue?: StreamEvent[
         ? '\n\nRESEARCH/BROWSER ROUTING GUARD: This task is classified as research/browser work. Use `web_search` for discovery and route to `web_explorer`/`navis` for opening pages, forms, listings, booking platforms, and live prices. Ignore any plan step that suggests `computer_use` for websites or browser workflows.'
         : '';
 
-      const systemMessage = `AS AN AGI ORCHESTRATOR, follow this task decomposition plan strictly:\n\n${planText}\n\n${agiHints}${researchRoutingGuard}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable.`;
+      const systemMessage = `Follow this task decomposition plan to execute the user's request directly and efficiently:\n\n${planText}\n\n${agiHints}${researchRoutingGuard}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable. Act and communicate directly as Fern without exposing internal orchestration labels, planning meta-text, or robotic prefixes.`;
 
       logger.info(`Execution pipeline finalized. System ready for task processing.`);
 

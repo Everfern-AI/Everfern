@@ -326,14 +326,19 @@ export const createExecuteToolsNode = (
           }
         }
 
+        let outputText = typeof rec.result.output === 'string' ? rec.result.output : JSON.stringify(rec.result.output);
+        if (rec.result.success === false && rec.result.error && !outputText.includes(rec.result.error)) {
+          outputText = `${outputText}\n[Tool Error: ${rec.result.error}]`.trim();
+        }
+
         newMessages.push({
           role: 'tool',
           tool_call_id: (groupTools.find((t: any) => t.name === rec.toolName) as any)?.id,
           tool_name: rec.toolName,
           name: rec.toolName,
           content: rec.result.base64Image
-            ? [{ type: 'text', text: rec.result.output }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${rec.result.base64Image}` } }]
-            : rec.result.output,
+            ? [{ type: 'text', text: outputText }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${rec.result.base64Image}` } }]
+            : outputText,
         });
       }
 

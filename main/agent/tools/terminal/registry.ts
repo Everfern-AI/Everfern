@@ -610,6 +610,27 @@ export class CommandRegistry {
         this.processQueue(actualTarget);
       });
     } catch (err: any) {
+      if (actualTarget === 'vm' && process.platform === 'win32') {
+        console.warn(`[CommandRegistry] VM execution failed (${err.message}). Falling back to main host (PowerShell)...`);
+        try {
+          const hostShell = await this.getOrCreateShell('main', cwd);
+          return new Promise<CommandInfo>((resolve) => {
+            hostShell.queue.push({
+              id,
+              command,
+              cwd,
+              timeoutMs,
+              onData,
+              emitEvent,
+              resolve
+            });
+            this.processQueue('main');
+          });
+        } catch (hostErr: any) {
+          console.error(`[CommandRegistry] Host fallback execution also failed:`, hostErr);
+        }
+      }
+
       const failedInfo: CommandInfo = {
         id,
         command,

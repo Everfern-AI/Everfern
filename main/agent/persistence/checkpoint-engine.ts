@@ -864,7 +864,7 @@ export class CheckpointEngine {
       ]
     );
 
-    console.log(
+    console.debug(
       `[CheckpointEngine] Checkpoint created: id=${id} task=${taskId} step=${stepNumber} compressed=${compressed}`
     );
 

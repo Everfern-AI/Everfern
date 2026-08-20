@@ -122,6 +122,7 @@ export interface ACPStoredConfig {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  customModel?: string;
   vlm?: {
     engine: 'online' | 'local';
     provider: string;
