@@ -149,12 +149,12 @@ export default function SearchPopup({
                         exit={{ opacity: 0, scale: 0.96, y: -10 }}
                         transition={{ type: 'spring', damping: 24, stiffness: 320 }}
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        className="glossy"
                         style={{
                             position: 'relative',
                             backgroundColor: 'var(--color-bg-surface, #ffffff)',
                             borderRadius: 16,
                             border: '1px solid var(--color-border)',
-                            boxShadow: '0 25px 60px -12px rgba(0, 0, 0, 0.35)',
                             zIndex: 99999,
                             width: '90%',
                             maxWidth: 540,

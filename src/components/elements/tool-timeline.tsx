@@ -90,62 +90,64 @@ export function ToolTimeline({
         >
           {take(steps, visibleSteps).map((step, index, shown) => {
             const Icon = step.icon;
-            const active = streaming && index === shown.length - 1;
             const isLast = index === shown.length - 1;
+            const stepText = step.chip ? `${step.verb} ${step.chip}` : step.verb;
 
             return (
-              <div
-                key={`${step.verb}-${step.chip}-${index}`}
-                onClick={(e) => {
-                  if (onStepClick) {
-                    e.stopPropagation();
-                    onStepClick(step, index);
-                  }
-                }}
-                className={cn(
-                  "fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-foreground/70 flex items-start gap-2.5 text-[13px] duration-200 group/step relative overflow-hidden",
-                  onStepClick ? "cursor-pointer hover:text-foreground hover:bg-foreground/[0.04] rounded-md px-1.5 -mx-1.5 py-0.5 transition-colors" : "",
-                  active && "step-shimmer-active"
-                )}
-                title={onStepClick ? "Click to view tool call details" : undefined}
-              >
-                {/* Icon column with vertical connecting line */}
-                <div className="flex flex-col items-center shrink-0 w-4 self-stretch pt-0.5">
-                  <div className={cn("flex items-center justify-center size-4 shrink-0 z-10", active && "animate-pulse")}>
-                    <Icon className={cn("size-3.5 shrink-0 transition-colors", active ? "text-foreground/90" : "text-foreground/50 group-hover/step:text-foreground/80")} />
-                  </div>
-                  {!isLast && (
-                    <div className="w-[1.5px] flex-1 my-1 bg-zinc-300 dark:bg-zinc-700/60 rounded-full min-h-[14px]" />
-                  )}
-                </div>
-
-                <div className={cn("flex items-baseline gap-1.5 min-w-0 flex-1 flex-wrap pt-0.5", !isLast ? "pb-2.5" : "pb-0.5")}>
-                  <ShimmerLabel
-                    active={active}
-                    className="relative inline-block leading-none font-semibold text-foreground/90 shrink-0 text-[13px]"
+              <React.Fragment key={`${step.verb}-${step.chip}-${index}`}>
+                <div
+                  onClick={(e) => {
+                    if (onStepClick) {
+                      e.stopPropagation();
+                      onStepClick(step, index);
+                    }
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    cursor: onStepClick ? "pointer" : "default",
+                    padding: "1px 0",
+                  }}
+                  className={onStepClick ? "hover:opacity-80 transition-opacity" : ""}
+                >
+                  <Icon
+                    size={15}
+                    strokeWidth={1.75}
+                    style={{ color: "var(--muted-foreground, rgba(255,255,255,0.4))", flexShrink: 0 }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 14.5,
+                      lineHeight: 1.5,
+                      color: "var(--foreground, rgba(255,255,255,0.75))",
+                      fontWeight: 400,
+                    }}
                   >
-                    {step.verb}
-                  </ShimmerLabel>
-                  {step.chip && (
-                    <ShimmerLabel
-                      active={active}
-                      className={cn(
-                        "text-[13px] leading-tight break-words font-normal",
-                        active ? "text-foreground/85" : "text-foreground/70 group-hover/step:text-foreground/90"
-                      )}
-                    >
-                      {step.chip}
-                    </ShimmerLabel>
-                  )}
+                    {stepText}
+                  </span>
                 </div>
-              </div>
+                {!isLast && (
+                  <div
+                    style={{
+                      width: 1,
+                      height: 14,
+                      marginLeft: 7,
+                      background: "var(--border, rgba(255,255,255,0.14))",
+                      opacity: 0.7,
+                      marginTop: 2,
+                      marginBottom: 2,
+                    }}
+                  />
+                )}
+              </React.Fragment>
             );
           })}
           {stats.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-2">
-              {stats.map((stat) => (
+              {stats.map((stat, idx) => (
                 <span
-                  key={stat.file}
+                  key={`${stat.file}-${idx}`}
                   className="bg-foreground/[0.06] text-foreground/80 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-[11px]"
                 >
                   <span>{stat.file}</span>
@@ -165,29 +167,6 @@ export function ToolTimeline({
           )}
         </div>
       </CollapsibleContent>
-      <style>{`
-        @keyframes stepShimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        .step-shimmer-active::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(
-            90deg,
-            transparent 0%,
-            rgba(99, 102, 241, 0.08) 25%,
-            rgba(99, 102, 241, 0.15) 50%,
-            rgba(99, 102, 241, 0.08) 75%,
-            transparent 100%
-          );
-          background-size: 200% 100%;
-          animation: stepShimmer 2s ease-in-out infinite;
-          pointer-events: none;
-          border-radius: inherit;
-        }
-      `}</style>
     </Collapsible>
   );
 }

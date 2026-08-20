@@ -93,7 +93,7 @@ export function CostMeter({
       >
         {sortedLines.map((line, i) => (
           <span
-            key={line.model}
+            key={`${line.model}-${i}`}
             style={{
               height: "100%",
               width: pct(line.share),
@@ -109,7 +109,7 @@ export function CostMeter({
       <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4 }}>
         {sortedLines.map((line, i) => (
           <div
-            key={line.model}
+            key={`${line.model}-${i}`}
             style={{
               display: "flex",
               alignItems: "center",

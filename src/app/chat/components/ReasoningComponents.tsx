@@ -548,7 +548,7 @@ export const ReasoningBlock = ({ content, streaming = false }: { content: string
                 streaming={streaming}
                 open={open}
                 onOpenChange={setOpen}
-                restingLabel="Reasoned"
+                restingLabel="Thought"
             />
         </div>
     );

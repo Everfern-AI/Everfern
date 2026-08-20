@@ -220,7 +220,7 @@ export const synthesizeToolTool: AgentTool = {
 
 export const synthesizeSkillTool: AgentTool = {
   name: 'synthesize_skill',
-  description: 'Synthesizes a new reusable expert skill containing system instructions, guidelines, and context. The skill will be proposed to the user for approval before dynamic registration.',
+  description: 'Synthesizes a new reusable expert skill containing system instructions, guidelines, and context. The skill will be proposed to the user for approval before dynamic registration. Do NOT use this tool for creating PDFs, documents, or files; use standard code execution and file writing tools instead.',
   parameters: {
     type: 'object',
     properties: {

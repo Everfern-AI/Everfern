@@ -847,7 +847,7 @@ const UserQuestionForm = ({
         const agentName = isNavisSecurityCheck ? 'Navis' : 'EverFern';
 
         return (
-            <div style={{
+            <div className="glossy" style={{
                 background: 'var(--color-bg-surface)',
                 border: '1px solid var(--color-border)',
                 borderRadius: 16,
@@ -856,7 +856,6 @@ const UserQuestionForm = ({
                 fontFamily: "var(--font-sans), 'Matter', system-ui, sans-serif",
                 width: '100%',
                 maxWidth: 520,
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
             }}>
                 {/* Header Icon + Title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>

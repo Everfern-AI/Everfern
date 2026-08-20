@@ -448,6 +448,12 @@
   --glass-blur: blur(12px);
   --backdrop-blur: blur(8px);
 
+  /* Glossy surface highlight & shadow */
+  --glossy-highlight: rgba(255, 255, 255, 0.42);
+  --glossy-shadow-color: rgba(0, 0, 0, 0.10);
+  --glossy-inner: inset 0 1px 0 0 var(--glossy-highlight);
+  --glossy-outer: 0 4px 20px -4px var(--glossy-shadow-color);
+
   /* ────────────────────────────────────────────────────────────────── */
   /* ANIMATIONS & TRANSITIONS                                           */
   /* ────────────────────────────────────────────────────────────────── */
@@ -863,6 +869,93 @@ a:hover {
   animation: pulse 2s ease-in-out infinite;
 }
 
+/* ── Glossy surface effect ───────────────────────────────────────────────── */
+
+.glossy,
+.glossy-no-border {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.glossy {
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+.glossy-bubble {
+  box-shadow: inset 0 1px 0 0 var(--glossy-highlight), 0 4px 16px -4px var(--glossy-shadow-color);
+  border-top: 1px solid var(--glossy-highlight);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.glossy-input {
+  box-shadow: inset 0 1px 0 0 var(--glossy-highlight), 0 4px 20px -4px var(--glossy-shadow-color);
+  border-top: 1px solid var(--glossy-highlight);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+/* Apply glossy finish to common component classes in dark mode */
+.dark .card,
+.dark .surface,
+.dark .surface-elevated,
+.dark .input,
+.dark .btn-secondary,
+.dark .badge,
+.dark .glossy,
+.dark .glossy-no-border,
+.dark .glossy-bubble,
+.dark .glossy-input {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+}
+
+.dark .glossy,
+.dark .glossy-bubble,
+.dark .glossy-input {
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+.dark .card-hover:hover {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+/* ── Auto-apply glossy to common Tailwind + custom surface patterns in dark mode ── */
+.dark .bg-card,
+.dark .bg-popover,
+.dark .bg-muted,
+.dark .bg-\[var\(--color-bg-surface\)\],
+.dark .bg-\[var\(--color-bg-subtle\)\],
+.dark .bg-\[var\(--color-bg-elevated\)\],
+.dark .bg-\[\#0A0A0A\],
+.dark .bg-\[\#141414\],
+.dark .bg-neutral-900,
+.dark .bg-black\/60,
+.dark [class*="rounded-"][class*="shadow-"][class*="border"] {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+/* Message bubbles in dark mode */
+.dark [class*="user-bubble"],
+.dark [class*="assistant-bubble"] {
+  box-shadow: inset 0 1px 0 0 var(--glossy-highlight), 0 4px 16px -4px var(--glossy-shadow-color);
+}
+
+/* Modal / Dialog / Overlay panels in dark mode */
+.dark [class*="modal"],
+.dark [class*="dialog"],
+.dark [class*="popover"],
+.dark [class*="dropdown-menu"],
+.dark [role="dialog"] {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+/* Make sure glossy inputs don't lose focus rings */
+.dark .glossy-input:focus,
+.dark .input:focus {
+  box-shadow: 0 0 0 3px var(--color-accent-dim), inset 0 1px 0 0 var(--glossy-highlight), 0 4px 20px -4px var(--glossy-shadow-color);
+}
+
 /* ── Focus styles ────────────────────────────────────────────────────────── */
 
 :focus-visible {
@@ -968,6 +1061,10 @@ a:hover {
   --sidebar-settings-hover-bg: rgba(255, 255, 255, 0.06);
   --sidebar-settings-hover-border: rgba(255, 255, 255, 0.15);
   --sidebar-settings-hover-text: #e5e4df;
+
+  /* Glossy surface highlight & shadow — dark theme */
+  --glossy-highlight: rgba(255, 255, 255, 0.10);
+  --glossy-shadow-color: rgba(0, 0, 0, 0.45);
 }
 
 @theme inline {

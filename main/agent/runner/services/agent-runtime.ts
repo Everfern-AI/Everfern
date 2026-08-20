@@ -17,6 +17,7 @@ import {
   initializeSessionPersistenceManager,
 } from '../../persistence/session-manager';
 import { loadSoul } from '../../personality-manager';
+import { StreamingThoughtFilter, scrubReasoningTags } from '../../helpers/thinking';
 
 // ── State restoration types ───────────────────────────────────────────
 
@@ -569,7 +570,7 @@ ${projection.activeDependencies}
           properties: {
             _narrative: {
               type: 'string',
-              description: 'A single, clear sentence explaining what you are doing in this tool action (e.g., "Checking package.json for installed dependencies")'
+              description: 'A single, elegant active-voice sentence describing what you are doing from the user perspective (e.g. "Generating PDF report with climate charts and data tables"). Never mention internal VM mechanics or technical jargon like "in the Linux VM".'
             },
             ...props
           }
@@ -578,6 +579,8 @@ ${projection.activeDependencies}
     });
 
     const startedToolCallIndices = new Set<number>();
+
+    const thoughtFilter = new StreamingThoughtFilter();
 
     const request: ChatRequest = {
       messages: limitedMessages,
@@ -611,70 +614,30 @@ ${projection.activeDependencies}
         }
       },
       onStreamChunk: (chunk: string) => {
-        // First chunk received
-        if (!streamedText && !thoughtBuffer && !isThinking) {
-           // We intentionally do not force isThinking = true here, 
-           // as many models (like Ollama, LM Studio) do not use <think> tags.
-           // Setting it here forces them into an infinite thinking buffer loop.
-        }
-        console.log(`[Stream] Received chunk: "${chunk}" (buffer: ${thoughtBuffer.length} chars)`);
-        thoughtBuffer += chunk;
-        const hasStart = thoughtBuffer.includes('<think>') || thoughtBuffer.includes('<thought>');
-        const hasEnd = thoughtBuffer.includes('</think>') || thoughtBuffer.includes('</thought>');
-
-        if (!isThinking && hasStart) {
-          isThinking = true;
-          const tag = thoughtBuffer.includes('<think>') ? '<think>' : '<thought>';
-          const parts = thoughtBuffer.split(tag);
-          if (parts[0]) {
-            console.log(`[Stream] Sending chunk before <think>: "${parts[0]}"`);
-            eventQueue?.push({ type: 'chunk', content: parts[0] });
-            streamedText += parts[0];
+        thoughtFilter.process(
+          chunk,
+          (content) => {
+            eventQueue?.push({ type: 'chunk', content });
+            streamedText += content;
+          },
+          (thought) => {
+            eventQueue?.push({ type: 'thought', content: thought });
           }
-          if (parts[1]) {
-            console.log(`[Stream] Sending thought: "${parts[1].slice(0, 50)}..."`);
-            eventQueue?.push({ type: 'thought', content: parts[1] });
-          }
-          thoughtBuffer = '';
-        } else if (isThinking && hasEnd) {
-          isThinking = false;
-          const tag = thoughtBuffer.includes('</think>') ? '</think>' : '</thought>';
-          const parts = thoughtBuffer.split(tag);
-          if (parts[0]) {
-            console.log(`[Stream] Sending thought end: "${parts[0].slice(0, 50)}..."`);
-            eventQueue?.push({ type: 'thought', content: parts[0] });
-          }
-          if (parts[1]) {
-            console.log(`[Stream] Sending chunk after </think>: "${parts[1]}"`);
-            eventQueue?.push({ type: 'chunk', content: parts[1] });
-            streamedText += parts[1];
-          }
-          thoughtBuffer = '';
-        } else if (isThinking) {
-          console.log(`[Stream] In thinking mode, sending as thought`);
-          eventQueue?.push({ type: 'thought', content: chunk });
-          thoughtBuffer = '';
-        } else {
-          const trimmed = thoughtBuffer.trim();
-          if (!trimmed.startsWith('{') && !trimmed.startsWith('<')) {
-            console.log(`[Stream] Sending regular chunk: "${thoughtBuffer}"`);
-            eventQueue?.push({ type: 'chunk', content: thoughtBuffer });
-            streamedText += thoughtBuffer;
-            thoughtBuffer = '';
-          } else if (thoughtBuffer.length > 20) {
-            console.log(`[Stream] Buffer > 20 chars, sending: "${thoughtBuffer.slice(0, 50)}..."`);
-            eventQueue?.push({ type: 'chunk', content: thoughtBuffer });
-            streamedText += thoughtBuffer;
-            thoughtBuffer = '';
-          } else {
-            console.log(`[Stream] Buffering (starts with { or <, length: ${thoughtBuffer.length})`);
-          }
-        }
+        );
       },
       abortSignal: globalAbortManager.abortController.signal,
     };
 
     let response = await client.chat(request);
+    thoughtFilter.flush(
+      (content) => {
+        eventQueue?.push({ type: 'chunk', content });
+        streamedText += content;
+      },
+      (thought) => {
+        eventQueue?.push({ type: 'thought', content: thought });
+      }
+    );
 
     // 5. Canned Refusal Interception & Natural Text Response Completion
     // If model emits a canned LLM refusal about web browsing, override it once.
@@ -765,9 +728,7 @@ ${projection.activeDependencies}
       textContent = response.content.map((c: any) => 'text' in c ? c.text : '').join('\n');
     }
 
-    let scrubbed = textContent.replace(/<(?:think|thought)>[\s\S]*?<\/(?:think|thought)>/ig, '').trim();
-    // Also remove unclosed <think> or <thought> tags at the end of the string
-    scrubbed = scrubbed.replace(/<(?:think|thought)>[\s\S]*$/i, '').trim();
+    let scrubbed = scrubReasoningTags(textContent);
 
     // If model didn't provide tool calls but intent requires them, parse or nudge
     if (!response.toolCalls || response.toolCalls.length === 0) {

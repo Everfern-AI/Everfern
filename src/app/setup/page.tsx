@@ -82,7 +82,7 @@ const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
 );
 
 const EverFernBglessLogo = ({ size = 20, isDark = false }: { size?: number; isDark?: boolean }) => (
-    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} className={isDark ? "" : "dark:invert opacity-90"} />
+    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} priority loading="eager" className={isDark ? "" : "dark:invert opacity-90"} />
 );
 
 const PhosphorStar = ({ size = 24, color = "currentColor", weight = "fill" }: { size?: number; color?: string; weight?: "fill" | "regular" | "duotone" }) => {
@@ -942,7 +942,7 @@ export default function SetupPage() {
                 style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
+                    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} priority loading="eager" style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                 </div>
                 <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
                     <WindowControls />
@@ -989,6 +989,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <BackButton onClick={() => router.push("/auth")} />
@@ -1080,6 +1081,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" }}
                         >
                             <BackButton onClick={() => setStep(1)} />
@@ -1182,6 +1184,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column" }}
                         >
                             <BackButton onClick={() => setStep(2)} />
@@ -1268,6 +1271,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: engine === "local" ? 640 : 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 24 }}>
@@ -1845,6 +1849,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -1991,6 +1996,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2012,6 +2018,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2724,6 +2731,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", alignItems: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2884,6 +2892,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 540, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -2981,6 +2990,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 500, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -3075,6 +3085,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>
@@ -3136,6 +3147,7 @@ export default function SetupPage() {
                             animate="center"
                             exit="exit"
                             transition={pageTransition}
+                            className="glossy"
                             style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
                         >
                             <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 32 }}>

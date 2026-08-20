@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils";
 
 export const collapsePanel = "overflow-hidden transition-all data-[state=closed]:animate-collapse data-[state=open]:animate-expand";
 export const mono = "font-mono text-xs";
-export const paper = "bg-card text-card-foreground border border-border shadow-sm";
+export const paper = "bg-card text-card-foreground border border-border shadow-sm glossy";
 export const field = "bg-muted/50 border border-border";
-export const floating = "bg-popover text-popover-foreground border border-border shadow-md";
+export const floating = "bg-popover text-popover-foreground border border-border shadow-md glossy";
 
 export function ShimmerLabel({
   active,
@@ -34,32 +34,32 @@ export function ShimmerLabel({
       <style>{`
         @keyframes timelineTextShimmer {
           0% {
-            background-position: 200% center;
+            background-position: -200% 0;
           }
           100% {
-            background-position: -200% center;
+            background-position: 200% 0;
           }
         }
         .timeline-shimmer-active {
-          background-size: 200% auto;
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          color: transparent !important;
           animation: timelineTextShimmer 2.4s linear infinite;
           background-image: linear-gradient(
             90deg,
-            rgba(100, 116, 139, 0.8) 0%,
-            rgba(100, 116, 139, 0.8) 30%,
-            rgba(15, 23, 42, 1) 50%,
-            rgba(100, 116, 139, 0.8) 70%,
-            rgba(100, 116, 139, 0.8) 100%
+            #71717a 0%,
+            #18181b 45%,
+            #71717a 90%
           );
         }
         .dark .timeline-shimmer-active {
           background-image: linear-gradient(
             90deg,
-            rgba(161, 161, 170, 0.75) 0%,
-            rgba(161, 161, 170, 0.75) 30%,
-            rgba(255, 255, 255, 1) 50%,
-            rgba(161, 161, 170, 0.75) 70%,
-            rgba(161, 161, 170, 0.75) 100%
+            #71717a 0%,
+            #ffffff 45%,
+            #71717a 90%
           );
         }
         .timeline-static-shimmer {

@@ -236,6 +236,7 @@ export default function AuthPage() {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.96 }}
                             transition={{ type: "spring", bounce: 0.18, duration: 0.5 }}
+                            className="glossy"
                             style={{
                                 width: "100%",
                                 maxWidth: 420,
@@ -243,6 +244,9 @@ export default function AuthPage() {
                                 flexDirection: "column",
                                 alignItems: "center",
                                 textAlign: "center",
+                                background: 'var(--color-bg-surface)',
+                                borderRadius: 24,
+                                padding: 40,
                             }}
                         >
                             {/* Avatar or check icon */}
@@ -362,7 +366,8 @@ export default function AuthPage() {
                             initial="hidden"
                             animate="visible"
                             exit={{ opacity: 0 }}
-                            className="w-full max-w-[420px] flex flex-col items-center text-center"
+                            className="w-full max-w-[420px] flex flex-col items-center text-center glossy"
+                            style={{ background: 'var(--color-bg-surface)', borderRadius: 24, padding: 40 }}
                         >
                             <motion.h2
                                 variants={itemVariants}

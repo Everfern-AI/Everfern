@@ -1,107 +1,76 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface FileArtifactProps {
     path: string;
-    description: string;
-    chatId: string;
+    description?: string;
+    chatId?: string;
     onOpenArtifact?: (name: string) => void;
 }
 
 export default function FileArtifact({ path, description, chatId, onOpenArtifact }: FileArtifactProps) {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
     const [isHovered, setIsHovered] = useState(false);
+    const [isDownloadHovered, setIsDownloadHovered] = useState(false);
+    const [isArrowHovered, setIsArrowHovered] = useState(false);
+    const [showDropdown, setShowDropdown] = useState(false);
     const [apps, setApps] = useState<Array<{ name: string; path: string; icon: string }>>([]);
     const [appsLoading, setAppsLoading] = useState(false);
-    const [showDropdown, setShowDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const filename = path.split(/[\\/]/).pop() || 'Unknown File';
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const filename = path ? path.split(/[\\/]/).pop() || 'Untitled' : 'Untitled';
+    const ext = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() || '' : '';
 
-    const getFileTypeInfo = (extension: string) => {
-        if (['xlsx', 'xls', 'csv'].includes(extension)) {
-            return {
-                label: 'Spreadsheet',
-                color: '#107c41',
-                bgColor: 'rgba(16, 124, 65, 0.08)',
-                icon: (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="4" fill="#107C41" />
-                        <path d="M8 8h3v3H8V8zm0 5h3v3H8v-3zm5-5h3v3h-3V8zm0 5h3v3h-3v-3z" fill="white" />
-                        <path d="M6 6h12v12H6V6zm1-1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H7z" fill="#0c5e31" opacity="0.3" />
-                    </svg>
-                )
-            };
+    // Determine type label and badge info
+    const getTypeInfo = (extension: string) => {
+        if (['xlsx', 'xls', 'csv', 'tsv'].includes(extension)) {
+            return { label: 'Spreadsheet', ext: extension.toUpperCase() };
         }
-        if (['docx', 'doc'].includes(extension)) {
-            return {
-                label: 'Document',
-                color: '#2b579a',
-                bgColor: 'rgba(43, 87, 154, 0.08)',
-                icon: (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="4" fill="#2B579A" />
-                        <path d="M7 8h10M7 12h10M7 16h6" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-                    </svg>
-                )
-            };
+        if (['docx', 'doc', 'rtf', 'odt'].includes(extension)) {
+            return { label: 'Document', ext: extension.toUpperCase() };
         }
         if (extension === 'pdf') {
-            return {
-                label: 'PDF Document',
-                color: '#d9381e',
-                bgColor: 'rgba(217, 56, 30, 0.08)',
-                icon: (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="4" fill="#D9381E" />
-                        <path d="M9 16V8h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H9zm1.5-1.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1v2z" fill="white" />
-                    </svg>
-                )
-            };
+            return { label: 'Document', ext: 'PDF' };
         }
-        if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'py', 'json', 'c', 'cpp', 'go', 'rs', 'sh', 'bat', 'ps1'].includes(extension)) {
-            return {
-                label: 'Code',
-                color: '#007acc',
-                bgColor: 'rgba(0, 122, 204, 0.08)',
-                icon: (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="4" fill="#007ACC" />
-                        <path d="M8 9.5L5.5 12 8 14.5M16 9.5L18.5 12 16 14.5M13 7l-2 10" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                )
-            };
+        if (['md', 'markdown'].includes(extension)) {
+            return { label: 'Document', ext: 'MD' };
+        }
+        if (['pptx', 'ppt', 'key'].includes(extension)) {
+            return { label: 'Presentation', ext: extension.toUpperCase() };
+        }
+        if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'py', 'json', 'c', 'cpp', 'go', 'rs', 'sh', 'bat', 'ps1', 'sql'].includes(extension)) {
+            return { label: 'Code', ext: extension.toUpperCase() };
         }
         if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'avif'].includes(extension)) {
-            return {
-                label: 'Image',
-                color: '#e28743',
-                bgColor: 'rgba(226, 135, 67, 0.08)',
-                icon: (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="3" width="18" height="18" rx="4" fill="#E28743" />
-                        <circle cx="8.5" cy="8.5" r="1.5" fill="white" />
-                        <path d="M5 19l4-4 3 3 5-7 3 3v4H5z" fill="white" />
-                    </svg>
-                )
-            };
+            return { label: 'Image', ext: extension.toUpperCase() };
         }
-        return {
-            label: 'File',
-            color: '#71717a',
-            bgColor: 'rgba(113, 113, 122, 0.08)',
-            icon: (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="3" width="18" height="18" rx="4" fill="#71717A" />
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="#71717A" />
-                    <path d="M14 2v6h6" fill="#52525b" opacity="0.5" />
-                </svg>
-            )
-        };
+        return { label: 'Document', ext: extension ? extension.toUpperCase() : 'FILE' };
     };
 
-    const fileTypeInfo = getFileTypeInfo(ext);
+    const typeInfo = getTypeInfo(ext);
 
+    // Format display title
+    const displayTitle = React.useMemo(() => {
+        if (description && description.length < 60 && !description.includes('/') && !description.includes('\\')) {
+            return description;
+        }
+        const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+        if (nameWithoutExt.toLowerCase() === 'system_prompt') {
+            return 'Everfern system prompt';
+        }
+        // Capitalize words nicely
+        return nameWithoutExt
+            .replace(/[_-]/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+    }, [description, filename]);
+
+    // Format subtitle: "Document · PDF"
+    const subtitle = `${typeInfo.label} · ${typeInfo.ext}`;
+
+    // Load registered apps for file
     useEffect(() => {
         let isMounted = true;
         setAppsLoading(true);
@@ -112,8 +81,7 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                 }
                 if (isMounted) setAppsLoading(false);
             })
-            .catch((err: any) => {
-                console.error("Error fetching file apps in FileArtifact:", err);
+            .catch(() => {
                 if (isMounted) setAppsLoading(false);
             });
 
@@ -122,6 +90,7 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
         };
     }, [path]);
 
+    // Handle outside click for dropdown
     useEffect(() => {
         const handleOutsideClick = (e: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -132,9 +101,11 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
         return () => document.removeEventListener('mousedown', handleOutsideClick);
     }, []);
 
-    const handleClick = () => {
+    const handleOpen = () => {
         if (onOpenArtifact) {
             onOpenArtifact(filename);
+        } else {
+            (window as any).electronAPI?.system?.openFile?.(path).catch(() => {});
         }
     };
 
@@ -143,177 +114,278 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
         try {
             await (window as any).electronAPI?.system?.openFile?.(path, appPath);
         } catch (err) {
-            console.error("Failed to open file:", err);
+            console.error('Failed to open file:', err);
         }
     };
 
+    const handleShowInFolder = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setShowDropdown(false);
+        try {
+            await (window as any).electronAPI?.system?.showItemInFolder?.(path);
+        } catch {}
+    };
+
+    const handleCopyPath = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setShowDropdown(false);
+        try {
+            await navigator.clipboard.writeText(path);
+        } catch {}
+    };
+
     return (
-        <div
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            onClick={handleClick}
+            onClick={handleOpen}
             style={{
                 display: 'flex',
                 flexDirection: 'row',
                 alignItems: 'center',
-                padding: '12px 20px',
-                backgroundColor: 'var(--color-bg-surface, #ffffff)',
-                border: '1px solid var(--color-border, rgba(0, 0, 0, 0.08))',
-                borderRadius: 20,
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                backgroundColor: isDark 
+                    ? (isHovered ? '#1a1a1a' : '#141414') 
+                    : (isHovered ? '#fcfcfc' : '#ffffff'),
+                border: isDark 
+                    ? (isHovered ? '1px solid rgba(255, 255, 255, 0.14)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                    : (isHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                borderRadius: 14,
                 cursor: 'pointer',
-                boxShadow: isHovered ? '0 10px 25px rgba(0,0,0,0.06)' : '0 2px 8px rgba(0,0,0,0.02)',
-                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                gap: 16,
+                boxShadow: isHovered
+                    ? (isDark ? '0 6px 20px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)')
+                    : (isDark ? '0 2px 6px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.02)'),
+                transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+                gap: 14,
                 position: 'relative',
                 width: '100%',
-                maxWidth: '680px',
+                maxWidth: '100%',
                 boxSizing: 'border-box',
-                marginTop: 8,
-                marginBottom: 8,
+                marginTop: 6,
+                marginBottom: 6,
             }}
         >
-            {/* File Icon Container */}
-            <div style={{
-                width: 42,
-                height: 42,
-                borderRadius: 10,
-                backgroundColor: fileTypeInfo.bgColor,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-            }}>
-                {fileTypeInfo.icon}
-            </div>
-
-            {/* File Info */}
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div style={{
-                    fontSize: 14.5,
-                    fontWeight: 600,
-                    color: 'var(--color-text-primary, #111111)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                }}>
-                    {filename}
-                </div>
-                <div style={{
-                    fontSize: 12,
-                    color: 'var(--color-text-tertiary, #8a8886)',
-                    fontWeight: 500
-                }}>
-                    {fileTypeInfo.label} · {ext.toUpperCase()}
-                </div>
-            </div>
-
-            {/* Split Button Container */}
-            <div
-                style={{
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    borderRadius: 10,
-                    border: '1px solid var(--color-border, rgba(0, 0, 0, 0.12))',
-                    overflow: 'hidden',
-                    height: 34,
-                }}
-                ref={dropdownRef}
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Left Part: Open Action */}
-                <button
-                    onClick={handleClick}
+            {/* Left Section: Thumbnail + Text */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
+                {/* Vertical Document Silhouette Mockup matching Claude's design */}
+                <div
                     style={{
-                        padding: '0 14px',
-                        height: '100%',
-                        backgroundColor: 'var(--color-bg-surface, #ffffff)',
-                        color: 'var(--color-text-primary, #111111)',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        transition: 'background-color 0.15s ease',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.03))'; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface, #ffffff)'; }}
-                >
-                    Open
-                </button>
-
-                {/* Vertical Divider */}
-                <div style={{
-                    width: 1,
-                    height: '100%',
-                    backgroundColor: 'var(--color-border, rgba(0, 0, 0, 0.12))',
-                }} />
-
-                {/* Right Part: Dropdown Arrow */}
-                <button
-                    onClick={() => setShowDropdown(prev => !prev)}
-                    style={{
-                        padding: '0 10px',
-                        height: '100%',
-                        backgroundColor: 'var(--color-bg-surface, #ffffff)',
-                        color: 'var(--color-text-secondary, #555555)',
-                        border: 'none',
-                        cursor: 'pointer',
+                        width: 44,
+                        height: 54,
+                        borderRadius: 9,
+                        backgroundColor: isDark ? '#191919' : '#f4f4f6',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.11)' : '1px solid rgba(0, 0, 0, 0.09)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        transition: 'background-color 0.15s ease',
+                        flexShrink: 0,
+                        boxShadow: isDark
+                            ? 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 5px rgba(0,0,0,0.3)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 3px rgba(0,0,0,0.04)',
+                        position: 'relative',
+                        overflow: 'hidden'
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.03))'; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface, #ffffff)'; }}
                 >
+                    {/* Document Page SVG matching reference */}
                     <svg
-                        width="12"
-                        height="12"
+                        width="20"
+                        height="22"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                        xmlns="http://www.w3.org/2000/svg"
                         style={{
-                            transform: showDropdown ? 'rotate(180deg)' : 'none',
-                            transition: 'transform 0.2s ease',
+                            opacity: isDark ? 0.7 : 0.6,
                         }}
                     >
-                        <polyline points="6 9 12 15 18 9" />
+                        {/* Page Outline */}
+                        <path
+                            d="M6 3.5H14.5L19 8V20.5C19 21.0523 18.5523 21.5 18 21.5H6C5.44772 21.5 5 21.0523 5 20.5V4.5C5 3.94772 5.44772 3.5 6 3.5Z"
+                            stroke={isDark ? '#e5e5e5' : '#27272a'}
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                        {/* Folded Dog-Ear Corner */}
+                        <path
+                            d="M14 3.5V8.5H19"
+                            stroke={isDark ? '#e5e5e5' : '#27272a'}
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                        {/* Document Content Lines */}
+                        <path
+                            d="M9 13H15M9 16.5H13"
+                            stroke={isDark ? '#e5e5e5' : '#27272a'}
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                        />
                     </svg>
-                </button>
+                </div>
+
+                {/* Center Metadata */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                    <div
+                        style={{
+                            fontSize: 14.5,
+                            fontWeight: 500,
+                            color: isDark ? '#ffffff' : '#18181b',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            letterSpacing: '-0.01em',
+                            lineHeight: 1.3
+                        }}
+                    >
+                        {displayTitle}
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 12.5,
+                            color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#71717a',
+                            fontWeight: 400,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            letterSpacing: '-0.005em'
+                        }}
+                    >
+                        {subtitle}
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Action Buttons */}
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexShrink: 0,
+                    position: 'relative'
+                }}
+                ref={dropdownRef}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Download Pill Button Group */}
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <button
+                        onClick={handleOpen}
+                        onMouseEnter={() => setIsDownloadHovered(true)}
+                        onMouseLeave={() => setIsDownloadHovered(false)}
+                        style={{
+                            height: 36,
+                            padding: '0 16px',
+                            borderRadius: '9px 0 0 9px',
+                            backgroundColor: isDark 
+                                ? (isDownloadHovered ? '#2c2c2c' : '#222222') 
+                                : (isDownloadHovered ? '#e4e4e7' : '#f4f4f5'),
+                            border: isDark 
+                                ? (isDownloadHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isDownloadHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderRight: 'none',
+                            color: isDark ? '#ffffff' : '#18181b',
+                            fontSize: 13.5,
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6
+                        }}
+                    >
+                        Download
+                    </button>
+
+                    {/* Secondary dropdown trigger for opening with specific apps */}
+                    <button
+                        onClick={() => setShowDropdown(prev => !prev)}
+                        onMouseEnter={() => setIsArrowHovered(true)}
+                        onMouseLeave={() => setIsArrowHovered(false)}
+                        style={{
+                            height: 36,
+                            padding: '0 7px',
+                            borderRadius: '0 9px 9px 0',
+                            backgroundColor: isDark 
+                                ? (isArrowHovered ? '#2c2c2c' : '#222222') 
+                                : (isArrowHovered ? '#e4e4e7' : '#f4f4f5'),
+                            border: isDark 
+                                ? (isArrowHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isArrowHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',
+                            color: isDark 
+                                ? (isArrowHovered ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.6)') 
+                                : (isArrowHovered ? '#18181b' : '#71717a'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <svg
+                            width="11"
+                            height="11"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                                transform: showDropdown ? 'rotate(180deg)' : 'none',
+                                transition: 'transform 0.18s ease'
+                            }}
+                        >
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                </div>
 
                 {/* Dropdown Menu */}
                 <AnimatePresence>
                     {showDropdown && (
                         <motion.div
-                            initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                            initial={{ opacity: 0, y: 6, scale: 0.96 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 6, scale: 0.95 }}
-                            transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                            exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                             style={{
                                 position: 'absolute',
                                 bottom: 'calc(100% + 6px)',
                                 right: 0,
-                                zIndex: 99,
-                                backgroundColor: 'var(--color-bg-surface, #ffffff)',
-                                border: '1px solid var(--color-border, rgba(0, 0, 0, 0.08))',
+                                zIndex: 100,
+                                backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
                                 borderRadius: 12,
-                                boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                                minWidth: 180,
+                                boxShadow: isDark ? '0 12px 32px rgba(0,0,0,0.6)' : '0 12px 32px rgba(0,0,0,0.12)',
+                                minWidth: 200,
                                 overflow: 'hidden',
                                 padding: '4px 0',
                                 boxSizing: 'border-box'
                             }}
                         >
-                            <div style={{ padding: '6px 12px 4px', fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary, #8a8886)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Open in
+                            <div
+                                style={{
+                                    padding: '6px 12px 4px',
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: isDark ? 'rgba(255, 255, 255, 0.4)' : '#8a8886',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em'
+                                }}
+                            >
+                                Open with
                             </div>
 
                             {appsLoading ? (
-                                <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--color-text-tertiary, #8a8886)' }}>Detecting apps...</div>
+                                <div style={{ padding: '8px 12px', fontSize: 12, color: isDark ? 'rgba(255,255,255,0.4)' : '#8a8886' }}>
+                                    Detecting apps...
+                                </div>
                             ) : apps.length === 0 ? (
                                 <button
                                     onClick={() => handleOpenWithApp()}
@@ -326,12 +398,16 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                                         border: 'none',
                                         cursor: 'pointer',
                                         fontSize: 12,
-                                        color: 'var(--color-text-primary, #111111)',
+                                        color: isDark ? '#ffffff' : '#111111',
                                         textAlign: 'left',
                                         fontWeight: 500
                                     }}
-                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.03))'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                    }}
                                 >
                                     Default Application
                                 </button>
@@ -351,22 +427,35 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                                                 border: 'none',
                                                 cursor: 'pointer',
                                                 fontSize: 12,
-                                                color: 'var(--color-text-primary, #111111)',
+                                                color: isDark ? '#ffffff' : '#111111',
                                                 textAlign: 'left',
                                                 transition: 'background 0.1s'
                                             }}
-                                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.03))'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }}
                                         >
                                             {app.icon ? (
                                                 <img src={app.icon} alt="" width={16} height={16} style={{ borderRadius: 3, flexShrink: 0 }} />
                                             ) : (
-                                                <div style={{ width: 16, height: 16, borderRadius: 3, backgroundColor: 'var(--color-bg-hover, rgba(0,0,0,0.05))', flexShrink: 0 }} />
+                                                <div
+                                                    style={{
+                                                        width: 16,
+                                                        height: 16,
+                                                        borderRadius: 3,
+                                                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                                        flexShrink: 0
+                                                    }}
+                                                />
                                             )}
-                                            <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.name}</span>
+                                            <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {app.name}
+                                            </span>
                                         </button>
                                     ))}
-                                    <div style={{ height: 1, backgroundColor: 'var(--color-border, rgba(0, 0, 0, 0.08))', margin: '4px 0' }} />
                                     <button
                                         onClick={() => handleOpenWithApp()}
                                         style={{
@@ -378,21 +467,129 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                                             border: 'none',
                                             cursor: 'pointer',
                                             fontSize: 12,
-                                            color: 'var(--color-text-secondary, #555555)',
+                                            color: isDark ? 'rgba(255, 255, 255, 0.65)' : '#555555',
                                             textAlign: 'left',
                                             fontWeight: 500
                                         }}
-                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover, rgba(0,0,0,0.03))'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                        onMouseEnter={e => {
+                                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                        }}
                                     >
                                         Default Application
                                     </button>
                                 </>
                             )}
+
+                            <div
+                                style={{
+                                    height: 1,
+                                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                    margin: '4px 0'
+                                }}
+                            />
+
+                            {/* Open in Google Drive */}
+                            <button
+                                onClick={handleDriveClick}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    color: isDark ? 'rgba(255, 255, 255, 0.85)' : '#333333',
+                                    textAlign: 'left',
+                                    fontWeight: 500
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+                                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
+                                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
+                                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+                                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+                                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+                                </svg>
+                                Save to Google Drive
+                            </button>
+
+                            {/* Show in folder */}
+                            <button
+                                onClick={handleShowInFolder}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    color: isDark ? 'rgba(255, 255, 255, 0.7)' : '#555555',
+                                    textAlign: 'left',
+                                    fontWeight: 500
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                </svg>
+                                Show in Folder
+                            </button>
+
+                            {/* Copy file path */}
+                            <button
+                                onClick={handleCopyPath}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    color: isDark ? 'rgba(255, 255, 255, 0.7)' : '#555555',
+                                    textAlign: 'left',
+                                    fontWeight: 500
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                                Copy File Path
+                            </button>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </div>
-        </div>
+        </motion.div>
     );
 }

@@ -138,20 +138,24 @@ export function resolvePromptPlaceholdersSync(
   const linuxHome = hostPathToLinux(homedirNorm);
   const user = osUserInfo();
 
-  // All paths are Linux VM paths — the AI uses these in all tool calls
-  const planPath = `${linuxHome}/.everfern/chat/plan/${safeConvId}/`;
-  const artifactPath = `${linuxHome}/.everfern/artifacts/${safeConvId}/`;
-  const execPath = `${linuxHome}/.everfern/exec/${safeConvId}/`;
-  const sitePath = `${linuxHome}/.everfern/sites/${safeConvId}/`;
-  const uploadsPath = `/everfern/`;
+  // All paths inside the Linux VM are native ext4 Linux paths
+  const planPath = `~/.everfern/chat/plan/${safeConvId}/`;
+  const artifactPath = `~/.everfern/artifacts/${safeConvId}/`;
+  const execPath = `~/.everfern/workspace/`;
+  const sitePath = `~/.everfern/sites/${safeConvId}/`;
+  const uploadsPath = `~/.everfern/attachments/`;
 
-  // OS Info
+  // OS & Terminal Execution Info
   const osInfo =
     platform === 'win32'
-      ? '**OS**: Windows (host).\n- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh.exe or powershell.exe). You MUST use Windows PowerShell syntax (do NOT use Linux commands like "ls -la", use PowerShell syntax and backslash paths like "C:\\Users\\...").\n- **target: "vm"**: Executes commands inside the Linux VM (WSL running Bash). You MUST use Linux Bash syntax (use Linux commands like "ls -la" and paths like "/mnt/c/Users/...").'
+      ? '**Environment & Terminal Execution**:\n' +
+        '- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh/powershell).\n' +
+        '- **target: "vm"**: Executes inside the dedicated Linux VM terminal (WSL). Working directory is automatically `~/.everfern/workspace/` with the Python virtualenv (`~/.everfern/venv`) active. Run commands like `python script.py` or `pip install <package>` directly without `/mnt/` prefixes.'
       : platform === 'darwin'
-        ? '**OS**: macOS (host).\n- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n- **target: "vm"**: Executes commands inside the Docker Linux VM running Bash (uses "/host/Users/..." paths).'
-        : '**OS**: Linux. All commands execute natively using Bash.';
+        ? '**Environment & Terminal Execution**:\n' +
+          '- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n' +
+          '- **target: "vm"**: Executes inside the dedicated Linux VM container (Docker Ubuntu). Working directory is `~/.everfern/workspace/` with the Python virtualenv active.'
+        : '**Environment**: Linux. All commands execute natively.';
 
   // Session File Registry
   const sessionRegistry = sessionCreatedPaths.length > 0

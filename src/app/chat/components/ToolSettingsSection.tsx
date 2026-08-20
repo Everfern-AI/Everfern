@@ -9,15 +9,19 @@ import {
     KeyIcon,
     CheckIcon,
     EyeIcon,
-    ComputerDesktopIcon,
+    ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
+import PdfOcrPanel from './PdfOcrPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ToolConfig {
     mode: 'local' | 'api';
+    provider?: 'exa' | 'firecrawl';
     headless: boolean;
     apiKey: string;
+    exaApiKey?: string;
+    firecrawlApiKey?: string;
 }
 
 interface NavisConfig {
@@ -26,8 +30,8 @@ interface NavisConfig {
     headless: boolean;
     maxSteps: number;
     useChromeProfile: boolean;
-    useIsolatedBrowser: boolean;
     selectedBrowserId: string;
+    useIsolatedBrowser: boolean;
     automationMode: 'extension-first' | 'playwright';
 }
 
@@ -43,14 +47,14 @@ const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
     onlyVision: false,
     headless: false,
     maxSteps: 200,
-    useChromeProfile: false,
-    useIsolatedBrowser: true,
+    useChromeProfile: true,
     selectedBrowserId: 'chrome',
+    useIsolatedBrowser: false,
     automationMode: 'extension-first',
 };
 
 const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
-    webSearch: { mode: 'local', headless: true, apiKey: '' },
+    webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
     webCrawl: { mode: 'local', headless: true, apiKey: '' },
     browserUse: { mode: 'local', headless: false, apiKey: '' },
     navis: { ...DEFAULT_NAVIS_SETTINGS },
@@ -80,7 +84,255 @@ const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     />
 );
 
-// ── ToolConfigPanel ───────────────────────────────────────────────────────────
+// ── WebSearchConfigPanel ───────────────────────────────────────────────────────
+
+interface WebSearchConfigPanelProps {
+    config: ToolConfig;
+    onChange: (config: ToolConfig) => void;
+}
+
+const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) => {
+    const currentProvider = config.provider || 'exa';
+    const currentApiKey = currentProvider === 'firecrawl'
+        ? (config.firecrawlApiKey ?? config.apiKey ?? '')
+        : (config.exaApiKey ?? config.apiKey ?? '');
+
+    const handleProviderChange = (provider: 'exa' | 'firecrawl') => {
+        const targetApiKey = provider === 'firecrawl'
+            ? (config.firecrawlApiKey || (config.provider === 'firecrawl' ? config.apiKey : ''))
+            : (config.exaApiKey || (config.provider === 'exa' ? config.apiKey : ''));
+
+        onChange({
+            ...config,
+            provider,
+            apiKey: targetApiKey,
+        });
+    };
+
+    const handleKeyChange = (val: string) => {
+        if (currentProvider === 'firecrawl') {
+            onChange({
+                ...config,
+                firecrawlApiKey: val,
+                apiKey: val,
+            });
+        } else {
+            onChange({
+                ...config,
+                exaApiKey: val,
+                apiKey: val,
+            });
+        }
+    };
+
+    return (
+        <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                    <MagnifyingGlassIcon width={18} height={18} />
+                </div>
+                <div>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Web Search</h3>
+                    <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '2px 0 0' }}>Search the web via local automation or search APIs</p>
+                </div>
+            </div>
+
+            {/* Mode selector */}
+            <div style={{ marginBottom: 16 }}>
+                <Label>Execution Mode</Label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {(['local', 'api'] as const).map(mode => {
+                        const isSelected = config.mode === mode;
+                        return (
+                            <div
+                                key={mode}
+                                onClick={() => onChange({ ...config, mode })}
+                                style={{
+                                    padding: '14px 16px',
+                                    borderRadius: 12,
+                                    border: `1.5px solid ${isSelected ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                    backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease-out',
+                                    position: 'relative',
+                                    userSelect: 'none',
+                                }}
+                                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
+                            >
+                                {isSelected && (
+                                    <div style={{ position: 'absolute', top: 10, right: 10, color: 'var(--color-text-primary)' }}>
+                                        <CheckIcon width={14} height={14} strokeWidth={2.5} />
+                                    </div>
+                                )}
+                                <div style={{ fontSize: 14, fontWeight: isSelected ? 600 : 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                                    {mode === 'local' ? 'Local' : 'API'}
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                                    {mode === 'local' ? 'Playwright search' : 'External search provider'}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Conditional: Headless toggle (local mode) */}
+            <AnimatePresence initial={false}>
+                {config.mode === 'local' && (
+                    <motion.div
+                        key="headless-toggle"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        style={{ overflow: 'hidden' }}
+                    >
+                        <div style={{ paddingTop: 4 }}>
+                            <Label>Browser Mode</Label>
+                            <div
+                                onClick={() => onChange({ ...config, headless: !config.headless })}
+                                style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
+                                    borderRadius: 12, cursor: 'pointer', transition: 'background 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-base)'}
+                            >
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                                        {config.headless ? 'Headless' : 'Headful'}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                                        {config.headless ? 'Browser runs invisibly in the background' : 'Browser window is visible on screen'}
+                                    </div>
+                                </div>
+                                {/* Toggle switch */}
+                                <div style={{
+                                    width: 44, height: 24, borderRadius: 12, position: 'relative',
+                                    backgroundColor: config.headless ? 'var(--color-text-primary)' : 'var(--color-border)',
+                                    transition: 'background 0.2s', flexShrink: 0,
+                                }}>
+                                    <div style={{
+                                        position: 'absolute', top: 3,
+                                        left: config.headless ? 23 : 3,
+                                        width: 18, height: 18, borderRadius: '50%',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        transition: 'left 0.2s',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                    }} />
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Conditional: Providers & API Key (API mode) */}
+            <AnimatePresence initial={false}>
+                {config.mode === 'api' && (
+                    <motion.div
+                        key="api-provider-section"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        style={{ overflow: 'hidden' }}
+                    >
+                        <div style={{ paddingTop: 6 }}>
+                            <Label>Search Provider</Label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                                {/* Exa Provider Card */}
+                                <div
+                                    onClick={() => handleProviderChange('exa')}
+                                    style={{
+                                        padding: '14px 16px',
+                                        borderRadius: 12,
+                                        border: `1.5px solid ${currentProvider === 'exa' ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                        backgroundColor: currentProvider === 'exa' ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease-out',
+                                        position: 'relative',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 12,
+                                    }}
+                                    onMouseEnter={e => { if (currentProvider !== 'exa') e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                    onMouseLeave={e => { if (currentProvider !== 'exa') e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
+                                >
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.08)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
+                                        <img src="/images/etc/tools/exa-color.png" alt="Exa" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13.5, fontWeight: currentProvider === 'exa' ? 600 : 500, color: 'var(--color-text-primary)' }}>Exa</div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 1 }}>Neural AI Search</div>
+                                    </div>
+                                    {currentProvider === 'exa' && (
+                                        <div style={{ color: 'var(--color-text-primary)' }}>
+                                            <CheckIcon width={16} height={16} strokeWidth={2.5} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Firecrawl Provider Card */}
+                                <div
+                                    onClick={() => handleProviderChange('firecrawl')}
+                                    style={{
+                                        padding: '14px 16px',
+                                        borderRadius: 12,
+                                        border: `1.5px solid ${currentProvider === 'firecrawl' ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                        backgroundColor: currentProvider === 'firecrawl' ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease-out',
+                                        position: 'relative',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 12,
+                                    }}
+                                    onMouseEnter={e => { if (currentProvider !== 'firecrawl') e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                                    onMouseLeave={e => { if (currentProvider !== 'firecrawl') e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
+                                >
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.08)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
+                                        <img src="/images/etc/tools/firecrawl-logo.png" alt="Firecrawl" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13.5, fontWeight: currentProvider === 'firecrawl' ? 600 : 500, color: 'var(--color-text-primary)' }}>Firecrawl</div>
+                                        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 1 }}>Markdown Search</div>
+                                    </div>
+                                    {currentProvider === 'firecrawl' && (
+                                        <div style={{ color: 'var(--color-text-primary)' }}>
+                                            <CheckIcon width={16} height={16} strokeWidth={2.5} />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* API Key Input */}
+                            <Label>{currentProvider === 'firecrawl' ? 'Firecrawl API Key' : 'Exa API Key'}</Label>
+                            <div style={{ position: 'relative' }}>
+                                <KeyIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
+                                <Input
+                                    type="password"
+                                    placeholder={currentProvider === 'firecrawl' ? 'Enter Firecrawl API key (fc-...)' : 'Enter Exa API key...'}
+                                    value={currentApiKey}
+                                    onChange={e => handleKeyChange(e.target.value)}
+                                    style={{ paddingLeft: 40 }}
+                                />
+                            </div>
+                            <p style={{ fontSize: 11, color: 'var(--color-text-placeholder)', marginTop: 8 }}>
+                                Stored securely in ~/.everfern/ — never leaves your device.
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
+
+// ── ToolConfigPanel (for WebCrawl & BrowserResearch) ──────────────────────────
 
 interface ToolConfigPanelProps {
     title: string;
@@ -195,7 +447,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
 
             {/* Conditional: API key input (api mode only) */}
             <AnimatePresence initial={false}>
-                {config.mode === 'api' && (
+                {config.mode === 'api' && apiLabel !== 'N/A' && (
                     <motion.div
                         key="api-key-input"
                         initial={{ opacity: 0, height: 0 }}
@@ -227,173 +479,45 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
     );
 };
 
-// ── BrowserDropdown ─────────────────────────────────────────────────────────────
-
-function BrowserDropdown({ browsers, value, onChange }: { browsers: any[], value: string, onChange: (val: string) => void }) {
-    const [open, setOpen] = useState(false);
-    
-    // Robust fuzzy match: handles exact, partial, legacy short IDs ('chrome', 'firefox') and prefix
-    const findBrowser = (id: string) => {
-        if (!id) return null;
-        const lower = id.toLowerCase();
-        return (
-            // 1. Exact ID match
-            browsers.find(b => b.id === id) ||
-            // 2. Saved ID contains browser name keyword (e.g. 'chrome' is in 'google-chrome')
-            browsers.find(b => b.id.includes(lower) || lower.includes(b.id)) ||
-            // 3. 'chrome'/'chromium' → any chromium browser
-            ((lower === 'chrome' || lower.includes('chrome') || lower.includes('chromium'))
-                ? browsers.find(b => b.engine === 'chromium' || b.id.includes('chrome') || b.name?.toLowerCase().includes('chrome'))
-                : null) ||
-            // 4. 'firefox'/'mozilla' → any firefox browser
-            ((lower === 'firefox' || lower.includes('firefox') || lower.includes('mozilla'))
-                ? browsers.find(b => b.engine === 'firefox' || b.id.includes('firefox') || b.name?.toLowerCase().includes('firefox'))
-                : null) ||
-            // 5. Brave
-            (lower.includes('brave') ? browsers.find(b => b.id.includes('brave') || b.name?.toLowerCase().includes('brave')) : null) ||
-            // 6. Last resort: first available browser
-            (browsers.length > 0 ? browsers[0] : null)
-        );
-    };
-
-    const selectedBrowser = findBrowser(value);
-
-    // Auto-correct stored ID if it's a legacy/stale value and we resolved a real browser
-    const effectiveValue = selectedBrowser ? selectedBrowser.id : value;
-
-    // Auto-correct stale/legacy saved ID (e.g. 'chrome' → 'google-chrome') when dropdown opens
-    const handleOpen = () => {
-        if (selectedBrowser && selectedBrowser.id !== value) {
-            onChange(selectedBrowser.id);
-        }
-        setOpen(o => !o);
-    };
-
-    return (
-        <div style={{ position: 'relative' }}>
-            {/* Main button */}
-            <div
-                onClick={handleOpen}
-                style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '12px 16px', backgroundColor: 'var(--color-bg-surface)',
-                    border: '1px solid var(--color-border)', borderRadius: 12, cursor: 'pointer',
-                    boxShadow: '0 2px 5px var(--color-bg-overlay), 0 1px 2px var(--color-bg-overlay)'
-                }}
-            >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {selectedBrowser?.logo ? (
-                        <img src={selectedBrowser.logo} alt={selectedBrowser.name} style={{ width: 24, height: 24, objectFit: 'contain' }} />
-                    ) : (
-                        <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <GlobeAltIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
-                        </div>
-                    )}
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                        {selectedBrowser?.name || (browsers.length > 0 ? browsers[0].name : 'Select Browser')}
-                    </span>
-                </div>
-                {/* Simple clean caret */}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{
-                    color: 'var(--color-text-tertiary)',
-                    flexShrink: 0,
-                    transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease-in-out'
-                }}>
-                    <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-            </div>
-
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        transition={{ duration: 0.15 }}
-                        style={{
-                            position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8,
-                            backgroundColor: 'var(--color-bg-elevated)', borderRadius: 12, overflow: 'hidden',
-                            boxShadow: '0 10px 25px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05)',
-                            zIndex: 50, border: '1px solid var(--color-border)', maxHeight: 250, overflowY: 'auto'
-                        }}
-                    >
-                        {browsers.length > 0 && (
-                            <div style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                                System Browsers
-                            </div>
-                        )}
-                        
-                        {browsers.map(b => (
-                            <div
-                                key={b.id}
-                                onClick={() => { onChange(b.id); setOpen(false); }}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
-                                    cursor: 'pointer', backgroundColor: effectiveValue === b.id ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = effectiveValue === b.id ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)'}
-                            >
-                                {b.logo ? (
-                                    <img src={b.logo} alt={b.name} style={{ width: 20, height: 20, objectFit: 'contain' }} />
-                                ) : (
-                                    <div style={{ width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <GlobeAltIcon width={12} height={12} style={{ color: 'var(--color-text-tertiary)' }} />
-                                    </div>
-                                )}
-                                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>{b.name}</span>
-                                {effectiveValue === b.id && <CheckIcon width={16} height={16} style={{ color: 'var(--color-success)' }} />}
-                            </div>
-                        ))}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            
-            {/* Backdrop for closing */}
-            {open && (
-                <div 
-                    onClick={() => setOpen(false)}
-                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
-                />
-            )}
-        </div>
-    );
-}
-
 // ── ToolSettingsSection ───────────────────────────────────────────────────────
 
 export function ToolSettingsSection() {
     const [config, setConfig] = useState<ToolSettingsConfig>(DEFAULT_TOOL_SETTINGS);
-    const [browsers, setBrowsers] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [extensionStatus, setExtensionStatus] = useState<any>(null);
     const [extensionMessage, setExtensionMessage] = useState<string>('');
     const [isPreparingMainProfileExtension, setIsPreparingMainProfileExtension] = useState(false);
+
+    const openLink = async (url: string) => {
+        try {
+            if ((window as any).electronAPI?.shell?.openExternal) {
+                await (window as any).electronAPI.shell.openExternal(url);
+            } else {
+                window.open(url, '_blank');
+            }
+        } catch (e) {
+            console.error('Failed to open link:', e);
+            window.open(url, '_blank');
+        }
+    };
 
     // Load config on mount
     useEffect(() => {
         const load = async () => {
             try {
                 const stored = await (window as any).electronAPI?.toolSettings?.get?.();
-                const availableBrowsers = await (window as any).electronAPI?.toolSettings?.getBrowsers?.();
-                if (availableBrowsers) {
-                    setBrowsers(availableBrowsers);
-                }
                 const navisExtensionStatus = await (window as any).electronAPI?.toolSettings?.getNavisExtensionStatus?.();
                 if (navisExtensionStatus) {
                     setExtensionStatus(navisExtensionStatus);
                 }
                 if (stored) {
-                    // Merge with defaults to ensure all keys (like browserUse) exist
                     const merged = {
                         ...DEFAULT_TOOL_SETTINGS,
                         ...stored,
                         webSearch: { ...DEFAULT_TOOL_SETTINGS.webSearch, ...(stored.webSearch || {}) },
                         webCrawl: { ...DEFAULT_TOOL_SETTINGS.webCrawl, ...(stored.webCrawl || {}) },
                         browserUse: { ...DEFAULT_TOOL_SETTINGS.browserUse, ...(stored.browserUse || {}) },
-                        navis: { ...DEFAULT_NAVIS_SETTINGS, ...(stored.navis || {}) },
+                        navis: { ...DEFAULT_NAVIS_SETTINGS, ...(stored.navis || {}), useIsolatedBrowser: false, useChromeProfile: true, automationMode: 'extension-first' },
                     };
                     setConfig(merged);
                 }
@@ -435,7 +559,13 @@ export function ToolSettingsSection() {
     };
 
     const handleNavisChange = async (navisConfig: NavisConfig) => {
-        const next = { ...config, navis: navisConfig };
+        const enforcedConfig: NavisConfig = {
+            ...navisConfig,
+            useIsolatedBrowser: false,
+            useChromeProfile: true,
+            automationMode: 'extension-first',
+        };
+        const next = { ...config, navis: enforcedConfig };
         setConfig(next);
         try {
             await (window as any).electronAPI?.toolSettings?.set?.(next);
@@ -454,13 +584,13 @@ export function ToolSettingsSection() {
 
     return (
         <div>
-            <ToolConfigPanel
-                title="Web Search"
-                icon={<MagnifyingGlassIcon width={18} height={18} />}
-                apiLabel="Exa API Key"
+            {/* ── Web Search Panel (Exa & Firecrawl) ──────────────────────── */}
+            <WebSearchConfigPanel
                 config={config.webSearch}
                 onChange={toolConfig => handleChange('webSearch', toolConfig)}
             />
+
+            {/* ── Website Crawl Panel ────────────────────────────────────── */}
             <ToolConfigPanel
                 title="Website Crawl"
                 icon={<GlobeAltIcon width={18} height={18} />}
@@ -468,6 +598,8 @@ export function ToolSettingsSection() {
                 config={config.webCrawl}
                 onChange={toolConfig => handleChange('webCrawl', toolConfig)}
             />
+
+            {/* ── Browser Research Panel ─────────────────────────────────── */}
             <ToolConfigPanel
                 title="Browser Research"
                 icon={<WrenchScrewdriverIcon width={18} height={18} />}
@@ -478,14 +610,156 @@ export function ToolSettingsSection() {
 
             {/* ── Navis (AI Browser) Panel ─────────────────────────────── */}
             <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16 }}>
-                {/* Header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', boxShadow: '0 2px 4px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-navis-icon-color)' }}>
-                        <ComputerDesktopIcon width={18} height={18} />
+                {/* Header with 3D computer icon */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                    <div style={{
+                        width: 38, height: 38, borderRadius: 10,
+                        backgroundColor: 'var(--color-bg-surface)',
+                        border: '1px solid var(--color-border)',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.04)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        overflow: 'hidden', padding: 4,
+                    }}>
+                        <img
+                            src="/3d-icons/computer-front-color.png"
+                            alt="Navis AI Browser"
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
                     </div>
                     <div>
                         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Navis (AI Browser)</h3>
                         <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '2px 0 0' }}>Autonomous browser research agent</p>
+                    </div>
+                </div>
+
+                {/* Extension Integration Card */}
+                <div style={{
+                    padding: 16,
+                    backgroundColor: 'var(--color-bg-base)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 14,
+                    marginBottom: 18,
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <Label>Browser Extension Integration</Label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 500, color: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-placeholder)', display: 'inline-block' }} />
+                            {extensionStatus?.connected ? 'Navis extension connected' : 'Extension not connected'}
+                        </div>
+                    </div>
+
+                    <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.55, margin: '0 0 14px' }}>
+                        Navis operates exclusively through the official browser extension, allowing it to navigate, research, and execute tasks directly in your real browser profile.
+                    </p>
+
+                    {/* Store Buttons (Chrome & Firefox) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                        {/* Chrome Button */}
+                        <button
+                            type="button"
+                            onClick={() => openLink('https://chromewebstore.google.com/detail/everfern-navis/pipkiglicdhcacieghoinohgfibhkmgf?hl=en&authuser=0')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 9,
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: 13,
+                                color: 'var(--color-text-primary)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                                transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                e.currentTarget.style.borderColor = 'var(--color-text-secondary)';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)';
+                                e.currentTarget.style.borderColor = 'var(--color-border)';
+                            }}
+                        >
+                            {/* Chrome Icon SVG */}
+                            <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+                                <circle cx="24" cy="24" r="22" fill="#d4d4d4" />
+                                <circle cx="24" cy="24" r="9" fill="var(--color-bg-surface)" />
+                                <circle cx="24" cy="24" r="5.5" fill="#a3a3a3" />
+                                <path d="M24 2C14 2 5.7 8.4 3 17l12.5.5L24 15a9 9 0 0 1 8.5 5H46A22 22 0 0 0 24 2z" fill="#b0b0b0" />
+                                <path d="M32.5 20A9 9 0 0 1 28 32.5L34 44A22 22 0 0 0 46 20H32.5z" fill="#c0c0c0" />
+                                <path d="M20 32.5A9 9 0 0 1 15.5 17L3 17a22 22 0 0 0 31 27l-6-11.5z" fill="#9a9a9a" />
+                            </svg>
+                            <span>Add to Chrome</span>
+                            <ArrowTopRightOnSquareIcon width={13} height={13} style={{ color: 'var(--color-text-tertiary)' }} />
+                        </button>
+
+                        {/* Firefox Button */}
+                        <button
+                            type="button"
+                            onClick={() => openLink('https://addons.mozilla.org/en-US/firefox/addon/everfern-navis/')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 9,
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                backgroundColor: 'var(--color-bg-surface)',
+                                border: '1px solid var(--color-border)',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: 13,
+                                color: 'var(--color-text-primary)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                                transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-subtle)';
+                                e.currentTarget.style.borderColor = 'var(--color-text-secondary)';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)';
+                                e.currentTarget.style.borderColor = 'var(--color-border)';
+                            }}
+                        >
+                            {/* Firefox Icon SVG */}
+                            <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+                                <circle cx="24" cy="24" r="22" fill="#c8c8c8" />
+                                <circle cx="24" cy="24" r="10" fill="var(--color-bg-surface)" />
+                                <path d="M24 4C13 4 4 13 4 24c0 3 .6 6 1.8 8.6L16 28c-.6-1.3-1-2.6-1-4 0-5 4-9 9-9 1.4 0 2.7.4 4 1l4.6-10.2C30 4.6 27 4 24 4z" fill="#a0a0a0" />
+                                <path d="M44 24c0-7-3.7-13-9.3-16.5L30 17.7c2.5 1.8 4 4.8 4 8.3 0 5.5-4.5 10-10 10-1.8 0-3.5-.5-5-1.4l-4.5 10.4C18 43.1 21 44 24 44c11 0 20-9 20-20z" fill="#888888" />
+                            </svg>
+                            <span>Add to Firefox</span>
+                            <ArrowTopRightOnSquareIcon width={13} height={13} style={{ color: 'var(--color-text-tertiary)' }} />
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button
+                            type="button"
+                            onClick={handlePrepareMainProfileExtension}
+                            disabled={isPreparingMainProfileExtension}
+                            style={{
+                                padding: '7px 12px',
+                                borderRadius: 8,
+                                border: '1px solid var(--color-border)',
+                                backgroundColor: isPreparingMainProfileExtension ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+                                color: 'var(--color-text-secondary)',
+                                fontSize: 11.5,
+                                fontWeight: 500,
+                                cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
+                            }}
+                        >
+                            {isPreparingMainProfileExtension ? 'Preparing folder...' : 'Prepare unpack folder (Dev)'}
+                        </button>
+                        {extensionMessage && (
+                            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                                {extensionMessage}
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -579,54 +853,6 @@ export function ToolSettingsSection() {
                     </div>
                 </div>
 
-                {/* Browser Selection */}
-                <div style={{ marginBottom: 18 }}>
-                    <Label>Browser</Label>
-
-                    <BrowserDropdown 
-                        browsers={browsers} 
-                        value={config.navis.selectedBrowserId}
-                        onChange={(val) => {
-                            handleNavisChange({ ...config.navis, useIsolatedBrowser: false, selectedBrowserId: val, useChromeProfile: true, automationMode: 'extension-first' });
-                        }}
-                    />
-
-                    <div style={{ marginTop: 8, padding: '0 4px' }}>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
-                            Use the installed Navis extension to control your real Chrome/Chromium or Firefox profile directly when connected.
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                            <button
-                                type="button"
-                                onClick={handlePrepareMainProfileExtension}
-                                disabled={isPreparingMainProfileExtension}
-                                style={{
-                                    padding: '9px 12px',
-                                    borderRadius: 10,
-                                    border: '1px solid var(--color-border)',
-                                    backgroundColor: isPreparingMainProfileExtension ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
-                                    color: 'var(--color-text-primary)',
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    cursor: isPreparingMainProfileExtension ? 'wait' : 'pointer',
-                                    boxShadow: '0 2px 5px rgba(0,0,0,0.06)',
-                                }}
-                            >
-                                {isPreparingMainProfileExtension ? 'Preparing install folder...' : 'Prepare install folder'}
-                            </button>
-                        </div>
-                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: extensionStatus?.connected ? 'var(--color-success)' : 'var(--color-text-placeholder)', display: 'inline-block' }} />
-                            {extensionStatus?.connected ? 'Navis extension connected' : 'Install the Navis extension to connect'}
-                        </div>
-                        {extensionMessage && (
-                            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                                {extensionMessage}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
                 {/* Max Steps Slider */}
                 <div>
                     <Label>Max Steps Per Task</Label>
@@ -652,13 +878,16 @@ export function ToolSettingsSection() {
                 </div>
             </div>
 
+            {/* ── PDF OCR Panel (auto-extract text when PDFs are attached) ── */}
+            <PdfOcrPanel />
+
             <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <WrenchScrewdriverIcon width={14} height={14} style={{ color: 'var(--color-text-tertiary)' }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)' }}>About Tool Modes</span>
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.6 }}>
-                    <strong>Local</strong> mode uses local isolated browser automation. <strong>API</strong> mode calls an external service (Exa for search, Firecrawl for crawl) using your API key. <strong>Navis Browser</strong> uses the installed Navis extension for Chrome/Chromium or Firefox profile control. <strong>Navis Vision</strong> is an on-demand fallback for pages where DOM refs are not enough. Changes take effect immediately.
+                    <strong>Web Search</strong> supports local scraping or external APIs (Exa and Firecrawl). <strong>Website Crawl</strong> extracts structured content via Firecrawl. <strong>Navis AI Browser</strong> operates directly via the installed Navis browser extension in Chrome or Firefox. Changes take effect immediately.
                 </p>
             </div>
         </div>
@@ -666,4 +895,3 @@ export function ToolSettingsSection() {
 }
 
 export default ToolSettingsSection;
-

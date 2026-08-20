@@ -4,8 +4,11 @@ import * as os from 'os';
 
 export interface ToolConfig {
   mode: 'local' | 'api';
+  provider?: 'exa' | 'firecrawl';
   headless: boolean;
   apiKey: string;
+  exaApiKey?: string;
+  firecrawlApiKey?: string;
   useVision?: boolean;
   useThinking?: boolean;
   maxActionsPerStep?: number;
@@ -23,11 +26,18 @@ export interface NavisConfig {
   automationMode: 'extension-first' | 'playwright';
 }
 
+export interface PdfOcrConfig {
+  engine: 'ocrmypdf' | 'tesseract' | 'paddleocr' | 'paddleocr-vl' | 'vision-send';
+  backend: 'auto' | 'openvino';
+  autoOcr: boolean;
+}
+
 export interface ToolSettingsConfig {
   webSearch: ToolConfig;
   webCrawl: ToolConfig;
   browserUse: ToolConfig;
   navis: NavisConfig;
+  pdfOcr: PdfOcrConfig;
 }
 
 export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
@@ -41,8 +51,14 @@ export const DEFAULT_NAVIS_SETTINGS: NavisConfig = {
   automationMode: 'extension-first',
 };
 
+export const DEFAULT_PDF_OCR_SETTINGS: PdfOcrConfig = {
+  engine: 'ocrmypdf',
+  backend: 'auto',
+  autoOcr: true,
+};
+
 export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
-  webSearch: { mode: 'local', headless: true, apiKey: '' },
+  webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
   webCrawl:  { mode: 'local', headless: true, apiKey: '' },
   browserUse: { 
     mode: 'local', 
@@ -54,6 +70,7 @@ export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
     maxFailures: 10
   },
   navis: { ...DEFAULT_NAVIS_SETTINGS },
+  pdfOcr: { ...DEFAULT_PDF_OCR_SETTINGS },
 };
 
 const SETTINGS_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-settings.json');
@@ -83,6 +100,7 @@ export class ToolSettingsStore {
         webCrawl: { ...DEFAULT_TOOL_SETTINGS.webCrawl, ...(loaded.webCrawl || {}) },
         browserUse: { ...DEFAULT_TOOL_SETTINGS.browserUse, ...(loaded.browserUse || {}) },
         navis: { ...DEFAULT_NAVIS_SETTINGS, ...(loaded.navis || {}) },
+        pdfOcr: { ...DEFAULT_PDF_OCR_SETTINGS, ...(loaded.pdfOcr || {}) },
       };
 
       // Ensure new Navis fields are populated
@@ -128,6 +146,11 @@ export class ToolSettingsStore {
   set(config: ToolSettingsConfig): void {
     this.writeFile(config);
     this.cache = config;
+  }
+
+  reset(): void {
+    this.cache = { ...DEFAULT_TOOL_SETTINGS };
+    this.writeFile(this.cache);
   }
 }
 

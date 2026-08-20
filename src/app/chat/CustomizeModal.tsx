@@ -151,13 +151,13 @@ export default function CustomizeModal({ isOpen, onClose }: CustomizeModalProps)
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.96, y: 12 }}
                         transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                        className="glossy"
                         style={{
                             width: '100%',
                             maxWidth: 620,
                             backgroundColor: 'var(--color-bg-surface, #ffffff)',
                             borderRadius: 22,
                             overflow: 'hidden',
-                            boxShadow: '0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px var(--color-border, #e5e5e5)',
                             display: 'flex',
                             flexDirection: 'column',
                             maxHeight: '88vh',

@@ -175,6 +175,11 @@ CODING TASK RULES:
 - Mark independent feature lanes with canParallelize=true and the same parallelGroup so the Coding Specialist can spawn workers.
 - Do not add approval/doc-writing steps unless the user explicitly asked for specs or documentation.
 
+PDF & DOCUMENT CREATION RULES:
+- For PDF generation, drafting, or compilation tasks, the step MUST specify writing a Python script using 'reportlab' (pre-installed in ~/.everfern/venv) or 'weasyprint', and executing it in the Linux VM (target: 'vm' with terminal_execute).
+- NEVER assign a tool named "pdf" or "synthesize_skill" for PDF generation. Always use code generation (write/edit) and terminal execution.
+- Deliverable presentation: After generating the output file, include a final step calling 'present_files' so the document card appears in the chat UI.
+
 Respond with ONLY the JSON object.`;
 
     for (let attempt = 1; attempt <= 2; attempt++) {

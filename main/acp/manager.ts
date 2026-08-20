@@ -39,6 +39,7 @@ export class ACPManager {
           provider: stored.provider as ProviderType,
           apiKey:   stored.apiKey,
           model:    stored.model,
+          customModel: stored.customModel,
           vlm:      stored.vlm,
           baseUrl:  stored.baseUrl,
         });

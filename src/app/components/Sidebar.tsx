@@ -575,26 +575,22 @@ export default function Sidebar({
                             <EllipsisHorizontalIcon width={16} height={16} />
                         </div>
 
-                        {/* Right-edge progressive blur & smooth gradient fade */}
-                        <div
-                            style={{
-                                position: "absolute",
-                                right: 0,
-                                top: 0,
-                                bottom: 0,
-                                width: 44,
-                                pointerEvents: "none",
-                                zIndex: 2,
-                                borderRadius: "0 10px 10px 0",
-                                background: isActive
-                                    ? "linear-gradient(to right, rgba(0,0,0,0) 0%, var(--sidebar-bg-selected) 80%)"
-                                    : "linear-gradient(to right, rgba(0,0,0,0) 0%, var(--sidebar-bg, #ffffff) 80%)",
-                                backdropFilter: "blur(4px)",
-                                WebkitBackdropFilter: "blur(4px)",
-                                maskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.5) 40%, black 100%)",
-                                WebkitMaskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.5) 40%, black 100%)",
-                            }}
-                        />
+                        {/* Right-edge smooth fade for active item */}
+                        {isActive && (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    width: 36,
+                                    pointerEvents: "none",
+                                    zIndex: 2,
+                                    borderRadius: "0 10px 10px 0",
+                                    background: "linear-gradient(to right, transparent 0%, var(--sidebar-bg-selected) 90%)",
+                                }}
+                            />
+                        )}
                     </>
                 )}
             </div>
@@ -610,6 +606,7 @@ export default function Sidebar({
                 initial={false}
                 animate={{ width: isOpen ? sidebarWidth : collapsedWidth }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="glossy-no-border"
                 style={{
                     position: "fixed",
                     left: 0,
@@ -673,7 +670,7 @@ export default function Sidebar({
                     backgroundColor: "var(--sidebar-bg)"
                 } as any}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
+                        <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern" width={48} height={48} priority loading="eager" style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }} />
                         {isOpen && (
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--sidebar-brand-text)", fontFamily: 'var(--font-sans)' }}>EverFern</span>

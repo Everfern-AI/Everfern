@@ -140,6 +140,7 @@ export interface AIClientConfig {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  customModel?: string;
   temperature?: number;
   maxTokens?: number;
   /** Decoupled Vision AI configuration */
@@ -397,7 +398,7 @@ const GEMINI_COMPUTER_USE_TOOLS = [
 // ── AIClient ─────────────────────────────────────────────────────────
 
 export class AIClient {
-  private config: Required<Omit<AIClientConfig, 'vlm'>> & { vlm?: AIClientConfig['vlm'] };
+  private config: Required<Omit<AIClientConfig, 'vlm' | 'customModel'>> & { vlm?: AIClientConfig['vlm']; customModel?: string };
   private openaiClient?: OpenAI; // For NVIDIA NIM and DeepSeek
 
   constructor(config: AIClientConfig) {
@@ -440,6 +441,7 @@ export class AIClient {
       apiKey: finalApiKey,
       baseUrl: finalBaseUrl,
       model: normalizedModel ?? DEFAULT_MODELS[config.provider],
+      customModel: config.customModel,
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
       vlm: config.vlm,
@@ -2840,6 +2842,62 @@ export class AIClient {
     });
   }
 
+  private _formatOllamaTools(tools: any[]): any[] {
+    const sanitizeParams = (rawParams: any): any => {
+      if (!rawParams || typeof rawParams !== 'object') {
+        return { type: 'object', properties: {}, required: [] };
+      }
+
+      const clean: any = {
+        type: rawParams.type || 'object',
+        properties: {},
+        required: Array.isArray(rawParams.required) ? [...rawParams.required] : []
+      };
+
+      if (rawParams.properties && typeof rawParams.properties === 'object') {
+        for (const [key, val] of Object.entries(rawParams.properties)) {
+          if (val && typeof val === 'object') {
+            const propCopy: any = { ...(val as any) };
+            if (typeof propCopy.required === 'boolean') {
+              if (propCopy.required && !clean.required.includes(key)) {
+                clean.required.push(key);
+              }
+              delete propCopy.required;
+            } else if (Array.isArray(propCopy.required)) {
+              delete propCopy.required;
+            }
+            if (propCopy.properties && typeof propCopy.properties === 'object') {
+              propCopy.properties = sanitizeParams(propCopy).properties;
+            }
+            clean.properties[key] = propCopy;
+          } else {
+            clean.properties[key] = val;
+          }
+        }
+      }
+
+      if (!Array.isArray(clean.required)) {
+        clean.required = [];
+      }
+
+      return clean;
+    };
+
+    return tools.map(t => {
+      const rawFunc = (t && (t as any).type === 'function' && (t as any).function)
+        ? (t as any).function
+        : t;
+      return {
+        type: 'function',
+        function: {
+          name: rawFunc.name,
+          description: rawFunc.description || '',
+          parameters: sanitizeParams(rawFunc.parameters)
+        }
+      };
+    });
+  }
+
   private async _ollamaChat(req: ChatRequest): Promise<ChatResponse> {
     const isStreaming = !!req.onStreamChunk;
     const messages = this._mapOllamaMessages(req.messages);
@@ -2871,19 +2929,7 @@ export class AIClient {
 
     // Pass tools to Ollama if provided
     if (req.tools && req.tools.length > 0) {
-      body['tools'] = req.tools.map(t => {
-        if (t && (t as any).type === 'function' && (t as any).function) {
-          return t;
-        }
-        return {
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters
-          }
-        };
-      });
+      body['tools'] = this._formatOllamaTools(req.tools);
     }
 
     const headers = this._ollamaHeaders;
@@ -3038,19 +3084,7 @@ export class AIClient {
 
     // Pass tools to Ollama if provided (mirrors non-streaming path)
     if (req.tools && req.tools.length > 0) {
-      body['tools'] = req.tools.map(t => {
-        if (t && (t as any).type === 'function' && (t as any).function) {
-          return t;
-        }
-        return {
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters
-          }
-        };
-      });
+      body['tools'] = this._formatOllamaTools(req.tools);
     }
 
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {

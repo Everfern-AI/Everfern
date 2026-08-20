@@ -9,6 +9,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
+ipcRenderer.setMaxListeners(200);
+
 const sentLocalExecutionResponses = new Set<string>();
 const listenersMap = new Map<any, any>();
 
@@ -74,6 +76,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPlatform:    () => ipcRenderer.invoke('system:get-platform'),
     openFilePicker: (options?: any) => ipcRenderer.invoke('system:open-file-picker', options),
     openFolderPicker: () => ipcRenderer.invoke('system:open-folder-picker'),
+    ocrStatus: () => ipcRenderer.invoke('system:ocr-status'),
+    ocrInstall: () => ipcRenderer.invoke('system:ocr-install'),
+    onOcrProgress: (cb: (data: { percent: number; step: string; detail: string }) => void) => {
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('system:ocr-progress', handler);
+      return () => { ipcRenderer.removeListener('system:ocr-progress', handler); };
+    },
+    ocrPdf: (params: { pdfPath: string; engine?: string; backend?: string; installIfMissing?: boolean }) => ipcRenderer.invoke('system:ocr-pdf', params),
+    pdfPages: (params: { pdfPath: string; maxPages?: number; installIfMissing?: boolean }) => ipcRenderer.invoke('system:pdf-pages', params),
     wipeAccount:    () => ipcRenderer.invoke('system:wipe-account'),
     getPermissionStatus: () => ipcRenderer.invoke('permissions:status'),
     grantPermission:     () => ipcRenderer.invoke('permissions:grant'),
@@ -104,6 +115,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
     checkEnvironmentDependencies: () => ipcRenderer.invoke('system:checkEnvironmentDependencies'),
     setupEnvironmentDependencies: () => ipcRenderer.invoke('system:setupEnvironmentDependencies'),
+    onVMSetupLog: (cb: (data: { timestamp: string; message: string; level?: 'info' | 'success' | 'warn' | 'error'; step?: number }) => void) => {
+      ipcRenderer.on('system:vm-setup-log', (_e, data) => cb(data));
+    },
+    removeVMSetupLogListeners: () => {
+      ipcRenderer.removeAllListeners('system:vm-setup-log');
+    },
     toHostPath:     (pathStr: string) => ipcRenderer.invoke('system:to-host-path', pathStr),
     getVersion:     () => ipcRenderer.invoke('system:get-version'),
     detectHardware: () => ipcRenderer.invoke('system:detect-hardware'),

@@ -57,34 +57,20 @@ export class TelemetryLogger {
     if (this.spinTimer) {
       clearInterval(this.spinTimer);
       this.spinTimer = null;
-      // Clear line completely
-      process.stdout.write('\r\x1b[K');
     }
   }
 
-  private startSpinner(task: string) {
-    if (this.silent) return;
-    this.stopSpinner();
-    this.currentTask = task;
-    
-    this.spinTimer = setInterval(() => {
-      process.stdout.write(`\r\x1b[K\x1b[36m${this.spinnerFrames[this.currentFrame]}\x1b[0m \x1b[3m${this.currentTask}\x1b[0m`);
-      this.currentFrame = (this.currentFrame + 1) % this.spinnerFrames.length;
-    }, 80);
+  private startSpinner(_task: string) {
+    // Raw terminal spinner disabled to prevent stdout corruption and race conditions in concurrent/Electron runners
   }
 
-  public updateSpinner(task: string) {
-    if (this.silent) return;
-    this.startSpinner(task);
+  public updateSpinner(_task: string) {
+    // No-op
   }
 
-  private printLog(msg: string, resumeSpinnerTask?: string) {
-    this.stopSpinner();
+  private printLog(msg: string, _resumeSpinnerTask?: string) {
     if (!this.silent) {
       console.log(msg);
-    }
-    if (resumeSpinnerTask) {
-      this.startSpinner(resumeSpinnerTask);
     }
   }
 

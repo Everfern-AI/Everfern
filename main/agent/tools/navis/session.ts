@@ -4,7 +4,7 @@
  * Manages a single Playwright browser lifecycle for the Navis agent.
  */
 
-import { chromium as pwChromium, firefox as pwFirefox, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -12,6 +12,20 @@ import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
 import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
+
+let pwChromium: any = null;
+let pwFirefox: any = null;
+try {
+  const pw = require('playwright');
+  pwChromium = pw.chromium;
+  pwFirefox = pw.firefox;
+} catch {
+  try {
+    const pwCore = require('playwright-core');
+    pwChromium = pwCore.chromium;
+    pwFirefox = pwCore.firefox;
+  } catch {}
+}
 
 const chromium = pwChromium;
 

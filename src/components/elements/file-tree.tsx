@@ -1,7 +1,7 @@
 "use client";
 
 import React, { type ComponentProps } from "react";
-import { ChevronDownIcon, FileCode, FolderIcon } from "lucide-react";
+import { FileCode, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FileTreeNode {
@@ -45,97 +45,64 @@ export function FileTree({
   return (
     <div
       data-slot="file-tree"
-      className={cn(
-        "flex w-full max-w-lg flex-col gap-2 rounded-2xl p-3.5 border shadow-sm select-none my-2",
-        className
-      )}
-      style={{
-        backgroundColor: "var(--color-bg-surface, var(--color-bg-base))",
-        borderColor: "var(--color-border)",
-      }}
+      className={cn("flex w-full max-w-full flex-col gap-1.5 my-2 select-none", className)}
       {...props}
     >
       {/* Header Summary */}
-      <div className="flex items-baseline justify-between px-1">
-        <span className="text-[13px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+      <div className="flex items-baseline justify-between py-0.5">
+        <span className="text-[13.5px] font-medium text-foreground/75">
           {fileCount} {fileCount === 1 ? "file" : "files"} changed
         </span>
         <span className="font-mono text-xs tabular-nums flex items-center gap-1.5">
           {totalAdditions > 0 && (
-            <span style={{ color: "var(--color-success, #10b981)" }}>
-              +{totalAdditions}
-            </span>
+            <span className="text-emerald-500 font-medium">+{totalAdditions}</span>
           )}
           {totalDeletions > 0 && (
-            <span style={{ color: "var(--color-error, #ef4444)" }}>
-              −{totalDeletions}
-            </span>
+            <span className="text-red-400 font-medium">−{totalDeletions}</span>
           )}
         </span>
       </div>
 
       {/* Tree rows */}
-      <div className="flex flex-col gap-0.5">
-        {displayedNodes.map((node) => {
+      <div className="flex flex-col gap-0.5 pl-2 border-l border-border/25 ml-1">
+        {displayedNodes.map((node, idx) => {
           const isFile = node.kind === "file";
 
           return (
             <div
-              key={node.path}
+              key={`${node.kind}-${node.path}-${idx}`}
               onClick={() => {
                 if (isFile && onFileClick) {
                   onFileClick(node);
                 }
               }}
               className={cn(
-                "fade-in slide-in-from-left-1 animate-in fill-mode-both flex items-center gap-2 rounded-lg px-1.5 py-1 text-[13px] transition-colors duration-150",
-                isFile && onFileClick && "cursor-pointer hover:opacity-85"
+                "flex items-center gap-2 py-0.5 text-[13px] transition-colors",
+                isFile && onFileClick ? "cursor-pointer hover:opacity-80" : ""
               )}
               style={{
-                paddingInlineStart: `${0.25 + node.depth * 0.9}rem`,
+                paddingInlineStart: `${node.depth * 0.75}rem`,
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--color-bg-subtle)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
             >
               {!isFile ? (
                 <>
-                  <ChevronDownIcon
-                    className="size-3 shrink-0 opacity-40"
-                    style={{ color: "var(--color-text-tertiary)" }}
-                  />
-                  <FolderIcon
-                    className="size-3.5 shrink-0 opacity-70"
-                    style={{ color: "var(--color-text-secondary)" }}
-                  />
-                  <span
-                    className="font-medium min-w-0 flex-1 truncate text-[12.5px]"
-                    style={{ color: "var(--color-text-secondary)" }}
-                  >
+                  <Folder className="size-3.5 shrink-0 text-foreground/40" />
+                  <span className="font-medium text-foreground/60 text-[12.5px] truncate">
                     {node.name}
                   </span>
                 </>
               ) : (
                 <>
-                  <FileCode
-                    className="ms-3 size-3.5 shrink-0 opacity-60"
-                    style={{ color: "var(--color-text-tertiary)" }}
-                  />
-                  <span
-                    className="min-w-0 flex-1 truncate text-[12.5px]"
-                    style={{ color: "var(--color-text-primary)" }}
-                  >
+                  <FileCode className="size-3.5 shrink-0 text-foreground/45" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
                     {node.name}
                   </span>
                   <span className="font-mono text-[11px] shrink-0 tabular-nums flex items-center gap-1">
                     {node.additions !== undefined && node.additions > 0 && (
-                      <span style={{ color: "var(--color-success, #10b981)" }}>
-                        +{node.additions}
-                      </span>
+                      <span className="text-emerald-500">+{node.additions}</span>
                     )}
                     {node.deletions !== undefined && node.deletions > 0 && (
-                      <span style={{ color: "var(--color-error, #ef4444)" }}>
-                        −{node.deletions}
-                      </span>
+                      <span className="text-red-400">−{node.deletions}</span>
                     )}
                   </span>
                 </>

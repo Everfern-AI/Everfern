@@ -139,31 +139,159 @@ c.line(100, height - 140, 400, height - 140)
 c.save()
 ```
 
-#### Create PDF with Multiple Pages
+#### Production-Grade Self-Contained Report Template
 ```python
+import os
+import sys
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
 
-doc = SimpleDocTemplate("report.pdf", pagesize=letter)
-styles = getSampleStyleSheet()
-story = []
+def build_pdf_report(output_pdf_path: str):
+    # Ensure parent directory exists
+    os.makedirs(os.path.dirname(os.path.abspath(output_pdf_path)), exist_ok=True)
+    
+    doc = SimpleDocTemplate(
+        output_pdf_path,
+        pagesize=letter,
+        leftMargin=54,
+        rightMargin=54,
+        topMargin=54,
+        bottomMargin=54
+    )
+    
+    # Page background & border styling callback
+    def draw_background(canvas, doc):
+        canvas.saveState()
+        # Cream background fill
+        canvas.setFillColor(colors.HexColor('#FCFBF7'))
+        canvas.rect(0, 0, doc.pagesize[0], doc.pagesize[1], stroke=0, fill=1)
+        # Top accent header line
+        canvas.setFillColor(colors.HexColor('#2D5A27'))
+        canvas.rect(54, doc.pagesize[1] - 40, doc.pagesize[0] - 108, 3, stroke=0, fill=1)
+        # Footer page number
+        canvas.setFont('Helvetica', 9)
+        canvas.setFillColor(colors.HexColor('#718096'))
+        canvas.drawRightString(doc.pagesize[0] - 54, 35, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
 
-# Add content
-title = Paragraph("Report Title", styles['Title'])
-story.append(title)
-story.append(Spacer(1, 12))
+    styles = getSampleStyleSheet()
+    
+    # Custom Typography Hierarchy
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=24,
+        leading=28,
+        textColor=colors.HexColor('#1A202C'),
+        alignment=TA_LEFT,
+        spaceAfter=8
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubtitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=12,
+        leading=16,
+        textColor=colors.HexColor('#4A5568'),
+        spaceAfter=20
+    )
+    h1_style = ParagraphStyle(
+        'Heading1_Custom',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=15,
+        leading=19,
+        textColor=colors.HexColor('#2D5A27'),
+        spaceBefore=14,
+        spaceAfter=8,
+        keepWithNext=True
+    )
+    body_style = ParagraphStyle(
+        'Body_Custom',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=15,
+        textColor=colors.HexColor('#2D3748'),
+        alignment=TA_LEFT,
+        spaceAfter=8
+    )
+    bullet_style = ParagraphStyle(
+        'Bullet_Custom',
+        parent=body_style,
+        leftIndent=15,
+        bulletIndent=5,
+        spaceAfter=4
+    )
 
-body = Paragraph("This is the body of the report. " * 20, styles['Normal'])
-story.append(body)
-story.append(PageBreak())
+    story = []
+    
+    # Header & Meta
+    story.append(Paragraph("Global Warming: Causes, Effects & Solutions", title_style))
+    story.append(Paragraph("A Comprehensive Synthesis & Policy Brief", subtitle_style))
+    story.append(Spacer(1, 10))
 
-# Page 2
-story.append(Paragraph("Page 2", styles['Heading1']))
-story.append(Paragraph("Content for page 2", styles['Normal']))
+    # Executive Summary Card (Table)
+    summary_text = Paragraph(
+        "<b>Executive Summary:</b> Human-induced climate change is causing widespread disruptions to ecological and human systems. Rapid decarbonization, reforestation, and renewable energy adoption remain the primary levers for limiting warming to 1.5°C.",
+        body_style
+    )
+    summary_table = Table([[summary_text]], colWidths=[504])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F0F4EF')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#CBD5E0')),
+        ('PADDING', (0, 0), (-1, -1), 12),
+        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 15))
 
-# Build PDF
-doc.build(story)
+    # Section 1
+    story.append(Paragraph("1. Primary Drivers & Causes", h1_style))
+    story.append(Paragraph("Atmospheric greenhouse gas concentrations have reached record highs primarily driven by:", body_style))
+    story.append(Paragraph("• <b>Fossil Fuel Combustion:</b> Power generation, industrial manufacturing, and transport.", bullet_style))
+    story.append(Paragraph("• <b>Deforestation:</b> Loss of carbon sinks through land clearing for agriculture.", bullet_style))
+    story.append(Paragraph("• <b>Industrial Agriculture:</b> Methane and nitrous oxide emissions from livestock and fertilizers.", bullet_style))
+    story.append(Spacer(1, 10))
+
+    # Section 2: Data Comparison Table
+    story.append(Paragraph("2. Emission Impact Matrix", h1_style))
+    table_data = [
+        [Paragraph("<b>Sector</b>", body_style), Paragraph("<b>Global Share (%)</b>", body_style), Paragraph("<b>Primary Gas</b>", body_style)],
+        [Paragraph("Energy & Electricity", body_style), Paragraph("34%", body_style), Paragraph("CO<sub>2</sub>", body_style)],
+        [Paragraph("Industry", body_style), Paragraph("24%", body_style), Paragraph("CO<sub>2</sub> / HFCs", body_style)],
+        [Paragraph("Agriculture & Forestry", body_style), Paragraph("22%", body_style), Paragraph("CH<sub>4</sub> / N<sub>2</sub>O", body_style)],
+        [Paragraph("Transport", body_style), Paragraph("15%", body_style), Paragraph("CO<sub>2</sub>", body_style)],
+    ]
+    data_table = Table(table_data, colWidths=[200, 150, 154])
+    data_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(data_table)
+    story.append(Spacer(1, 15))
+
+    # Section 3
+    story.append(Paragraph("3. Actionable Solutions & Pathways", h1_style))
+    story.append(Paragraph("Key strategies identified across IPCC and international frameworks:", body_style))
+    story.append(Paragraph("1. <b>Clean Electrification:</b> Scaling solar, wind, and battery storage.", bullet_style))
+    story.append(Paragraph("2. <b>Energy Efficiency:</b> Upgrading industrial systems, insulation, and smart grids.", bullet_style))
+    story.append(Paragraph("3. <b>Nature-Based Carbon Removal:</b> Reforestation and soil conservation.", bullet_style))
+
+    # Build Document
+    doc.build(story, onFirstPage=draw_background, onLaterPages=draw_background)
+    print(f"[Success] PDF generated at: {output_pdf_path}")
+
+if __name__ == '__main__':
+    target = sys.argv[1] if len(sys.argv) > 1 else "output_report.pdf"
+    build_pdf_report(target)
 ```
 
 #### Subscripts and Superscripts
@@ -257,6 +385,51 @@ for i, image in enumerate(images):
 print(text)
 ```
 
+### EverFern OCR: When a PDF Is Attached
+
+EverFern automatically extracts text from an **attached PDF** before it reaches the model. Depending on the user's **PDF OCR** setting (`Settings → Linux VM → PDF OCR`), the prompt will contain one of:
+
+- **PaddleOCR / PaddleOCR-VL:** a block like
+  ```
+  [Extracted text via PaddleOCR:]
+  <recognized text>
+  ```
+- **Vision Send:** the prompt includes each PDF page as an **image**.
+
+**Rules:**
+1. If a PDF's extracted text was already provided in the prompt, use it directly — do **not** re-OCR the same file. If it looks truncated, mention it rather than silently guessing. (Page screenshots under Vision Send are capped at 30 pages.)
+2. If a PDF has **no** extracted text (or you need a fresh scan / the OCR errored), run OCR yourself:
+   - **Text-layer PDFs:** prefer `pdftotext` or `pdfplumber` (`page.extract_text()`) — fast and exact.
+   - **Scanned/image-only PDFs:** use PaddleOCR via the EverFern OCR venv.
+3. PaddleOCR environment: the app installs PaddleOCR + OpenVINO into `~/.everfern/ocr-venv`. It runs on the **Windows host**, not the Linux VM. To invoke it:
+   ```bash
+   # Windows host (via execute_pwsh with local=true):
+   & "$HOME\.everfern\ocr-venv\Scripts\python.exe" -c "from paddleocr import PaddleOCR; o=PaddleOCR(use_doc_orientation_classify=False,use_doc_unwarping=False,use_textline_orientation=True,lang='en'); print(o.predict('file.pdf') and [r['rec_texts'] for r in o.predict('file.pdf')] if hasattr(o,'predict') else [x[1][0] for x in (o.ocr('file.pdf',cls=True) or [[]])[0]])"
+   ```
+   The simplest reliable path is a small script:
+   ```python
+   from pathlib import Path
+   import fitz, numpy as np
+   from paddleocr import PaddleOCR
+   ocr = PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=True, lang='en')
+   doc = fitz.open("document.pdf")
+   out = []
+   for page in doc:
+       pix = page.get_pixmap(dpi=150)
+       img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+       if pix.n == 4:
+           img = img[:, :, :3]
+       for r in ocr.predict(img):
+           out.extend(r.get("rec_texts", []))
+   print("\n".join(out))
+   ```
+   Save it and run with the OCR venv:
+   ```bash
+   # Windows:  "$HOME\.everfern\ocr-venv\Scripts\python.exe" ocr.py
+   # VM fallback (Linux ~/.everfern/venv): python3 ocr.py  # with pytesseract/convert_from_path
+   ```
+4. If neither PaddleOCR nor pytesseract is available, tell the user the OCR engine isn't installed (Settings → Linux VM → PDF OCR → Install OCR Dependencies) rather than producing empty output.
+
 ### Add Watermark
 ```python
 from pypdf import PdfReader, PdfWriter
@@ -311,7 +484,7 @@ with open("encrypted.pdf", "wb") as output:
 | Extract tables | pdfplumber | `page.extract_tables()` |
 | Create PDFs | reportlab | Canvas or Platypus |
 | Command line merge | qpdf | `qpdf --empty --pages ...` |
-| OCR scanned PDFs | pytesseract | Convert to image first |
+| OCR scanned PDFs | EverFern auto-OCR / pytesseract | Prefer attached extracted text; else PaddleOCR or pytesseract |
 | Fill PDF forms | pdf-lib or pypdf (see FORMS.md) | See FORMS.md |
 
 ## Next Steps
