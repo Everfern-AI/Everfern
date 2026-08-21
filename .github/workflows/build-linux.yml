@@ -8,6 +8,8 @@ on:
     branches:
       - main
       - 'codenrust/**'
+      - 'fix/**'
+      - 'feat/**'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -36,14 +38,6 @@ jobs:
           cache: 'npm'
 
       # ── 3. System dependencies ─────────────────────────────────────────────
-      # libglib2.0-dev  → glib-object.h (required by sharp / libvips headers)
-      # pkg-config      → resolves correct -I include paths for native builds
-      # libvips-dev     → sharp system libvips (fallback, we use bundled below)
-      # libcairo2-dev / libpango1.0-dev / librsvg2-dev → canvas module
-      # libx11-dev / libxtst-dev → uiohook-napi / @jitsi/robotjs (X11 input)
-      # libxkbfile-dev  → keyboard symbol lookup (robotjs)
-      # libfuse2        → electron-builder AppImage packaging (Ubuntu 22)
-      # libfuse2t64     → same but Ubuntu 24 renames the package
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update -y
@@ -78,13 +72,6 @@ jobs:
         run: npm install
 
       # ── 5. Rebuild native modules for Electron ─────────────────────────────
-      # @electron/rebuild is in devDependencies and is the correct tool for this.
-      # It automatically discovers all native modules and rebuilds them against
-      # the right Electron ABI headers.
-      #
-      # SHARP_IGNORE_GLOBAL_LIBVIPS=1 → force sharp to use its own bundled
-      # libvips (inside @img/sharp-libvips-linux-x64) instead of system libvips.
-      # This avoids the -I/glib-2.0 path resolution bug when building from source.
       - name: Rebuild native modules for Electron
         run: npm run rebuild:electron
 
@@ -102,7 +89,20 @@ jobs:
       # APPIMAGE_EXTRACT_AND_RUN=1 is required on CI runners that don't have
       # FUSE kernel support (GitHub Actions runs inside a container).
       - name: Package — AppImage, deb, rpm
-        run: npx electron-builder --linux --publish never
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            echo "[Attempt $i/3] Running electron-builder..."
+            npx electron-builder --linux --publish never && break || {
+              if [ $i -lt 3 ]; then
+                echo "[Warning] electron-builder encountered an error (e.g. transient 502). Retrying in 15s..."
+                sleep 15
+              else
+                echo "[Error] electron-builder failed after 3 attempts."
+                exit 1
+              fi
+            }
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPIMAGE_EXTRACT_AND_RUN: '1'

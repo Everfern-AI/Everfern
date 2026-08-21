@@ -101,7 +101,20 @@ jobs:
         run: npm run build:electron-ts
 
       - name: Build and Publish
-        run: npx electron-builder ${{ matrix.builder_args }} --publish always
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            echo "[Attempt $i/3] Running electron-builder..."
+            npx electron-builder ${{ matrix.builder_args }} --publish always && break || {
+              if [ $i -lt 3 ]; then
+                echo "[Warning] electron-builder encountered an error (e.g. transient 502). Retrying in 15s..."
+                sleep 15
+              else
+                echo "[Error] electron-builder failed after 3 attempts."
+                exit 1
+              fi
+            }
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
