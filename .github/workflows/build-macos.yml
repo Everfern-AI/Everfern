@@ -1,0 +1,101 @@
+name: Build macOS
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+      - 'codenrust/**'
+      - 'fix/**'
+      - 'feat/**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload artifacts to GitHub Release'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  build-macos:
+    name: Build macOS (${{ matrix.target_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            target_name: Apple Silicon (arm64)
+            builder_flag: --arm64
+          - os: macos-13
+            arch: x64
+            target_name: Intel (x64)
+            builder_flag: --x64
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ─────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # ── 3. System dependencies ─────────────────────────────────────────────
+      - name: Install macOS Dependencies
+        run: brew install vips
+
+      # ── 4. Install npm dependencies ────────────────────────────────────────
+      - name: Install Node modules
+        run: npm install
+
+      # ── 5. Rebuild native modules for Electron ─────────────────────────────
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild:electron
+
+      # ── 6. Build Next.js frontend ──────────────────────────────────────────
+      - name: Build Next.js frontend
+        run: npm run build:next
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      # ── 7. Compile Electron TypeScript ─────────────────────────────────────
+      - name: Compile Electron TypeScript
+        run: npm run build:electron-ts
+
+      # ── 8. Package with electron-builder ───────────────────────────────────
+      - name: Package — DMG & ZIP (${{ matrix.arch }})
+        run: npx electron-builder --macos ${{ matrix.builder_flag }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 9. Upload build artifacts ──────────────────────────────────────────
+      - name: Upload macOS artifacts (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: EverFern-macOS-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      # ── 10. Attach to GitHub Release (tag pushes or manual trigger) ─────────
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*.zip
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
