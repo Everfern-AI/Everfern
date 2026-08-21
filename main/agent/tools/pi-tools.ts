@@ -87,7 +87,10 @@ function stripAnsi(str: string): string {
 }
 
 export function performSmartReplace(content: string, oldString: string, newString: string): { success: boolean; updatedContent: string; error?: string } {
-  if (!oldString) return { success: false, updatedContent: content, error: 'Empty oldString provided' };
+  if (!oldString) {
+    console.error('[pi-tools] ❌ performSmartReplace: Empty oldString provided');
+    return { success: false, updatedContent: content, error: 'Empty oldString provided. To create a new file or overwrite full content, use the write tool instead.' };
+  }
   if (content.includes(oldString)) {
     return { success: true, updatedContent: content.replace(oldString, newString) };
   }
@@ -543,8 +546,8 @@ function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<s
         continue;
       }
 
-      // If it is already a WSL localhost path, just normalize backslashes and do not double-translate
-      if (p.startsWith('//wsl.localhost/') || p.startsWith('//wsl/')) {
+      // If it is already a UNC path (e.g. \\wsl.localhost\..., \\wsl$\..., \\server\share\...), just normalize backslashes and do not double-translate
+      if (p.startsWith('//')) {
         translated[key] = p.replace(/\//g, '\\');
         continue;
       }
@@ -1168,8 +1171,29 @@ function adaptTool(
           outputText = JSON.stringify(result);
         }
 
-        if (result.isError) {
-          return { success: false, output: stripAnsi(outputText), error: stripAnsi(outputText) };
+        const isResultError = result.isError === true || 
+          result.success === false || 
+          !!result.error || 
+          (typeof outputText === 'string' && (
+            outputText.trim().startsWith('Error:') || 
+            outputText.includes('Error: None of the') || 
+            outputText.includes('Empty oldString provided')
+          ));
+
+        if (isResultError) {
+          const cleanOutput = stripAnsi(outputText).trim();
+          const targetPath = (args.path || args.TargetFile || args.filePath || args.file || '') as string;
+          console.error(`\n==================================================`);
+          console.error(`[pi-tools] ❌ ${name.toUpperCase()} TOOL EXECUTION FAILED`);
+          if (targetPath) console.error(`[pi-tools] ❌ Path: ${targetPath}`);
+          console.error(`[pi-tools] ❌ Error: ${cleanOutput}`);
+          console.error(`==================================================\n`);
+          return { 
+            success: false, 
+            output: cleanOutput, 
+            error: result.error || cleanOutput,
+            data: { error: cleanOutput, ...(result.data || {}) } 
+          };
         }
 
         if (name === 'write') {
@@ -1195,10 +1219,12 @@ function adaptTool(
               await rollbackManager.initialize();
               const { taskId } = currentAgentContext;
               if (!taskId) {
+                console.error(`[pi-tools] ❌ Revert error: requires an active agent task context`);
                 return { success: false, output: 'Error: revert requires an active agent task context', error: 'no_task_context' };
               }
               const snapshots = await rollbackManager.getFileSnapshotsForPath(taskId, editedPath);
               if (!snapshots.length) {
+                console.error(`[pi-tools] ❌ Revert error: No tracked snapshots found for ${editedPath}`);
                 return { success: false, output: `Error: No tracked snapshots found for ${editedPath} to revert`, error: 'no_snapshots' };
               }
               // Restore from the latest snapshot's contentBefore
@@ -1212,9 +1238,11 @@ function adaptTool(
                   data: { path: editedPath, reverted: true, snapshotId: latest.id, contentAfter: revertedContent }
                 };
               } else {
+                console.error(`[pi-tools] ❌ Failed to revert ${editedPath}: ${result.error}`);
                 return { success: false, output: `Error: Failed to revert ${editedPath}: ${result.error}`, error: 'revert_failed' };
               }
             } catch (revertErr: any) {
+              console.error(`[pi-tools] ❌ Revert error for ${editedPath}:`, revertErr);
               return { success: false, output: `Error: Revert failed for ${editedPath}: ${revertErr.message}`, error: 'revert_error' };
             }
           }
@@ -1512,9 +1540,14 @@ async function withRollbackTracking(
             data: { path: filePath, appliedCount, totalChunks: edits.length, contentBefore, contentAfter: currentContent }
           };
         } else {
+          const errMsg = `Error: None of the ${edits.length} edit chunks could be applied to ${filePath}.\n${errors.join('\n')}\nTo create a new file or replace the entire file, use the write tool instead. If editing, provide the exact existing content in TargetContent / oldString.`;
+          console.error(`\n==================================================`);
+          console.error(`[pi-tools] ❌ EDIT FAILED (MULTI-CHUNK) FOR ${filePath}:`);
+          console.error(`[pi-tools] ❌ ${errMsg}`);
+          console.error(`==================================================\n`);
           result = {
             success: false,
-            output: `Error: None of the ${edits.length} edit chunks could be applied to ${filePath}.\n${errors.join('\n')}`,
+            output: errMsg,
             error: 'edit_failed'
           };
         }
@@ -1526,7 +1559,8 @@ async function withRollbackTracking(
           result = { success: false, output: execErr.message || String(execErr), error: 'exec_error' };
         }
 
-        if ((!result || !result.success) && contentBefore) {
+        const isStandardError = !result || !result.success || (result as any).isError;
+        if (isStandardError && contentBefore) {
           const oldStr = (args.oldString || args.old_string || args.TargetContent || args.search || '') as string;
           const newStr = (args.newString || args.new_string || args.ReplacementContent || args.replace || '') as string;
           if (oldStr) {
@@ -1538,7 +1572,29 @@ async function withRollbackTracking(
                 output: stripAnsi(`Success: edited file via smart replace\nPath: ${filePath}`),
                 data: { path: filePath, oldString: oldStr, newString: newStr, contentBefore, contentAfter: smartRes.updatedContent }
               };
+            } else {
+              const errMsg = `Error: Edit failed for ${filePath}: ${smartRes.error || 'text not found in file'}.\nPlease ensure the exact existing content is provided in TargetContent / oldString.`;
+              console.error(`\n==================================================`);
+              console.error(`[pi-tools] ❌ EDIT FAILED FOR ${filePath}:`);
+              console.error(`[pi-tools] ❌ ${errMsg}`);
+              console.error(`==================================================\n`);
+              result = {
+                success: false,
+                output: errMsg,
+                error: 'edit_failed'
+              };
             }
+          } else {
+            const errMsg = `Error: Empty oldString / TargetContent provided for ${filePath}. To create a new file or replace full content, use the write tool instead. If editing, provide the exact existing content in TargetContent / oldString.`;
+            console.error(`\n==================================================`);
+            console.error(`[pi-tools] ❌ EDIT FAILED FOR ${filePath}:`);
+            console.error(`[pi-tools] ❌ ${errMsg}`);
+            console.error(`==================================================\n`);
+            result = {
+              success: false,
+              output: errMsg,
+              error: 'empty_old_string'
+            };
           }
         }
       }

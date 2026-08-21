@@ -306,11 +306,11 @@ function DualAxisDailyChart({ data, height = 200 }: {
 }
 
 // Mini Bar Chart for Monthly / Timeline
-function BarChart({ data, valueKey, labelKey, color, height = 150 }: {
+function BarChart({ data, valueKey, labelKey, color = "#6366f1", height = 150 }: {
     data: any[];
     valueKey: string;
     labelKey: string;
-    color: string;
+    color?: string;
     height?: number;
 }) {
     if (!data || data.length === 0) {
@@ -453,20 +453,33 @@ function DonutChart({ segments, size = 120 }: {
                             fontWeight: 500,
                             pointerEvents: "none",
                             whiteSpace: "nowrap",
-                            zIndex: 100,
-                            boxShadow: "0 4px 10px rgba(0,0,0,0.15)"
+                            zIndex: 10
                         }}
                     >
-                        {hovered.label}: {formatCost(hovered.value)}
+                        {hovered.label}: {formatCost(hovered.value)} ({((hovered.value / total) * 100).toFixed(1)}%)
                     </motion.div>
                 )}
             </AnimatePresence>
+            <div style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none"
+            }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text-primary)" }}>
+                    {formatCost(total)}
+                </span>
+                <span style={{ fontSize: 9.5, color: "var(--color-text-tertiary)", textTransform: "uppercase" }}>Total</span>
+            </div>
         </div>
     );
 }
 
 const CHART_COLORS = [
-    "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#3b82f6",
+    "#10b981", "#6366f1", "#f59e0b", "#3b82f6",
     "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#84cc16"
 ];
 
@@ -633,32 +646,37 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                     <button
                         onClick={handleShareAnalytics}
                         disabled={sharing || !summary}
+                        className="glossy"
                         style={{
                             padding: "6px 14px",
                             background: "var(--color-text-primary)",
                             border: "none",
+                            borderTop: "1px solid var(--glossy-highlight)",
                             borderRadius: 8,
                             fontSize: 12,
                             fontWeight: 600,
                             color: "var(--color-bg-surface)",
                             cursor: (sharing || !summary) ? "not-allowed" : "pointer",
                             opacity: (sharing || !summary) ? 0.6 : 1,
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.12)"
+                            boxShadow: "var(--glossy-inner), 0 2px 8px rgba(0,0,0,0.12)"
                         }}
                     >
                         {sharing ? "Generating..." : "✨ Share & Flex"}
                     </button>
                     <button
                         onClick={loadData}
+                        className="glossy"
                         style={{
                             padding: "6px 14px",
                             background: "var(--color-bg-subtle)",
                             border: "1px solid var(--color-border)",
+                            borderTop: "1px solid var(--glossy-highlight)",
                             borderRadius: 8,
                             fontSize: 12,
                             fontWeight: 600,
                             color: "var(--color-text-primary)",
-                            cursor: "pointer"
+                            cursor: "pointer",
+                            boxShadow: "var(--glossy-inner), var(--glossy-outer)"
                         }}
                     >
                         Refresh
@@ -680,27 +698,40 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 4, padding: "12px 28px 0", flexShrink: 0 }}>
-                {(["overview", "models", "timeline"] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        style={{
-                            padding: "7px 16px",
-                            borderRadius: 10,
-                            border: "none",
-                            background: activeTab === tab ? "var(--color-bg-surface)" : "transparent",
-                            color: activeTab === tab ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-                            fontWeight: activeTab === tab ? 700 : 500,
-                            fontSize: 13,
-                            cursor: "pointer",
-                            boxShadow: activeTab === tab ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-                            transition: "all 0.15s"
-                        }}
-                    >
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
+            <div style={{ padding: "14px 28px 0", flexShrink: 0 }}>
+                <div 
+                    className="glossy"
+                    style={{ 
+                        display: "inline-flex", 
+                        gap: 4, 
+                        padding: 4, 
+                        background: "var(--color-bg-surface)", 
+                        border: "1px solid var(--color-border)", 
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        borderRadius: 12,
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)"
+                    }}
+                >
+                    {(["overview", "models", "timeline"] as const).map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            style={{
+                                padding: "6px 16px",
+                                borderRadius: 8,
+                                border: "none",
+                                background: activeTab === tab ? "var(--color-bg-selected, rgba(0,0,0,0.06))" : "transparent",
+                                color: activeTab === tab ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                                fontWeight: activeTab === tab ? 600 : 500,
+                                fontSize: 13,
+                                cursor: "pointer",
+                                transition: "all 0.15s"
+                            }}
+                        >
+                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Content */}
@@ -719,10 +750,12 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                 )}
 
                 {error && !loading && (
-                    <div style={{
+                    <div className="glossy" style={{
                         background: "#fff5f5", border: "1px solid #fecaca",
+                        borderTop: "1px solid var(--glossy-highlight)",
                         borderRadius: 16, padding: 24, color: "#ef4444",
-                        fontSize: 14, marginBottom: 20
+                        fontSize: 14, marginBottom: 20,
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)"
                     }}>
                         <strong>Error:</strong> {error}
                         <br />
@@ -784,7 +817,6 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
     const runCost = formatCost(summary.avgCostPerRequest > 0 ? summary.avgCostPerRequest : 0);
     const sessionCost = formatCost(summary.totalCost || 0);
 
-    // Advanced Metrics Calculations
     const dailyCount = summary.dailyUsage?.length || 1;
     const avgDailySpend = summary.totalCost / Math.max(1, dailyCount);
     const projectedMonthlySpend = avgDailySpend * 30;
@@ -797,7 +829,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            {/* CostMeter Element */}
+            {/* CostMeter Element with Glossy finish */}
             <CostMeter
                 runCost={runCost}
                 sessionCost={sessionCost}
@@ -848,16 +880,21 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 gap: 16,
                 width: "100%"
             }}>
-                <div style={{
-                    background: "var(--color-bg-surface)",
-                    borderRadius: 18,
-                    border: "1px solid var(--color-border)",
-                    padding: "18px 20px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: 8
-                }}>
+                <div 
+                    className="glossy"
+                    style={{
+                        background: "var(--color-bg-surface)",
+                        borderRadius: 18,
+                        border: "1px solid var(--color-border)",
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: "18px 20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        gap: 8
+                    }}
+                >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Monthly Projection</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 8px", borderRadius: 10 }}>Forecast</span>
@@ -870,16 +907,21 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     </div>
                 </div>
 
-                <div style={{
-                    background: "var(--color-bg-surface)",
-                    borderRadius: 18,
-                    border: "1px solid var(--color-border)",
-                    padding: "18px 20px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: 8
-                }}>
+                <div 
+                    className="glossy"
+                    style={{
+                        background: "var(--color-bg-surface)",
+                        borderRadius: 18,
+                        border: "1px solid var(--color-border)",
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: "18px 20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        gap: 8
+                    }}
+                >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cost Per 1K Tokens</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 10 }}>Efficiency</span>
@@ -892,16 +934,21 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     </div>
                 </div>
 
-                <div style={{
-                    background: "var(--color-bg-surface)",
-                    borderRadius: 18,
-                    border: "1px solid var(--color-border)",
-                    padding: "18px 20px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: 8
-                }}>
+                <div 
+                    className="glossy"
+                    style={{
+                        background: "var(--color-bg-surface)",
+                        borderRadius: 18,
+                        border: "1px solid var(--color-border)",
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: "18px 20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        gap: 8
+                    }}
+                >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cache Savings</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.1)", padding: "2px 8px", borderRadius: 10 }}>Prompt Cache</span>
@@ -916,7 +963,17 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
             </div>
 
             {/* ── 3. Dual-Axis Daily Spend & Volume Chart ── */}
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "24px 26px" }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: "24px 26px" 
+                }}
+            >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
                     <div>
                         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Daily Spend & Request Volume (last 30 days)</div>
@@ -939,7 +996,17 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
             {/* ── 4. Token Ratio Ring + Provider Breakdown + Operational Health ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {/* Provider Spend Donut */}
-                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "22px 24px" }}>
+                <div 
+                    className="glossy"
+                    style={{ 
+                        background: "var(--color-bg-surface)", 
+                        borderRadius: 20, 
+                        border: "1px solid var(--color-border)", 
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: "22px 24px" 
+                    }}
+                >
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 16 }}>Spend by Provider</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
                         <DonutChart
@@ -963,7 +1030,17 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 </div>
 
                 {/* Input vs Output Token Ratio Split */}
-                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: "22px 24px" }}>
+                <div 
+                    className="glossy"
+                    style={{ 
+                        background: "var(--color-bg-surface)", 
+                        borderRadius: 20, 
+                        border: "1px solid var(--color-border)", 
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: "22px 24px" 
+                    }}
+                >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Token Input vs. Output Ratio</div>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 10 }}>Cost Driver</span>
@@ -995,15 +1072,20 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
             </div>
 
             {/* ── 5. Operational Health & Reliability ── */}
-            <div style={{
-                background: "var(--color-bg-surface)",
-                borderRadius: 20,
-                border: "1px solid var(--color-border)",
-                padding: "20px 24px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between"
-            }}>
+            <div 
+                className="glossy"
+                style={{
+                    background: "var(--color-bg-surface)",
+                    borderRadius: 20,
+                    border: "1px solid var(--color-border)",
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: "20px 24px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between"
+                }}
+            >
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <BoltIcon style={{ width: 20, height: 20, color: "#10b981" }} />
@@ -1042,7 +1124,17 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: 24 
+                }}
+            >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 20 }}>Models by Cost & Token Volume</div>
                 {summary.topModels.length === 0 ? (
                     <div style={{ color: "var(--color-text-secondary)", fontSize: 13, textAlign: "center", padding: "30px 0" }}>No model telemetry recorded yet</div>
@@ -1060,7 +1152,17 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
                 )}
             </div>
 
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: 24 
+                }}
+            >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 20 }}>Model Breakdown Details</div>
                 <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -1095,19 +1197,49 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
 function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: 24 
+                }}
+            >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Token Usage — Last 30 Days</div>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Daily token consumption velocity</div>
                 <BarChart data={summary.dailyUsage} valueKey="tokens" labelKey="date" color="#6366f1" height={160} />
             </div>
 
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: 24 
+                }}
+            >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Monthly Spend</div>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Historical spend over billing periods</div>
                 <BarChart data={summary.dailyUsage} valueKey="cost" labelKey="date" color="#f59e0b" height={160} />
             </div>
 
-            <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+            <div 
+                className="glossy"
+                style={{ 
+                    background: "var(--color-bg-surface)", 
+                    borderRadius: 20, 
+                    border: "1px solid var(--color-border)", 
+                    borderTop: "1px solid var(--glossy-highlight)",
+                    boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                    padding: 24 
+                }}
+            >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Usage by Hour of Day</div>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Activity distribution across peak work hours</div>
                 <BarChart
@@ -1127,7 +1259,17 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
 
             {/* Monthly table */}
             {summary.monthlyUsage.length > 0 && (
-                <div style={{ background: "var(--color-bg-surface)", borderRadius: 20, border: "1px solid var(--color-border)", padding: 24 }}>
+                <div 
+                    className="glossy"
+                    style={{ 
+                        background: "var(--color-bg-surface)", 
+                        borderRadius: 20, 
+                        border: "1px solid var(--color-border)", 
+                        borderTop: "1px solid var(--glossy-highlight)",
+                        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
+                        padding: 24 
+                    }}
+                >
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 16 }}>Monthly Billing Summary</div>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>

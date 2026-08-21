@@ -206,13 +206,17 @@ export class SystemTrayManager {
    * Get the appropriate tray icon path for the current platform
    */
   private getTrayIconPath(): string {
+    const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : '';
+    const resPath = process.resourcesPath || '';
+
     const candidates = [
-      path.join(app.getAppPath(), 'public', 'images', 'logos'),
       path.join(__dirname, '..', '..', '..', 'public', 'images', 'logos'),
       path.join(__dirname, '..', '..', 'public', 'images', 'logos'),
+      path.join(resPath, 'public', 'images', 'logos'),
+      path.join(resPath, 'images', 'logos'),
+      path.join(appPath, 'public', 'images', 'logos'),
+      path.join(appPath, 'dist-electron', 'public', 'images', 'logos'),
       path.join(process.cwd(), 'public', 'images', 'logos'),
-      path.join(process.resourcesPath, 'public', 'images', 'logos'),
-      path.join(process.resourcesPath, 'images', 'logos'),
     ];
 
     let iconName: string;
@@ -244,7 +248,7 @@ export class SystemTrayManager {
     }
 
     console.warn('[SystemTray] No suitable tray icon found, using default');
-    return path.join(app.getAppPath(), 'public', 'images', 'logos', iconName);
+    return path.join(appPath || process.cwd(), 'public', 'images', 'logos', iconName);
   }
 
   /**

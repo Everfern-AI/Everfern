@@ -52,12 +52,14 @@ export function CostMeter({
     <div
       data-slot="cost-meter"
       className={cn(
-        "flex w-full flex-col rounded-2xl border shadow-sm",
+        "flex w-full flex-col rounded-2xl border shadow-sm glossy",
         className
       )}
       style={{
         backgroundColor: "var(--color-bg-surface, var(--color-bg-base))",
         borderColor: "var(--color-border)",
+        borderTop: "1px solid var(--glossy-highlight)",
+        boxShadow: "var(--glossy-inner), var(--glossy-outer)",
         padding: "20px 24px",
         gap: 16,
       }}

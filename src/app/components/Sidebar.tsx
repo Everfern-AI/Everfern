@@ -574,23 +574,6 @@ export default function Sidebar({
                         >
                             <EllipsisHorizontalIcon width={16} height={16} />
                         </div>
-
-                        {/* Right-edge smooth fade for active item */}
-                        {isActive && (
-                            <div
-                                style={{
-                                    position: "absolute",
-                                    right: 0,
-                                    top: 0,
-                                    bottom: 0,
-                                    width: 36,
-                                    pointerEvents: "none",
-                                    zIndex: 2,
-                                    borderRadius: "0 10px 10px 0",
-                                    background: "linear-gradient(to right, transparent 0%, var(--sidebar-bg-selected) 90%)",
-                                }}
-                            />
-                        )}
                     </>
                 )}
             </div>

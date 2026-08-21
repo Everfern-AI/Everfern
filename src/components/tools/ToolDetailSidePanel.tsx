@@ -3477,7 +3477,7 @@ function FilePreviewOverlay({
         position: 'absolute',
         inset: 0,
         zIndex: 40,
-        background: '#18181b',
+        background: 'var(--color-bg-base)',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -3851,15 +3851,19 @@ export default function ToolDetailSidePanel({
             aria-label="Tool execution details"
             style={isDesktop ? {
               position: 'relative', height: '100%',
-              background: '#18181b', borderLeft: `1px solid ${T.border}`,
+              background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
+              padding: isFileEditor ? '8px 12px 12px 0' : '0',
               display: 'flex', flexDirection: 'column',
               overflow: 'hidden', outline: 'none', flexShrink: 0,
+              boxSizing: 'border-box',
             } : {
               position: 'fixed', right: 0, top: 0, bottom: 0,
               width: 'min(100%, 520px)',
-              background: '#18181b', borderLeft: `1px solid ${T.border}`,
+              background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
+              padding: isFileEditor ? '8px 12px 12px 0' : '0',
               display: 'flex', flexDirection: 'column',
               zIndex: 50, overflow: 'hidden', outline: 'none',
+              boxSizing: 'border-box',
             }}
             initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
             animate={isDesktop ? { width: panelWidth, opacity: 1 } : { x: 0 }}
@@ -3868,7 +3872,7 @@ export default function ToolDetailSidePanel({
           >
             {/* Inner wrapper prevents layout reflow during animation */}
             <div style={{
-              width: isDesktop ? panelWidth : '100%', height: '100%',
+              width: '100%', height: '100%',
               display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
             }}>
               {!isFileEditor && toolCall && (

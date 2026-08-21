@@ -84,7 +84,7 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
   variant = 'main',
 }) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
-  const [collapsed, setCollapsed] = useAutoCollapse(isRunning, autoCollapse);
+  const [isExpanded, setIsExpanded] = useAutoCollapse(isRunning, autoCollapse);
 
   const isSidebar = variant === 'sidebar';
 
@@ -94,8 +94,8 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
   }, [timeline?.steps]);
 
   React.useEffect(() => {
-    onCollapseChange?.(collapsed);
-  }, [collapsed, onCollapseChange]);
+    onCollapseChange?.(!isExpanded);
+  }, [isExpanded, onCollapseChange]);
 
   const toggleExpand = (stepId: string) => {
     const newExpanded = new Set(expandedSteps);
@@ -129,7 +129,7 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
       {!isSidebar && (
         <button
           type="button"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setIsExpanded(!isExpanded)}
           style={{
             width: '100%',
             display: 'flex',
@@ -158,7 +158,7 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
               {timeline.completedSteps}/{timeline.totalSteps} steps
             </span>
             <motion.div
-              animate={{ rotate: collapsed ? 0 : 180 }}
+              animate={{ rotate: isExpanded ? 180 : 0 }}
               transition={{ duration: 0.15 }}
               style={{ display: 'flex', color: 'rgba(255, 255, 255, 0.4)' }}
             >
@@ -170,7 +170,7 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
 
       {/* Content */}
       <AnimatePresence initial={false}>
-        {(!collapsed || isSidebar) && (
+        {(isExpanded || isSidebar) && (
           <motion.div
             initial={isSidebar ? false : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}

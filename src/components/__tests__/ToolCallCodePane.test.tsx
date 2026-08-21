@@ -1,69 +1,79 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ToolCallCodePane, tokenizeCodeLine } from '../tools/ToolCallCodePane';
+import { ToolCallCodePane, tokenizeCodeLine, PALETTE } from '../tools/ToolCallCodePane';
 
 describe('ToolCallCodePane', () => {
+  it('should tokenize Python code matching reference design', () => {
+    const pythonLine = 'from reportlab.lib.pagesizes import letter';
+    const tokens = tokenizeCodeLine(pythonLine, 'py');
+    expect(tokens.length).toBeGreaterThan(0);
+
+    const callLine = '    "TitleStyle", parent=styles["Title"], fontSize=28, leading=32,';
+    const callTokens = tokenizeCodeLine(callLine, 'py');
+    expect(callTokens.length).toBeGreaterThan(0);
+  });
+
   it('should tokenize TypeScript / TSX code accurately', () => {
     const sampleLine = 'import React, { useState, type ComponentProps } from "react";';
     const tokens = tokenizeCodeLine(sampleLine, 'tsx');
     expect(tokens.length).toBeGreaterThan(0);
   });
 
-  it('should render header with title and extension matching reference design', () => {
+  it('should render header with title and extension matching reference design (e.g. Build pdf · PY)', () => {
     const onClose = vi.fn();
     render(
       <ToolCallCodePane
-        toolName="replace_file_content"
-        path="/src/app/chat/components/WebSearch.tsx"
+        toolName="write_to_file"
+        path="/src/build_pdf.py"
         args={{
-          TargetFile: '/src/app/chat/components/WebSearch.tsx',
-          TargetContent: 'const a = 1;',
-          ReplacementContent: 'const a = 2;',
+          TargetFile: '/src/build_pdf.py',
+          CodeContent: 'from reportlab.lib.pagesizes import letter\nstyles = getSampleStyleSheet()',
         }}
         onClose={onClose}
       />
     );
 
-    // Title should show filename · EXT
-    expect(screen.getByText(/WebSearch\.tsx · TSX/i)).toBeDefined();
+    // Title should show formatted "Build pdf · PY"
+    expect(screen.getByText('Build pdf · PY')).toBeDefined();
     // Copy button should exist
     expect(screen.getByText('Copy')).toBeDefined();
   });
 
-  it('should handle write tools and render added lines', () => {
+  it('should handle write tools and render code with line numbers', () => {
     const onClose = vi.fn();
-    const code = '"use client";\n\nexport interface WebSearchResult {\n  title: string;\n}';
+    const code = 'from reportlab.lib.pagesizes import letter\nfrom reportlab.lib.units import inch';
     render(
       <ToolCallCodePane
         toolName="write_to_file"
-        path="src/types.ts"
+        path="src/report.py"
         args={{
-          TargetFile: 'src/types.ts',
+          TargetFile: 'src/report.py',
           CodeContent: code,
         }}
         onClose={onClose}
       />
     );
 
-    expect(screen.getByText(/types\.ts · TS/i)).toBeDefined();
+    expect(screen.getByText('Report · PY')).toBeDefined();
     expect(screen.getByText('1')).toBeDefined();
+    expect(screen.getByText('2')).toBeDefined();
   });
 
   it('should handle read / view_file tools and render output content', () => {
     const onClose = vi.fn();
-    const output = 'function take<T>(array: readonly T[], n: number): T[] {\n  return array.slice(0, n);\n}';
+    const output = 'def calculate(total, tax=0.1):\n    return total * (1 + tax)';
     render(
       <ToolCallCodePane
         toolName="view_file"
-        path="src/utils.ts"
+        path="src/tax_calc.py"
         output={output}
         onClose={onClose}
       />
     );
 
-    expect(screen.getByText(/utils\.ts · TS/i)).toBeDefined();
-    expect(screen.getByText('1')).toBeDefined();
+    expect(screen.getByText('Tax calc · PY')).toBeDefined();
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0);
     expect(screen.getByText('2')).toBeDefined();
   });
 
